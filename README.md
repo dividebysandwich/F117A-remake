@@ -23,3 +23,7 @@
 - [ ] Scene detail generation: Roads, cities, fields, mountains
 - [ ] Mission system
 - [ ] Menu
+
+
+Non-goals:
+Multiplayer (unless done by contributors), study-level realism, realistic graphics, VR

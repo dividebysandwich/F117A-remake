@@ -79,6 +79,8 @@ pub struct Aircraft {
     pub speed: f32,
     /// Speed in knots
     pub speed_knots: f32,
+    /// The calculated altitude
+    pub altitude : f32,
     /// Currently applied roll force
     pub roll_force: f32, 
     /// Currently applied yaw force
@@ -98,6 +100,7 @@ impl Default for Aircraft {
             thrust_force: 0.0,
             speed: 0.0,
             speed_knots: 0.0,
+            altitude: 0.0,
             roll_force: 0.0,
             yaw_force: 0.0,
             pitch_force: 0.0
@@ -109,6 +112,7 @@ impl Default for Aircraft {
 pub fn update_aircraft_forces(mut query: Query<(&mut ExternalForce, &Velocity, &Transform, &mut Aircraft)>, time: Res<Time>, mut debug_lines: ResMut<DebugLines>,) {
     for (mut external_force, velocity, transform, mut aircraft) in query.iter_mut() {
     
+        aircraft.altitude = transform.translation.y * 10.0;
         aircraft.speed = velocity.linvel.length();
         aircraft.speed_knots = aircraft.speed * 10.0;
 

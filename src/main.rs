@@ -1,16 +1,21 @@
 use bevy::prelude::*;
-use bevy::asset::{AssetEvent, Assets, Handle};
+use bevy::asset::Assets;
+use bevy::render::camera::ScalingMode;
 use bevy_editor_pls::*;
 use bevy_rapier3d::prelude::*;
 use bevy_atmosphere::prelude::*;
 use bevy_third_person_camera::*;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
+use bevy::core_pipeline::clear_color::ClearColorConfig;
+use bevy::render::view::visibility::RenderLayers;
 
 mod aircraft;
 mod player;
+mod hud;
 
 use crate::aircraft::*;
 use crate::player::*;
+use crate::hud::*;
 
 fn main() {
     App::new()
@@ -19,16 +24,17 @@ fn main() {
     .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
     .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin)
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-    .add_plugins(RapierDebugRenderPlugin::default())
+//    .add_plugins(RapierDebugRenderPlugin::default())
     .add_plugins(AtmospherePlugin)
     .add_plugins(ThirdPersonCameraPlugin)
     .add_plugins(DebugLinesPlugin::default())
     .add_systems(Startup, setup_graphics)
     .add_systems(Startup, setup_physics)
     .add_systems(Startup, spawn_player)
+    .add_systems(Startup, setup_hud)
     .add_systems(Update, update_player_aircraft_controls)
     .add_systems(Update, update_aircraft_forces)
-//    .add_systems(Update, test_query)
+    .add_systems(Update, update_hud)
     .add_systems(Update, keyboard_input)
     .run()
 }
@@ -49,17 +55,42 @@ fn keyboard_input(mut external_impulses: Query<&mut ExternalImpulse, With<Player
 }
 
 fn setup_graphics(mut commands: Commands) {
-    // Add a camera so we can see the debug-render.
+    // Main 3d camera
     commands.spawn((
         ThirdPersonCamera {
-            offset_enabled: false,
-            offset: Offset::new(0.5, 0.25),
             ..default()
         },
         Camera3dBundle {
             transform: Transform::from_xyz(-3.0, 3.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
-    }, AtmosphereCamera::default()));
+    }, AtmosphereCamera::default()))
+    .insert(UiCameraConfig {
+        show_ui: false,
+        ..default()
+    });
+
+    // HUD camera
+    commands.spawn((Camera2dBundle {
+        camera_2d: Camera2d {
+            // Don't clear the canvas before drawing
+            clear_color: ClearColorConfig::None,
+        },
+        camera: Camera {
+            // renders after / on top of the 3d camera
+            order: 1,
+            ..default()
+        },
+        projection: OrthographicProjection {
+            // Make sure the HUD scales with the window size
+            scale: 1.0,
+            scaling_mode: ScalingMode::Fixed {width: 1920., height: 1080.},
+            ..default()
+        }.into(),        ..Default::default()
+    }, RenderLayers::layer(1))).insert(UiCameraConfig {
+        show_ui: true,
+        ..default()
+    });
+
 
     // light
     commands.spawn(PointLightBundle {
@@ -78,6 +109,11 @@ fn setup_graphics(mut commands: Commands) {
         sky: Color::rgb(0.004, 0.027, 0.12),
     }));
 
+    commands.insert_resource(GizmoConfig {
+        render_layers: RenderLayers::layer(1),
+        ..default()
+    })
+
 }
 
 fn setup_physics(mut commands: Commands,    
@@ -95,24 +131,8 @@ fn setup_physics(mut commands: Commands,
             ..default()
         }
     ));
-    
-
-    /* Create the ground. */
-/*    commands.spawn(PbrBundle {
-        mesh: meshes.add(shape::Plane::from_size(100.0).into()),
-        material: materials.add(StandardMaterial {
-            base_color: Color::hex("#339933").unwrap(),
-            // vary key PBR parameters on a grid of spheres to show the effect
-            metallic: 0.2,
-            perceptual_roughness: 0.5,
-            ..default()
-        }),
-        ..default()
-    }).insert(Collider::cuboid(100.0, 0.1, 100.0))
-    .insert(TransformBundle::from(Transform::from_xyz(0.0, -2.0, 0.0)));
-*/
-
 }
+
 fn spawn_player(mut commands: Commands,    
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,

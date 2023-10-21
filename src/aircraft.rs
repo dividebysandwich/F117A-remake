@@ -77,6 +77,8 @@ pub struct Aircraft {
     pub thrust_force: f32, 
     /// World speed, calculated from physics
     pub speed: f32,
+    /// Speed in knots
+    pub speed_knots: f32,
     /// Currently applied roll force
     pub roll_force: f32, 
     /// Currently applied yaw force
@@ -95,6 +97,7 @@ impl Default for Aircraft {
             throttle: 0.0,
             thrust_force: 0.0,
             speed: 0.0,
+            speed_knots: 0.0,
             roll_force: 0.0,
             yaw_force: 0.0,
             pitch_force: 0.0
@@ -107,6 +110,7 @@ pub fn update_aircraft_forces(mut query: Query<(&mut ExternalForce, &Velocity, &
     for (mut external_force, velocity, transform, mut aircraft) in query.iter_mut() {
     
         aircraft.speed = velocity.linvel.length();
+        aircraft.speed_knots = aircraft.speed * 10.0;
 
         if aircraft.thrust_force < aircraft.throttle * MAXTHRUST.get(&aircraft.aircraft_type).unwrap() {
             aircraft.thrust_force += 20.0 * time.delta_seconds();
@@ -120,7 +124,7 @@ pub fn update_aircraft_forces(mut query: Query<(&mut ExternalForce, &Velocity, &
         let object_rotation = transform.rotation;
         let gravity_force = 100.0;
         lift_force = lift_force - gravity_force;
-        info!("Thrustforce: {} Speed: {} Lift: {}", aircraft.thrust_force, aircraft.speed, lift_force);
+//        info!("Thrustforce: {} Speed: {} Lift: {}", aircraft.thrust_force, aircraft.speed, lift_force);
     
         let force_vector = Vec3::new(aircraft.thrust_force, lift_force / 10.0, 0.0);
         let rotated_force_vector = Quat::mul_vec3(object_rotation, force_vector) + Vec3::new(0.0, lift_force, 0.0);

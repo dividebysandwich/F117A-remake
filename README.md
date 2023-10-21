@@ -1,6 +1,9 @@
 # F117A-remake
  A spiritual successor to an old DOS game, written in Rust / Bevy
 
+![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/225bec29-d680-49af-a29c-38eb084c2901)
+
+
 ### Todo:
 
 - [X] Basic scene setup
@@ -27,3 +30,4 @@
 
 Non-goals:
 Multiplayer (unless done by contributors), study-level realism, realistic graphics, VR
+

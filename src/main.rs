@@ -1,9 +1,7 @@
 use bevy::prelude::*;
-use bevy::asset::Assets;
 use bevy::render::camera::ScalingMode;
 use bevy_editor_pls::*;
 use bevy_rapier3d::prelude::*;
-use bevy_atmosphere::prelude::*;
 use bevy_third_person_camera::*;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use bevy::core_pipeline::clear_color::ClearColorConfig;
@@ -25,7 +23,6 @@ fn main() {
     .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin)
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
 //    .add_plugins(RapierDebugRenderPlugin::default())
-    .add_plugins(AtmospherePlugin)
     .add_plugins(ThirdPersonCameraPlugin)
     .add_plugins(DebugLinesPlugin::default())
     .add_systems(Startup, setup_graphics)
@@ -61,9 +58,14 @@ fn setup_graphics(mut commands: Commands) {
             ..default()
         },
         Camera3dBundle {
+            camera: Camera {
+                // renders first
+                order: 0,
+                ..default()
+            },
             transform: Transform::from_xyz(-3.0, 3.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
-    }, AtmosphereCamera::default()))
+    }))
     .insert(UiCameraConfig {
         show_ui: false,
         ..default()
@@ -77,7 +79,7 @@ fn setup_graphics(mut commands: Commands) {
         },
         camera: Camera {
             // renders after / on top of the 3d camera
-            order: 1,
+            order: 2,
             ..default()
         },
         projection: OrthographicProjection {
@@ -103,11 +105,6 @@ fn setup_graphics(mut commands: Commands) {
         },
         ..default()
     });
-    commands.insert_resource(AtmosphereModel::new(Gradient {
-        ground: Color::rgb(0.0, 0.0, 0.0),
-        horizon: Color::rgb(0.333, 0.11, 0.294),
-        sky: Color::rgb(0.004, 0.027, 0.12),
-    }));
 
     commands.insert_resource(GizmoConfig {
         render_layers: RenderLayers::layer(1),
@@ -135,7 +132,6 @@ fn setup_physics(mut commands: Commands,
 
 fn spawn_player(mut commands: Commands,    
     asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
 ) {
 
 //    let mesh: Handle<Mesh> = asset_server.load("models/planes/f117a.gltf#Scene0");
@@ -143,7 +139,7 @@ fn spawn_player(mut commands: Commands,
 //    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
     commands.spawn(SceneBundle {
         scene: asset_server.load("models/planes/f117a.gltf#Scene0"),
-        transform: Transform::from_scale(Vec3::splat(0.01)),
+        transform: Transform::from_scale(Vec3::splat(0.005)),
         ..default()
     }).insert(Player)
     .insert(Aircraft{name: String::from("GHOST 1-1"), aircraft_type: AircraftType::F117A, fuel: 35500.0, ..default() })
@@ -155,11 +151,12 @@ fn spawn_player(mut commands: Commands,
     })
     .insert(ThirdPersonCameraTarget)
     .insert(Velocity{..default()})
-    .insert(Collider::cuboid(200.0, 30.0, 200.0))
+    .insert(Collider::cuboid(100.0, 30.0, 100.0))
     .insert(Restitution::coefficient(0.4))
     .insert(RigidBody::Dynamic)
-    .insert(GravityScale(0.0))
-    .insert(Damping { linear_damping: 0.3, angular_damping: 1.0 });
+    .insert(GravityScale(0.0)) 
+    .insert(Damping { linear_damping: 0.3, angular_damping: 1.0 })
+    .insert(ColliderMassProperties::Density(35.0));
 //    .insert(TransformBundle::from(Transform::from_xyz(0.0, 4.0, 0.0)));
 
 

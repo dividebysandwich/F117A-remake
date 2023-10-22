@@ -33,8 +33,8 @@ lazy_static! {
 lazy_static! {
     pub static ref MAXFORCES_YAW : HashMap<AircraftType, f32>= {
         let mut map = HashMap::new();
-        map.insert(AircraftType::F117A, 45.0);
-        map.insert(AircraftType::MIG29, 47.0);
+        map.insert(AircraftType::F117A, 35.0);
+        map.insert(AircraftType::MIG29, 37.0);
         map
     };
 }
@@ -182,11 +182,11 @@ pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, (With
             aircraft.roll_force = 0.0;
         }
         //Yaw
-        if input.pressed(KeyCode::A) {
+        if input.pressed(KeyCode::D) {
             if aircraft.yaw_force > -*MAXFORCES_YAW.get(&aircraft.aircraft_type).unwrap() {
                 aircraft.yaw_force -= 8.0 * time.delta_seconds();
             }
-        } else if input.pressed(KeyCode::D) {
+        } else if input.pressed(KeyCode::A) {
             if aircraft.yaw_force < *MAXFORCES_YAW.get(&aircraft.aircraft_type).unwrap() {
                 aircraft.yaw_force += 8.0 * time.delta_seconds();
             }

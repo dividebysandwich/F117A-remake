@@ -55,7 +55,7 @@ fn draw_vertical_ladder(gizmos: &mut Gizmos, value : f32, xpos : f32, hud_size_y
     let mut y = -(value % 50.0) as i32;
     let mut value_limiter = value;
     for i in 0 .. hud_size_y as i32 {
-        if (value_limiter > 0.0) {
+        if value_limiter > 0.0 {
             if y % 10 == 0 {
                 if y % 50 == 0 {
                     gizmos.line_2d(Vec2::new(xpos + (tick_direction*20.0), -i as f32), Vec2::new(xpos, -i as f32), Color::GREEN);
@@ -73,7 +73,7 @@ pub fn update_hud(mut aircrafts: Query<&Aircraft, With<Player>>,
     mut speedlabels: Query<&mut Text, (With<LabelCurrentSpeed>, Without<LabelCurrentAltitude>)>, 
     mut altitudelabels: Query<&mut Text, (With<LabelCurrentAltitude>, Without<LabelCurrentSpeed>)>, 
     mut gizmos: Gizmos, 
-    time: Res<Time>) {
+    ) {
 
     for aircraft in aircrafts.iter_mut() {
         let mut speedlabel = speedlabels.get_single_mut().unwrap();

@@ -1,11 +1,21 @@
-use bevy::prelude::*;
-use bevy::render::camera::ScalingMode;
+use bevy::{
+        prelude::*,
+        asset::LoadState,
+        core_pipeline::{
+            clear_color::ClearColorConfig,
+            Skybox,
+        },
+        render::{
+            camera::ScalingMode,
+            render_resource::{TextureViewDescriptor, TextureViewDimension},
+            view::visibility::RenderLayers,
+            texture::CompressedImageFormats,
+        }
+    };
 use bevy_editor_pls::*;
 use bevy_rapier3d::prelude::*;
 use bevy_third_person_camera::*;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
-use bevy::core_pipeline::clear_color::ClearColorConfig;
-use bevy::render::view::visibility::RenderLayers;
 
 mod aircraft;
 mod player;
@@ -17,41 +27,88 @@ use crate::hud::*;
 
 fn main() {
     App::new()
-    .add_plugins(DefaultPlugins)
-    .add_plugins(EditorPlugin::default())
-    .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-    .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin)
-    .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
-//    .add_plugins(RapierDebugRenderPlugin::default())
-    .add_plugins(ThirdPersonCameraPlugin)
-    .add_plugins(DebugLinesPlugin::default())
-    .add_systems(Startup, setup_graphics)
-    .add_systems(Startup, setup_physics)
-    .add_systems(Startup, spawn_player)
-    .add_systems(Startup, setup_hud)
-    .add_systems(Update, update_player_aircraft_controls)
-    .add_systems(Update, update_aircraft_forces)
-    .add_systems(Update, update_hud)
-    .add_systems(Update, keyboard_input)
+    .add_plugins((
+        DefaultPlugins, 
+        EditorPlugin::default(),
+        bevy::diagnostic::FrameTimeDiagnosticsPlugin,
+        bevy::diagnostic::EntityCountDiagnosticsPlugin,
+        RapierPhysicsPlugin::<NoUserData>::default(),
+        ThirdPersonCameraPlugin,
+        DebugLinesPlugin::default()
+    ))
+    .add_systems(Startup, (
+        setup_graphics, 
+        setup_physics,
+        spawn_player,
+        setup_hud,
+    ))
+    .add_systems(Update, (
+        apply_skybox,
+        update_player_aircraft_controls, 
+        update_aircraft_forces,
+        update_hud, 
+    ))
     .run()
 }
 
-fn keyboard_input(mut external_impulses: Query<&mut ExternalImpulse, With<Player>>, mut transform: Query<&mut Transform, With<Player>>, input: Res<Input<KeyCode>>) {
-    if input.just_pressed(KeyCode::Space) {
-        println!("Boing!");
 
-        for mut external_impulse in external_impulses.iter_mut() {
-            println!("Applied!");
-            let object_rotation = transform.get_single().unwrap().rotation;
-            let impulse_vector = Vec3::new(0.0, 80.0, 0.0);
-            let rotated_impulse_vector = Quat::mul_vec3(object_rotation, impulse_vector);
-            external_impulse.impulse = rotated_impulse_vector;
-            external_impulse.torque_impulse = Vec3::new(0.0, 5.0, 10.0);
+const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
+    (
+        "skybox/night.png",
+        CompressedImageFormats::NONE,
+    )
+];
+
+#[derive(Resource)]
+struct Cubemap {
+    is_loaded: bool,
+    image_handle: Handle<Image>,
+}
+
+#[derive(Component)]
+struct MainCamera;
+
+
+fn apply_skybox(
+    main_cameras: Query<Entity, With<MainCamera>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut images: ResMut<Assets<Image>>,
+    mut cubemap: ResMut<Cubemap>,
+) {
+    if !cubemap.is_loaded && asset_server.get_load_state(&cubemap.image_handle) == LoadState::Loaded {
+        info!("Applying skybox");
+        let image = images.get_mut(&cubemap.image_handle).unwrap();
+        // NOTE: PNGs do not have any metadata that could indicate they contain a cubemap texture,
+        // so they appear as one texture. The following code reconfigures the texture as necessary.
+        if image.texture_descriptor.array_layer_count() == 1 {
+            image.reinterpret_stacked_2d_as_array(
+                image.texture_descriptor.size.height / image.texture_descriptor.size.width,
+            );
+            image.texture_view_descriptor = Some(TextureViewDescriptor {
+                dimension: Some(TextureViewDimension::Cube),
+                ..default()
+            });
         }
+
+        for main_camera in main_cameras.iter() {
+            commands.entity(main_camera).insert(Skybox(cubemap.image_handle.clone()));
+        }
+        cubemap.is_loaded = true;
     }
 }
 
-fn setup_graphics(mut commands: Commands) {
+
+
+fn setup_graphics(
+    mut commands: Commands, 
+    asset_server: Res<AssetServer>, 
+) {
+    commands.insert_resource(Cubemap {
+        is_loaded: false,
+        image_handle: asset_server.load(CUBEMAPS[0].0),
+    });
+
     // Main 3d camera
     commands.spawn((
         ThirdPersonCamera {
@@ -65,11 +122,13 @@ fn setup_graphics(mut commands: Commands) {
             },
             transform: Transform::from_xyz(-3.0, 3.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
-    }))
+        },
+    ))
     .insert(UiCameraConfig {
         show_ui: false,
         ..default()
-    });
+    })
+    .insert(MainCamera);
 
     // HUD camera
     commands.spawn((Camera2dBundle {
@@ -161,4 +220,3 @@ fn spawn_player(mut commands: Commands,
 
 
 }
-

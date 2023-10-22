@@ -44,11 +44,56 @@ fn main() {
     ))
     .add_systems(Update, (
         apply_skybox,
+        handle_camera_controls,
+        update_cockpit_camera,
         update_player_aircraft_controls, 
         update_aircraft_forces,
         update_hud, 
     ))
     .run()
+}
+
+fn handle_camera_controls(
+    main_cameras: Query<Entity, With<MainCamera>>,
+    mut commands: Commands,
+    aircrafts: Query<Entity, With<Player>>,
+    mut visibilities: Query<&Visibility>,
+    input: Res<Input<KeyCode>>) {
+    for aircraft in aircrafts.iter() {
+//        let mut _visibility = visibilities.get_mut(aircraft).unwrap();
+        if input.just_pressed(KeyCode::F1) {
+//            _visibility = &Visibility::Hidden;
+            for main_camera in main_cameras.iter() {
+                commands.entity(main_camera).remove::<ThirdPersonCamera>();
+                commands.entity(main_camera).insert(CockpitCamera);
+                commands.entity(main_camera).remove::<RenderLayers>();
+                commands.entity(main_camera).insert(RenderLayers::from_layers(&[0, 2]));
+
+            }
+        } else if input.just_pressed(KeyCode::F2) {
+//            _visibility = &Visibility::Visible;
+            for main_camera in main_cameras.iter() {
+                commands.entity(main_camera).remove::<CockpitCamera>();
+                commands.entity(main_camera).insert(ThirdPersonCamera{
+                    ..default()
+                });
+                commands.entity(main_camera).remove::<RenderLayers>();
+                commands.entity(main_camera).insert(RenderLayers::from_layers(&[0, 2, 3]));
+            }
+        }
+
+    }
+}
+
+fn update_cockpit_camera(
+    mut camera_transforms: Query<&mut Transform, (With<CockpitCamera>, Without<Aircraft>, Without<Player>)>,
+    aircraft_transforms: Query<&Transform, (With<Aircraft>, With<Player>, Without<CockpitCamera>)>) {
+    for aircraft_transform in aircraft_transforms.iter() {
+        for mut camera_transform in camera_transforms.iter_mut() {
+            camera_transform.translation = aircraft_transform.translation;
+            camera_transform.rotation = aircraft_transform.rotation * Quat::from_rotation_y(f32::to_radians(-90.0));
+        }
+    }
 }
 
 
@@ -67,6 +112,9 @@ struct Cubemap {
 
 #[derive(Component)]
 struct MainCamera;
+
+#[derive(Component)]
+struct CockpitCamera;
 
 
 fn apply_skybox(
@@ -110,25 +158,24 @@ fn setup_graphics(
     });
 
     // Main 3d camera
-    commands.spawn((
-        ThirdPersonCamera {
-            ..default()
-        },
+    commands.spawn(
         Camera3dBundle {
             camera: Camera {
                 // renders first
                 order: 0,
                 ..default()
             },
-            transform: Transform::from_xyz(-3.0, 3.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
+//            transform: Transform::from_xyz(-3.0, 3.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
-        },
-    ))
+        }
+    )
     .insert(UiCameraConfig {
         show_ui: false,
         ..default()
     })
-    .insert(MainCamera);
+    .insert(MainCamera)
+    .insert(CockpitCamera)
+    .insert(RenderLayers::from_layers(&[0, 2]));
 
     // HUD camera
     commands.spawn((Camera2dBundle {
@@ -198,6 +245,7 @@ fn spawn_player(mut commands: Commands,
 //    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
     commands.spawn(SceneBundle {
         scene: asset_server.load("models/planes/f117a.gltf#Scene0"),
+//        visibility: Visibility::Hidden,
         transform: Transform::from_scale(Vec3::splat(0.005)),
         ..default()
     }).insert(Player)
@@ -215,7 +263,10 @@ fn spawn_player(mut commands: Commands,
     .insert(RigidBody::Dynamic)
     .insert(GravityScale(0.0)) 
     .insert(Damping { linear_damping: 0.3, angular_damping: 1.0 })
-    .insert(ColliderMassProperties::Density(35.0));
+    .insert(ColliderMassProperties::Density(35.0))
+    // Player airplane is layer 3 so it can be skipped when rendering cockpit view
+    .insert(RenderLayers::layer(3));
+
 //    .insert(TransformBundle::from(Transform::from_xyz(0.0, 4.0, 0.0)));
 
 

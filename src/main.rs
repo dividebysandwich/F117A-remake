@@ -56,13 +56,11 @@ fn main() {
 fn handle_camera_controls(
     main_cameras: Query<Entity, With<MainCamera>>,
     mut commands: Commands,
-    aircrafts: Query<Entity, With<Player>>,
-    mut visibilities: Query<&Visibility>,
+    mut aircrafts: Query<&mut Visibility, With<Player>>,
     input: Res<Input<KeyCode>>) {
-    for aircraft in aircrafts.iter() {
-//        let mut _visibility = visibilities.get_mut(aircraft).unwrap();
+    for mut aircraft_visibility in aircrafts.iter_mut() {
         if input.just_pressed(KeyCode::F1) {
-//            _visibility = &Visibility::Hidden;
+            *aircraft_visibility = Visibility::Hidden;
             for main_camera in main_cameras.iter() {
                 commands.entity(main_camera).remove::<ThirdPersonCamera>();
                 commands.entity(main_camera).insert(CockpitCamera);
@@ -71,7 +69,7 @@ fn handle_camera_controls(
 
             }
         } else if input.just_pressed(KeyCode::F2) {
-//            _visibility = &Visibility::Visible;
+            *aircraft_visibility = Visibility::Visible;
             for main_camera in main_cameras.iter() {
                 commands.entity(main_camera).remove::<CockpitCamera>();
                 commands.entity(main_camera).insert(ThirdPersonCamera{
@@ -247,6 +245,7 @@ fn spawn_player(mut commands: Commands,
         scene: asset_server.load("models/planes/f117a.gltf#Scene0"),
 //        visibility: Visibility::Hidden,
         transform: Transform::from_scale(Vec3::splat(0.005)),
+        visibility: Visibility::Hidden,
         ..default()
     }).insert(Player)
     .insert(Aircraft{name: String::from("GHOST 1-1"), aircraft_type: AircraftType::F117A, fuel: 35500.0, ..default() })

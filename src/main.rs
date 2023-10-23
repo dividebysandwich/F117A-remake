@@ -20,10 +20,12 @@ use bevy_prototype_debug_lines::DebugLinesPlugin;
 mod aircraft;
 mod player;
 mod hud;
+mod sam;
 
 use crate::aircraft::*;
 use crate::player::*;
 use crate::hud::*;
+use crate::sam::*;
 
 fn main() {
     App::new()
@@ -33,6 +35,7 @@ fn main() {
         bevy::diagnostic::FrameTimeDiagnosticsPlugin,
         bevy::diagnostic::EntityCountDiagnosticsPlugin,
         RapierPhysicsPlugin::<NoUserData>::default(),
+//        RapierDebugRenderPlugin::default(),
         ThirdPersonCameraPlugin,
         DebugLinesPlugin::default()
     ))
@@ -243,7 +246,6 @@ fn spawn_player(mut commands: Commands,
 //    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
     commands.spawn(SceneBundle {
         scene: asset_server.load("models/planes/f117a.gltf#Scene0"),
-//        visibility: Visibility::Hidden,
         transform: Transform::from_scale(Vec3::splat(0.005)),
         visibility: Visibility::Hidden,
         ..default()
@@ -268,5 +270,6 @@ fn spawn_player(mut commands: Commands,
 
 //    .insert(TransformBundle::from(Transform::from_xyz(0.0, 4.0, 0.0)));
 
+    spawn_sam(commands, asset_server, 150.0, 150.0)
 
 }

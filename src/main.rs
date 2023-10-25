@@ -37,7 +37,7 @@ fn main() {
         bevy::diagnostic::FrameTimeDiagnosticsPlugin,
         bevy::diagnostic::EntityCountDiagnosticsPlugin,
         RapierPhysicsPlugin::<NoUserData>::default(),
-//        RapierDebugRenderPlugin::default(),
+        RapierDebugRenderPlugin::default(),
         ThirdPersonCameraPlugin,
         DebugLinesPlugin::default()
     ))
@@ -84,7 +84,7 @@ fn handle_camera_controls(
                     ..default()
                 });
                 commands.entity(main_camera).remove::<RenderLayers>();
-                commands.entity(main_camera).insert(RenderLayers::from_layers(&[0, 2, 3]));
+                commands.entity(main_camera).insert(RenderLayers::from_layers(&[0, 1, 2, 3])); //TODO: Remove Layer 1 to remove debug line display
             }
             let mut i:i32 = 0;
             let mut vehicles_sorted = vehicles.iter_mut().collect::<Vec<_>>();
@@ -301,6 +301,6 @@ fn spawn_player(mut commands: Commands,
 
 //    .insert(TransformBundle::from(Transform::from_xyz(0.0, 4.0, 0.0)));
 
-    spawn_sam(commands, asset_server, 10.0, 10.0)
+    spawn_sam(commands, asset_server, 100.0, 10.0)
 
 }

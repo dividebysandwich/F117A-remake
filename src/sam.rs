@@ -36,13 +36,13 @@ pub fn spawn_sam(mut commands: Commands,
 //    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
     commands.spawn(SceneBundle {
         scene: asset_server.load("models/vehicles/SA6.gltf#Scene0"),
-//        transform: Transform::from_scale(Vec3::splat(1.0)),
+//        transform: Transform::from_xyz(0.0, -1.0, 0.0),
         ..default()
     })
     .insert(Vehicle)
     .insert(SAM{name: String::from("SA-6 #1"), ..default() })
-//    .insert(Collider::cuboid(30.0, 30.0, 30.0))
-//    .insert(RigidBody::Dynamic)
+    .insert(Collider::cuboid(0.25, 0.35, 0.4))
+    .insert(RigidBody::Dynamic)
     .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)));
 
 

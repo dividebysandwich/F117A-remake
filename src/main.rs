@@ -21,11 +21,13 @@ mod aircraft;
 mod player;
 mod hud;
 mod sam;
+mod vehicle;
 
 use crate::aircraft::*;
 use crate::player::*;
 use crate::hud::*;
 use crate::sam::*;
+use crate::vehicle::*;
 
 fn main() {
     App::new()
@@ -60,6 +62,8 @@ fn handle_camera_controls(
     main_cameras: Query<Entity, With<MainCamera>>,
     mut commands: Commands,
     mut aircrafts: Query<&mut Visibility, With<Player>>,
+    mut vehicles: Query<Entity, With<Vehicle>>,
+    mut camera_settings: ResMut<CameraSettings>,
     input: Res<Input<KeyCode>>) {
     for mut aircraft_visibility in aircrafts.iter_mut() {
         if input.just_pressed(KeyCode::F1) {
@@ -76,10 +80,26 @@ fn handle_camera_controls(
             for main_camera in main_cameras.iter() {
                 commands.entity(main_camera).remove::<CockpitCamera>();
                 commands.entity(main_camera).insert(ThirdPersonCamera{
+                    zoom: Zoom::new(0.5, 50.0),
                     ..default()
                 });
                 commands.entity(main_camera).remove::<RenderLayers>();
                 commands.entity(main_camera).insert(RenderLayers::from_layers(&[0, 2, 3]));
+            }
+            let mut i:i32 = 0;
+            let mut vehicles_sorted = vehicles.iter_mut().collect::<Vec<_>>();
+            vehicles_sorted.sort_by(|a, b| (a.index()).partial_cmp(&b.index()).unwrap());
+            for vehicle in vehicles_sorted.iter() {
+                if camera_settings.target_index == i {
+                    commands.entity(*vehicle).insert(ThirdPersonCameraTarget);
+                } else {
+                    commands.entity(*vehicle).remove::<ThirdPersonCameraTarget>();
+                }
+                i += 1;
+            }
+            camera_settings.target_index += 1;
+            if camera_settings.target_index >= i {
+                camera_settings.target_index = 0;
             }
         }
 
@@ -109,6 +129,11 @@ const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
 struct Cubemap {
     is_loaded: bool,
     image_handle: Handle<Image>,
+}
+
+#[derive (Resource)]
+struct CameraSettings {
+    target_index: i32, // Keeps track of which target is currently being followed
 }
 
 #[derive(Component)]
@@ -156,6 +181,11 @@ fn setup_graphics(
     commands.insert_resource(Cubemap {
         is_loaded: false,
         image_handle: asset_server.load(CUBEMAPS[0].0),
+    });
+
+    // Initialize the third person target storage
+    commands.insert_resource(CameraSettings {
+        target_index: 0,
     });
 
     // Main 3d camera
@@ -249,7 +279,9 @@ fn spawn_player(mut commands: Commands,
         transform: Transform::from_scale(Vec3::splat(0.005)),
         visibility: Visibility::Hidden,
         ..default()
-    }).insert(Player)
+    })
+    .insert(Player)
+    .insert(Vehicle)
     .insert(Aircraft{name: String::from("GHOST 1-1"), aircraft_type: AircraftType::F117A, fuel: 35500.0, ..default() })
     .insert(ExternalImpulse {
         ..default()
@@ -257,7 +289,6 @@ fn spawn_player(mut commands: Commands,
     .insert(ExternalForce {
         ..default()
     })
-    .insert(ThirdPersonCameraTarget)
     .insert(Velocity{..default()})
     .insert(Collider::cuboid(100.0, 30.0, 100.0))
     .insert(Restitution::coefficient(0.4))
@@ -270,6 +301,6 @@ fn spawn_player(mut commands: Commands,
 
 //    .insert(TransformBundle::from(Transform::from_xyz(0.0, 4.0, 0.0)));
 
-    spawn_sam(commands, asset_server, 150.0, 150.0)
+    spawn_sam(commands, asset_server, 10.0, 10.0)
 
 }

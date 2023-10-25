@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
-use std::collections::HashMap;
+
+use crate::vehicle::*;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum SAMType {
@@ -38,10 +39,11 @@ pub fn spawn_sam(mut commands: Commands,
 //        transform: Transform::from_scale(Vec3::splat(1.0)),
         ..default()
     })
+    .insert(Vehicle)
     .insert(SAM{name: String::from("SA-6 #1"), ..default() })
-    .insert(Collider::cuboid(30.0, 30.0, 30.0))
-    .insert(RigidBody::Dynamic)
-    .insert(TransformBundle::from(Transform::from_xyz(xpos, 4.0, zpos)));
+//    .insert(Collider::cuboid(30.0, 30.0, 30.0))
+//    .insert(RigidBody::Dynamic)
+    .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)));
 
 
 }

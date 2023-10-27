@@ -22,11 +22,11 @@ mod player;
 mod hud;
 mod sam;
 mod vehicle;
+mod util;
 
 use crate::aircraft::*;
 use crate::player::*;
 use crate::hud::*;
-use crate::sam::*;
 use crate::vehicle::*;
 
 fn main() {
@@ -43,7 +43,7 @@ fn main() {
     ))
     .add_systems(Startup, (
         setup_graphics, 
-        setup_physics,
+        setup_terrain,
         spawn_player,
         setup_hud,
     ))
@@ -62,7 +62,7 @@ fn handle_camera_controls(
     main_cameras: Query<Entity, With<MainCamera>>,
     mut commands: Commands,
     mut aircrafts: Query<&mut Visibility, With<Player>>,
-    mut vehicles: Query<Entity, With<Vehicle>>,
+    mut vehicles: Query<(Entity, &Vehicle)>,
     mut camera_settings: ResMut<CameraSettings>,
     input: Res<Input<KeyCode>>) {
     for mut aircraft_visibility in aircrafts.iter_mut() {
@@ -88,12 +88,12 @@ fn handle_camera_controls(
             }
             let mut i:i32 = 0;
             let mut vehicles_sorted = vehicles.iter_mut().collect::<Vec<_>>();
-            vehicles_sorted.sort_by(|a, b| (a.index()).partial_cmp(&b.index()).unwrap());
-            for vehicle in vehicles_sorted.iter() {
+            vehicles_sorted.sort_by(|(_,a), (_, b)| (a.serialnumber).partial_cmp(&b.serialnumber).unwrap());
+            for (entity, _vehicle) in vehicles_sorted.iter() {
                 if camera_settings.target_index == i {
-                    commands.entity(*vehicle).insert(ThirdPersonCameraTarget);
+                    commands.entity(*entity).insert(ThirdPersonCameraTarget);
                 } else {
-                    commands.entity(*vehicle).remove::<ThirdPersonCameraTarget>();
+                    commands.entity(*entity).remove::<ThirdPersonCameraTarget>();
                 }
                 i += 1;
             }
@@ -250,7 +250,7 @@ fn setup_graphics(
 
 }
 
-fn setup_physics(mut commands: Commands,    
+fn setup_terrain(mut commands: Commands,    
     asset_server: Res<AssetServer>,
 ) {
     let gltf_handle = asset_server.load("terrain/testmap.gltf#Scene0");
@@ -267,40 +267,3 @@ fn setup_physics(mut commands: Commands,
     ));
 }
 
-fn spawn_player(mut commands: Commands,    
-    asset_server: Res<AssetServer>,
-) {
-
-//    let mesh: Handle<Mesh> = asset_server.load("models/planes/f117a.gltf#Scene0");
-//    let m = &meshes.get(&mesh);
-//    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
-    commands.spawn(SceneBundle {
-        scene: asset_server.load("models/planes/f117a.gltf#Scene0"),
-        transform: Transform::from_scale(Vec3::splat(0.005)),
-        visibility: Visibility::Hidden,
-        ..default()
-    })
-    .insert(Player)
-    .insert(Vehicle)
-    .insert(Aircraft{name: String::from("GHOST 1-1"), aircraft_type: AircraftType::F117A, fuel: 35500.0, ..default() })
-    .insert(ExternalImpulse {
-        ..default()
-    })
-    .insert(ExternalForce {
-        ..default()
-    })
-    .insert(Velocity{..default()})
-    .insert(Collider::cuboid(100.0, 30.0, 100.0))
-    .insert(Restitution::coefficient(0.4))
-    .insert(RigidBody::Dynamic)
-    .insert(GravityScale(0.0)) 
-    .insert(Damping { linear_damping: 0.3, angular_damping: 1.0 })
-    .insert(ColliderMassProperties::Density(35.0))
-    // Player airplane is layer 3 so it can be skipped when rendering cockpit view
-    .insert(RenderLayers::layer(3));
-
-//    .insert(TransformBundle::from(Transform::from_xyz(0.0, 4.0, 0.0)));
-
-    spawn_sam(commands, asset_server, 100.0, 10.0)
-
-}

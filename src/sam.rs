@@ -30,7 +30,6 @@ pub fn spawn_sam(mut commands: Commands,
     xpos: f32,
     zpos: f32,
 ) {
-
 //    let mesh: Handle<Mesh> = asset_server.load("models/planes/f117a.gltf#Scene0");
 //    let m = &meshes.get(&mesh);
 //    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
@@ -39,7 +38,7 @@ pub fn spawn_sam(mut commands: Commands,
 //        transform: Transform::from_xyz(0.0, -1.0, 0.0),
         ..default()
     })
-    .insert(Vehicle)
+    .insert(Vehicle{..default()})
     .insert(SAM{name: String::from("SA-6 #1"), ..default() })
     .insert(Collider::cuboid(0.25, 0.35, 0.4))
     .insert(RigidBody::Dynamic)

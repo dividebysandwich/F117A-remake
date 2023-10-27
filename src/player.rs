@@ -19,7 +19,6 @@ pub fn spawn_player(mut commands: Commands,
 //    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
     commands.spawn(SceneBundle {
         scene: asset_server.load("models/planes/f117a.gltf#Scene0"),
-        transform: Transform::from_scale(Vec3::splat(0.005)),
         visibility: Visibility::Hidden,
         ..default()
     })
@@ -33,7 +32,7 @@ pub fn spawn_player(mut commands: Commands,
         ..default()
     })
     .insert(Velocity{..default()})
-    .insert(Collider::cuboid(100.0, 30.0, 100.0))
+    .insert(Collider::cuboid(0.5, 0.15, 0.5))
     .insert(Restitution::coefficient(0.4))
     .insert(RigidBody::Dynamic)
     .insert(GravityScale(0.0)) 

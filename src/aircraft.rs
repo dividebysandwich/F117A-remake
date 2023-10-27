@@ -108,7 +108,6 @@ impl Default for Aircraft {
     }
 }
 
-//pub fn update_aircraft_forces(mut external_forces: Query<&mut ExternalForce, With<Aircraft>>, mut velocities: Query<&mut Velocity, With<Aircraft>>,  mut transform: Query<&mut Transform, With<Aircraft>>, mut aircraft: Query<&mut Aircraft, With<Aircraft>>) {
 pub fn update_aircraft_forces(mut query: Query<(&mut ExternalForce, &Velocity, &Transform, &mut Aircraft)>, time: Res<Time>, mut debug_lines: ResMut<DebugLines>,) {
     for (mut external_force, velocity, transform, mut aircraft) in query.iter_mut() {
     

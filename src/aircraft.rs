@@ -108,7 +108,11 @@ impl Default for Aircraft {
     }
 }
 
-pub fn update_aircraft_forces(mut query: Query<(&mut ExternalForce, &Velocity, &Transform, &mut Aircraft)>, time: Res<Time>, mut debug_lines: ResMut<DebugLines>,) {
+pub fn update_aircraft_forces(
+    mut query: Query<(&mut ExternalForce, &Velocity, &Transform, &mut Aircraft)>, 
+    time: Res<Time>, 
+    mut debug_lines: ResMut<DebugLines>,
+) {
     for (mut external_force, velocity, transform, mut aircraft) in query.iter_mut() {
     
         aircraft.altitude = transform.translation.y * 10.0;

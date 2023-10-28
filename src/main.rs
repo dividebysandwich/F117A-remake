@@ -23,7 +23,7 @@ mod hud;
 mod sam;
 mod vehicle;
 mod util;
-//mod missile;
+mod missile;
 
 use crate::aircraft::*;
 use crate::player::*;

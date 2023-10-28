@@ -1,42 +1,42 @@
 use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
 
 use crate::util::*;
 
 #[derive(Component)]
 pub struct Missile {
-    start_time: u64,
-    launching_vehicle: Entity,
-    target: Entity,
-    target_position: Vec3,
-    max_turn_rate: f32,
-    thrust: f32, 
-    max_thrust: f32,
-    thrust_ramp: f32,
-    turn_rate: f32,
-    turn_ramp: f32,
-    gain: f32,
-    ignition_delay: u64,
-    proximity_fuse_distance: f32,
-    proximity_fuse_arm_time: u64, 
-    last_target_distance: f32,
-    last_position: Vec3,
-    line_of_sight: Vec3,
-    acceleration: Vec3,
+    pub start_time: u64,
+    pub launching_vehicle: Entity,
+    pub target: Entity,
+    pub target_transform: Transform,
+    pub target_position: Vec3,
+    pub max_turn_rate: f32,
+    pub thrust: f32, 
+    pub max_thrust: f32,
+    pub thrust_ramp: f32,
+    pub turn_rate: f32,
+    pub turn_ramp: f32,
+    pub gain: f32,
+    pub ignition_delay: u64,
+    pub proximity_fuse_distance: f32,
+    pub proximity_fuse_arm_time: u64, 
+    pub last_target_distance: f32,
+    pub last_position: Vec3,
+    pub line_of_sight: Vec3,
+    pub acceleration: Vec3,
 }
 
 impl Default for Missile {
     fn default() -> Self {
          Missile {
             start_time: get_time_millis(),
-            launching_vehicle: Some(Entity),
-            target: Some(Entity),
             target_position: Vec3::new(0.0, 0.0, 0.0),
-            max_turn_rate: 180.0,
+            max_turn_rate: 0.5,
             thrust: 0.0,
             max_thrust: 10.0,
             thrust_ramp: 3.0,
             turn_rate: 0.0,
-            turn_ramp: 3.0,
+            turn_ramp: 0.3,
             gain: 3.0,
             ignition_delay: 1000,
             proximity_fuse_distance: 10000.0,
@@ -45,29 +45,49 @@ impl Default for Missile {
             last_position: Vec3::new(0.0, 0.0, 0.0),
             line_of_sight: Vec3::new(0.0, 0.0, 0.0),
             acceleration: Vec3::new(0.0, 0.0, 0.0),
+            launching_vehicle: Entity::PLACEHOLDER,
+            target: Entity::PLACEHOLDER,
+            target_transform: Transform::from_xyz(0.0, 0.0, 0.0)
          }
     }
 }
 
-fn update_missile(mut missile: Missile, time: Res<Time>, mut query: Query<(&mut Transform, &mut RigidBody, &mut Collider)>) {
+pub fn update_missiles(
+    mut query: Query<(&mut ExternalForce, &mut Transform, &mut Collider, &mut RigidBody, &mut Missile), With<Missile>>, 
+    time: Res<Time>, 
+) {
+    for (mut missile_force, mut missile_transform, mut missile_collider, mut missile_rigid_body, mut missile ) in query.iter_mut() {
+        update_single_missile(missile, time.clone(), missile_transform, missile_collider, missile_rigid_body, missile_force);
+    }
+
+}
+
+fn update_single_missile(
+    mut missile: Mut<Missile>, 
+    time: Time, 
+    mut missile_transform: Mut<Transform>, 
+    mut missile_collider: Mut<Collider>, 
+    mut missile_rigid_body: Mut<RigidBody>, 
+    mut missile_force: Mut<ExternalForce>,
+) {
 		
     let current_time = get_time_millis();
-    if (current_time - missile.start_time < missile.ignition_delay) {
+    if current_time - missile.start_time < missile.ignition_delay {
         return;
     }
 
     //We may know our target, or just the coordinates
-    if (missile.target) {
-        missile.target_position = missile.target.transform.position;
+    if missile.target != Entity::PLACEHOLDER {
+        missile.target_position = missile.target_transform.translation;
     }/* else if (FLIRSensor) {
         targetPosition = FLIRSensor.getCurrentLaserCoordinates();
     }*/
 
     //Proximity fuze if we have passed the target
-    let targetDistance = Vector3.Distance(transform.position, missile.target_position);
+    let target_distance = (missile.target_transform.translation - missile_transform.translation).length();
 
 /*     if (current_time - missile.start_time > missile.proximity_fuse_arm_time) {
-        if (targetDistance > missile.last_target_distance) {
+        if (target_distance > missile.last_target_distance) {
             if (missile.last_target_distance < missile.proximity_fuse_distance) {
                 Damageable[] damageables = (Damageable[]) GameObject.FindObjectsOfType (typeof(Damageable));
                 foreach (Damageable d in damageables) {
@@ -83,46 +103,49 @@ fn update_missile(mut missile: Missile, time: Res<Time>, mut query: Query<(&mut 
         }
     }
     */
-    missile.last_target_distance = targetDistance;
-    missile.last_position = transform.position;
+    missile.last_target_distance = target_distance;
+    missile.last_position = missile_transform.translation;
 
     
     // Increase thrust over time
-    if (missile.thrust < missile.max_thrust) {
+    if missile.thrust < missile.max_thrust {
         // don't go over in case thrustRamp is very small
         let increase = time.delta_seconds() * missile.max_thrust / missile.thrust_ramp;
-        missile.thrust = Mathf.Min(missile.thrust + increase, missile.max_thrust);
+        missile.thrust = (missile.thrust + increase).min(missile.max_thrust);
     }
 
     // Increase turn rate over time
-    if (turnRate < maxTurnRate) {
+    if missile.turn_rate < missile.max_turn_rate {
         let increase = time.delta_seconds() * missile.max_turn_rate / missile.turn_ramp;
-        missile.turn_rate = Mathf.Min(missile.turn_rate + increase, missile.max_turn_rate);
+        missile.turn_rate = (missile.turn_rate + increase).min(missile.max_turn_rate);
     }
 
     // Proportional Navigation evaluates the rate of change of the Line Of Sight (los) to our target. If the rate of change is zero,
     // the missile is on a collision course. If it is not, we apply a force to correct course.
-    let prevLos = missile.line_of_sight;
-    missile.line_of_sight = missile.target_position - transform.position;
-    let mut dLos = missile.line_of_sight - prevLos;
+    let prev_los = missile.line_of_sight;
+    missile.line_of_sight = missile.target_position - missile_transform.translation;
+    let mut d_los = missile.line_of_sight - prev_los;
 
     // we only want the component perpendicular to the line of sight
-    dLos = dLos - Vector3.Project(dLos, missile.line_of_sight);
+    d_los = d_los - d_los.project_onto(missile.line_of_sight);
         
     // plain PN would be:
     // acceleration = time.delta_seconds() * missile.line_of_sight + dLos * nc;
 
     // Augmented PN takes acceleration into account
-    missile.acceleration = time.delta_seconds() * missile.line_of_sight + dLos * gain + time.delta_seconds() * missile.acceleration * gain / 2;
+    missile.acceleration = time.delta_seconds() * missile.line_of_sight + d_los * missile.gain + time.delta_seconds() * missile.acceleration * missile.gain / 2.0;
     // Acceleration can't be larger than the maximum thrust
-    missile.acceleration = Vector3.ClampMagnitude(missile.acceleration * missile.thrust, missile.thrust);
+    missile.acceleration = (missile.acceleration * missile.thrust).clamp_length_max(missile.thrust);
         
     // Accelerate towards target
-    body.AddForce(acceleration, ForceMode.Acceleration);
+    missile_force.force = missile.acceleration;
 
-    let targetRotation = Quaternion.LookRotation(acceleration, transform.up);
-    transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, Time.deltaTime * turnRate);
-    
+//    let target_rotation = Quaternion.LookRotation(missile.acceleration, transform.up);
+//    missile_transform.rotation = Quaternion.RotateTowards(missile_transform.rotation, target_rotation, time.delta_seconds() * missile.turn_rate);
+//    missile_transform.rotation = missile_transform.rotation.lerp(Quat::from(0.0, 0.0, 0.0), time.delta_seconds() * missile.turn_rate);
+
+    missile_transform.look_to(missile.acceleration.normalize(), Vec3::Y);
+
     // For less accurate guidance, turn entity towards it and apply forward thrust
     //body.AddForce(transform.forward * acceleration.magnitude, ForceMode.Acceleration);
 }

@@ -267,6 +267,7 @@ fn setup_terrain(mut commands: Commands,
             shape: Some(ComputedColliderShape::TriMesh),
             ..default()
         }
-    ));
+    ))
+    .insert(CollisionGroups::new(Group::from_bits_truncate(0b0001), Group::from_bits_truncate(0b1111)));
 }
 

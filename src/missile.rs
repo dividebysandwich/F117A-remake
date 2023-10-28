@@ -53,11 +53,12 @@ impl Default for Missile {
 }
 
 pub fn update_missiles(
-    mut query: Query<(&mut ExternalForce, &mut Transform, &mut Collider, &mut RigidBody, &mut Missile), With<Missile>>, 
+    mut query: Query<(&mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
     time: Res<Time>, 
 ) {
-    for (mut missile_force, mut missile_transform, mut missile_collider, mut missile_rigid_body, mut missile ) in query.iter_mut() {
-        update_single_missile(missile, time.clone(), missile_transform, missile_collider, missile_rigid_body, missile_force);
+    for (mut missile_force, mut missile_transform, mut missile_collider, mut missile ) in query.iter_mut() {
+        info!("Missile found");
+        update_single_missile(missile, time.clone(), missile_transform, missile_collider, missile_force);
     }
 
 }
@@ -67,7 +68,6 @@ fn update_single_missile(
     time: Time, 
     mut missile_transform: Mut<Transform>, 
     mut missile_collider: Mut<Collider>, 
-    mut missile_rigid_body: Mut<RigidBody>, 
     mut missile_force: Mut<ExternalForce>,
 ) {
 		

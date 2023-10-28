@@ -166,7 +166,18 @@ pub fn update_player_weapon_controls(
                 target: sams.single().0,
                 target_transform: *sams.single().1,
                 ..default()
-            }).insert(TransformBundle::from(transform.clone()));
+            }).insert(TransformBundle::from(transform.clone()))
+            .insert(Velocity{..default()})
+            .insert(ExternalForce {
+                ..default()
+            })
+            .insert(Collider::cuboid(0.2, 0.05, 0.2))
+            .insert(CollisionGroups::new(Group::from_bits_truncate(0b1111), Group::from_bits_truncate(0b0111)))
+            .insert(Restitution::coefficient(0.4))
+            .insert(RigidBody::Dynamic)
+            .insert(GravityScale(1.0)) 
+            .insert(Damping { linear_damping: 0.3, angular_damping: 1.0 })
+            .insert(ColliderMassProperties::Density(15.0));
         }
     }
 }

@@ -41,6 +41,7 @@ pub fn spawn_sam(mut commands: Commands,
     .insert(Vehicle{..default()})
     .insert(SAM{name: String::from("SA-6 #1"), ..default() })
     .insert(Collider::cuboid(0.25, 0.35, 0.4))
+    .insert(CollisionGroups::new(Group::from_bits_truncate(0b1111), Group::from_bits_truncate(0b1111)))
     .insert(RigidBody::Dynamic)
     .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)));
 

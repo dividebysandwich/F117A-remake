@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
 use crate::vehicle::*;
+use crate::missile::*;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum SAMType {
@@ -43,7 +44,9 @@ pub fn spawn_sam(mut commands: Commands,
     .insert(Collider::cuboid(0.25, 0.35, 0.4))
     .insert(CollisionGroups::new(Group::from_bits_truncate(0b1111), Group::from_bits_truncate(0b1111)))
     .insert(RigidBody::Dynamic)
-    .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)));
+    .insert(ColliderMassProperties::Density(100.0))
+    .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)))
+    .insert(Targetable);
 
 
 }

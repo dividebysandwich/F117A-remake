@@ -33,7 +33,7 @@ impl Default for Missile {
             target_position: Vec3::new(0.0, 0.0, 0.0),
             max_turn_rate: 0.5,
             thrust: 0.0,
-            max_thrust: 10.0,
+            max_thrust: 50.0,
             thrust_ramp: 3.0,
             turn_rate: 0.0,
             turn_ramp: 0.3,
@@ -52,12 +52,21 @@ impl Default for Missile {
     }
 }
 
+#[derive(Component)]
+pub struct Targetable;
+
 pub fn update_missiles(
     mut query: Query<(&mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
+    query2: Query<&Transform, (With<Targetable>, Without<Missile>)>,
     time: Res<Time>, 
 ) {
     for (mut missile_force, mut missile_transform, mut missile_collider, mut missile ) in query.iter_mut() {
         info!("Missile found");
+        let target_transform = query2.get(missile.target);
+        match target_transform {
+            Ok(t) => missile.target_transform = *t,
+            Err(e) => info!("Error: {}", e),
+        }
         update_single_missile(missile, time.clone(), missile_transform, missile_collider, missile_force);
     }
 
@@ -77,11 +86,11 @@ fn update_single_missile(
     }
 
     //We may know our target, or just the coordinates
-    if missile.target != Entity::PLACEHOLDER {
+//    if missile.target != Entity::PLACEHOLDER {
         missile.target_position = missile.target_transform.translation;
-    }/* else if (FLIRSensor) {
-        targetPosition = FLIRSensor.getCurrentLaserCoordinates();
-    }*/
+//    }/* else if (FLIRSensor) {
+//        targetPosition = FLIRSensor.getCurrentLaserCoordinates();
+//    }*/
 
     //Proximity fuze if we have passed the target
     let target_distance = (missile.target_transform.translation - missile_transform.translation).length();
@@ -139,6 +148,9 @@ fn update_single_missile(
         
     // Accelerate towards target
     missile_force.force = missile.acceleration;
+
+    info!("Missile thrust: {}", missile.thrust);
+    info!("Missile turn_rate: {}", missile.turn_rate);
 
 // Unity original:
 //    let target_rotation = Quaternion.LookRotation(missile.acceleration, transform.up);

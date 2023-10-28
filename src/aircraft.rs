@@ -177,7 +177,8 @@ pub fn update_player_weapon_controls(
             .insert(RigidBody::Dynamic)
             .insert(GravityScale(1.0)) 
             .insert(Damping { linear_damping: 0.3, angular_damping: 1.0 })
-            .insert(ColliderMassProperties::Density(15.0));
+            .insert(ColliderMassProperties::Density(15.0))
+            .insert(Targetable);
         }
     }
 }

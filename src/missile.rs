@@ -140,12 +140,15 @@ fn update_single_missile(
     // Accelerate towards target
     missile_force.force = missile.acceleration;
 
+// Unity original:
 //    let target_rotation = Quaternion.LookRotation(missile.acceleration, transform.up);
 //    missile_transform.rotation = Quaternion.RotateTowards(missile_transform.rotation, target_rotation, time.delta_seconds() * missile.turn_rate);
-//    missile_transform.rotation = missile_transform.rotation.lerp(Quat::from(0.0, 0.0, 0.0), time.delta_seconds() * missile.turn_rate);
 
-    missile_transform.look_to(missile.acceleration.normalize(), Vec3::Y);
+    // Turn towards target
+    let mut target_transform:Transform = Transform::default();
+    target_transform = target_transform.looking_to(missile.acceleration.normalize(), Vec3::Y);
+    missile_transform.rotation = missile_transform.rotation.lerp(target_transform.rotation, time.delta_seconds() * missile.turn_rate);
 
-    // For less accurate guidance, turn entity towards it and apply forward thrust
-    //body.AddForce(transform.forward * acceleration.magnitude, ForceMode.Acceleration);
+//    missile_transform.look_to(missile.acceleration.normalize(), Vec3::Y);
+
 }

@@ -5,6 +5,8 @@ use lazy_static::lazy_static;
 use bevy_prototype_debug_lines::DebugLines;
 
 use crate::player::*;
+use crate::missile::*;
+use crate::sam::*;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum AircraftType {
@@ -144,7 +146,32 @@ pub fn update_aircraft_forces(
     }
 }
 
-pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, (With<Aircraft>, With<Player>)>, input: Res<Input<KeyCode>>, time: Res<Time>) {
+pub fn update_player_weapon_controls(
+    mut aircrafts: Query<(&mut Aircraft, Entity, &Transform), With<Player>>, 
+    sams: Query<(Entity, &Transform), With<SAM>>,
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    input: Res<Input<KeyCode>>
+) {
+    if input.just_pressed(KeyCode::Space) {
+        info!("Firing missile");
+        for (mut aircraft, entity, transform) in aircrafts.iter_mut() {
+            info!("Firing from player aircraft");
+            let mut missile = commands.spawn(SceneBundle {
+                scene: asset_server.load("models/weapons/AGM-65.gltf#Scene0"),
+                visibility: Visibility::Hidden,
+                ..default()
+            }).insert(Missile {
+                launching_vehicle : entity,
+                target: sams.single().0,
+                target_transform: *sams.single().1,
+                ..default()
+            }).insert(TransformBundle::from(transform.clone()));
+        }
+    }
+}
+
+pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, With<Player>>, input: Res<Input<KeyCode>>, time: Res<Time>) {
     for mut aircraft in aircrafts.iter_mut() {
         // Throttle
 //        info!("Throttle: {}", aircraft.throttle);
@@ -197,7 +224,5 @@ pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, (With
             //TODO: Slew to 0 instead of hard reset
             aircraft.yaw_force = 0.0;
         }
-
-
     }
 }

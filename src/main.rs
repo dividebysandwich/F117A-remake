@@ -29,6 +29,7 @@ use crate::aircraft::*;
 use crate::player::*;
 use crate::hud::*;
 use crate::vehicle::*;
+use crate::missile::*;
 
 fn main() {
     App::new()
@@ -53,6 +54,8 @@ fn main() {
         handle_camera_controls,
         update_cockpit_camera,
         update_player_aircraft_controls, 
+        update_player_weapon_controls,
+        update_missiles,
         update_aircraft_forces,
         update_hud, 
     ))
@@ -103,7 +106,6 @@ fn handle_camera_controls(
                 camera_settings.target_index = 0;
             }
         }
-
     }
 }
 

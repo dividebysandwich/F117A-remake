@@ -30,6 +30,18 @@
 Non-goals:
 Multiplayer (unless done by contributors), study-level realism, realistic graphics, VR
 
+### Keys:
+
+[W] Throttle up
+[S] Throttle down
+[A] Rudder left
+[D] Rudder right
+[Cursor keys] Elevator & Ailerons
+[Space] Weapon release
+[F1] Cockpit view
+[F2] Follow cam, press repeatedly to cycle through view targets
+
+
 Old images:
 
 ![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/225bec29-d680-49af-a29c-38eb084c2901)

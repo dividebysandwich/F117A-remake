@@ -32,14 +32,14 @@ Multiplayer (unless done by contributors), study-level realism, realistic graphi
 
 ### Keys:
 
-[W] Throttle up
-[S] Throttle down
-[A] Rudder left
-[D] Rudder right
-[Cursor keys] Elevator & Ailerons
-[Space] Weapon release
-[F1] Cockpit view
-[F2] Follow cam, press repeatedly to cycle through view targets
+- [W] Throttle up
+- [S] Throttle down
+- [A] Rudder left
+- [D] Rudder right
+- [Cursor keys] Elevator & Ailerons
+- [Space] Weapon release
+- [F1] Cockpit view
+- [F2] Follow cam, press repeatedly to cycle through view targets
 
 
 Old images:

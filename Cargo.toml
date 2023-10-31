@@ -17,6 +17,7 @@ bevy_third_person_camera = "0.1.5"
 bevy_prototype_debug_lines = { version = "0.11.1", features = ["3d"] }
 bevy_window = "0.11.3"
 bevy-scene-hook = "8.0.0"
+bevy_mod_billboard = "0.4.1"
 
 [profile.dev.package."*"]
 opt-level = 3

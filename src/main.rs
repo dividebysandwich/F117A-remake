@@ -16,7 +16,7 @@ use bevy_editor_pls::*;
 use bevy_rapier3d::prelude::*;
 use bevy_third_person_camera::*;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
-use bevy_mod_billboard::prelude::*;
+use bevy_mod_billboard::{prelude::*, BillboardDepth};
 
 mod aircraft;
 mod player;
@@ -262,7 +262,7 @@ fn setup_graphics(
     });
 
     // Pixel shader render test
-    let material = materials.add(StandardMaterial {
+/*    let material = materials.add(StandardMaterial {
         base_color: Color::hex("#ff0000").unwrap(),
         emissive: Color::hex("#ff0000").unwrap(),
         ..Default::default()
@@ -275,12 +275,13 @@ fn setup_graphics(
         mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
         ..Default::default()
     }).insert(Vehicle{..default()});
-
+*/
     let image_handle = asset_server.load("test.png");
     commands.spawn(BillboardTextureBundle {
-        transform: Transform::from_translation(Vec3::new(500.0, 1.0, 5.0)),
+        transform: Transform::from_translation(Vec3::new(500.0, 0.5, 5.0)),
         texture: billboard_textures.add(BillboardTexture::Single(image_handle)),
         mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+        billboard_depth: BillboardDepth(false),
         ..default()
     }).insert(LightBillboard);
 

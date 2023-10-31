@@ -1,5 +1,5 @@
 use bevy::{
-        prelude::*,
+        prelude::{*, shape::Quad},
         asset::LoadState,
         core_pipeline::{
             clear_color::ClearColorConfig,
@@ -16,6 +16,7 @@ use bevy_editor_pls::*;
 use bevy_rapier3d::prelude::*;
 use bevy_third_person_camera::*;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
+use bevy_mod_billboard::prelude::*;
 
 mod aircraft;
 mod player;
@@ -24,12 +25,14 @@ mod sam;
 mod vehicle;
 mod util;
 mod missile;
+mod billboard;
 
 use crate::aircraft::*;
 use crate::player::*;
 use crate::hud::*;
 use crate::vehicle::*;
 use crate::missile::*;
+use crate::billboard::*;
 
 fn main() {
     App::new()
@@ -41,7 +44,8 @@ fn main() {
         RapierPhysicsPlugin::<NoUserData>::default(),
         RapierDebugRenderPlugin::default(),
         ThirdPersonCameraPlugin,
-        DebugLinesPlugin::default()
+        DebugLinesPlugin::default(),
+        BillboardPlugin
     ))
     .add_systems(Startup, (
         setup_graphics, 
@@ -58,6 +62,7 @@ fn main() {
         update_missiles,
         update_aircraft_forces,
         update_hud, 
+        auto_scale_billboards,
     ))
     .run()
 }
@@ -84,7 +89,7 @@ fn handle_camera_controls(
             for main_camera in main_cameras.iter() {
                 commands.entity(main_camera).remove::<CockpitCamera>();
                 commands.entity(main_camera).insert(ThirdPersonCamera{
-                    zoom: Zoom::new(0.5, 50.0),
+                    zoom: Zoom::new(0.2, 500.0),
                     ..default()
                 });
                 commands.entity(main_camera).remove::<RenderLayers>();
@@ -140,11 +145,13 @@ struct CameraSettings {
 }
 
 #[derive(Component)]
-struct MainCamera;
+pub struct MainCamera;
 
 #[derive(Component)]
-struct CockpitCamera;
+pub struct CockpitCamera;
 
+#[derive(Component)]
+pub struct LightBillboard;
 
 fn apply_skybox(
     main_cameras: Query<Entity, With<MainCamera>>,
@@ -179,6 +186,9 @@ fn apply_skybox(
 
 fn setup_graphics(
     mut commands: Commands, 
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut billboard_textures: ResMut<Assets<BillboardTexture>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>, 
 ) {
     commands.insert_resource(Cubemap {
@@ -249,7 +259,30 @@ fn setup_graphics(
     commands.insert_resource(GizmoConfig {
         render_layers: RenderLayers::layer(1),
         ..default()
-    })
+    });
+
+    // Pixel shader render test
+    let material = materials.add(StandardMaterial {
+        base_color: Color::hex("#ff0000").unwrap(),
+        emissive: Color::hex("#ff0000").unwrap(),
+        ..Default::default()
+    });
+
+    // Test entity for scaled point light textures
+    commands.spawn(PbrBundle {
+        transform: Transform::from_xyz(500.0, 1.0, 5.0),
+        material: material,
+        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+        ..Default::default()
+    }).insert(Vehicle{..default()});
+
+    let image_handle = asset_server.load("test.png");
+    commands.spawn(BillboardTextureBundle {
+        transform: Transform::from_translation(Vec3::new(500.0, 1.0, 5.0)),
+        texture: billboard_textures.add(BillboardTexture::Single(image_handle)),
+        mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+        ..default()
+    }).insert(LightBillboard);
 
 }
 

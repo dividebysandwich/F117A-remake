@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-#bevy = { version = "0.11.3" }
-bevy = { version = "0.11.3" , features = ["dynamic_linking"]}
+#bevy = { version = "0.11.3", default-features = false }
+bevy = { version = "0.11.3" , features = ["dynamic_linking"], default-features = false}
 #bevy-inspector-egui = "0.20.0"
 #bevy_editor_pls = {git = "https://github.com/jakobhellermann/bevy_editor_pls"}
 #bevy_rapier3d = { version = "0.22.0", features = [ "simd-stable" ] }

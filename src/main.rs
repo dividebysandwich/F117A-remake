@@ -16,6 +16,7 @@ use bevy_rapier3d::prelude::*;
 use bevy_third_person_camera::*;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use bevy_mod_billboard::{prelude::*, BillboardDepth};
+use bevy_scene_hook::{SceneHook, HookPlugin, HookedSceneBundle};
 
 mod aircraft;
 mod player;
@@ -43,7 +44,8 @@ fn main() {
         RapierDebugRenderPlugin::default(),
         ThirdPersonCameraPlugin,
         DebugLinesPlugin::default(),
-        BillboardPlugin
+        BillboardPlugin,
+        HookPlugin,
     ))
     .add_systems(Startup, (
         setup_graphics, 
@@ -61,6 +63,7 @@ fn main() {
         update_aircraft_forces,
         update_hud, 
         auto_scale_billboards,
+        update_light_billboards,
     ))
     .run()
 }
@@ -150,6 +153,9 @@ pub struct CockpitCamera;
 
 #[derive(Component)]
 pub struct LightBillboard;
+
+#[derive(Component)]
+pub struct LightBillboardToBeAdded;
 
 fn apply_skybox(
     main_cameras: Query<Entity, With<MainCamera>>,
@@ -285,13 +291,80 @@ fn setup_graphics(
 
 }
 
+fn update_light_billboards(
+    lights_to_add: Query<Entity, With<LightBillboardToBeAdded>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut billboard_textures: ResMut<Assets<BillboardTexture>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    let image_handle: Handle<Image> = asset_server.load("test.png");
+    for entity in lights_to_add.iter() {
+        let light = commands.spawn(BillboardTextureBundle {
+            texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
+            mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+            billboard_depth: BillboardDepth(false),
+            ..default()
+        }).insert(LightBillboard).id();
+        commands.entity(entity).push_children(&[light]);
+        commands.entity(entity).remove::<LightBillboardToBeAdded>();
+    }
+}
+
 fn setup_terrain(mut commands: Commands,    
     asset_server: Res<AssetServer>,
 ) {
+
     let gltf_handle = asset_server.load("terrain/testmap.gltf#Scene0");
 
+/*    commands.spawn((HookedSceneBundle {
+        scene: SceneBundle { scene: gltf_handle, ..default() },
+        hook: SceneHook::new(|entity, cmds| {
+            for n in entity.get::<Name>().iter() {
+                let name = n.as_str();
+                if name.starts_with("PointLight") {
+                    cmds.insert(BillboardTextureBundle {
+                        transform: Transform::from_translation(Vec3::new(500.0, 0.5, 5.0)),
+                        texture: billboard_textures.add(BillboardTexture::Single(image_handle)),
+                        mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+                        billboard_depth: BillboardDepth(false),
+                        ..default()
+                    }).insert(LightBillboard);
+                
+                }
+            }
+        }),
+    },
+    RigidBody::Fixed,
+    AsyncSceneCollider {
+        shape: Some(ComputedColliderShape::TriMesh),
+        ..default()
+    }
+    ));
+*/
+
+    commands.spawn((
+        HookedSceneBundle {
+            scene: SceneBundle { scene: gltf_handle.clone(), ..default() },
+            hook: SceneHook::new(|entity, cmds| {
+                for n in entity.get::<Name>().iter() {
+                    let name = n.as_str();
+                    if name.starts_with("PointLight") {
+                        cmds.insert(LightBillboardToBeAdded);
+                    }
+                }
+            }),
+        },
+        RigidBody::Fixed,
+        AsyncSceneCollider {
+            shape: Some(ComputedColliderShape::TriMesh),
+            ..default()
+        }
+    ));
+
+/*
     commands.spawn((SceneBundle {
-        scene: gltf_handle,
+        scene: gltf_handle.clone(),
         ..default()
         },
         RigidBody::Fixed,
@@ -301,5 +374,6 @@ fn setup_terrain(mut commands: Commands,
         }
     ))
     .insert(CollisionGroups::new(Group::from_bits_truncate(0b0001), Group::from_bits_truncate(0b1111)));
+*/
 }
 

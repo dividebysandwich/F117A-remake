@@ -12,7 +12,6 @@ use bevy::{
             texture::CompressedImageFormats,
         }
     };
-use bevy_editor_pls::*;
 use bevy_rapier3d::prelude::*;
 use bevy_third_person_camera::*;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
@@ -38,7 +37,6 @@ fn main() {
     App::new()
     .add_plugins((
         DefaultPlugins, 
-        EditorPlugin::default(),
         bevy::diagnostic::FrameTimeDiagnosticsPlugin,
         bevy::diagnostic::EntityCountDiagnosticsPlugin,
         RapierPhysicsPlugin::<NoUserData>::default(),

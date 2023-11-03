@@ -64,7 +64,8 @@ fn main() {
                 update_missiles,
                 update_aircraft_forces,
                 update_hud,
-                auto_scale_billboards,
+                update_blinking_lights,
+                auto_scale_and_hide_billboards,
                 update_light_billboards,
             ),
         )

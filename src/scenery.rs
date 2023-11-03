@@ -21,7 +21,7 @@ pub fn setup_terrain(mut commands: Commands, asset_server: Res<AssetServer>) {
                     if name.starts_with("PointLight") {
                         cmds.insert(LightBillboardToBeAdded {
                             light_color: LightColor::RED,
-                            light_type: LightType::SOLID,
+                            light_type: LightType::BLINKING,
                         });
                     }
                 }
@@ -59,6 +59,7 @@ pub fn setup_scenery(
             .insert(LightBillboard {
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
+                active: true,
             });
 
         commands
@@ -72,6 +73,7 @@ pub fn setup_scenery(
             .insert(LightBillboard {
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
+                active: true,
             });
 
         commands
@@ -85,6 +87,7 @@ pub fn setup_scenery(
             .insert(LightBillboard {
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
+                active: true,
             });
 
         i += 1.0;
@@ -103,6 +106,7 @@ pub fn setup_scenery(
             .insert(LightBillboard {
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
+                active: true,
             });
         i += 1.0;
     }
@@ -120,6 +124,7 @@ pub fn setup_scenery(
             .insert(LightBillboard {
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
+                active: true,
             });
         i += 1.0;
     }

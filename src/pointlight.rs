@@ -1,8 +1,9 @@
 use bevy::{prelude::{*, shape::Quad}, render::render_resource::{TextureDimension, Extent3d, TextureFormat}, reflect::TypeUuid};
 use bevy_mod_billboard::{prelude::*, BillboardDepth};
 use bevy_mod_raycast::prelude::*;
-use crate::{MainCamera};
+use std::time::{Instant, Duration};
 
+use crate::{MainCamera, util::get_time_millis};
 
 #[derive(Debug, Copy, Clone)]
 pub enum LightType {
@@ -31,6 +32,7 @@ pub struct LightBillboardToBeAdded {
 pub struct LightBillboard {
     pub light_color: LightColor,
     pub light_type: LightType,
+    pub active: bool,
 }
 
 #[derive(Resource, TypeUuid, Reflect)]
@@ -83,15 +85,15 @@ pub fn create_texture(light_color: LightColor) -> Image {
 
 
 
-pub fn auto_scale_billboards(
-    mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, With<LightBillboard>)>,
+pub fn auto_scale_and_hide_billboards(
+    mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, &LightBillboard)>,
     camera: Query<(&MainCamera, &GlobalTransform, &Transform, Without<LightBillboard>)>,
     raycast_query: Query<Entity, With<LightBillboard>>,
     mut raycast: Raycast,
 ) {
     let (_cam, c_global_transform, c_transform, _) = camera.single();
 
-    for (mut b_visibility, b_global_transform, mut b_transform, _) in billboards.iter_mut() {
+    for (mut b_visibility, b_global_transform, mut b_transform, billboard) in billboards.iter_mut() {
         let cam_distance = c_global_transform.translation().distance(b_global_transform.translation()) * 0.4;
 //        let direction = (b_transform.translation - c_transform.translation).normalize();
 //        let cam_up = c_transform.rotation * Vec3::Y;
@@ -105,7 +107,9 @@ pub fn auto_scale_billboards(
             .with_early_exit_test(&early_exit_test);
 
         let hits = raycast.cast_ray(Ray3d::new(c_global_transform.translation(), b_global_transform.translation() - c_global_transform.translation()), &settings);
-        *b_visibility = Visibility::Visible;
+        if billboard.active == true { // Don't make inactive billboards visible
+            *b_visibility = Visibility::Visible;
+        }
         b_transform.scale = Vec3::new(cam_distance, cam_distance, cam_distance);
         for (is_first, intersection) in hits {
             *b_visibility = Visibility::Hidden;
@@ -140,9 +144,68 @@ pub fn update_light_billboards(
             .insert(LightBillboard {
                 light_color: light_billboard_to_be_added.light_color,
                 light_type: light_billboard_to_be_added.light_type,
+                active: true,
             })
             .id();
         commands.entity(entity).push_children(&[light]);
         commands.entity(entity).remove::<LightBillboardToBeAdded>();
     }
+}
+
+pub fn update_blinking_lights(
+    mut billboards: Query<(&mut Visibility, &mut LightBillboard)>,
+) {
+    let milliseconds = get_time_millis();
+
+    let slow_blink_active: bool;
+    match milliseconds % 2000 {
+        0..=1000 => slow_blink_active = true,
+        _ => slow_blink_active = false,
+    }
+
+    let first_flash_active: bool;
+    match milliseconds % 2000 {
+        0..=50 => first_flash_active = true,
+        _ => first_flash_active = false,
+    }
+    let second_flash_active: bool;
+    match milliseconds % 2000 {
+        300..=350 => second_flash_active = true,
+        _ => second_flash_active = false,
+    }
+
+
+    for (mut visibility, mut billboard) in billboards.iter_mut() {
+        match billboard.light_type {
+            LightType::BLINKING => {
+                if slow_blink_active {
+                    billboard.active = true;
+                    *visibility = Visibility::Visible;
+                } else {
+                    billboard.active = false;
+                    *visibility = Visibility::Hidden;
+                }
+            },
+            LightType::FLASH_SINGLE => {
+                if first_flash_active {
+                    billboard.active = true;
+                    *visibility = Visibility::Visible;
+                } else {
+                    billboard.active = false;
+                    *visibility = Visibility::Hidden;
+                }
+            },
+            LightType::FLASH_DOUBLE => {
+                if first_flash_active || second_flash_active {
+                    billboard.active = true;
+                    *visibility = Visibility::Visible;
+                } else {
+                    billboard.active = false;
+                    *visibility = Visibility::Hidden;
+                }
+            },
+            _ => {},
+        }
+    }
+
 }

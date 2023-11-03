@@ -10,6 +10,7 @@ use crate::pointlight::LightColor;
 use crate::pointlight::LightType;
 use crate::pointlight::get_light_color_from_name;
 use crate::pointlight::get_light_type_from_name;
+use crate::pointlight::get_lightsource_type_from_name;
 use crate::vehicle::*;
 use crate::sam::*;
 
@@ -40,6 +41,7 @@ pub fn spawn_player(mut commands: Commands,
                         cmds.insert(LightBillboardToBeAdded {
                             light_color: get_light_color_from_name(name),
                             light_type: get_light_type_from_name(name),
+                            lightsource_type: get_lightsource_type_from_name(name)
                         });
                     }
                 }

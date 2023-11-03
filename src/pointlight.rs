@@ -10,6 +10,7 @@ pub enum LightType {
     SOLID,
     BLINKING,
     FLASH_SINGLE,
+    FLASH_ALT_SINGLE,
     FLASH_DOUBLE,
 }
 
@@ -26,14 +27,25 @@ pub enum LightColor {
 pub struct LightBillboardToBeAdded {
     pub light_color: LightColor,
     pub light_type: LightType,
+    pub lightsource_type: LightSourceType,
 }
 
 #[derive(Component)]
 pub struct LightBillboard {
     pub light_color: LightColor,
     pub light_type: LightType,
+    pub lightsource_type: LightSourceType,
     pub active: bool,
     pub occluded: bool,
+}
+
+
+#[derive(Debug, Copy, Clone)]
+pub enum LightSourceType{
+    POINT,
+    SPOT,
+    DIRECTIONAL,
+    NONE
 }
 
 #[derive(Resource, TypeUuid, Reflect)]
@@ -87,7 +99,7 @@ pub fn create_texture(light_color: LightColor) -> Image {
 
 
 pub fn auto_scale_and_hide_billboards(
-    mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, &mut LightBillboard)>,
+    mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, &mut LightBillboard), Without<PointLight>>,
     camera: Query<(&MainCamera, &GlobalTransform, &Transform, Without<LightBillboard>)>,
     raycast_query: Query<Entity, With<LightBillboard>>,
     mut raycast: Raycast,
@@ -147,17 +159,41 @@ pub fn update_light_billboards(
             .insert(LightBillboard {
                 light_color: light_billboard_to_be_added.light_color,
                 light_type: light_billboard_to_be_added.light_type,
+                lightsource_type : light_billboard_to_be_added.lightsource_type,
                 active: true,
                 occluded: false,
             })
             .id();
         commands.entity(entity).push_children(&[light]);
+        if let LightSourceType::POINT = light_billboard_to_be_added.lightsource_type  {
+            info!("Adding light source!");
+            let lightsource = commands.spawn(PointLightBundle {
+                point_light: PointLight {
+                    color: Color::rgb(1.0, 1.0, 1.0),
+                    intensity: 20000.,
+                    range: 10.,
+                    shadows_enabled: true,
+                    ..default()
+                },
+                ..default()
+            })
+            .insert(LightBillboard {
+                light_color: light_billboard_to_be_added.light_color,
+                light_type: light_billboard_to_be_added.light_type,
+                lightsource_type : light_billboard_to_be_added.lightsource_type,
+                active: true,
+                occluded: false,
+            })
+            .id();
+            commands.entity(entity).push_children(&[lightsource]);
+        }
         commands.entity(entity).remove::<LightBillboardToBeAdded>();
     }
 }
 
 pub fn update_blinking_lights(
-    mut billboards: Query<(&mut Visibility, &mut LightBillboard)>,
+    mut billboards: Query<(&mut Visibility, &mut LightBillboard), Without<PointLight>>,
+    mut lightsources: Query<(&mut Visibility, &LightBillboard, &mut PointLight), With<PointLight>>,
 ) {
     let milliseconds = get_time_millis();
 
@@ -177,7 +213,36 @@ pub fn update_blinking_lights(
         300..=350 => second_flash_active = true,
         _ => second_flash_active = false,
     }
+    let first_flash_alt_active: bool;
+    match milliseconds % 2000 {
+        400..=450 => first_flash_alt_active = true,
+        _ => first_flash_alt_active = false,
+    }
 
+
+    for (mut visibility, billboard, mut lightsource) in lightsources.iter_mut() {
+        match billboard.light_type {        
+            LightType::FLASH_SINGLE => {
+                if first_flash_active {
+                    lightsource.intensity = 1000.0;
+//                    *visibility = Visibility::Visible;
+                } else {
+                    lightsource.intensity = 0.0;
+//                    *visibility = Visibility::Hidden;
+                }
+            },
+            LightType::FLASH_ALT_SINGLE => {
+                if first_flash_alt_active {
+                    lightsource.intensity = 1000.0;
+//                    *visibility = Visibility::Visible;
+                } else {
+                    lightsource.intensity = 0.0;
+//                    *visibility = Visibility::Hidden;
+                }
+            },
+            _ => {},
+        }
+    }
 
     for (mut visibility, mut billboard) in billboards.iter_mut() {
         match billboard.light_type {
@@ -194,6 +259,17 @@ pub fn update_blinking_lights(
             },
             LightType::FLASH_SINGLE => {
                 if first_flash_active {
+                    billboard.active = true;
+                    if billboard.occluded == false {
+                        *visibility = Visibility::Visible;
+                    }
+                } else {
+                    billboard.active = false;
+                    *visibility = Visibility::Hidden;
+                }
+            },
+            LightType::FLASH_ALT_SINGLE => {
+                if first_flash_alt_active {
                     billboard.active = true;
                     if billboard.occluded == false {
                         *visibility = Visibility::Visible;
@@ -242,9 +318,19 @@ pub fn get_light_type_from_name(name: &str) -> LightType{
         return LightType::BLINKING;
     } else if name.contains("_FLASH_SINGLE") {
         return LightType::FLASH_SINGLE;
+    } else if name.contains("_FLASH_ALT_SINGLE") {
+        return LightType::FLASH_ALT_SINGLE;
     } else if name.contains("_FLASH_DOUBLE") {
         return LightType::FLASH_DOUBLE;
     } else {
         return LightType::SOLID;
+    }
+}
+
+pub fn get_lightsource_type_from_name(name: &str) -> LightSourceType{
+    if name.contains("_ILLUMINATING") {
+        return LightSourceType::POINT;
+    } else {
+        return LightSourceType::NONE;
     }
 }

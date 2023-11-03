@@ -3,7 +3,7 @@
 
 ![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/603ae486-8727-4d48-8e6e-066c4a736f89)
 
-![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/5561a510-da44-49c3-aa58-79f514af9412)
+![image](https://i.imgur.com/8nikN4e.gif)
 
 
 ### Todo:

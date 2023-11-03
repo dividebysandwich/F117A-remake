@@ -243,7 +243,7 @@ fn setup_graphics(
         ..default()
     });
 
-/*
+
     // light
     commands.spawn(PointLightBundle {
         transform: Transform::from_xyz(50.0, 50.0, 50.0),
@@ -255,7 +255,7 @@ fn setup_graphics(
         },
         ..default()
     });
-*/
+
     commands.insert_resource(GizmoConfig {
         render_layers: RenderLayers::layer(1),
         ..default()
@@ -277,36 +277,13 @@ fn setup_graphics(
     }).insert(Vehicle{..default()});
 */
     let image_handle = asset_server.load("test.png");
-    let mut i = 0.0;
-    while i < 86.0 {
-        commands.spawn(BillboardTextureBundle {
-            transform: Transform::from_translation(Vec3::new(0.0 + (i*2.0), -0.96, -2.0)),
-            texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-            mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
-            billboard_depth: BillboardDepth(false),
-            ..default()
-        }).insert(LightBillboard);
-
-        //let image_handle = asset_server.load("test.png");
-        commands.spawn(BillboardTextureBundle {
-            transform: Transform::from_translation(Vec3::new(0.0 + (i*2.0), -0.96, 2.8)),
-            texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-            mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
-            billboard_depth: BillboardDepth(false),
-            ..default()
-        }).insert(LightBillboard);
-
-        //let image_handle = asset_server.load("test.png");
-        commands.spawn(BillboardTextureBundle {
-            transform: Transform::from_translation(Vec3::new(0.0 + (i*2.0), -0.96, 7.4)),
-            texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-            mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
-            billboard_depth: BillboardDepth(false),
-            ..default()
-        }).insert(LightBillboard);
-
-        i += 1.0;
-    }
+    commands.spawn(BillboardTextureBundle {
+        transform: Transform::from_translation(Vec3::new(500.0, 0.5, 5.0)),
+        texture: billboard_textures.add(BillboardTexture::Single(image_handle)),
+        mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+        billboard_depth: BillboardDepth(false),
+        ..default()
+    }).insert(LightBillboard);
 
 }
 

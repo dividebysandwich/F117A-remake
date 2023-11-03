@@ -60,6 +60,7 @@ pub fn setup_scenery(
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
                 active: true,
+                occluded: false,
             });
 
         commands
@@ -74,6 +75,7 @@ pub fn setup_scenery(
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
                 active: true,
+                occluded: false,
             });
 
         commands
@@ -88,6 +90,7 @@ pub fn setup_scenery(
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
                 active: true,
+                occluded: false,
             });
 
         i += 1.0;
@@ -107,6 +110,7 @@ pub fn setup_scenery(
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
                 active: true,
+                occluded: false,
             });
         i += 1.0;
     }
@@ -125,6 +129,7 @@ pub fn setup_scenery(
                 light_color: LightColor::YELLOW,
                 light_type: LightType::SOLID,
                 active: true,
+                occluded: false,
             });
         i += 1.0;
     }

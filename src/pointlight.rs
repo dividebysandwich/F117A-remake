@@ -33,6 +33,7 @@ pub struct LightBillboard {
     pub light_color: LightColor,
     pub light_type: LightType,
     pub active: bool,
+    pub occluded: bool,
 }
 
 #[derive(Resource, TypeUuid, Reflect)]
@@ -86,14 +87,14 @@ pub fn create_texture(light_color: LightColor) -> Image {
 
 
 pub fn auto_scale_and_hide_billboards(
-    mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, &LightBillboard)>,
+    mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, &mut LightBillboard)>,
     camera: Query<(&MainCamera, &GlobalTransform, &Transform, Without<LightBillboard>)>,
     raycast_query: Query<Entity, With<LightBillboard>>,
     mut raycast: Raycast,
 ) {
     let (_cam, c_global_transform, c_transform, _) = camera.single();
 
-    for (mut b_visibility, b_global_transform, mut b_transform, billboard) in billboards.iter_mut() {
+    for (mut b_visibility, b_global_transform, mut b_transform, mut billboard) in billboards.iter_mut() {
         let cam_distance = c_global_transform.translation().distance(b_global_transform.translation()) * 0.4;
 //        let direction = (b_transform.translation - c_transform.translation).normalize();
 //        let cam_up = c_transform.rotation * Vec3::Y;
@@ -107,12 +108,14 @@ pub fn auto_scale_and_hide_billboards(
             .with_early_exit_test(&early_exit_test);
 
         let hits = raycast.cast_ray(Ray3d::new(c_global_transform.translation(), b_global_transform.translation() - c_global_transform.translation()), &settings);
+        billboard.occluded = false;
         if billboard.active == true { // Don't make inactive billboards visible
             *b_visibility = Visibility::Visible;
         }
         b_transform.scale = Vec3::new(cam_distance, cam_distance, cam_distance);
         for (is_first, intersection) in hits {
             *b_visibility = Visibility::Hidden;
+            billboard.occluded = true;
         }
 
     }
@@ -145,6 +148,7 @@ pub fn update_light_billboards(
                 light_color: light_billboard_to_be_added.light_color,
                 light_type: light_billboard_to_be_added.light_type,
                 active: true,
+                occluded: false,
             })
             .id();
         commands.entity(entity).push_children(&[light]);
@@ -180,7 +184,9 @@ pub fn update_blinking_lights(
             LightType::BLINKING => {
                 if slow_blink_active {
                     billboard.active = true;
-                    *visibility = Visibility::Visible;
+                    if billboard.occluded == false {
+                        *visibility = Visibility::Visible;
+                    }
                 } else {
                     billboard.active = false;
                     *visibility = Visibility::Hidden;
@@ -189,7 +195,9 @@ pub fn update_blinking_lights(
             LightType::FLASH_SINGLE => {
                 if first_flash_active {
                     billboard.active = true;
-                    *visibility = Visibility::Visible;
+                    if billboard.occluded == false {
+                        *visibility = Visibility::Visible;
+                    }
                 } else {
                     billboard.active = false;
                     *visibility = Visibility::Hidden;
@@ -198,7 +206,9 @@ pub fn update_blinking_lights(
             LightType::FLASH_DOUBLE => {
                 if first_flash_active || second_flash_active {
                     billboard.active = true;
-                    *visibility = Visibility::Visible;
+                    if billboard.occluded == false {
+                        *visibility = Visibility::Visible;
+                    }
                 } else {
                     billboard.active = false;
                     *visibility = Visibility::Hidden;

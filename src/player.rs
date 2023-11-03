@@ -1,8 +1,15 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 use bevy::render::view::visibility::RenderLayers;
+use bevy_scene_hook::HookedSceneBundle;
+use bevy_scene_hook::SceneHook;
 
 use crate::aircraft::*;
+use crate::pointlight::LightBillboardToBeAdded;
+use crate::pointlight::LightColor;
+use crate::pointlight::LightType;
+use crate::pointlight::get_light_color_from_name;
+use crate::pointlight::get_light_type_from_name;
 use crate::vehicle::*;
 use crate::sam::*;
 
@@ -17,11 +24,28 @@ pub fn spawn_player(mut commands: Commands,
 //    let mesh: Handle<Mesh> = asset_server.load("models/planes/f117a.gltf#Scene0");
 //    let m = &meshes.get(&mesh);
 //    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
-    commands.spawn(SceneBundle {
-        scene: asset_server.load("models/planes/f117a.gltf#Scene0"),
-        visibility: Visibility::Hidden,
-        ..default()
-    })
+    let gltf_handle = asset_server.load("models/planes/f117a.glb#Scene0");
+
+    commands.spawn((
+        HookedSceneBundle {
+            scene: SceneBundle {
+                scene: gltf_handle.clone(),
+                visibility: Visibility::Hidden,
+                ..default()
+            },
+            hook: SceneHook::new(|entity, cmds| {
+                for n in entity.get::<Name>().iter() {
+                    let name = n.as_str();
+                    if name.starts_with("PointLight") {
+                        cmds.insert(LightBillboardToBeAdded {
+                            light_color: get_light_color_from_name(name),
+                            light_type: get_light_type_from_name(name),
+                        });
+                    }
+                }
+            }),
+        },
+    ))
     .insert(Player)
     .insert(Vehicle{..default()})
     .insert(Aircraft{name: String::from("GHOST 1-1"), aircraft_type: AircraftType::F117A, fuel: 35500.0, ..default() })

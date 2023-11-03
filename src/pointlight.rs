@@ -219,3 +219,32 @@ pub fn update_blinking_lights(
     }
 
 }
+
+
+pub fn get_light_color_from_name(name: &str) -> LightColor{
+    if name.contains("_RED") {
+        return LightColor::RED;
+    } else if name.contains("_GREEN") {
+        return LightColor::GREEN;
+    } else if name.contains("_BLUE") {
+        return LightColor::BLUE;
+    } else if name.contains("_YELLOW") {
+        return LightColor::YELLOW;
+    } else if name.contains("_WHITE") {
+        return LightColor::WHITE;
+    } else {
+        return LightColor::WHITE;
+    }
+}
+
+pub fn get_light_type_from_name(name: &str) -> LightType{
+    if name.contains("_BLINKING") {
+        return LightType::BLINKING;
+    } else if name.contains("_FLASH_SINGLE") {
+        return LightType::FLASH_SINGLE;
+    } else if name.contains("_FLASH_DOUBLE") {
+        return LightType::FLASH_DOUBLE;
+    } else {
+        return LightType::SOLID;
+    }
+}

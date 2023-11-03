@@ -4,10 +4,10 @@ use bevy_mod_billboard::{prelude::BillboardTexture, BillboardTextureBundle, Bill
 use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::{HookedSceneBundle, SceneHook};
 
-use crate::pointlight::{LightBillboardToBeAdded, LightColor, LightType, LightBillboard, create_texture};
+use crate::pointlight::{LightBillboardToBeAdded, LightColor, LightType, LightBillboard, create_texture, get_light_color_from_name, get_light_type_from_name};
 
 pub fn setup_terrain(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let gltf_handle = asset_server.load("terrain/testmap.gltf#Scene0");
+    let gltf_handle = asset_server.load("terrain/testmap.glb#Scene0");
 
     commands.spawn((
         HookedSceneBundle {
@@ -20,8 +20,8 @@ pub fn setup_terrain(mut commands: Commands, asset_server: Res<AssetServer>) {
                     let name = n.as_str();
                     if name.starts_with("PointLight") {
                         cmds.insert(LightBillboardToBeAdded {
-                            light_color: LightColor::RED,
-                            light_type: LightType::BLINKING,
+                            light_color: get_light_color_from_name(name),
+                            light_type: get_light_type_from_name(name),
                         });
                     }
                 }

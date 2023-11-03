@@ -142,12 +142,12 @@ pub fn update_aircraft_forces(
         let rotated_torque_vector = Quat::mul_vec3(object_rotation, torque_vector);
         external_force.torque = rotated_torque_vector;
 
-        debug_lines.line_colored(transform.translation,transform.translation + (rotated_force_vector / 100.0),0.0, Color::RED);
+//        debug_lines.line_colored(transform.translation,transform.translation + (rotated_force_vector / 100.0),0.0, Color::RED);
     }
 }
 
 pub fn update_player_weapon_controls(
-    mut aircrafts: Query<(&mut Aircraft, Entity, &Transform), With<Player>>, 
+    aircrafts: Query<(&Aircraft, Entity, &Transform), With<Player>>, 
     sams: Query<(Entity, &Transform), With<SAM>>,
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -155,9 +155,9 @@ pub fn update_player_weapon_controls(
 ) {
     if input.just_pressed(KeyCode::Space) {
         info!("Firing missile");
-        for (mut aircraft, entity, transform) in aircrafts.iter_mut() {
+        for (_aircraft, entity, transform) in aircrafts.iter() {
             info!("Firing from player aircraft");
-            let mut missile = commands.spawn(SceneBundle {
+            let mut _missile = commands.spawn(SceneBundle {
                 scene: asset_server.load("models/weapons/AGM-65.gltf#Scene0"),
                 visibility: Visibility::Hidden,
                 ..default()

@@ -8,13 +8,12 @@
 - [X] Basic scene setup
 - [X] Basic controls
 - [X] Basic flight physics
-- [X] Basic Camera system
-- [X] DOS style point light sources
-- [-] Missiles with proportional navigation
-- [-] HUD
+- [ ] Camera system
+- [ ] HUD
 - [ ] Targeting MFD
 - [ ] HSI MFD
 - [ ] Arcade targeting
+- [ ] Missiles with proportional navigation
 - [ ] Target destructionn
 - [ ] Pulse / doppler radar gameplay
 - [ ] Sound

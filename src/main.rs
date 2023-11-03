@@ -7,17 +7,16 @@ use bevy::{
         },
         render::{
             camera::ScalingMode,
-            render_resource::{TextureViewDescriptor, TextureViewDimension, Texture, Extent3d, TextureDimension, TextureFormat},
+            render_resource::{TextureViewDescriptor, TextureViewDimension},
             view::visibility::RenderLayers,
-            texture::CompressedImageFormats, renderer::RenderDevice,
+            texture::CompressedImageFormats,
         }
     };
-use std::collections::HashMap;
+use bevy_editor_pls::*;
 use bevy_rapier3d::prelude::*;
 use bevy_third_person_camera::*;
 use bevy_prototype_debug_lines::DebugLinesPlugin;
 use bevy_mod_billboard::{prelude::*, BillboardDepth};
-use bevy_scene_hook::{SceneHook, HookPlugin, HookedSceneBundle};
 
 mod aircraft;
 mod player;
@@ -39,14 +38,14 @@ fn main() {
     App::new()
     .add_plugins((
         DefaultPlugins, 
+        EditorPlugin::default(),
         bevy::diagnostic::FrameTimeDiagnosticsPlugin,
         bevy::diagnostic::EntityCountDiagnosticsPlugin,
         RapierPhysicsPlugin::<NoUserData>::default(),
         RapierDebugRenderPlugin::default(),
         ThirdPersonCameraPlugin,
         DebugLinesPlugin::default(),
-        BillboardPlugin,
-        HookPlugin,
+        BillboardPlugin
     ))
     .add_systems(Startup, (
         setup_graphics, 
@@ -64,7 +63,6 @@ fn main() {
         update_aircraft_forces,
         update_hud, 
         auto_scale_billboards,
-        update_light_billboards,
     ))
     .run()
 }
@@ -152,39 +150,8 @@ pub struct MainCamera;
 #[derive(Component)]
 pub struct CockpitCamera;
 
-#[derive(Debug, Copy, Clone)]
-enum LightType {
-    SOLID,
-    BLINKING,
-    FLASH_SINGLE,
-    FLASH_DOUBLE,
-}
-
-#[derive(Debug, Copy, Clone)]
-enum LightColor {
-    WHITE,
-    RED,
-    GREEN,
-    BLUE,
-    YELLOW,
-}
-
 #[derive(Component)]
-pub struct LightBillboardToBeAdded {
-    light_color : LightColor,
-    light_type : LightType,
-}
-
-#[derive(Component)]
-pub struct LightBillboard {
-    light_color : LightColor,
-    light_type : LightType,
-}
-
-#[derive(Resource)]
-struct LightTextures  {
-    map: HashMap<LightColor, Handle<Image>>,
-}
+pub struct LightBillboard;
 
 fn apply_skybox(
     main_cameras: Query<Entity, With<MainCamera>>,
@@ -276,7 +243,7 @@ fn setup_graphics(
         ..default()
     });
 
-
+/*
     // light
     commands.spawn(PointLightBundle {
         transform: Transform::from_xyz(50.0, 50.0, 50.0),
@@ -288,7 +255,7 @@ fn setup_graphics(
         },
         ..default()
     });
-
+*/
     commands.insert_resource(GizmoConfig {
         render_layers: RenderLayers::layer(1),
         ..default()
@@ -310,120 +277,46 @@ fn setup_graphics(
     }).insert(Vehicle{..default()});
 */
     let image_handle = asset_server.load("test.png");
-    commands.spawn(BillboardTextureBundle {
-        transform: Transform::from_translation(Vec3::new(500.0, 0.5, 5.0)),
-        texture: billboard_textures.add(BillboardTexture::Single(image_handle)),
-        mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
-        billboard_depth: BillboardDepth(false),
-        ..default()
-    }).insert(LightBillboard{ light_color: LightColor::YELLOW, light_type : LightType::SOLID });
-
-}
-
-fn create_texture(
-    light_color: LightColor,
-) -> Image {
-
-    let mut image = Image::new_fill(
-        Extent3d {
-            width: 16,
-            height: 16,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &vec![0; 16 * 16 * 4],
-        TextureFormat::Rgba8UnormSrgb,
-    );
-
-    let color: [u8; 4] = [255, 0, 0, 255]; // RGBA red color
-    image.data = (0..16 * 16).flat_map(|_| color).collect();
-    image
-}
-/* TODO
-fn load_textures(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut texture_handles: ResMut<LightTextures>,
-) {
-    let texture_red = create_texture(LightColor::RED);
-    texture_handles.map.insert(LightColor::RED, texture_red);
-}
-*/
-
-fn update_light_billboards(
-    lights_to_add: Query<(Entity, &LightBillboardToBeAdded)>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut billboard_textures: ResMut<Assets<BillboardTexture>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-) {
-    let image_handle: Handle<Image> = asset_server.load("test.png");
-    for (entity, light_billboard_to_be_added) in lights_to_add.iter() {
-        let light = commands.spawn(BillboardTextureBundle {
+    let mut i = 0.0;
+    while i < 86.0 {
+        commands.spawn(BillboardTextureBundle {
+            transform: Transform::from_translation(Vec3::new(0.0 + (i*2.0), -0.96, -2.0)),
             texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
             mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
             billboard_depth: BillboardDepth(false),
             ..default()
-        }).insert(LightBillboard{ light_color: light_billboard_to_be_added.light_color, light_type : light_billboard_to_be_added.light_type }).id();
-        commands.entity(entity).push_children(&[light]);
-        commands.entity(entity).remove::<LightBillboardToBeAdded>();
+        }).insert(LightBillboard);
+
+        //let image_handle = asset_server.load("test.png");
+        commands.spawn(BillboardTextureBundle {
+            transform: Transform::from_translation(Vec3::new(0.0 + (i*2.0), -0.96, 2.8)),
+            texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
+            mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+            billboard_depth: BillboardDepth(false),
+            ..default()
+        }).insert(LightBillboard);
+
+        //let image_handle = asset_server.load("test.png");
+        commands.spawn(BillboardTextureBundle {
+            transform: Transform::from_translation(Vec3::new(0.0 + (i*2.0), -0.96, 7.4)),
+            texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
+            mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+            billboard_depth: BillboardDepth(false),
+            ..default()
+        }).insert(LightBillboard);
+
+        i += 1.0;
     }
+
 }
 
 fn setup_terrain(mut commands: Commands,    
     asset_server: Res<AssetServer>,
 ) {
-
     let gltf_handle = asset_server.load("terrain/testmap.gltf#Scene0");
 
-/*    commands.spawn((HookedSceneBundle {
-        scene: SceneBundle { scene: gltf_handle, ..default() },
-        hook: SceneHook::new(|entity, cmds| {
-            for n in entity.get::<Name>().iter() {
-                let name = n.as_str();
-                if name.starts_with("PointLight") {
-                    cmds.insert(BillboardTextureBundle {
-                        transform: Transform::from_translation(Vec3::new(500.0, 0.5, 5.0)),
-                        texture: billboard_textures.add(BillboardTexture::Single(image_handle)),
-                        mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
-                        billboard_depth: BillboardDepth(false),
-                        ..default()
-                    }).insert(LightBillboard);
-                
-                }
-            }
-        }),
-    },
-    RigidBody::Fixed,
-    AsyncSceneCollider {
-        shape: Some(ComputedColliderShape::TriMesh),
-        ..default()
-    }
-    ));
-*/
-
-    commands.spawn((
-        HookedSceneBundle {
-            scene: SceneBundle { scene: gltf_handle.clone(), ..default() },
-            hook: SceneHook::new(|entity, cmds| {
-                for n in entity.get::<Name>().iter() {
-                    let name = n.as_str();
-                    if name.starts_with("PointLight") {
-                        cmds.insert(LightBillboardToBeAdded{ light_color: LightColor::YELLOW, light_type : LightType::SOLID });
-                    }
-                }
-            }),
-        },
-        RigidBody::Fixed,
-        AsyncSceneCollider {
-            shape: Some(ComputedColliderShape::TriMesh),
-            ..default()
-        }
-    ));
-
-/*
     commands.spawn((SceneBundle {
-        scene: gltf_handle.clone(),
+        scene: gltf_handle,
         ..default()
         },
         RigidBody::Fixed,
@@ -433,6 +326,5 @@ fn setup_terrain(mut commands: Commands,
         }
     ))
     .insert(CollisionGroups::new(Group::from_bits_truncate(0b0001), Group::from_bits_truncate(0b1111)));
-*/
 }
 

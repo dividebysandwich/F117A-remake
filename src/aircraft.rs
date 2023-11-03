@@ -147,7 +147,7 @@ pub fn update_aircraft_forces(
 }
 
 pub fn update_player_weapon_controls(
-    mut aircrafts: Query<(&Aircraft, Entity, &Transform), With<Player>>, 
+    mut aircrafts: Query<(&mut Aircraft, Entity, &Transform), With<Player>>, 
     sams: Query<(Entity, &Transform), With<SAM>>,
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -155,7 +155,7 @@ pub fn update_player_weapon_controls(
 ) {
     if input.just_pressed(KeyCode::Space) {
         info!("Firing missile");
-        for (aircraft, entity, transform) in aircrafts.iter() {
+        for (mut aircraft, entity, transform) in aircrafts.iter_mut() {
             info!("Firing from player aircraft");
             let mut missile = commands.spawn(SceneBundle {
                 scene: asset_server.load("models/weapons/AGM-65.gltf#Scene0"),

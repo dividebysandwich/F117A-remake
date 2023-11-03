@@ -3,13 +3,18 @@
 
 ![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/603ae486-8727-4d48-8e6e-066c4a736f89)
 
+![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/5561a510-da44-49c3-aa58-79f514af9412)
+
+
 ### Todo:
 
 - [X] Basic scene setup
 - [X] Basic controls
 - [X] Basic flight physics
-- [ ] Camera system
-- [ ] HUD
+- [X] Basic Camera system
+- [X] DOS style point light sources
+- [-] Missiles with proportional navigation
+- [-] HUD
 - [ ] Targeting MFD
 - [ ] HSI MFD
 - [ ] Arcade targeting

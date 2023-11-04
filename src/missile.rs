@@ -55,6 +55,10 @@ impl Default for Missile {
 #[derive(Component)]
 pub struct Targetable;
 
+#[derive(Component)]
+pub struct SensorTarget;
+
+
 pub fn update_missiles(
     mut query: Query<(&mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
     query2: Query<&Transform, (With<Targetable>, Without<Missile>)>,

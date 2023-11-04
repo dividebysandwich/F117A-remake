@@ -46,7 +46,8 @@ pub fn spawn_sam(mut commands: Commands,
     .insert(RigidBody::Dynamic)
     .insert(ColliderMassProperties::Density(100.0))
     .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)))
-    .insert(Targetable);
+    .insert(Targetable)
+    .insert(SensorTarget);
 
 
 }

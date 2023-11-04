@@ -1,5 +1,5 @@
 
-use bevy::prelude::{*, shape::Quad};
+use bevy::{prelude::{*, shape::Quad}, render::view::RenderLayers};
 use bevy_mod_billboard::{prelude::BillboardTexture, BillboardTextureBundle, BillboardDepth};
 use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::{HookedSceneBundle, SceneHook};
@@ -63,7 +63,7 @@ pub fn setup_scenery(
                 lightsource_type: LightSourceType::NONE,
                 active: true,
                 occluded: false,
-            });
+            }).insert(RenderLayers::layer(4));
 
         commands
             .spawn(BillboardTextureBundle {
@@ -79,7 +79,7 @@ pub fn setup_scenery(
                 lightsource_type: LightSourceType::NONE,
                 active: true,
                 occluded: false,
-            });
+            }).insert(RenderLayers::layer(4));
 
         commands
             .spawn(BillboardTextureBundle {
@@ -95,7 +95,7 @@ pub fn setup_scenery(
                 lightsource_type: LightSourceType::NONE,
                 active: true,
                 occluded: false,
-            });
+            }).insert(RenderLayers::layer(4));
 
         i += 1.0;
     }
@@ -116,7 +116,7 @@ pub fn setup_scenery(
                 lightsource_type: LightSourceType::NONE,
                 active: true,
                 occluded: false,
-            });
+            }).insert(RenderLayers::layer(4));
         i += 1.0;
     }
     i = 0.0;
@@ -136,7 +136,7 @@ pub fn setup_scenery(
                 lightsource_type: LightSourceType::NONE,
                 active: true,
                 occluded: false,
-            });
+            }).insert(RenderLayers::layer(4));
         i += 1.0;
     }
 

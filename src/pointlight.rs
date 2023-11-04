@@ -1,4 +1,4 @@
-use bevy::{prelude::{*, shape::Quad}, render::render_resource::{TextureDimension, Extent3d, TextureFormat}, reflect::TypeUuid};
+use bevy::{prelude::{*, shape::Quad}, render::{render_resource::{TextureDimension, Extent3d, TextureFormat}, view::RenderLayers}, reflect::TypeUuid};
 use bevy_mod_billboard::{prelude::*, BillboardDepth};
 use bevy_mod_raycast::prelude::*;
 
@@ -162,6 +162,7 @@ pub fn update_light_billboards(
                 active: true,
                 occluded: false,
             })
+            .insert(RenderLayers::layer(4))
             .id();
         commands.entity(entity).push_children(&[light]);
         if let LightSourceType::POINT = light_billboard_to_be_added.lightsource_type  {
@@ -183,6 +184,7 @@ pub fn update_light_billboards(
                 active: true,
                 occluded: false,
             })
+            .insert(RenderLayers::layer(4))
             .id();
             commands.entity(entity).push_children(&[lightsource]);
         }

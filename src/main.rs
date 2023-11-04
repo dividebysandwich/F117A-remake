@@ -69,11 +69,18 @@ fn main() {
                 update_blinking_lights,
                 auto_scale_and_hide_billboards,
                 update_light_billboards,
-                setup_mfd,
+                update_mfd,
             ),
         )
         .run()
 }
+
+//Render layers:
+// 0: World
+// 1: UI / HUD
+// 2: (reserved)
+// 3: Player aircraft
+// 4: Point lights
 
 fn handle_camera_controls(
     main_cameras: Query<Entity, With<MainCamera>>,
@@ -93,7 +100,7 @@ fn handle_camera_controls(
                 commands.entity(main_camera).remove::<RenderLayers>();
                 commands
                     .entity(main_camera)
-                    .insert(RenderLayers::from_layers(&[0, 2]));
+                    .insert(RenderLayers::from_layers(&[0, 2, 4]));
             }
         } else if input.just_pressed(KeyCode::F2) {
             *aircraft_visibility = Visibility::Visible;
@@ -107,7 +114,7 @@ fn handle_camera_controls(
                 commands.entity(main_camera).remove::<RenderLayers>();
                 commands
                     .entity(main_camera)
-                    .insert(RenderLayers::from_layers(&[0, 2, 3])); //TODO: Remove Layer 1 to remove debug line display
+                    .insert(RenderLayers::from_layers(&[0, 2, 3, 4])); //TODO: Remove Layer 1 to remove debug line display
             }
             let mut i: i32 = 0;
             let mut vehicles_sorted = vehicles.iter_mut().collect::<Vec<_>>();
@@ -230,7 +237,7 @@ fn setup_graphics(
         })
         .insert(MainCamera)
         .insert(CockpitCamera)
-        .insert(RenderLayers::from_layers(&[0, 2]));
+        .insert(RenderLayers::from_layers(&[0, 2, 4]));
 
     // HUD camera
     commands
@@ -252,6 +259,8 @@ fn setup_graphics(
                         width: 1920.,
                         height: 1080.,
                     },
+                    far: 1000.0,
+                    near: -1000.0,
                     ..default()
                 }
                 .into(),

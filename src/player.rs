@@ -6,8 +6,6 @@ use bevy_scene_hook::SceneHook;
 
 use crate::aircraft::*;
 use crate::pointlight::LightBillboardToBeAdded;
-use crate::pointlight::LightColor;
-use crate::pointlight::LightType;
 use crate::pointlight::get_light_color_from_name;
 use crate::pointlight::get_light_type_from_name;
 use crate::pointlight::get_lightsource_type_from_name;

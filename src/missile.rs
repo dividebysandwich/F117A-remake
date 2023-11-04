@@ -60,7 +60,7 @@ pub fn update_missiles(
     query2: Query<&Transform, (With<Targetable>, Without<Missile>)>,
     time: Res<Time>, 
 ) {
-    for (mut missile_force, mut missile_transform, mut missile_collider, mut missile ) in query.iter_mut() {
+    for (missile_force, mut missile_transform, mut missile_collider, mut missile ) in query.iter_mut() {
         info!("Missile found");
         let target_transform = query2.get(missile.target);
         match target_transform {

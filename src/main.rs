@@ -27,6 +27,7 @@ mod util;
 mod vehicle;
 mod pointlight;
 mod scenery;
+mod mfd;
 
 use crate::aircraft::*;
 use crate::hud::*;
@@ -35,6 +36,7 @@ use crate::player::*;
 use crate::vehicle::*;
 use crate::pointlight::*;
 use crate::scenery::*;
+use crate::mfd::*;
 
 fn main() {
     App::new()
@@ -51,7 +53,7 @@ fn main() {
         ))
         .add_systems(
             Startup,
-            (setup_graphics, initialize_textures, setup_terrain, setup_scenery, spawn_player, setup_hud),
+            (setup_graphics, initialize_textures, setup_terrain, setup_scenery, spawn_player, setup_hud, setup_flir),
         )
         .add_systems(
             Update,
@@ -67,6 +69,7 @@ fn main() {
                 update_blinking_lights,
                 auto_scale_and_hide_billboards,
                 update_light_billboards,
+                setup_mfd,
             ),
         )
         .run()
@@ -163,6 +166,9 @@ pub struct MainCamera;
 #[derive(Component)]
 pub struct CockpitCamera;
 
+#[derive(Component)]
+pub struct HudCamera;
+
 
 fn apply_skybox(
     main_cameras: Query<Entity, With<MainCamera>>,
@@ -216,7 +222,6 @@ fn setup_graphics(
                 order: 0,
                 ..default()
             },
-            //            transform: Transform::from_xyz(-3.0, 3.0, 10.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
         })
         .insert(UiCameraConfig {
@@ -254,6 +259,7 @@ fn setup_graphics(
             },
             RenderLayers::layer(1),
         ))
+        .insert(HudCamera)
         .insert(UiCameraConfig {
             show_ui: true,
             ..default()

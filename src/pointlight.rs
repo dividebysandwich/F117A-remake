@@ -1,7 +1,6 @@
 use bevy::{prelude::{*, shape::Quad}, render::render_resource::{TextureDimension, Extent3d, TextureFormat}, reflect::TypeUuid};
 use bevy_mod_billboard::{prelude::*, BillboardDepth};
 use bevy_mod_raycast::prelude::*;
-use std::time::{Instant, Duration};
 
 use crate::{MainCamera, util::get_time_millis};
 

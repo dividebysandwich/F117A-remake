@@ -9,7 +9,7 @@ use bevy::{
     }, reflect::TypeUuid, core_pipeline::clear_color::ClearColorConfig,
 };
 
-use crate::{player::Player, missile::SensorTarget};
+use crate::{player::Player, targeting::SensorTarget};
 
 #[derive(Component)]
 pub struct FlirCamera;
@@ -39,12 +39,12 @@ pub fn update_mfd(
                 transform.translation = player_transform.single().translation;
                 match sensor_target.get_single() {
                     Ok(target_transform) => {
-                        info!("Target found");
+//                        info!("Target found");
                         let los = target_transform.translation - transform.translation;
                         *transform = transform.looking_to(los.normalize(), Vec3::Y);
                     },
                     Err(_) => {
-                        info!("No target");
+//                        info!("No target");
                         transform.rotation = player_transform.single().rotation;
                     }
                 }

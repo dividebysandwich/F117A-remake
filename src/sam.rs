@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
+use crate::targeting::SensorTarget;
+use crate::targeting::Targetable;
 use crate::vehicle::*;
 use crate::missile::*;
 
@@ -26,8 +28,8 @@ impl Default for SAM {
     }
 }
 
-pub fn spawn_sam(mut commands: Commands,    
-    asset_server: Res<AssetServer>,
+pub fn spawn_sam(commands: &mut Commands,    
+    asset_server: &Res<AssetServer>,
     xpos: f32,
     zpos: f32,
 ) {
@@ -46,8 +48,6 @@ pub fn spawn_sam(mut commands: Commands,
     .insert(RigidBody::Dynamic)
     .insert(ColliderMassProperties::Density(100.0))
     .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)))
-    .insert(Targetable)
-    .insert(SensorTarget);
-
+    .insert(Targetable);
 
 }

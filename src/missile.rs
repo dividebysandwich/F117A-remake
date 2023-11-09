@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
-use crate::util::*;
+use crate::{util::*, targeting::Targetable};
 
 #[derive(Component)]
 pub struct Missile {
@@ -51,13 +51,6 @@ impl Default for Missile {
          }
     }
 }
-
-#[derive(Component)]
-pub struct Targetable;
-
-#[derive(Component)]
-pub struct SensorTarget;
-
 
 pub fn update_missiles(
     mut query: Query<(&mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 

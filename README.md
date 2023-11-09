@@ -13,12 +13,12 @@
 - [X] Basic flight physics
 - [X] Basic Camera system
 - [X] DOS style point light sources
-- [-] Missiles with proportional navigation
-- [-] HUD
-- [ ] Targeting MFD
+- [-] IN PROGRESS: Missiles with proportional navigation
+- [-] IN PROGRESS: HUD
+- [-] IN PROGRESS: Targeting MFD
+- [-] IN PROGRESS: Arcade targeting
+- [-] IN PROGRESS: Missiles with proportional navigation
 - [ ] HSI MFD
-- [ ] Arcade targeting
-- [ ] Missiles with proportional navigation
 - [ ] Target destructionn
 - [ ] Pulse / doppler radar gameplay
 - [ ] Sound
@@ -45,6 +45,10 @@ Multiplayer (unless done by contributors), study-level realism, realistic graphi
 - [Space] Weapon release
 - [F1] Cockpit view
 - [F2] Follow cam, press repeatedly to cycle through view targets
+- [N] Next target (Arcade targeting)
+- [M] Previous target (Arcade targeting)
+- [T] Lock target at crosshair (Arcade targeting)
+- [Backspace] Clear target lock (Arcade targeting)
 
 
 Old images:

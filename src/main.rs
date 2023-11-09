@@ -28,6 +28,7 @@ mod vehicle;
 mod pointlight;
 mod scenery;
 mod mfd;
+mod targeting;
 
 use crate::aircraft::*;
 use crate::hud::*;
@@ -37,6 +38,7 @@ use crate::vehicle::*;
 use crate::pointlight::*;
 use crate::scenery::*;
 use crate::mfd::*;
+use crate::targeting::*;
 
 fn main() {
     App::new()
@@ -60,6 +62,7 @@ fn main() {
             (
                 apply_skybox,
                 handle_camera_controls,
+                handle_targeting_controls,
                 update_cockpit_camera,
                 update_player_aircraft_controls,
                 update_player_weapon_controls,
@@ -220,6 +223,9 @@ fn setup_graphics(
 
     // Initialize the third person target storage
     commands.insert_resource(CameraSettings { target_index: 0, render_hud: true });
+
+    // Initialize the sensor target storage
+    commands.insert_resource(TargetSettings { target_index: -1 });
 
     // Main 3d camera
     commands

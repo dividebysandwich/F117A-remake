@@ -68,6 +68,7 @@ pub fn spawn_player(mut commands: Commands,
 
 //    .insert(TransformBundle::from(Transform::from_xyz(0.0, 4.0, 0.0)));
 
-    spawn_sam(commands, asset_server, 100.0, 10.0)
+    spawn_sam(&mut commands, &asset_server, 100.0, 10.0);
+    spawn_sam(&mut commands, &asset_server, 10.0, 10.0);
 
 }

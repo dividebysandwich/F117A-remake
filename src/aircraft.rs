@@ -2,11 +2,12 @@ use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 use std::collections::HashMap;
 use lazy_static::lazy_static;
-use bevy_prototype_debug_lines::DebugLines;
+//use bevy_prototype_debug_lines::DebugLines;
 
 use crate::player::*;
 use crate::missile::*;
 use crate::sam::*;
+use crate::targeting::Targetable;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum AircraftType {

@@ -259,7 +259,7 @@ fn setup_graphics(
                         width: 1920.,
                         height: 1080.,
                     },
-                    far: 1000.0,
+                    far: 1000.0, // Changing far and near planes is required to make spritebundles work
                     near: -1000.0,
                     ..default()
                 }

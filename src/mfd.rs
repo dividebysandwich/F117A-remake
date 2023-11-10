@@ -1,12 +1,12 @@
 use bevy::{
     prelude::*,
     render::{
-        camera::RenderTarget,
+        camera::{RenderTarget, ScalingMode},
         render_resource::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
         view::RenderLayers,
-    }, reflect::TypeUuid, core_pipeline::clear_color::ClearColorConfig,
+    }, reflect::TypeUuid, core_pipeline::clear_color::ClearColorConfig, sprite::MaterialMesh2dBundle,
 };
 
 use crate::{player::Player, targeting::SensorTarget};
@@ -28,6 +28,8 @@ pub fn update_mfd(
     mut commands: Commands,
     image_handles: Option<Res<FlirImage>>,
     asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     query: Query<Entity, With<MfdSprite>>,
     player_transform: Query<&Transform, (With<Player>, Without<FlirCamera>, Without<SensorTarget>)>,
     mut flir_cameras: Query<&mut Transform, (With<FlirCamera>, Without<Player>, Without<SensorTarget>)>,
@@ -67,16 +69,17 @@ pub fn update_mfd(
                     let text_style = TextStyle {
                         font: font.clone(),
                         font_size: 30.0,
-                        color: Color::YELLOW,
+                        color: Color::GREEN,
                     };
                     commands.spawn(
                         Text2dBundle {
-                            text: Text::from_section("MFD TEST", text_style.clone()).with_alignment(TextAlignment::Right),
-                            transform: Transform::from_translation(Vec3::new(200.0, 100.0, 0.0)),
+                            text: Text::from_section("L", text_style.clone()).with_alignment(TextAlignment::Right),
+                            transform: Transform::from_translation(Vec3::new(-100.0, -100.0, 0.0)),
                             ..default()
                         }
-                    ).insert(RenderLayers::layer(1));
+                    ).insert(RenderLayers::layer(2));
 
+                    draw_crosshair(&mut commands, &mut meshes, &mut materials);
 
                 }
                 _ => {
@@ -86,6 +89,33 @@ pub fn update_mfd(
         }
     }
     
+}
+
+fn draw_crosshair(commands: &mut Commands<'_, '_>, meshes: &mut ResMut<'_, Assets<Mesh>>, materials: &mut ResMut<'_, Assets<ColorMaterial>>) {
+    commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes.add(shape::Box::new(50., 4., 0.).into()).into(),
+        material: materials.add(ColorMaterial::from(Color::GREEN)),
+        transform: Transform::from_translation(Vec3::new(50., 0., 0.)),
+        ..default()
+    }).insert(RenderLayers::layer(2));
+    commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes.add(shape::Box::new(50., 4., 0.).into()).into(),
+        material: materials.add(ColorMaterial::from(Color::GREEN)),
+        transform: Transform::from_translation(Vec3::new(-50., 0., 0.)),
+        ..default()
+    }).insert(RenderLayers::layer(2));
+    commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes.add(shape::Box::new(4., 50., 0.).into()).into(),
+        material: materials.add(ColorMaterial::from(Color::GREEN)),
+        transform: Transform::from_translation(Vec3::new(0., 50., 0.)),
+        ..default()
+    }).insert(RenderLayers::layer(2));
+    commands.spawn(MaterialMesh2dBundle {
+        mesh: meshes.add(shape::Box::new(4., 50., 0.).into()).into(),
+        material: materials.add(ColorMaterial::from(Color::GREEN)),
+        transform: Transform::from_translation(Vec3::new(0., -50., 0.)),
+        ..default()
+    }).insert(RenderLayers::layer(2));
 }
 
 //Set up the camera and render target for the FLIR
@@ -126,6 +156,7 @@ pub fn setup_flir(
         image: image_handle.clone(),
     });
 
+    let start_fov: f32 = 5.0;
     commands
         .spawn(Camera3dBundle {
             camera_3d: Camera3d {
@@ -133,15 +164,15 @@ pub fn setup_flir(
                 ..default()
             },
             camera: Camera {
-                // render before the "main pass" camera
-                order: -1,
+                // render before the "main pass" camera and the mfd 2d camera
+                order: -2,
                 target: RenderTarget::Image(image_handle.clone()),
                 ..default()
             },
-//            projection: PerspectiveProjection {
-//                fov: 10.0,
-//                ..default()
-//            },
+            projection: bevy::prelude::Projection::Perspective(PerspectiveProjection {
+                fov: start_fov.to_radians(),
+                ..default()
+            }),
             transform: Transform::from_translation(Vec3::new(0.0, 0.0, 15.0))
             .looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
@@ -151,6 +182,42 @@ pub fn setup_flir(
             ..default()
         })
         .insert(FlirCamera)
-        .insert(RenderLayers::from_layers(&[0, 2]));
+        .insert(RenderLayers::from_layers(&[0]));
+
+        // HUD camera
+        commands
+        .spawn((
+            Camera2dBundle {
+                camera_2d: Camera2d {
+                    // Don't clear the canvas before drawing
+                    clear_color: ClearColorConfig::None,
+                },
+                camera: Camera {
+                    // renders after the mfd 3d camera and before the main cameras
+                    order: -1,
+                    target: RenderTarget::Image(image_handle.clone()),
+                    ..default()
+                },
+                projection: OrthographicProjection {
+                    // Make sure the HUD scales with the window size
+                    scale: 1.0,
+                    scaling_mode: ScalingMode::Fixed {
+                        width: 512.,
+                        height: 512.,
+                    },
+                    far: 1000.0, // Changing far and near planes is required to make spritebundles work
+                    near: -1000.0,
+                    ..default()
+                }
+                .into(),
+                ..Default::default()
+            },
+            RenderLayers::layer(2),
+        ))
+        .insert(UiCameraConfig {
+            show_ui: true,
+            ..default()
+        });
+
 
 }

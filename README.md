@@ -1,6 +1,8 @@
 # F117A-remake
  A spiritual successor to an old DOS game, written in Rust / Bevy
 
+![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/5f71d059-25f8-4a62-8f81-a4f6d1b91ffa)
+
 ![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/603ae486-8727-4d48-8e6e-066c4a736f89)
 
 ![image](https://i.imgur.com/8nikN4e.gif)

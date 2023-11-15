@@ -13,7 +13,7 @@ use bevy::{
     },
 };
 use bevy_mod_billboard::prelude::*;
-use bevy_prototype_debug_lines::DebugLinesPlugin;
+//use bevy_prototype_debug_lines::DebugLinesPlugin;
 use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::HookPlugin;
 use bevy_third_person_camera::*;
@@ -49,7 +49,7 @@ fn main() {
             RapierPhysicsPlugin::<NoUserData>::default(),
             //    RapierDebugRenderPlugin::default(),
             ThirdPersonCameraPlugin,
-            DebugLinesPlugin::default(),
+//            DebugLinesPlugin::default(),
             BillboardPlugin,
             HookPlugin,
         ))
@@ -187,28 +187,31 @@ fn apply_skybox(
     mut images: ResMut<Assets<Image>>,
     mut cubemap: ResMut<Cubemap>,
 ) {
-    if !cubemap.is_loaded && asset_server.get_load_state(&cubemap.image_handle) == LoadState::Loaded
-    {
-        info!("Applying skybox");
-        let image = images.get_mut(&cubemap.image_handle).unwrap();
-        // NOTE: PNGs do not have any metadata that could indicate they contain a cubemap texture,
-        // so they appear as one texture. The following code reconfigures the texture as necessary.
-        if image.texture_descriptor.array_layer_count() == 1 {
-            image.reinterpret_stacked_2d_as_array(
-                image.texture_descriptor.size.height / image.texture_descriptor.size.width,
-            );
-            image.texture_view_descriptor = Some(TextureViewDescriptor {
-                dimension: Some(TextureViewDimension::Cube),
-                ..default()
-            });
-        }
+    if !cubemap.is_loaded {
+        let (a_load, a_deps, a_rec_deps) = asset_server.get_load_states(&cubemap.image_handle).unwrap();
+        if a_load == LoadState::Loaded
+        {
+            info!("Applying skybox");
+            let image = images.get_mut(&cubemap.image_handle).unwrap();
+            // NOTE: PNGs do not have any metadata that could indicate they contain a cubemap texture,
+            // so they appear as one texture. The following code reconfigures the texture as necessary.
+            if image.texture_descriptor.array_layer_count() == 1 {
+                image.reinterpret_stacked_2d_as_array(
+                    image.texture_descriptor.size.height / image.texture_descriptor.size.width,
+                );
+                image.texture_view_descriptor = Some(TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::Cube),
+                    ..default()
+                });
+            }
 
-        for main_camera in main_cameras.iter() {
-            commands
-                .entity(main_camera)
-                .insert(Skybox(cubemap.image_handle.clone()));
+            for main_camera in main_cameras.iter() {
+                commands
+                    .entity(main_camera)
+                    .insert(Skybox(cubemap.image_handle.clone()));
+            }
+            cubemap.is_loaded = true;
         }
-        cubemap.is_loaded = true;
     }
 }
 

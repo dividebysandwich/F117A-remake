@@ -18,6 +18,7 @@ use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::HookPlugin;
 use bevy_third_person_camera::*;
 
+mod definitions;
 mod aircraft;
 mod hud;
 mod missile;

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use lazy_static::lazy_static;
 //use bevy_prototype_debug_lines::DebugLines;
 
+use crate::definitions::*;
 use crate::player::*;
 use crate::missile::*;
 use crate::targeting::SensorTarget;
@@ -174,8 +175,13 @@ pub fn update_player_weapon_controls(
                     ..default()
                 })
                 .insert(Collider::cuboid(0.2, 0.05, 0.2))
-                //Collider bits: [Terrain, Aircraft, Ground vehicles, Missiles, Player]
-                .insert(CollisionGroups::new(Group::from_bits_truncate(0b00010), Group::from_bits_truncate(0b11110)))
+                .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_MISSILE),
+                    Group::from_bits_truncate(
+                        COLLISION_MASK_TERRAIN | 
+                        COLLISION_MASK_AIRCRAFT |
+                        COLLISION_MASK_GROUNDVEHICLE |
+                        COLLISION_MASK_MISSILE
+                    )))
                 .insert(Ccd::enabled())
                 .insert(Restitution::coefficient(0.4))
                 .insert(RigidBody::Dynamic)

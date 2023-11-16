@@ -4,6 +4,7 @@ use bevy::render::view::visibility::RenderLayers;
 use bevy_scene_hook::HookedSceneBundle;
 use bevy_scene_hook::SceneHook;
 
+use crate::definitions::*;
 use crate::aircraft::*;
 use crate::pointlight::LightBillboardToBeAdded;
 use crate::pointlight::get_light_color_from_name;
@@ -57,8 +58,13 @@ pub fn spawn_player(mut commands: Commands,
     })
     .insert(Velocity{..default()})
     .insert(Collider::cuboid(0.5, 0.15, 0.5))
-    //Collider bits: [Terrain, AI Aircraft, Ground vehicles, Missiles, Player]
-    .insert(CollisionGroups::new(Group::from_bits_truncate(0b00001), Group::from_bits_truncate(0b11110)))
+    .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_PLAYER), 
+        Group::from_bits_truncate(
+            COLLISION_MASK_TERRAIN |
+            COLLISION_MASK_AIRCRAFT |
+            COLLISION_MASK_GROUNDVEHICLE |
+            COLLISION_MASK_MISSILE
+        )))
     .insert(Restitution::coefficient(0.4))
     .insert(RigidBody::Dynamic)
     .insert(GravityScale(0.0)) 

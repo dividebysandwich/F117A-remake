@@ -44,7 +44,8 @@ pub fn spawn_sam(commands: &mut Commands,
     .insert(Vehicle{..default()})
     .insert(SAM{name: String::from("SA-6 #1"), ..default() })
     .insert(Collider::cuboid(0.25, 0.35, 0.4))
-    .insert(CollisionGroups::new(Group::from_bits_truncate(0b1111), Group::from_bits_truncate(0b1111)))
+    //Collider bits: [Terrain, Aircraft, Ground vehicles, Missiles, Player]
+    .insert(CollisionGroups::new(Group::from_bits_truncate(0b00100), Group::from_bits_truncate(0b11111)))
     .insert(RigidBody::Dynamic)
     .insert(ColliderMassProperties::Density(100.0))
     .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)))

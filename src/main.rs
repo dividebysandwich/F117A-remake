@@ -47,7 +47,7 @@ fn main() {
             bevy::diagnostic::FrameTimeDiagnosticsPlugin,
             bevy::diagnostic::EntityCountDiagnosticsPlugin,
             RapierPhysicsPlugin::<NoUserData>::default(),
-            //    RapierDebugRenderPlugin::default(),
+            RapierDebugRenderPlugin::default(),
             ThirdPersonCameraPlugin,
 //            DebugLinesPlugin::default(),
             BillboardPlugin,
@@ -117,7 +117,7 @@ fn handle_camera_controls(
                 commands.entity(main_camera).remove::<RenderLayers>();
                 commands
                     .entity(main_camera)
-                    .insert(RenderLayers::from_layers(&[0, 3, 4])); //TODO: Remove Layer 1 to remove debug line display
+                    .insert(RenderLayers::from_layers(&[0, 1, 3, 4])); //TODO: Remove Layer 1 to remove debug line display
             }
             let mut i: i32 = 0;
             let mut vehicles_sorted = vehicles.iter_mut().collect::<Vec<_>>();

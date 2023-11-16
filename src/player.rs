@@ -57,7 +57,8 @@ pub fn spawn_player(mut commands: Commands,
     })
     .insert(Velocity{..default()})
     .insert(Collider::cuboid(0.5, 0.15, 0.5))
-    .insert(CollisionGroups::new(Group::from_bits_truncate(0b1111), Group::from_bits_truncate(0b1111)))
+    //Collider bits: [Terrain, AI Aircraft, Ground vehicles, Missiles, Player]
+    .insert(CollisionGroups::new(Group::from_bits_truncate(0b00001), Group::from_bits_truncate(0b11110)))
     .insert(Restitution::coefficient(0.4))
     .insert(RigidBody::Dynamic)
     .insert(GravityScale(0.0)) 

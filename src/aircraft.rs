@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 
 use crate::player::*;
 use crate::missile::*;
-use crate::sam::*;
+use crate::targeting::SensorTarget;
 use crate::targeting::Targetable;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -148,38 +148,42 @@ pub fn update_aircraft_forces(
 }
 
 pub fn update_player_weapon_controls(
-    aircrafts: Query<(&Aircraft, Entity, &Transform), With<Player>>, 
-    sams: Query<(Entity, &Transform), With<SAM>>,
+    aircrafts: Query<(&Aircraft, Entity, &Transform, &Velocity), With<Player>>, 
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    input: Res<Input<KeyCode>>
+    input: Res<Input<KeyCode>>,
+    targets: Query<(Entity, &Transform), With<SensorTarget>>,
 ) {
     if input.just_pressed(KeyCode::Space) {
-        info!("Firing missile");
-        for (_aircraft, entity, transform) in aircrafts.iter() {
-            info!("Firing from player aircraft");
-            let mut _missile = commands.spawn(SceneBundle {
-                scene: asset_server.load("models/weapons/AGM-65.gltf#Scene0"),
-                visibility: Visibility::Hidden,
-                ..default()
-            }).insert(Missile {
-                launching_vehicle : entity,
-                target: sams.single().0,
-                target_transform: *sams.single().1,
-                ..default()
-            }).insert(TransformBundle::from(transform.clone()))
-            .insert(Velocity{..default()})
-            .insert(ExternalForce {
-                ..default()
-            })
-            .insert(Collider::cuboid(0.2, 0.05, 0.2))
-            .insert(CollisionGroups::new(Group::from_bits_truncate(0b1111), Group::from_bits_truncate(0b0111)))
-            .insert(Restitution::coefficient(0.4))
-            .insert(RigidBody::Dynamic)
-            .insert(GravityScale(1.0)) 
-            .insert(Damping { linear_damping: 0.3, angular_damping: 1.0 })
-            .insert(ColliderMassProperties::Density(15.0))
-            .insert(Targetable);
+        for (target, target_transform) in targets.iter() {
+            info!("Firing missile");
+            for (_aircraft, entity, transform, aircraft_velocity) in aircrafts.iter() {
+                info!("Firing from player aircraft");
+                let mut _missile = commands.spawn(SceneBundle {
+                    scene: asset_server.load("models/weapons/AGM-65.gltf#Scene0"),
+                    visibility: Visibility::Hidden,
+                    ..default()
+                }).insert(Missile {
+                    launching_vehicle : entity,
+                    target: target,
+                    target_transform: *target_transform,
+                    ..default()
+                }).insert(TransformBundle::from(transform.clone()))
+                .insert(Velocity{linvel: aircraft_velocity.linvel, ..default()})
+                .insert(ExternalForce {
+                    ..default()
+                })
+                .insert(Collider::cuboid(0.2, 0.05, 0.2))
+                //Collider bits: [Terrain, Aircraft, Ground vehicles, Missiles, Player]
+                .insert(CollisionGroups::new(Group::from_bits_truncate(0b00010), Group::from_bits_truncate(0b11110)))
+                .insert(Ccd::enabled())
+                .insert(Restitution::coefficient(0.4))
+                .insert(RigidBody::Dynamic)
+                .insert(GravityScale(1.0)) 
+                .insert(Damping { linear_damping: 0.3, angular_damping: 1.0 })
+                .insert(ColliderMassProperties::Density(15.0))
+                .insert(Targetable);
+            }
         }
     }
 }

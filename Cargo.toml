@@ -17,6 +17,7 @@ bevy_window = "0.12.0"
 bevy-scene-hook = "9.0.0"
 bevy_mod_billboard = { path = "../bevy_mod_billboard" }
 bevy_mod_raycast = "0.16.0"
+rand = "0.8.4"
 
 [profile.dev.package."*"]
 opt-level = 3

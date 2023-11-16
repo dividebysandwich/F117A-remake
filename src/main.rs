@@ -19,6 +19,7 @@ use bevy_scene_hook::HookPlugin;
 use bevy_third_person_camera::*;
 
 mod definitions;
+mod explosion;
 mod aircraft;
 mod hud;
 mod missile;
@@ -40,6 +41,7 @@ use crate::pointlight::*;
 use crate::scenery::*;
 use crate::mfd::*;
 use crate::targeting::*;
+use crate::explosion::*;
 
 fn main() {
     App::new()
@@ -48,7 +50,7 @@ fn main() {
             bevy::diagnostic::FrameTimeDiagnosticsPlugin,
             bevy::diagnostic::EntityCountDiagnosticsPlugin,
             RapierPhysicsPlugin::<NoUserData>::default(),
-            RapierDebugRenderPlugin::default(),
+//            RapierDebugRenderPlugin::default(),
             ThirdPersonCameraPlugin,
 //            DebugLinesPlugin::default(),
             BillboardPlugin,
@@ -74,6 +76,7 @@ fn main() {
                 auto_scale_and_hide_billboards,
                 update_light_billboards,
                 update_mfd,
+                handle_explosion_test,
             ),
         )
         .run()

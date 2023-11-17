@@ -16,14 +16,14 @@
 - [X] Basic Camera system
 - [X] DOS style point light sources
 - [X] Missiles with proportional navigation
+- [X] Target destruction
 - [-] IN PROGRESS: HUD
 - [-] IN PROGRESS: Targeting MFD
 - [-] IN PROGRESS: Arcade targeting
+- [ ] Pulse / doppler radar gameplay
+- [ ] SAM sites attacking player
 - [ ] Radar countermeasures
 - [ ] HSI MFD
-- [ ] Target destructionn
-- [ ] Pulse / doppler radar gameplay
-- [ ] SAM sites
 - [ ] Sound
 - [ ] Player damage modeling
 - [ ] Advanced targeting (LANTIRN)

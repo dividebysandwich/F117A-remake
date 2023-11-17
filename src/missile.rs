@@ -56,6 +56,7 @@ pub fn update_missiles(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>, 
     mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
     missile_targets: Query<&Transform, (With<Targetable>, Without<Missile>)>,
     all_targets: Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
@@ -67,7 +68,7 @@ pub fn update_missiles(
             Ok(t) => missile.target_transform = *t,
             Err(e) => info!("Missile targeting error: {}", e),
         }
-        update_single_missile(missile_entity, &mut commands, &mut meshes, &mut materials, missile, time.clone(), missile_transform, missile_collider, missile_force, &all_targets);
+        update_single_missile(missile_entity, &mut commands, &mut meshes, &mut materials, &asset_server, missile, time.clone(), missile_transform, missile_collider, missile_force, &all_targets);
         
     }
 
@@ -78,6 +79,7 @@ fn update_single_missile(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
+    asset_server: &Res<AssetServer>, 
     mut missile: Mut<Missile>, 
     time: Time, 
     mut missile_transform: Mut<Transform>, 
@@ -114,6 +116,10 @@ fn update_single_missile(
                         spawn_explosion(commands, meshes, materials, ExplosionType::SMALL, &position);
                     }
                 }
+                commands.spawn(AudioBundle {
+                    source: asset_server.load("sounds/xplgmn2.ogg"),
+                    ..default()
+                });    
                 commands.entity(missile_entity).despawn_recursive();
             }
         }
@@ -175,6 +181,7 @@ pub fn handle_collision_events(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>, 
     mut collision_events: EventReader<CollisionEvent>,
     mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
     missile_targets: Query<&Transform, (With<Targetable>, Without<Missile>)>,
@@ -184,8 +191,8 @@ pub fn handle_collision_events(
         println!("Received collision event: {:?}", collision_event);
         match collision_event {
             CollisionEvent::Started(entity1, entity2, _) => {
-                handle_collision_entity(&missiles, entity1, &all_targets, &mut commands, &mut meshes, &mut materials);
-                handle_collision_entity(&missiles, entity2, &all_targets, &mut commands, &mut meshes, &mut materials);
+                handle_collision_entity(&missiles, entity1, &all_targets, &mut commands, &mut meshes, &mut materials, &asset_server);
+                handle_collision_entity(&missiles, entity2, &all_targets, &mut commands, &mut meshes, &mut materials, &asset_server);
             },
             CollisionEvent::Stopped(_, _, _) => {
                 // Do nothing
@@ -193,7 +200,15 @@ pub fn handle_collision_events(
         }    }
 }
 
-fn handle_collision_entity(missiles: &Query<'_, '_, (Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, entity: &Entity, all_targets: &Query<'_, '_, (Entity, &Transform), (With<Targetable>, Without<Missile>)>, commands: &mut Commands<'_, '_>, meshes: &mut ResMut<'_, Assets<Mesh>>, materials: &mut ResMut<'_, Assets<StandardMaterial>>) {
+fn handle_collision_entity(
+    missiles: &Query<'_, '_, (Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
+    entity: &Entity, 
+    all_targets: &Query<'_, '_, (Entity, &Transform), (With<Targetable>, Without<Missile>)>, 
+    commands: &mut Commands<'_, '_>, 
+    meshes: &mut ResMut<'_, Assets<Mesh>>, 
+    materials: &mut ResMut<'_, Assets<StandardMaterial>>,
+    asset_server: &Res<AssetServer>, 
+) {
     if missiles.get_component::<Missile>(*entity).is_ok() {
         let missile_transform_result = missiles.get(*entity);
         match missile_transform_result {
@@ -214,6 +229,11 @@ fn handle_collision_entity(missiles: &Query<'_, '_, (Entity, &mut ExternalForce,
             Err(e) => info!("Collision handling error: {}", e),
         }
         //TODO: Missile explosion effect in case of terrain hit
+        commands.spawn(AudioBundle {
+            source: asset_server.load("sounds/xplgmn2.ogg"),
+            ..default()
+        });    
+
         commands.entity(*entity).despawn_recursive();
         }
 }

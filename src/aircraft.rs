@@ -158,6 +158,11 @@ pub fn update_player_weapon_controls(
     if input.just_pressed(KeyCode::Space) {
         for (target, target_transform) in targets.iter() {
             info!("Firing missile");
+            commands.spawn(AudioBundle {
+                source: asset_server.load("sounds/internallaunch.ogg"),
+                ..default()
+            });
+        
             for (_aircraft, entity, transform, aircraft_velocity) in aircrafts.iter() {
                 info!("Firing from player aircraft");
                 let mut _missile = commands.spawn(SceneBundle {

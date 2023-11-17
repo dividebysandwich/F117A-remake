@@ -59,7 +59,16 @@ fn main() {
         ))
         .add_systems(
             Startup,
-            (setup_graphics, initialize_textures, setup_terrain, setup_scenery, spawn_player, setup_hud, setup_flir),
+            (
+                setup_graphics, 
+                initialize_textures, 
+                setup_terrain, 
+                setup_scenery, 
+                spawn_player, 
+                setup_hud, 
+                setup_flir,
+                setup_sounds,
+            ),
         )
         .add_systems(
             Update,
@@ -83,6 +92,16 @@ fn main() {
             ),
         )
         .run()
+}
+
+fn setup_sounds(
+    asset_server: Res<AssetServer>, 
+    mut commands: Commands
+) {
+    commands.spawn(AudioBundle {
+        source: asset_server.load("sounds/radio_takeoff.ogg"),
+        ..default()
+    });
 }
 
 //Render layers:

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
-use crate::{util::*, targeting::Targetable};
+use crate::{util::*, targeting::Targetable, explosion::{spawn_explosion, ExplosionType}};
 
 #[derive(Component)]
 pub struct Missile {
@@ -39,7 +39,7 @@ impl Default for Missile {
             turn_ramp: 0.2,
             gain: 3.0,
             ignition_delay: 300,
-            proximity_fuse_distance: 10000.0,
+            proximity_fuse_distance: 1.0,
             proximity_fuse_arm_time: 5000,
             last_target_distance: 9999999999.9,
             last_position: Vec3::new(0.0, 0.0, 0.0),
@@ -53,28 +53,37 @@ impl Default for Missile {
 }
 
 pub fn update_missiles(
-    mut query: Query<(&mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
-    query2: Query<&Transform, (With<Targetable>, Without<Missile>)>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
+    missile_targets: Query<&Transform, (With<Targetable>, Without<Missile>)>,
+    all_targets: Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
     time: Res<Time>, 
 ) {
-    for (missile_force, mut missile_transform, mut missile_collider, mut missile ) in query.iter_mut() {
-        info!("Missile found");
-        let target_transform = query2.get(missile.target);
+    for (missile_entity, missile_force, mut missile_transform, mut missile_collider, mut missile ) in missiles.iter_mut() {
+        let target_transform = missile_targets.get(missile.target);
         match target_transform {
             Ok(t) => missile.target_transform = *t,
-            Err(e) => info!("Error: {}", e),
+            Err(e) => info!("Missile targeting error: {}", e),
         }
-        update_single_missile(missile, time.clone(), missile_transform, missile_collider, missile_force);
+        update_single_missile(missile_entity, &mut commands, &mut meshes, &mut materials, missile, time.clone(), missile_transform, missile_collider, missile_force, &all_targets);
+        
     }
 
 }
 
 fn update_single_missile(
+    missile_entity: Entity,
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
     mut missile: Mut<Missile>, 
     time: Time, 
     mut missile_transform: Mut<Transform>, 
     mut missile_collider: Mut<Collider>, 
     mut missile_force: Mut<ExternalForce>,
+    all_targets: &Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
 ) {
 		
     let current_time = get_time_millis();
@@ -92,23 +101,24 @@ fn update_single_missile(
     //Proximity fuze if we have passed the target
     let target_distance = (missile.target_transform.translation - missile_transform.translation).length();
 
-/*     if (current_time - missile.start_time > missile.proximity_fuse_arm_time) {
-        if (target_distance > missile.last_target_distance) {
-            if (missile.last_target_distance < missile.proximity_fuse_distance) {
-                Damageable[] damageables = (Damageable[]) GameObject.FindObjectsOfType (typeof(Damageable));
-                foreach (Damageable d in damageables) {
-                    let curdist = Vector3.Distance(lastPosition, d.transform.position);
-                    if (curdist < missile.proximity_fuse_distance) {
-                        //TODO: Simulate less than full damage depending on actual explosion distance
-                        Damage(d.transform.root.gameObject);
+     if current_time - missile.start_time > missile.proximity_fuse_arm_time {
+        if target_distance > missile.last_target_distance {
+            if missile.last_target_distance < missile.proximity_fuse_distance {
+                for (prox_target_entity, prox_target_transform) in all_targets.iter() {
+                    let prox_target_distance = (prox_target_transform.translation - missile_transform.translation).length();
+                    //Damage all targets within proximity fuse distance
+                    if prox_target_distance < missile.proximity_fuse_distance {
+                        info!("Missile proximity detonation");
+                        commands.entity(prox_target_entity).despawn();
+                        let position = prox_target_transform.translation;
+                        spawn_explosion(commands, meshes, materials, ExplosionType::SMALL, &position);
                     }
                 }
-                Detonate();
+                commands.entity(missile_entity).despawn();
             }
-            return;
         }
     }
-    */
+    
     missile.last_target_distance = target_distance;
     missile.last_position = missile_transform.translation;
 
@@ -146,18 +156,64 @@ fn update_single_missile(
     // Accelerate towards target
     missile_force.force = missile.acceleration;
 
-    info!("Missile thrust: {}", missile.thrust);
-    info!("Missile turn_rate: {}", missile.turn_rate);
-
-// Unity original:
-//    let target_rotation = Quaternion.LookRotation(missile.acceleration, transform.up);
-//    missile_transform.rotation = Quaternion.RotateTowards(missile_transform.rotation, target_rotation, time.delta_seconds() * missile.turn_rate);
+//    info!("Missile thrust: {}", missile.thrust);
+//    info!("Missile turn_rate: {}", missile.turn_rate);
 
     // Turn towards target
     let mut target_transform:Transform = Transform::default();
     target_transform = target_transform.looking_to(missile.acceleration.normalize(), Vec3::Y);
     missile_transform.rotation = missile_transform.rotation.lerp(target_transform.rotation, time.delta_seconds() * missile.turn_rate);
 
-//    missile_transform.look_to(missile.acceleration.normalize(), Vec3::Y);
+    // Simplified version of the above that just makes the missile look at the target:
+    //    missile_transform.look_to(missile.acceleration.normalize(), Vec3::Y);
 
+}
+
+
+/* A system that displays the events. */
+pub fn handle_collision_events(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut collision_events: EventReader<CollisionEvent>,
+    mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
+    missile_targets: Query<&Transform, (With<Targetable>, Without<Missile>)>,
+    all_targets: Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
+) {
+    for collision_event in collision_events.read() {
+        println!("Received collision event: {:?}", collision_event);
+        match collision_event {
+            CollisionEvent::Started(entity1, entity2, _) => {
+                handle_collision_entity(&missiles, entity1, &all_targets, &mut commands, &mut meshes, &mut materials);
+                handle_collision_entity(&missiles, entity2, &all_targets, &mut commands, &mut meshes, &mut materials);
+            },
+            CollisionEvent::Stopped(_, _, _) => {
+                // Do nothing
+            }
+        }    }
+}
+
+fn handle_collision_entity(missiles: &Query<'_, '_, (Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, entity: &Entity, all_targets: &Query<'_, '_, (Entity, &Transform), (With<Targetable>, Without<Missile>)>, commands: &mut Commands<'_, '_>, meshes: &mut ResMut<'_, Assets<Mesh>>, materials: &mut ResMut<'_, Assets<StandardMaterial>>) {
+    if missiles.get_component::<Missile>(*entity).is_ok() {
+        let missile_transform_result = missiles.get(*entity);
+        match missile_transform_result {
+            Ok(t) => { 
+                info!("Missile contact detonation");
+                let missile_transform = *t.2;
+                let missile = t.4;
+                for (prox_target_entity, prox_target_transform) in all_targets.iter() {
+                    let prox_target_distance = (prox_target_transform.translation - missile_transform.translation).length();
+                    //Damage all targets within proximity fuse distance
+                    if prox_target_distance < missile.proximity_fuse_distance {
+                        commands.entity(prox_target_entity).despawn();
+                        let position = prox_target_transform.translation;
+                        spawn_explosion(commands, meshes, materials, ExplosionType::SMALL, &position);
+                    }
+                }
+                    },
+            Err(e) => info!("Collision handling error: {}", e),
+        }
+        //TODO: Missile explosion effect in case of terrain hit
+        commands.entity(*entity).despawn();
+        }
 }

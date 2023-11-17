@@ -1,4 +1,7 @@
 use std::time::SystemTime;
+use rand::Rng;
+
+use bevy::math::Vec3;
 
 ///This function returns the current time in milliseconds
 /// 
@@ -31,4 +34,23 @@ pub fn get_serial_number() -> u64 {
         COUNTER += 1;
         COUNTER
     }
+}
+
+pub fn random_vec3(range:f32) -> Vec3 {
+    let mut rng = rand::thread_rng();
+    Vec3::new(
+        rng.gen_range(-range..range),
+        rng.gen_range(-range..range),
+        rng.gen_range(-range..range),
+    )
+}
+
+pub fn random_u64(min: u64, range:u64) -> u64 {
+    let mut rng = rand::thread_rng();
+    rng.gen_range(min..range)
+}
+
+pub fn random_f32(min: f32, range:f32) -> f32 {
+    let mut rng = rand::thread_rng();
+    rng.gen_range(min..range)
 }

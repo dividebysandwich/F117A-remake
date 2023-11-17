@@ -31,6 +31,7 @@ mod pointlight;
 mod scenery;
 mod mfd;
 mod targeting;
+mod health;
 
 use crate::aircraft::*;
 use crate::hud::*;
@@ -77,6 +78,8 @@ fn main() {
                 update_light_billboards,
                 update_mfd,
                 handle_explosion_test,
+                handle_collision_events,
+                update_explosion_effects,
             ),
         )
         .run()

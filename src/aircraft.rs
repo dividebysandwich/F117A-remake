@@ -175,7 +175,9 @@ pub fn update_player_weapon_controls(
                     ..default()
                 })
                 .insert(Collider::cuboid(0.2, 0.05, 0.2))
-                .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_MISSILE),
+                .insert(ActiveEvents::COLLISION_EVENTS)
+                .insert(CollisionGroups::new(
+                    Group::from_bits_truncate(COLLISION_MASK_MISSILE),
                     Group::from_bits_truncate(
                         COLLISION_MASK_TERRAIN | 
                         COLLISION_MASK_AIRCRAFT |

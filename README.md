@@ -15,22 +15,25 @@
 - [X] Basic flight physics
 - [X] Basic Camera system
 - [X] DOS style point light sources
-- [-] IN PROGRESS: Missiles with proportional navigation
+- [X] Missiles with proportional navigation
 - [-] IN PROGRESS: HUD
 - [-] IN PROGRESS: Targeting MFD
 - [-] IN PROGRESS: Arcade targeting
-- [-] IN PROGRESS: Missiles with proportional navigation
+- [ ] Radar countermeasures
 - [ ] HSI MFD
 - [ ] Target destructionn
 - [ ] Pulse / doppler radar gameplay
-- [ ] Sound
 - [ ] SAM sites
+- [ ] Sound
 - [ ] Player damage modeling
 - [ ] Advanced targeting (LANTIRN)
 - [ ] Advanced flight physics
 - [ ] Bombs
-- [ ] Scene detail generation: Roads, cities, fields, mountains
+- [ ] Scenery detail generation: Roads, cities, fields, mountains
 - [ ] Mission system
+- [ ] AI aircraft
+- [ ] IR AAM missiles
+- [ ] IR countermeasures
 - [ ] Menu
 
 

@@ -7,6 +7,7 @@
 
 ![image](https://i.imgur.com/8nikN4e.gif)
 
+![image](https://i.imgur.com/urPaNAb.gif)
 
 ### Todo:
 

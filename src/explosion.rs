@@ -110,7 +110,7 @@ pub fn update_explosion_effects(
     for (entity, explosion_effect, mut point_light) in explosion_effects.iter_mut() {
         point_light.intensity = 100.0 * (1.0 - (time - explosion_effect.start_time) as f32 / explosion_effect.life_time as f32);
         if time - explosion_effect.start_time > explosion_effect.life_time {
-            commands.entity(entity).despawn();
+            commands.entity(entity).despawn_recursive();
         }
     }
 }

@@ -47,7 +47,7 @@ pub fn update_mfd(
                     },
                     Err(_) => {
 //                        info!("No target");
-                        transform.rotation = player_transform.single().rotation;
+//                        transform.rotation = player_transform.single().rotation;
                     }
                 }
             }
@@ -156,7 +156,7 @@ pub fn setup_flir(
         image: image_handle.clone(),
     });
 
-    let start_fov: f32 = 5.0;
+    let start_fov: f32 = 2.0;
     commands
         .spawn(Camera3dBundle {
             camera_3d: Camera3d {

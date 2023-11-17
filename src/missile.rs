@@ -109,12 +109,12 @@ fn update_single_missile(
                     //Damage all targets within proximity fuse distance
                     if prox_target_distance < missile.proximity_fuse_distance {
                         info!("Missile proximity detonation");
-                        commands.entity(prox_target_entity).despawn();
+                        commands.entity(prox_target_entity).despawn_recursive();
                         let position = prox_target_transform.translation;
                         spawn_explosion(commands, meshes, materials, ExplosionType::SMALL, &position);
                     }
                 }
-                commands.entity(missile_entity).despawn();
+                commands.entity(missile_entity).despawn_recursive();
             }
         }
     }
@@ -205,7 +205,7 @@ fn handle_collision_entity(missiles: &Query<'_, '_, (Entity, &mut ExternalForce,
                     let prox_target_distance = (prox_target_transform.translation - missile_transform.translation).length();
                     //Damage all targets within proximity fuse distance
                     if prox_target_distance < missile.proximity_fuse_distance {
-                        commands.entity(prox_target_entity).despawn();
+                        commands.entity(prox_target_entity).despawn_recursive();
                         let position = prox_target_transform.translation;
                         spawn_explosion(commands, meshes, materials, ExplosionType::SMALL, &position);
                     }
@@ -214,6 +214,6 @@ fn handle_collision_entity(missiles: &Query<'_, '_, (Entity, &mut ExternalForce,
             Err(e) => info!("Collision handling error: {}", e),
         }
         //TODO: Missile explosion effect in case of terrain hit
-        commands.entity(*entity).despawn();
+        commands.entity(*entity).despawn_recursive();
         }
 }

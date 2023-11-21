@@ -166,8 +166,7 @@ pub fn update_player_weapon_controls(
             for (_aircraft, entity, transform, aircraft_velocity) in aircrafts.iter() {
                 info!("Firing from player aircraft");
                 let mut _missile = commands.spawn(SceneBundle {
-                    scene: asset_server.load("models/weapons/AGM-65.gltf#Scene0"),
-                    visibility: Visibility::Hidden,
+                    scene: asset_server.load("models/weapons/AGM-65.glb#Scene0"),
                     ..default()
                 }).insert(Missile {
                     launching_vehicle : entity,

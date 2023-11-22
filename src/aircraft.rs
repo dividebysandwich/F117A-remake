@@ -19,8 +19,8 @@ pub enum AircraftType {
 lazy_static! {
     pub static ref MAXFORCES_ROLL : HashMap<AircraftType, f32>= {
         let mut map = HashMap::new();
-        map.insert(AircraftType::F117A, 45.0);
-        map.insert(AircraftType::MIG29, 47.0);
+        map.insert(AircraftType::F117A, 12.0);
+        map.insert(AircraftType::MIG29, 17.0);
         map
     };
 }
@@ -28,8 +28,8 @@ lazy_static! {
 lazy_static! {
     pub static ref MAXFORCES_PITCH : HashMap<AircraftType, f32>= {
         let mut map = HashMap::new();
-        map.insert(AircraftType::F117A, 45.0);
-        map.insert(AircraftType::MIG29, 47.0);
+        map.insert(AircraftType::F117A, 6.0);
+        map.insert(AircraftType::MIG29, 8.0);
         map
     };
 }
@@ -37,8 +37,8 @@ lazy_static! {
 lazy_static! {
     pub static ref MAXFORCES_YAW : HashMap<AircraftType, f32>= {
         let mut map = HashMap::new();
-        map.insert(AircraftType::F117A, 35.0);
-        map.insert(AircraftType::MIG29, 37.0);
+        map.insert(AircraftType::F117A, 5.0);
+        map.insert(AircraftType::MIG29, 7.0);
         map
     };
 }
@@ -46,8 +46,8 @@ lazy_static! {
 lazy_static! {
     pub static ref MAXTHRUST : HashMap<AircraftType, f32>= {
         let mut map = HashMap::new();
-        map.insert(AircraftType::F117A, 60.0);
-        map.insert(AircraftType::MIG29, 60.0);
+        map.insert(AircraftType::F117A, 65.0);
+        map.insert(AircraftType::MIG29, 65.0);
         map
     };
 }
@@ -128,7 +128,7 @@ pub fn update_aircraft_forces(
         } else if aircraft.thrust_force > aircraft.throttle * MAXTHRUST.get(&aircraft.aircraft_type).unwrap() {
             aircraft.thrust_force -= 20.0 * time.delta_seconds();
         }
-        let mut lift_force = *LIFT.get(&aircraft.aircraft_type).unwrap() * aircraft.speed;
+        let mut lift_force = *LIFT.get(&aircraft.aircraft_type).unwrap() * aircraft.speed * ((20.0 - transform.translation.y) / 20.0).clamp(0.55, 1.0);
         if lift_force > 105.0 {
             lift_force = 105.0;
         }

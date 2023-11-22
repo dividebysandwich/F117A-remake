@@ -17,6 +17,7 @@ use bevy_mod_billboard::prelude::*;
 use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::HookPlugin;
 use bevy_third_person_camera::*;
+use radar::{update_rcs, update_radar};
 
 mod definitions;
 mod explosion;
@@ -32,6 +33,8 @@ mod scenery;
 mod mfd;
 mod targeting;
 mod health;
+mod coalition;
+mod radar;
 
 use crate::aircraft::*;
 use crate::hud::*;
@@ -81,6 +84,8 @@ fn main() {
                 update_player_weapon_controls,
                 update_missiles,
                 update_aircraft_forces,
+                update_rcs,
+                update_radar,
                 update_hud,
                 update_blinking_lights,
                 auto_scale_and_hide_billboards,

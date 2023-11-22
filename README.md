@@ -18,14 +18,14 @@
 - [X] DOS style point light sources
 - [X] Missiles with proportional navigation
 - [X] Target destruction
+- [-] IN PROGRESS: Pulse / doppler radar gameplay
 - [-] IN PROGRESS: HUD
 - [-] IN PROGRESS: Targeting MFD
 - [-] IN PROGRESS: Arcade targeting
-- [ ] Pulse / doppler radar gameplay
+- [-] IN PROGRESS: Sound
 - [ ] SAM sites attacking player
 - [ ] Radar countermeasures
 - [ ] HSI MFD
-- [ ] Sound
 - [ ] Player damage modeling
 - [ ] Advanced targeting (LANTIRN)
 - [ ] Advanced flight physics

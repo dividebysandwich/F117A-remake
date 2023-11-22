@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
+use crate::coalition::{CoalitionType, Coalition};
 use crate::definitions::*;
+use crate::radar::*;
 use crate::targeting::Targetable;
 use crate::vehicle::*;
 
@@ -31,6 +33,7 @@ pub fn spawn_sam(commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     xpos: f32,
     zpos: f32,
+    side: CoalitionType,
 ) {
 //    let mesh: Handle<Mesh> = asset_server.load("models/planes/f117a.gltf#Scene0");
 //    let m = &meshes.get(&mesh);
@@ -41,6 +44,7 @@ pub fn spawn_sam(commands: &mut Commands,
         ..default()
     })
     .insert(Vehicle{..default()})
+    .insert(Coalition{side: side})
     .insert(SAM{name: String::from("SA-6 #1"), ..default() })
     .insert(Collider::cuboid(0.25, 0.35, 0.4))
     .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_GROUNDVEHICLE), 
@@ -54,6 +58,12 @@ pub fn spawn_sam(commands: &mut Commands,
     .insert(RigidBody::Dynamic)
     .insert(ColliderMassProperties::Density(100.0))
     .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)))
-    .insert(Targetable);
+    .insert(Targetable)
+    .insert(RadarEmitter{
+        radar_type: RadarEmitterType::PULSE, 
+        radar_gain: 100.0, 
+        scan_interval: 3.0, 
+        ..default()
+    });
 
 }

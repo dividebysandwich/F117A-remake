@@ -52,23 +52,24 @@ impl Default for Missile {
     }
 }
 
+#[allow(unused_mut)]
 pub fn update_missiles(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>, 
-    mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
+    mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Missile)>, 
     missile_targets: Query<&Transform, (With<Targetable>, Without<Missile>)>,
     all_targets: Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
     time: Res<Time>, 
 ) {
-    for (missile_entity, missile_force, mut missile_transform, mut missile_collider, mut missile ) in missiles.iter_mut() {
+    for (missile_entity, missile_force, mut missile_transform, mut missile ) in missiles.iter_mut() {
         let target_transform = missile_targets.get(missile.target);
         match target_transform {
             Ok(t) => missile.target_transform = *t,
             Err(e) => info!("Missile targeting error: {}", e),
         }
-        update_single_missile(missile_entity, &mut commands, &mut meshes, &mut materials, &asset_server, missile, time.clone(), missile_transform, missile_collider, missile_force, &all_targets);
+        update_single_missile(missile_entity, &mut commands, &mut meshes, &mut materials, &asset_server, missile, time.clone(), missile_transform, missile_force, &all_targets);
         
     }
 
@@ -82,8 +83,7 @@ fn update_single_missile(
     asset_server: &Res<AssetServer>, 
     mut missile: Mut<Missile>, 
     time: Time, 
-    mut missile_transform: Mut<Transform>, 
-    mut missile_collider: Mut<Collider>, 
+    mut missile_transform: Mut<Transform>,
     mut missile_force: Mut<ExternalForce>,
     all_targets: &Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
 ) {
@@ -177,6 +177,7 @@ fn update_single_missile(
 
 
 /* A system that displays the events. */
+#[allow(unused_mut)]
 pub fn handle_collision_events(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -184,7 +185,6 @@ pub fn handle_collision_events(
     asset_server: Res<AssetServer>, 
     mut collision_events: EventReader<CollisionEvent>,
     mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
-    missile_targets: Query<&Transform, (With<Targetable>, Without<Missile>)>,
     all_targets: Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
 ) {
     for collision_event in collision_events.read() {

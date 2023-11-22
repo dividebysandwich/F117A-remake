@@ -3,6 +3,7 @@ use bevy_rapier3d::prelude::*;
 
 use crate::{util::{get_time_millis, random_vec3, random_u64, random_f32}, player::Player, definitions::*};
 
+#[allow(dead_code)]
 pub enum ExplosionType {
     SMALL,
     MEDIUM,

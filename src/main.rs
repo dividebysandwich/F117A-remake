@@ -219,7 +219,7 @@ fn apply_skybox(
     mut cubemap: ResMut<Cubemap>,
 ) {
     if !cubemap.is_loaded {
-        let (a_load, a_deps, a_rec_deps) = asset_server.get_load_states(&cubemap.image_handle).unwrap();
+        let (a_load, _a_deps, _a_rec_deps) = asset_server.get_load_states(&cubemap.image_handle).unwrap();
         if a_load == LoadState::Loaded
         {
             info!("Applying skybox");

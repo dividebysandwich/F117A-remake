@@ -4,6 +4,7 @@ use bevy_mod_raycast::prelude::*;
 
 use crate::{MainCamera, util::get_time_millis};
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
 pub enum LightType {
     SOLID,
@@ -38,7 +39,7 @@ pub struct LightBillboard {
     pub occluded: bool,
 }
 
-
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 pub enum LightSourceType{
     POINT,
@@ -103,7 +104,7 @@ pub fn auto_scale_and_hide_billboards(
     raycast_query: Query<Entity, With<LightBillboard>>,
     mut raycast: Raycast,
 ) {
-    let (_cam, c_global_transform, c_transform, _) = camera.single();
+    let (_cam, c_global_transform, _c_transform, _) = camera.single();
 
     for (mut b_visibility, b_global_transform, mut b_transform, mut billboard) in billboards.iter_mut() {
         let cam_distance = c_global_transform.translation().distance(b_global_transform.translation()) * 0.4;
@@ -124,7 +125,7 @@ pub fn auto_scale_and_hide_billboards(
             *b_visibility = Visibility::Visible;
         }
         b_transform.scale = Vec3::new(cam_distance, cam_distance, cam_distance);
-        for (is_first, intersection) in hits {
+        for (_is_first, _intersection) in hits {
             *b_visibility = Visibility::Hidden;
             billboard.occluded = true;
         }
@@ -192,6 +193,7 @@ pub fn update_light_billboards(
     }
 }
 
+#[allow(unused_mut)]
 pub fn update_blinking_lights(
     mut billboards: Query<(&mut Visibility, &mut LightBillboard), Without<PointLight>>,
     mut lightsources: Query<(&mut Visibility, &LightBillboard, &mut PointLight), With<PointLight>>,
@@ -221,7 +223,7 @@ pub fn update_blinking_lights(
     }
 
 
-    for (mut visibility, billboard, mut lightsource) in lightsources.iter_mut() {
+for (mut _visibility, billboard, mut lightsource) in lightsources.iter_mut() {
         match billboard.light_type {        
             LightType::FLASH_SINGLE => {
                 if first_flash_active {

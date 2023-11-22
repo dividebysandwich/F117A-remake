@@ -54,7 +54,7 @@ pub fn spawn_player(mut commands: Commands,
     .insert(Coalition{side: CoalitionType::BLUE})
     .insert(RadarDetectable {
         base_radar_cross_section: 0.2,
-        radar_visibility: 0.1,
+        ..default()
     })
     .insert(Vehicle{..default()})
     .insert(Aircraft{name: String::from("GHOST 1-1"), aircraft_type: AircraftType::F117A, fuel: 35500.0, ..default() })

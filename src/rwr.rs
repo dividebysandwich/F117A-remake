@@ -58,7 +58,6 @@ pub fn update_rwr(
             let energy = detectable.reflected_energy.clamp(0.0, 1.0);
             transform.scale.x = energy;
             transform.translation.x = energy * 300. - 200.;
-            info!("scale: {} x: {} energy: {}", transform.scale.x, transform.translation.x, energy);
         }
     }
 

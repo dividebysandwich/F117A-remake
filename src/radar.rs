@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{coalition::Coalition, util::get_time_millis};
+use crate::{coalition::Coalition, util::get_time_millis, definitions::RADAR_PULSE_TIMEOUT};
 
 #[allow(dead_code)]
 pub enum RadarEmitterType {
@@ -13,6 +13,7 @@ pub struct RadarDetectable {
     pub base_radar_cross_section: f32, // This is the basic visibility value
     pub radar_cross_section: f32, // Calculated radar visibility based on orientation, for RWR display
     pub reflected_energy: f32, // Calculated radar return energy, for RWR display
+    pub last_impulse_time: u64, // Time of last radar pulse, for RWR display
 }
 
 impl Default for RadarDetectable {
@@ -21,6 +22,7 @@ impl Default for RadarDetectable {
             base_radar_cross_section: 0.2,
             radar_cross_section: 0.0,
             reflected_energy: 0.0,
+            last_impulse_time: 0,
          }
     }
 }
@@ -120,9 +122,14 @@ pub fn update_radar(
 
             let final_return_signal = raw_return_signal * effective_gain;
             info!("Final return signal: {}", final_return_signal);
-            detectable.reflected_energy = final_return_signal;
 
-            //TODO: Update RCR/RWR indicator
+            // Only remember the strongest impulse, unless it's older than 300ms
+            // This prevents weaker signals that arrive later from obscuring important strong returns
+            if (final_return_signal > detectable.reflected_energy) || (milliseconds - detectable.last_impulse_time > RADAR_PULSE_TIMEOUT) {
+                detectable.reflected_energy = final_return_signal;
+                detectable.last_impulse_time = milliseconds;
+            }
+
             //TODO: Tracking and targeting
 
         }

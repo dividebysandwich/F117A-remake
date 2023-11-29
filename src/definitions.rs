@@ -15,3 +15,5 @@ pub const RENDERLAYER_MFD: u8 = 2;
 pub const RENDERLAYER_AIRCRAFT: u8 = 3;
 #[allow(dead_code)]
 pub const RENDERLAYER_POINTLIGHTS: u8 = 4;
+
+pub const RADAR_PULSE_TIMEOUT: u64 = 300;

@@ -3,6 +3,7 @@ use bevy::render::view::visibility::RenderLayers;
 
 use crate::CameraSettings;
 use crate::aircraft::*;
+use crate::definitions::RENDERLAYER_COCKPIT;
 use crate::player::*;
 
 
@@ -25,7 +26,7 @@ pub fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             transform: Transform::from_translation(Vec3::new(-470.0, 0.0, 0.0)),
             ..default()
         }
-    ).insert(RenderLayers::layer(1))
+    ).insert(RenderLayers::layer(RENDERLAYER_COCKPIT))
     .insert(LabelCurrentSpeed);
 
     commands.spawn(
@@ -34,7 +35,7 @@ pub fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             transform: Transform::from_translation(Vec3::new(470.0, 0.0, 0.0)),
             ..default()
         }
-    ).insert(RenderLayers::layer(1))
+    ).insert(RenderLayers::layer(RENDERLAYER_COCKPIT))
     .insert(LabelCurrentAltitude);
 
 }

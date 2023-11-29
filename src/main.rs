@@ -17,6 +17,7 @@ use bevy_mod_billboard::prelude::*;
 use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::HookPlugin;
 use bevy_third_person_camera::*;
+use definitions::{RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS, RENDERLAYER_COCKPIT, RENDERLAYER_AIRCRAFT};
 use radar::{update_rcs, update_radar};
 
 mod definitions;
@@ -138,7 +139,9 @@ fn handle_camera_controls(
                 commands.entity(main_camera).remove::<RenderLayers>();
                 commands
                     .entity(main_camera)
-                    .insert(RenderLayers::from_layers(&[0, 4]));
+                    .insert(RenderLayers::from_layers(&[
+                        RENDERLAYER_WORLD, 
+                        RENDERLAYER_POINTLIGHTS]));
             }
         } else if input.just_pressed(KeyCode::F2) {
             *aircraft_visibility = Visibility::Visible;
@@ -152,7 +155,11 @@ fn handle_camera_controls(
                 commands.entity(main_camera).remove::<RenderLayers>();
                 commands
                     .entity(main_camera)
-                    .insert(RenderLayers::from_layers(&[0, 1, 3, 4])); //TODO: Remove Layer 1 to remove debug line display
+                    .insert(RenderLayers::from_layers(&[
+                        RENDERLAYER_WORLD, 
+                        RENDERLAYER_COCKPIT, 
+                        RENDERLAYER_AIRCRAFT, 
+                        RENDERLAYER_POINTLIGHTS])); //TODO: Remove Cockpit Layer (1) to remove debug line display
             }
             let mut i: i32 = 0;
             let mut vehicles_sorted = vehicles.iter_mut().collect::<Vec<_>>();
@@ -281,7 +288,7 @@ fn setup_graphics(
         })
         .insert(MainCamera)
         .insert(CockpitCamera)
-        .insert(RenderLayers::from_layers(&[0, 4]));
+        .insert(RenderLayers::from_layers(&[RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS]));
 
     // HUD camera
     commands
@@ -310,7 +317,7 @@ fn setup_graphics(
                 .into(),
                 ..Default::default()
             },
-            RenderLayers::layer(1),
+            RenderLayers::layer(RENDERLAYER_COCKPIT),
         ))
         .insert(HudCamera)
         .insert(UiCameraConfig {
@@ -331,7 +338,7 @@ fn setup_graphics(
     });*/
 
     commands.insert_resource(GizmoConfig {
-        render_layers: RenderLayers::layer(1),
+        render_layers: RenderLayers::layer(RENDERLAYER_COCKPIT),
         ..default()
     });
 

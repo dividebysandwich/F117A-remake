@@ -2,7 +2,7 @@ use bevy::{prelude::{*, shape::Quad}, render::{render_resource::{TextureDimensio
 use bevy_mod_billboard::{prelude::*, BillboardDepth};
 use bevy_mod_raycast::prelude::*;
 
-use crate::{MainCamera, util::get_time_millis};
+use crate::{MainCamera, util::get_time_millis, definitions::RENDERLAYER_POINTLIGHTS};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
@@ -163,7 +163,7 @@ pub fn update_light_billboards(
                 active: true,
                 occluded: false,
             })
-            .insert(RenderLayers::layer(4))
+            .insert(RenderLayers::layer(RENDERLAYER_POINTLIGHTS))
             .id();
         commands.entity(entity).push_children(&[light]);
         if let LightSourceType::POINT = light_billboard_to_be_added.lightsource_type  {
@@ -185,7 +185,7 @@ pub fn update_light_billboards(
                 active: true,
                 occluded: false,
             })
-            .insert(RenderLayers::layer(4))
+            .insert(RenderLayers::layer(RENDERLAYER_POINTLIGHTS))
             .id();
             commands.entity(entity).push_children(&[lightsource]);
         }

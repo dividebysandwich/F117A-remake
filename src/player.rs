@@ -79,7 +79,7 @@ pub fn spawn_player(mut commands: Commands,
     .insert(Damping { linear_damping: 0.25, angular_damping: 3.0 })
     .insert(ColliderMassProperties::Density(35.0))
     // Player airplane is layer 3 so it can be skipped when rendering cockpit view
-    .insert(RenderLayers::layer(3));
+    .insert(RenderLayers::layer(RENDERLAYER_AIRCRAFT));
 
 //    .insert(TransformBundle::from(Transform::from_xyz(0.0, 4.0, 0.0)));
 

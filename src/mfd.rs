@@ -9,7 +9,7 @@ use bevy::{
     }, reflect::TypeUuid, core_pipeline::clear_color::ClearColorConfig, sprite::MaterialMesh2dBundle,
 };
 
-use crate::{player::Player, targeting::SensorTarget};
+use crate::{player::Player, targeting::SensorTarget, definitions::{RENDERLAYER_MFD, RENDERLAYER_WORLD, RENDERLAYER_COCKPIT}};
 
 #[derive(Component)]
 pub struct FlirCamera;
@@ -62,7 +62,7 @@ pub fn update_mfd(
                         texture: _resource.image.clone(),
                         ..Default::default()
                     })
-                    .insert(RenderLayers::layer(1))
+                    .insert(RenderLayers::layer(RENDERLAYER_COCKPIT))
                     .insert(MfdSprite); // This stops setup_mfd from being called again
 
                     let font = asset_server.load("fonts/Brickshapers-eXPx.ttf");
@@ -77,7 +77,7 @@ pub fn update_mfd(
                             transform: Transform::from_translation(Vec3::new(-100.0, -100.0, 0.0)),
                             ..default()
                         }
-                    ).insert(RenderLayers::layer(2));
+                    ).insert(RenderLayers::layer(RENDERLAYER_MFD));
 
                     draw_crosshair(&mut commands, &mut meshes, &mut materials);
 
@@ -97,25 +97,25 @@ fn draw_crosshair(commands: &mut Commands<'_, '_>, meshes: &mut ResMut<'_, Asset
         material: materials.add(ColorMaterial::from(Color::GREEN)),
         transform: Transform::from_translation(Vec3::new(50., 0., 0.)),
         ..default()
-    }).insert(RenderLayers::layer(2));
+    }).insert(RenderLayers::layer(RENDERLAYER_MFD));
     commands.spawn(MaterialMesh2dBundle {
         mesh: meshes.add(shape::Box::new(50., 4., 0.).into()).into(),
         material: materials.add(ColorMaterial::from(Color::GREEN)),
         transform: Transform::from_translation(Vec3::new(-50., 0., 0.)),
         ..default()
-    }).insert(RenderLayers::layer(2));
+    }).insert(RenderLayers::layer(RENDERLAYER_MFD));
     commands.spawn(MaterialMesh2dBundle {
         mesh: meshes.add(shape::Box::new(4., 50., 0.).into()).into(),
         material: materials.add(ColorMaterial::from(Color::GREEN)),
         transform: Transform::from_translation(Vec3::new(0., 50., 0.)),
         ..default()
-    }).insert(RenderLayers::layer(2));
+    }).insert(RenderLayers::layer(RENDERLAYER_MFD));
     commands.spawn(MaterialMesh2dBundle {
         mesh: meshes.add(shape::Box::new(4., 50., 0.).into()).into(),
         material: materials.add(ColorMaterial::from(Color::GREEN)),
         transform: Transform::from_translation(Vec3::new(0., -50., 0.)),
         ..default()
-    }).insert(RenderLayers::layer(2));
+    }).insert(RenderLayers::layer(RENDERLAYER_MFD));
 }
 
 //Set up the camera and render target for the FLIR
@@ -182,7 +182,7 @@ pub fn setup_flir(
             ..default()
         })
         .insert(FlirCamera)
-        .insert(RenderLayers::from_layers(&[0]));
+        .insert(RenderLayers::from_layers(&[RENDERLAYER_WORLD]));
 
         // HUD camera
         commands
@@ -212,7 +212,7 @@ pub fn setup_flir(
                 .into(),
                 ..Default::default()
             },
-            RenderLayers::layer(2),
+            RenderLayers::layer(RENDERLAYER_MFD),
         ))
         .insert(UiCameraConfig {
             show_ui: true,

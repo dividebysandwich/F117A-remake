@@ -35,6 +35,7 @@ mod targeting;
 mod health;
 mod coalition;
 mod radar;
+mod rwr;
 
 use crate::aircraft::*;
 use crate::hud::*;
@@ -46,6 +47,7 @@ use crate::scenery::*;
 use crate::mfd::*;
 use crate::targeting::*;
 use crate::explosion::*;
+use crate::rwr::*;
 
 fn main() {
     App::new()
@@ -71,6 +73,7 @@ fn main() {
                 setup_hud, 
                 setup_flir,
                 setup_sounds,
+                setup_rwr,
             ),
         )
         .add_systems(
@@ -91,6 +94,7 @@ fn main() {
                 auto_scale_and_hide_billboards,
                 update_light_billboards,
                 update_mfd,
+                update_rwr,
                 handle_explosion_test,
                 handle_collision_events,
                 update_explosion_effects,

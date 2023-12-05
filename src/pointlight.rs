@@ -134,13 +134,12 @@ pub fn auto_scale_and_hide_billboards(
 }
 
 pub fn update_light_billboards(
-    lights_to_add: Query<(Entity, &LightBillboardToBeAdded)>,
+    lights_to_add: Query<(Entity, &Transform, &LightBillboardToBeAdded)>,
     mut commands: Commands,
-    mut billboard_textures: ResMut<Assets<BillboardTexture>>,
     mut meshes: ResMut<Assets<Mesh>>,
     image_handles: Res<PrefabImages>,
 ) {
-    for (entity, light_billboard_to_be_added) in lights_to_add.iter() {
+    for (entity, transform, light_billboard_to_be_added) in lights_to_add.iter() {
         let image_handle: Handle<Image>;
         match light_billboard_to_be_added.light_color {
             LightColor::BLUE => image_handle = image_handles.blue.clone(),
@@ -151,8 +150,8 @@ pub fn update_light_billboards(
         }
         let light = commands
             .spawn(BillboardTextureBundle {
-                texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-                mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+                texture: BillboardTextureHandle(image_handle.clone()),
+                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })

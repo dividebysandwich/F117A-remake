@@ -1,6 +1,6 @@
 
 use bevy::{prelude::{*, shape::Quad}, render::view::RenderLayers};
-use bevy_mod_billboard::{prelude::BillboardTexture, BillboardTextureBundle, BillboardDepth};
+use bevy_mod_billboard::{prelude::BillboardTextureHandle, BillboardTextureBundle, BillboardDepth, BillboardMeshHandle};
 use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::{HookedSceneBundle, SceneHook};
 
@@ -41,7 +41,6 @@ pub fn setup_terrain(mut commands: Commands, asset_server: Res<AssetServer>) {
 pub fn setup_scenery(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut billboard_textures: ResMut<Assets<BillboardTexture>>,
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
 ) {
@@ -52,8 +51,8 @@ pub fn setup_scenery(
         commands
             .spawn(BillboardTextureBundle {
                 transform: Transform::from_translation(Vec3::new(-0.2 + (i * 2.0), -0.96, -2.0)),
-                texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-                mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+                texture: BillboardTextureHandle(image_handle.clone()),
+                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })
@@ -68,8 +67,8 @@ pub fn setup_scenery(
         commands
             .spawn(BillboardTextureBundle {
                 transform: Transform::from_translation(Vec3::new(-0.2 + (i * 2.0), -0.96, 2.75)),
-                texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-                mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+                texture: BillboardTextureHandle(image_handle.clone()),
+                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })
@@ -84,8 +83,8 @@ pub fn setup_scenery(
         commands
             .spawn(BillboardTextureBundle {
                 transform: Transform::from_translation(Vec3::new(-0.2 + (i * 2.0), -0.96, 7.3)),
-                texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-                mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+                texture: BillboardTextureHandle(image_handle.clone()),
+                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })
@@ -105,8 +104,8 @@ pub fn setup_scenery(
         commands
             .spawn(BillboardTextureBundle {
                 transform: Transform::from_translation(Vec3::new(-2.5, -0.96, -2.0 + (i * 0.49))),
-                texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-                mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+                texture: BillboardTextureHandle(image_handle.clone()),
+                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })
@@ -125,8 +124,8 @@ pub fn setup_scenery(
         commands
             .spawn(BillboardTextureBundle {
                 transform: Transform::from_translation(Vec3::new(173.0, -0.96, -2.0 + (i * 0.49))),
-                texture: billboard_textures.add(BillboardTexture::Single(image_handle.clone())),
-                mesh: meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into(),
+                texture: BillboardTextureHandle(image_handle.clone()),
+                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })

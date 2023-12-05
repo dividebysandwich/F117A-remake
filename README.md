@@ -56,10 +56,7 @@ Multiplayer (unless done by contributors), study-level realism, realistic graphi
 - [T] Lock target at crosshair (Arcade targeting)
 - [Backspace] Clear target lock (Arcade targeting)
 
-### Compiling:
 
-At the moment, a special Bevy 0.12.0 compatible version of bevy_mod_billboard is needed, which has to be fetched from https://github.com/robtfm/bevy_mod_billboard/tree/bevy12
-Simply compile this locally with ```cargo build``` and then put the relative (or absolute) path to that directory on your disk into the appropriate line in cargo.toml
 
 
 Old images:

@@ -1,0 +1,85 @@
+lines_takeoff = [
+    "Let's go!",
+    "We're ready to rock and roll. Let's do the rolling first.",
+    "I love the smell of Composition H6 in the evening.",
+    "Please make sure your tray is stowed.",
+    "Did I turn off the stove before leaving home?",
+]
+lines_landing = [
+    "Another happy landing.",
+    "Safe and sound.",
+    "They never even knew we were there.",
+]
+lines_detected = [
+    "They spotted us!",
+    "You know that stealth doesn't mean invisible, right?",
+    "I'm lit up like a christmas tree!",
+    "You know I don't like being the center of attention.",
+]
+lines_ground_target_locked = [
+    "I see you...",
+    "Target designated.",
+    "I feel a mighty need.",
+    "Let's contact him about his extended warranty.",
+]
+lines_air_target_locked = [
+    "Bogey locked.",
+    "Yep, that's an enemy aircraft. Mhm.",
+    "I bet you can't lob a bomb on that target.",
+    "Enemy fighter jet sighted.",
+    "Air combat isn't really my strong suit, you know that, right?",
+]
+lines_ground_target_destroyed = [
+    "Tag, you're it.",
+    "From mud to dust.",
+    "At least they get to experience flight. Briefly.",
+]
+lines_air_target_destroyed = [
+    "Another one bites the dust.",
+    "And they said I need fighter cover",
+]
+lines_fighters_nearby = [
+    "The sky is getting crowded. I don't like it.",
+    "We might have to do something about those fighter jets.",
+    "See that's what you get for being noisy.",
+    "I wonder what those jets are looking for.",
+]
+lines_sam_pulse_nearby = [
+    "A pulse radar! Remember to fly head-on to avoid detection.",
+    "Pulse radar detected. Remember that my nose is pointy and small.",
+]
+lines_sam_doppler_nearby = [
+    "A doppler radar! Don't fly straight at it or they'll see us.",
+    "Doppler radar detected. The less our relative speed, the harder we are to spot.",
+]
+lines_sam_missiles_incoming = [
+    "That beeping noise is my missile warning system. Also, SAM just launched!",
+    "They're shooting at us!",
+    "SAM launch detected!",
+]
+lines_aam_missiles_incoming = [
+    "Missile! Missile! Missile!",
+    "Air to air missile launched!",
+    "AAM launch detected!",
+]
+lines_missiles_defeated = [
+    "Missile defeated.",
+    "That was close. Too close.",
+    "Phew!",
+    "That kind of stress isn't good for my hydraulics pressure.",
+]
+lines_damaged = [
+    "Ouch!!",
+    "Yeouch!",
+    "Gah, that sounded expensive!",
+    "I just had that buffed out you know?",
+    "I just hope that buffs out.",
+]
+lines_engine_damage = [
+    "We lost engine power!",
+    "No, no, no, no, no!",
+    "@*#$%*@#$!!",
+    "Well, that was fun while we had thrust.",
+    "Did you know I don't fly very long without engines, and neither do you?",
+    "Time for you to start flapping your arms!",
+]

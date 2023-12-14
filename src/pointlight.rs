@@ -134,12 +134,12 @@ pub fn auto_scale_and_hide_billboards(
 }
 
 pub fn update_light_billboards(
-    lights_to_add: Query<(Entity, &Transform, &LightBillboardToBeAdded)>,
+    lights_to_add: Query<(Entity, &LightBillboardToBeAdded)>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     image_handles: Res<PrefabImages>,
 ) {
-    for (entity, transform, light_billboard_to_be_added) in lights_to_add.iter() {
+    for (entity, light_billboard_to_be_added) in lights_to_add.iter() {
         let image_handle: Handle<Image>;
         match light_billboard_to_be_added.light_color {
             LightColor::BLUE => image_handle = image_handles.blue.clone(),

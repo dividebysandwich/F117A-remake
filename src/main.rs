@@ -17,6 +17,7 @@ use bevy_mod_billboard::prelude::*;
 use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::HookPlugin;
 use bevy_third_person_camera::*;
+use bevy_common_assets::toml::TomlAssetPlugin;
 use definitions::{RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS, RENDERLAYER_COCKPIT, RENDERLAYER_AIRCRAFT};
 use radar::{update_rcs, update_radar};
 
@@ -37,6 +38,7 @@ mod health;
 mod coalition;
 mod radar;
 mod rwr;
+mod f117_ai;
 
 use crate::aircraft::*;
 use crate::hud::*;
@@ -49,6 +51,7 @@ use crate::mfd::*;
 use crate::targeting::*;
 use crate::explosion::*;
 use crate::rwr::*;
+use crate::f117_ai::*;
 
 fn main() {
     App::new()
@@ -62,6 +65,7 @@ fn main() {
 //            DebugLinesPlugin::default(),
             BillboardPlugin,
             HookPlugin,
+            TomlAssetPlugin::<F117AI>::new(&["toml"]),
         ))
         .add_systems(
             Startup,
@@ -75,6 +79,7 @@ fn main() {
                 setup_flir,
                 setup_sounds,
                 setup_rwr,
+                load_f117_ai,
             ),
         )
         .add_systems(

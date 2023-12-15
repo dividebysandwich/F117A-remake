@@ -1,9 +1,11 @@
 lines_takeoff = [
     "Let's go!",
-    "We're ready to rock and roll. Let's do the rolling first.",
+    "We're ready to rock and roll.",
+    "Ready to rock and roll. Let's do the rolling first.",
     "I love the smell of Composition H6 in the evening.",
     "Please make sure your tray is stowed.",
     "Did I turn off the stove before leaving home?",
+    "Don't forget to turn off your phone.",
 ]
 lines_landing = [
     "Another happy landing.",
@@ -14,43 +16,53 @@ lines_detected = [
     "They spotted us!",
     "You know that stealth doesn't mean invisible, right?",
     "I'm lit up like a christmas tree!",
-    "You know I don't like being the center of attention.",
+    "I don't like being the center of attention.",
 ]
 lines_ground_target_locked = [
     "I see you...",
     "Target designated.",
-    "I feel a mighty need.",
-    "Let's contact him about his extended warranty.",
+    "I have a mighty need.",
+    "Let's contact them about their extended warranty.",
 ]
 lines_air_target_locked = [
     "Bogey locked.",
     "Yep, that's an enemy aircraft. Mhm.",
     "I bet you can't lob a bomb on that target.",
     "Enemy fighter jet sighted.",
-    "Air combat isn't really my strong suit, you know that, right?",
+    "Air combat isn't really my strong suit. You know that, right?",
 ]
 lines_ground_target_destroyed = [
     "Tag, you're it.",
     "From mud to dust.",
     "At least they get to experience flight. Briefly.",
+    "Catch.",
+    "I hope they had insurance.",
+    "Oh look, a new hole in the ground.",
+    "Wasn't us, I swear.",
+    "I wonder why these things keep randomly exploding.",
 ]
 lines_air_target_destroyed = [
     "Another one bites the dust.",
     "And they said I need fighter cover",
+    "Got 'em.",
+    "Enemy aircraft destroyed.",
 ]
 lines_fighters_nearby = [
     "The sky is getting crowded. I don't like it.",
     "We might have to do something about those fighter jets.",
     "See that's what you get for being noisy.",
     "I wonder what those jets are looking for.",
+    "This is not the stealth jet you're looking for.",
 ]
 lines_sam_pulse_nearby = [
     "A pulse radar! Remember to fly head-on to avoid detection.",
     "Pulse radar detected. Remember that my nose is pointy and small.",
+    "I sense a pulse radar.",
 ]
 lines_sam_doppler_nearby = [
     "A doppler radar! Don't fly straight at it or they'll see us.",
     "Doppler radar detected. The less our relative speed, the harder we are to spot.",
+    "I sense a doppler radar.",
 ]
 lines_sam_missiles_incoming = [
     "That beeping noise is my missile warning system. Also, SAM just launched!",
@@ -64,8 +76,10 @@ lines_aam_missiles_incoming = [
 ]
 lines_missiles_defeated = [
     "Missile defeated.",
+    "That was close.",
     "That was close. Too close.",
     "Phew!",
+    "Today is our lucky day.",
     "That kind of stress isn't good for my hydraulics pressure.",
 ]
 lines_damaged = [
@@ -74,12 +88,21 @@ lines_damaged = [
     "Gah, that sounded expensive!",
     "I just had that buffed out you know?",
     "I just hope that buffs out.",
+    "My paint!",
+    "We're good. I think.",
 ]
 lines_engine_damage = [
     "We lost engine power!",
     "No, no, no, no, no!",
     "@*#$%*@#$!!",
+    "I'm losing power!",
     "Well, that was fun while we had thrust.",
     "Did you know I don't fly very long without engines, and neither do you?",
     "Time for you to start flapping your arms!",
+    "Well that is suboptimal.",
+    "And my day was starting so well.",
+    "Can you get out and push?",
+    "I'm not sure I can glide that far.",
+    "I'm not sure I can glide that far. I'm not sure I can glide at all!",
+    "I wasn't built for gliding!",
 ]

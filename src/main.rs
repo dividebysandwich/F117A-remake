@@ -104,6 +104,7 @@ fn main() {
                 handle_explosion_test,
                 handle_collision_events,
                 update_explosion_effects,
+                update_f117_ai_cooldown
             ),
         )
         .run()

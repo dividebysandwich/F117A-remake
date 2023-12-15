@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-
 use bevy::prelude::*;
 use bevy::reflect::TypePath;
 use ::serde::Deserialize;
@@ -10,6 +9,7 @@ use crate::util::random_u64;
    It may occasionally comment on the situation and provide hints */
 
 pub enum F117AIEvent {
+    None,
     Takeoff,
     Landing,
     Detected,
@@ -66,7 +66,7 @@ pub struct F117AIState {
     pub cooldown_missiles_defeated: f32,
     pub cooldown_damaged: f32,
     pub cooldown_engine_damage: f32,
-    pub active_line: Option<F117AIEvent>,
+    pub selected_line: F117AIEvent,
     pub display_line: String,
     pub active_time: f32,
 }
@@ -89,8 +89,8 @@ impl Default for F117AIState {
             cooldown_missiles_defeated: 0.0,
             cooldown_damaged: 0.0,
             cooldown_engine_damage: 0.0,
-            active_line: None,
             active_time: 0.0,
+            selected_line: F117AIEvent::None,
             display_line: String::from(""),
         }
     }
@@ -101,20 +101,20 @@ pub fn load_f117_ai(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
+    let ai_state = F117AIState::default();
+    commands.insert_resource(ai_state);
 
     let ai = F117AIHandle(asset_server.load("ai/f117_ai.toml"));
     commands.insert_resource(ai);
-
-    let ai_state = F117AIState {
-        ..default()
-    };
-    commands.insert_resource(ai_state);
 }
 
-pub fn update_f117_ai_cooldown(
+pub fn update_f117_ai(
     mut f117_ai_state: ResMut<F117AIState>,
+    f117_ai_handle: Res<F117AIHandle>,
+    f117_ai_res: Res<Assets<F117AI>>,
     time: Res<Time>,
 ) {
+    // Update cooldown timers
     let deltatime = time.delta_seconds();
     f117_ai_state.cooldown_landing = (f117_ai_state.cooldown_landing - deltatime).max(0.0);
     f117_ai_state.cooldown_takeoff = (f117_ai_state.cooldown_takeoff - deltatime).max(0.0);
@@ -131,84 +131,93 @@ pub fn update_f117_ai_cooldown(
     f117_ai_state.cooldown_missiles_defeated = (f117_ai_state.cooldown_missiles_defeated - deltatime).max(0.0);
     f117_ai_state.cooldown_damaged = (f117_ai_state.cooldown_damaged - deltatime).max(0.0);
     f117_ai_state.cooldown_engine_damage = (f117_ai_state.cooldown_engine_damage - deltatime).max(0.0);
-
-    if f117_ai_state.active_line.is_some() {
+    
+    if f117_ai_state.display_line != "" {
         f117_ai_state.active_time += deltatime;
         if f117_ai_state.active_time > 4.0 {
-            f117_ai_state.active_line = None;
+            f117_ai_state.display_line = "".to_string();
             f117_ai_state.active_time = 0.0;
         }
     }
 
+    // Select a message
+    match f117_ai_res.get(&f117_ai_handle.0) {
+        Some(f117_ai_lines) => {
+            if f117_ai_state.display_line == "" {
+                #[allow(unused_assignments)]
+                let mut lines: Vec<String> = Vec::new();
+                match f117_ai_state.selected_line {
+                    F117AIEvent::None => {
+                        return;
+                    }
+                    F117AIEvent::Takeoff => {
+                        lines = f117_ai_lines.lines_takeoff.clone();
+                    }
+                    F117AIEvent::Landing => {
+                        lines = f117_ai_lines.lines_landing.clone();
+                    }
+                    F117AIEvent::Detected => {
+                        lines = f117_ai_lines.lines_detected.clone();
+                    }
+                    F117AIEvent::GroundTargetLocked => {
+                        lines = f117_ai_lines.lines_ground_target_locked.clone();
+                    }
+                    F117AIEvent::AirTargetLocked => {
+                        lines = f117_ai_lines.lines_air_target_locked.clone();
+                    }
+                    F117AIEvent::GroundTargetDestroyed => {
+                        lines = f117_ai_lines.lines_ground_target_destroyed.clone();
+                    }
+                    F117AIEvent::AirTargetDestroyed => {
+                        lines = f117_ai_lines.lines_air_target_destroyed.clone();
+                    }
+                    F117AIEvent::FightersNearby => {
+                        lines = f117_ai_lines.lines_fighters_nearby.clone();
+                    }
+                    F117AIEvent::SAMPulseNearby => {
+                        lines = f117_ai_lines.lines_sam_pulse_nearby.clone();
+                    }
+                    F117AIEvent::SAMDopplerNearby => {
+                        lines = f117_ai_lines.lines_sam_doppler_nearby.clone();
+                    }
+                    F117AIEvent::SAMMissilesIncoming => {
+                        lines = f117_ai_lines.lines_sam_missiles_incoming.clone();
+                    }
+                    F117AIEvent::AAMMissilesIncoming => {
+                        lines = f117_ai_lines.lines_aam_missiles_incoming.clone();
+                    }
+                    F117AIEvent::MissilesDefeated => {
+                        lines = f117_ai_lines.lines_missiles_defeated.clone();
+                    }
+                    F117AIEvent::Damaged => {
+                        lines = f117_ai_lines.lines_damaged.clone();
+                    }
+                    F117AIEvent::EngineDamage => {
+                        lines = f117_ai_lines.lines_engine_damage.clone();
+                    }
+                }
+                // Select a random line out of the given possibilities
+                f117_ai_state.selected_line = F117AIEvent::None;
+                let selected_num = random_u64(0,lines.len() as u64);
+                f117_ai_state.display_line = lines[selected_num as usize].clone();
+                f117_ai_state.active_time = 0.0;
+                println!("AI: {}", f117_ai_state.display_line);
+            }
+        }
+        None => {
+            println!("Error: F117 AI lines not loaded");
+        }
+    }
+
 }
+
 
 // Call this function to select a random line from the list and start the timer.
-pub fn activate_f117ai (
-    mut f117_ai_state: ResMut<F117AIState>,
-    f117_ai_handle: Res<F117AIHandle>,
-    f117_ai_res: Res<Assets<F117AI>>,
+pub fn activate_f117_ai (
+    f117_ai_state: &mut F117AIState,
     event_type: F117AIEvent,
 ) {
-
-    let f117_ai_lines = f117_ai_res.get(&f117_ai_handle.0).unwrap();
-
-    if f117_ai_state.active_line.is_none() {
-        #[allow(unused_assignments)]
-        let mut lines: Vec<String> = Vec::new();
-        match event_type {
-            F117AIEvent::Takeoff => {
-                lines = f117_ai_lines.lines_takeoff.clone();
-            }
-            F117AIEvent::Landing => {
-                lines = f117_ai_lines.lines_landing.clone();
-            }
-            F117AIEvent::Detected => {
-                lines = f117_ai_lines.lines_detected.clone();
-            }
-            F117AIEvent::GroundTargetLocked => {
-                lines = f117_ai_lines.lines_ground_target_locked.clone();
-            }
-            F117AIEvent::AirTargetLocked => {
-                lines = f117_ai_lines.lines_air_target_locked.clone();
-            }
-            F117AIEvent::GroundTargetDestroyed => {
-                lines = f117_ai_lines.lines_ground_target_destroyed.clone();
-            }
-            F117AIEvent::AirTargetDestroyed => {
-                lines = f117_ai_lines.lines_air_target_destroyed.clone();
-            }
-            F117AIEvent::FightersNearby => {
-                lines = f117_ai_lines.lines_fighters_nearby.clone();
-            }
-            F117AIEvent::SAMPulseNearby => {
-                lines = f117_ai_lines.lines_sam_pulse_nearby.clone();
-            }
-            F117AIEvent::SAMDopplerNearby => {
-                lines = f117_ai_lines.lines_sam_doppler_nearby.clone();
-            }
-            F117AIEvent::SAMMissilesIncoming => {
-                lines = f117_ai_lines.lines_sam_missiles_incoming.clone();
-            }
-            F117AIEvent::AAMMissilesIncoming => {
-                lines = f117_ai_lines.lines_aam_missiles_incoming.clone();
-            }
-            F117AIEvent::MissilesDefeated => {
-                lines = f117_ai_lines.lines_missiles_defeated.clone();
-            }
-            F117AIEvent::Damaged => {
-                lines = f117_ai_lines.lines_damaged.clone();
-            }
-            F117AIEvent::EngineDamage => {
-                lines = f117_ai_lines.lines_engine_damage.clone();
-            }
-
-            
-        }
-
-        // Select a random line out of the given possibilities
-        let selected_num = random_u64(0,lines.len() as u64);
-        f117_ai_state.display_line = lines[selected_num as usize].clone();
-        f117_ai_state.active_time = 0.0;
-        println!("AI: {}", f117_ai_state.display_line);
-    }
+    println!("AI: Activating AI");
+    f117_ai_state.selected_line = event_type;
 }
+

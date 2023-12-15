@@ -68,18 +68,24 @@ fn main() {
             TomlAssetPlugin::<F117AI>::new(&["toml"]),
         ))
         .add_systems(
+            PreStartup, 
+            (
+                load_f117_ai,
+            )
+        )
+        .add_systems(
             Startup,
             (
-                setup_graphics, 
+                setup_graphics,
                 initialize_textures, 
                 setup_terrain, 
-                setup_scenery, 
+                setup_scenery,
                 spawn_player, 
                 setup_hud, 
                 setup_flir,
                 setup_sounds,
                 setup_rwr,
-                load_f117_ai,
+                prepare_takeoff,
             ),
         )
         .add_systems(
@@ -104,7 +110,7 @@ fn main() {
                 handle_explosion_test,
                 handle_collision_events,
                 update_explosion_effects,
-                update_f117_ai_cooldown
+                update_f117_ai,
             ),
         )
         .run()

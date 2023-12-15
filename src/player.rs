@@ -8,6 +8,9 @@ use crate::coalition::Coalition;
 use crate::coalition::CoalitionType;
 use crate::definitions::*;
 use crate::aircraft::*;
+use crate::f117_ai::F117AIEvent;
+use crate::f117_ai::F117AIState;
+use crate::f117_ai::activate_f117_ai;
 use crate::pointlight::LightBillboardToBeAdded;
 use crate::pointlight::get_light_color_from_name;
 use crate::pointlight::get_light_type_from_name;
@@ -23,12 +26,10 @@ pub struct Player;
 pub fn spawn_player(mut commands: Commands,    
     asset_server: Res<AssetServer>,
 ) {
-
 //    let mesh: Handle<Mesh> = asset_server.load("models/planes/f117a.gltf#Scene0");
 //    let m = &meshes.get(&mesh);
 //    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
     let gltf_handle = asset_server.load("models/planes/f117a.glb#Scene0");
-
     commands.spawn((
         HookedSceneBundle {
             scene: SceneBundle {
@@ -86,4 +87,12 @@ pub fn spawn_player(mut commands: Commands,
     spawn_sam(&mut commands, &asset_server, 100.0, 10.0, CoalitionType::RED);
     spawn_sam(&mut commands, &asset_server, 10.0, 10.0, CoalitionType::RED);
 
+    
+}
+
+pub fn prepare_takeoff(
+    mut f117_ai_state: ResMut<F117AIState>,
+) {
+    println!("Prepare Takeoff");
+    activate_f117_ai (&mut f117_ai_state,F117AIEvent::Takeoff);
 }

@@ -182,11 +182,11 @@ pub fn setup_flir(
             ..default()
         })
         .insert(FlirCamera)
-        .insert(RenderLayers::from_layers(&[RENDERLAYER_WORLD]));
+        .insert(RenderLayers::layer(RENDERLAYER_WORLD));
 
         // HUD camera
         commands
-        .spawn((
+        .spawn(
             Camera2dBundle {
                 camera_2d: Camera2d {
                     // Don't clear the canvas before drawing
@@ -211,13 +211,13 @@ pub fn setup_flir(
                 }
                 .into(),
                 ..Default::default()
-            },
-            RenderLayers::layer(RENDERLAYER_MFD),
-        ))
+            }
+        )
         .insert(UiCameraConfig {
-            show_ui: true,
+            show_ui: false,
             ..default()
-        });
+        })
+        .insert(RenderLayers::layer(RENDERLAYER_MFD));
 
 
 }

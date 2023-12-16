@@ -25,6 +25,7 @@ mod definitions;
 mod explosion;
 mod aircraft;
 mod hud;
+mod dialog_ui;
 mod missile;
 mod player;
 mod sam;
@@ -52,11 +53,12 @@ use crate::targeting::*;
 use crate::explosion::*;
 use crate::rwr::*;
 use crate::f117_ai::*;
+use crate::dialog_ui::*;
 
 fn main() {
     App::new()
         .add_plugins((
-            DefaultPlugins,
+            DefaultPlugins.set(ImagePlugin::default_nearest()),
             bevy::diagnostic::FrameTimeDiagnosticsPlugin,
             bevy::diagnostic::EntityCountDiagnosticsPlugin,
             RapierPhysicsPlugin::<NoUserData>::default(),
@@ -77,11 +79,12 @@ fn main() {
             Startup,
             (
                 setup_graphics,
-                initialize_textures, 
-                setup_terrain, 
+                initialize_textures,
+                setup_terrain,
                 setup_scenery,
-                spawn_player, 
-                setup_hud, 
+                spawn_player,
+                setup_hud,
+                setup_dialog_ui,
                 setup_flir,
                 setup_sounds,
                 setup_rwr,
@@ -112,6 +115,12 @@ fn main() {
                 update_explosion_effects,
                 update_f117_ai,
             ),
+        )
+        .add_systems(
+            Update,
+            (
+                update_dialog_ui,
+            )
         )
         .run()
 }

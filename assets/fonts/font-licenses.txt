@@ -1,4 +1,7 @@
 ﻿Brickshapers-eXPx:
 license: Freeware, Non-Commercial
-link: https://www.fontspace.com/brickshapers-font-f31281
+Link: https://www.fontspace.com/brickshapers-font-f31281
 
+BigBlueTerm:
+License: Creative Commons Attribution-ShareAlike 4.0 International Public License
+Link: https://github.com/ryanoasis/nerd-fonts/releases/download/v3.1.1/BigBlueTerminal.zip

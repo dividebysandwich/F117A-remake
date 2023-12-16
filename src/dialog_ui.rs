@@ -1,4 +1,3 @@
-use bevy::a11y::accesskit::Size;
 use bevy::prelude::*;
 use bevy::render::view::visibility::RenderLayers;
 use bevy::text::Text2dBounds;
@@ -19,7 +18,6 @@ pub struct LabelAIDialogText;
 #[derive(Resource)]
 pub struct AIDialogUIState {
     pub is_visible: bool,
-    pub visible_time: f32,
 }
 
 pub fn setup_dialog_ui(
@@ -28,7 +26,6 @@ pub fn setup_dialog_ui(
 ) {
     let ui_state = AIDialogUIState{
         is_visible: false,
-        visible_time: 0.0,
     };
     commands.insert_resource(ui_state);
 
@@ -85,9 +82,9 @@ pub fn update_dialog_ui(
     mut ui_state: ResMut<AIDialogUIState>,
 ) {
 
+    // Hide dialog if there is no text to display
     if ui_state.is_visible == true && f117_ai_state.display_line.len() == 0 {
         ui_state.is_visible = false;
-        ui_state.visible_time = 0.0;
         for (mut text, mut visibility) in text_query.iter_mut() {
             text.sections[0].value = "".to_string();
             *visibility = Visibility::Hidden;
@@ -95,9 +92,9 @@ pub fn update_dialog_ui(
         for mut visibility in avatar_query.iter_mut() {
             *visibility = Visibility::Hidden;
         }
-    } else if ui_state.is_visible == false && f117_ai_state.display_line.len() > 0 {
+    } else // Show dialog if there's text, but only after a delay of 1 second.
+    if ui_state.is_visible == false && f117_ai_state.display_line.len() > 0 && f117_ai_state.active_time > 1.0 {
         ui_state.is_visible = true;
-        ui_state.visible_time = 0.0;
         for (mut text, mut visibility) in text_query.iter_mut() {
             text.sections[0].value = f117_ai_state.display_line.clone();
             *visibility = Visibility::Visible;

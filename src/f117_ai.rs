@@ -134,7 +134,7 @@ pub fn update_f117_ai(
     
     if f117_ai_state.display_line != "" {
         f117_ai_state.active_time += deltatime;
-        if f117_ai_state.active_time > 4.0 {
+        if f117_ai_state.active_time > 5.0 {
             f117_ai_state.display_line = "".to_string();
             f117_ai_state.active_time = 0.0;
         }

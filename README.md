@@ -1,7 +1,7 @@
 # F117A-remake
  A spiritual successor to an old DOS game, written in Rust / Bevy
 
-![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/5f71d059-25f8-4a62-8f81-a4f6d1b91ffa)
+![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/7f0ead6a-9566-4fcb-850f-596a87639192)
 
 ![image](https://github.com/dividebysandwich/F117A-remake/assets/23048489/603ae486-8727-4d48-8e6e-066c4a736f89)
 
@@ -18,6 +18,7 @@
 - [X] DOS style point light sources
 - [X] Missiles with proportional navigation
 - [X] Target destruction
+- [-] IN PROGRESS: AI assistant chatter
 - [-] IN PROGRESS: Pulse / doppler radar gameplay
 - [-] IN PROGRESS: HUD
 - [-] IN PROGRESS: Targeting MFD

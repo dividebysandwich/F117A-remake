@@ -57,7 +57,7 @@ pub fn setup_dialog_ui(
         }
     )
     .insert(RenderLayers::layer(RENDERLAYER_COCKPIT))
-    .insert(Visibility::Visible)
+    .insert(Visibility::Hidden)
     .insert(LabelAIDialogAvatar);
 
 
@@ -73,7 +73,7 @@ pub fn setup_dialog_ui(
         },
     )
     .insert(RenderLayers::layer(RENDERLAYER_COCKPIT))
-    .insert(Visibility::Visible)
+    .insert(Visibility::Hidden)
     .insert(LabelAIDialogText);
 
 }

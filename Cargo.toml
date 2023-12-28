@@ -7,17 +7,17 @@ edition = "2021"
 
 [dependencies]
 #bevy = { version = "0.12.0" }
-bevy = { version = "0.12.0" , features = ["dynamic_linking"]}
+bevy = { version = "0.12.1" , features = ["dynamic_linking"]}
 #bevy_rapier3d = { version = "0.23.0", features = [ "simd-stable" ] }
 bevy_rapier3d = { version = "0.23.0", features = [ "simd-stable", "debug-render-3d" ] }
 lazy_static = "1.4"
 bevy_third_person_camera = "0.1.7"
 #bevy_prototype_debug_lines = { version = "0.11.1", features = ["3d"] }
-bevy_window = "0.12.0"
+bevy_window = "0.12.1"
 bevy-scene-hook = "9.0.0"
 bevy_mod_billboard = "0.5.1"
 bevy_mod_raycast = "0.16.0"
-rand = "0.8.4"
+rand = "0.8.5"
 bevy_common_assets = {version = "0.8.0", features = ["toml"] }
 serde = { version = "1.0.193", features = ["derive"] }
 toml = "0.8.8"

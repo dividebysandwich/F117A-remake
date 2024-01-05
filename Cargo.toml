@@ -19,7 +19,7 @@ bevy_mod_billboard = "0.5.1"
 bevy_mod_raycast = "0.16.0"
 rand = "0.8.5"
 bevy_common_assets = {version = "0.8.0", features = ["toml"] }
-serde = { version = "1.0.193", features = ["derive"] }
+serde = { version = "1.0.194", features = ["derive"] }
 toml = "0.8.8"
 
 [profile.dev.package."*"]

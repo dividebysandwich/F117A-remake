@@ -1,9 +1,9 @@
 
-use bevy::{prelude::{*, shape::Quad}, render::view::RenderLayers};
+use bevy::{prelude::*, render::view::RenderLayers};
 use bevy_mod_billboard::{prelude::BillboardTextureHandle, BillboardTextureBundle, BillboardDepth, BillboardMeshHandle};
 use bevy_rapier3d::prelude::*;
-use bevy_scene_hook::{HookedSceneBundle, SceneHook};
 
+use crate::bevy_scene_hook::{HookedSceneBundle, SceneHook};
 use crate::{pointlight::{LightBillboardToBeAdded, LightColor, LightType, LightBillboard, create_texture, get_light_color_from_name, get_light_type_from_name, LightSourceType, get_lightsource_type_from_name}, definitions::RENDERLAYER_POINTLIGHTS};
 
 pub fn setup_terrain(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -52,7 +52,7 @@ pub fn setup_scenery(
             .spawn(BillboardTextureBundle {
                 transform: Transform::from_translation(Vec3::new(-0.2 + (i * 2.0), -0.96, -2.0)),
                 texture: BillboardTextureHandle(image_handle.clone()),
-                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
+                mesh: BillboardMeshHandle(meshes.add(Rectangle::new(Vec2::new(0.01, 0.01)).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })
@@ -68,7 +68,7 @@ pub fn setup_scenery(
             .spawn(BillboardTextureBundle {
                 transform: Transform::from_translation(Vec3::new(-0.2 + (i * 2.0), -0.96, 2.75)),
                 texture: BillboardTextureHandle(image_handle.clone()),
-                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
+                mesh: BillboardMeshHandle(meshes.add(Rectangle::new(Vec2::new(0.01, 0.01)).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })

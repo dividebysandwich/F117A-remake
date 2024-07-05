@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::render::view::visibility::RenderLayers;
 
+use crate::definitions::COLOR_GREEN;
 use crate::CameraSettings;
 use crate::aircraft::*;
 use crate::definitions::RENDERLAYER_COCKPIT;
@@ -18,11 +19,11 @@ pub fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     let text_style = TextStyle {
         font: font.clone(),
         font_size: 30.0,
-        color: Color::GREEN,
+        color: COLOR_GREEN,
     };
     commands.spawn(
         Text2dBundle {
-            text: Text::from_section("0".to_string(), text_style.clone()).with_alignment(TextAlignment::Left),
+            text: Text::from_section("0".to_string(), text_style.clone()).with_justify(JustifyText::Left),
             transform: Transform::from_translation(Vec3::new(-470.0, 0.0, 0.0)),
             ..default()
         }
@@ -32,7 +33,7 @@ pub fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.spawn(
         Text2dBundle {
-            text: Text::from_section("0".to_string(), text_style.clone()).with_alignment(TextAlignment::Right),
+            text: Text::from_section("0".to_string(), text_style.clone()).with_justify(JustifyText::Right),
             transform: Transform::from_translation(Vec3::new(470.0, 0.0, 0.0)),
             ..default()
         }
@@ -48,9 +49,9 @@ fn draw_vertical_ladder(gizmos: &mut Gizmos, value : f32, xpos : f32, hud_size_y
     for i in 0 .. hud_size_y as i32 {
         if y % 10 == 0 {
             if y % 50 == 0 {
-                gizmos.line_2d(Vec2::new(xpos + (tick_direction*20.0), i as f32), Vec2::new(xpos, i as f32), Color::GREEN);
+                gizmos.line_2d(Vec2::new(xpos + (tick_direction*20.0), i as f32), Vec2::new(xpos, i as f32), COLOR_GREEN);
             } else {
-                gizmos.line_2d(Vec2::new(xpos + (tick_direction*10.0), i as f32), Vec2::new(xpos, i as f32), Color::GREEN);
+                gizmos.line_2d(Vec2::new(xpos + (tick_direction*10.0), i as f32), Vec2::new(xpos, i as f32), COLOR_GREEN);
             }
         }
         y += 1;
@@ -62,9 +63,9 @@ fn draw_vertical_ladder(gizmos: &mut Gizmos, value : f32, xpos : f32, hud_size_y
         if value_limiter > 0.0 {
             if y % 10 == 0 {
                 if y % 50 == 0 {
-                    gizmos.line_2d(Vec2::new(xpos + (tick_direction*20.0), -i as f32), Vec2::new(xpos, -i as f32), Color::GREEN);
+                    gizmos.line_2d(Vec2::new(xpos + (tick_direction*20.0), -i as f32), Vec2::new(xpos, -i as f32), COLOR_GREEN);
                 } else {
-                    gizmos.line_2d(Vec2::new(xpos + (tick_direction*10.0), -i as f32), Vec2::new(xpos, -i as f32), Color::GREEN);
+                    gizmos.line_2d(Vec2::new(xpos + (tick_direction*10.0), -i as f32), Vec2::new(xpos, -i as f32), COLOR_GREEN);
                 }
             }
         }

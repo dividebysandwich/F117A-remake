@@ -60,7 +60,7 @@ pub fn setup_dialog_ui(
 
     commands.spawn(
         Text2dBundle {
-            text: Text::from_section("".to_string(), text_style.clone()).with_alignment(TextAlignment::Left),
+            text: Text::from_section("".to_string(), text_style.clone()).with_justify(JustifyText::Left),
             transform: Transform::from_translation(Vec3::new(-610.0, 450.0, 1.0)),
             text_2d_bounds: Text2dBounds {
                 size: Vec2::new(380.0, 100.0),

@@ -6,16 +6,16 @@ use bevy::{
             Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
         },
         view::RenderLayers,
-    }, reflect::TypeUuid, core_pipeline::clear_color::ClearColorConfig, sprite::MaterialMesh2dBundle,
+    }, sprite::MaterialMesh2dBundle,
 };
 
-use crate::{player::Player, targeting::SensorTarget, definitions::{RENDERLAYER_MFD, RENDERLAYER_WORLD, RENDERLAYER_COCKPIT}};
+use crate::{definitions::{COLOR_GREEN, RENDERLAYER_COCKPIT, RENDERLAYER_MFD, RENDERLAYER_WORLD}, player::Player, targeting::SensorTarget};
 
 #[derive(Component)]
 pub struct FlirCamera;
 
-#[derive(Resource, TypeUuid, Reflect)]
-#[uuid="58b43f34-80b3-4886-b9a0-93a48bf3ae7f"]
+#[derive(Resource, TypePath)]
+#[type_path = "f117::mfd::FlirImage"]
 pub struct FlirImage {
     pub image: Handle<Image>,
 }
@@ -69,11 +69,11 @@ pub fn update_mfd(
                     let text_style = TextStyle {
                         font: font.clone(),
                         font_size: 30.0,
-                        color: Color::GREEN,
+                        color: COLOR_GREEN,
                     };
                     commands.spawn(
                         Text2dBundle {
-                            text: Text::from_section("L", text_style.clone()).with_alignment(TextAlignment::Right),
+                            text: Text::from_section("L", text_style.clone()).with_justify(JustifyText::Right),
                             transform: Transform::from_translation(Vec3::new(-100.0, -100.0, 0.0)),
                             ..default()
                         }
@@ -93,26 +93,26 @@ pub fn update_mfd(
 
 fn draw_crosshair(commands: &mut Commands<'_, '_>, meshes: &mut ResMut<'_, Assets<Mesh>>, materials: &mut ResMut<'_, Assets<ColorMaterial>>) {
     commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(shape::Box::new(50., 4., 0.).into()).into(),
-        material: materials.add(ColorMaterial::from(Color::GREEN)),
+        mesh: meshes.add(Rectangle::new(50., 4.)).into(),
+        material: materials.add(ColorMaterial::from(COLOR_GREEN)),
         transform: Transform::from_translation(Vec3::new(50., 0., 0.)),
         ..default()
     }).insert(RenderLayers::layer(RENDERLAYER_MFD));
     commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(shape::Box::new(50., 4., 0.).into()).into(),
-        material: materials.add(ColorMaterial::from(Color::GREEN)),
+        mesh: meshes.add(Rectangle::new(50., 4.)).into(),
+        material: materials.add(ColorMaterial::from(COLOR_GREEN)),
         transform: Transform::from_translation(Vec3::new(-50., 0., 0.)),
         ..default()
     }).insert(RenderLayers::layer(RENDERLAYER_MFD));
     commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(shape::Box::new(4., 50., 0.).into()).into(),
-        material: materials.add(ColorMaterial::from(Color::GREEN)),
+        mesh: meshes.add(Rectangle::new(4., 50.)).into(),
+        material: materials.add(ColorMaterial::from(COLOR_GREEN)),
         transform: Transform::from_translation(Vec3::new(0., 50., 0.)),
         ..default()
     }).insert(RenderLayers::layer(RENDERLAYER_MFD));
     commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(shape::Box::new(4., 50., 0.).into()).into(),
-        material: materials.add(ColorMaterial::from(Color::GREEN)),
+        mesh: meshes.add(Rectangle::new(4., 50.)).into(),
+        material: materials.add(ColorMaterial::from(COLOR_GREEN)),
         transform: Transform::from_translation(Vec3::new(0., -50., 0.)),
         ..default()
     }).insert(RenderLayers::layer(RENDERLAYER_MFD));
@@ -159,11 +159,8 @@ pub fn setup_flir(
     let start_fov: f32 = 2.0;
     commands
         .spawn(Camera3dBundle {
-            camera_3d: Camera3d {
-                clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.0, 0.0)),
-                ..default()
-            },
             camera: Camera {
+                clear_color: ClearColorConfig::Custom(Color::srgb(0.0, 0.0, 0.0)),
                 // render before the "main pass" camera and the mfd 2d camera
                 order: -2,
                 target: RenderTarget::Image(image_handle.clone()),
@@ -177,10 +174,11 @@ pub fn setup_flir(
             .looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
         })
-        .insert(UiCameraConfig {
-            show_ui: false,
-            ..default()
-        })
+//TODO: Hide Gizmos on this camera, for example using GizmoConfig
+//        .insert(UiCameraConfig {
+//            show_ui: false,
+//            ..default()
+//        })
         .insert(FlirCamera)
         .insert(RenderLayers::layer(RENDERLAYER_WORLD));
 
@@ -188,11 +186,9 @@ pub fn setup_flir(
         commands
         .spawn(
             Camera2dBundle {
-                camera_2d: Camera2d {
+                camera: Camera {
                     // Don't clear the canvas before drawing
                     clear_color: ClearColorConfig::None,
-                },
-                camera: Camera {
                     // renders after the mfd 3d camera and before the main cameras
                     order: -1,
                     target: RenderTarget::Image(image_handle.clone()),
@@ -213,10 +209,11 @@ pub fn setup_flir(
                 ..Default::default()
             }
         )
-        .insert(UiCameraConfig {
-            show_ui: false,
-            ..default()
-        })
+//TODO: Hide Gizmos on this camera, for example using GizmoConfig
+//        .insert(UiCameraConfig {
+//            show_ui: false,
+//            ..default()
+//        })
         .insert(RenderLayers::layer(RENDERLAYER_MFD));
 
 

@@ -51,13 +51,13 @@ fn spawn_explosion_giblet(
     size: f32,
     life_time: u64,
 ) {
-    let explosion_handle = meshes.add(Mesh::from(shape::Cube { size: size }));
+    let explosion_handle = meshes.add(Cuboid::new(size, size, size));
     commands
         .spawn(PbrBundle {
             mesh: explosion_handle,
             material: materials.add(StandardMaterial {
-                base_color: Color::hex("#ffff33").unwrap(),
-                emissive: Color::hex("#ffff33").unwrap(),
+                base_color: Color::srgb(1.0, 1.0, 0.2),
+                emissive: Color::srgb(1.0, 1.0, 0.2).into(),
                 ..default()
             }),
             ..Default::default()
@@ -76,7 +76,7 @@ fn spawn_explosion_giblet(
         .insert(ColliderMassProperties::Density(100.0))
         .insert(PointLightBundle {
             point_light: PointLight {
-                color: Color::rgb(1.0, 1.0, 0.3),
+                color: Color::srgb(1.0, 1.0, 0.3),
                 intensity: 100.,
                 range: 10.,
                 shadows_enabled: false,
@@ -93,9 +93,9 @@ pub fn handle_explosion_test(
     player: Query<(Entity, &Transform), With<Player>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
 ) {
-    if input.just_pressed(KeyCode::O) {
+    if input.just_pressed(KeyCode::KeyO) {
         for p in player.iter() {
             let position = p.1.translation;
             spawn_explosion(&mut commands, &mut meshes, &mut materials, ExplosionType::SMALL, &position);

@@ -1,6 +1,6 @@
 use bevy::{
     asset::LoadState,
-    core_pipeline::{clear_color::ClearColorConfig, Skybox},
+    core_pipeline::Skybox,
     prelude::{*},
     render::{
         camera::ScalingMode,
@@ -21,6 +21,7 @@ use bevy_common_assets::toml::TomlAssetPlugin;
 use definitions::{RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS, RENDERLAYER_COCKPIT, RENDERLAYER_AIRCRAFT};
 use radar::{update_rcs, update_radar};
 
+mod bevy_scene_hook;
 mod definitions;
 mod explosion;
 mod aircraft;
@@ -148,7 +149,7 @@ fn handle_camera_controls(
     mut aircrafts: Query<&mut Visibility, With<Player>>,
     mut vehicles: Query<(Entity, &Vehicle)>,
     mut camera_settings: ResMut<CameraSettings>,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
 ) {
     for mut aircraft_visibility in aircrafts.iter_mut() {
         if input.just_pressed(KeyCode::F1) {
@@ -279,6 +280,7 @@ fn apply_skybox(
 }
 
 fn setup_graphics(
+    mut config_store: ResMut<GizmoConfigStore>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
@@ -303,10 +305,11 @@ fn setup_graphics(
             },
             ..Default::default()
         })
-        .insert(UiCameraConfig {
-            show_ui: false,
-            ..default()
-        })
+//TODO: Hide Gizmos on this camera, for example using GizmoConfig
+//        .insert(UiCameraConfig {
+//            show_ui: false,
+//            ..default()
+//        })
         .insert(MainCamera)
         .insert(CockpitCamera)
         .insert(RenderLayers::from_layers(&[RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS]));
@@ -315,11 +318,9 @@ fn setup_graphics(
     commands
         .spawn((
             Camera2dBundle {
-                camera_2d: Camera2d {
+                camera: Camera {
                     // Don't clear the canvas before drawing
                     clear_color: ClearColorConfig::None,
-                },
-                camera: Camera {
                     // renders after / on top of the 3d camera
                     order: 2,
                     ..default()
@@ -340,11 +341,12 @@ fn setup_graphics(
             },
             RenderLayers::layer(RENDERLAYER_COCKPIT),
         ))
-        .insert(HudCamera)
-        .insert(UiCameraConfig {
-            show_ui: true,
-            ..default()
-        });
+        .insert(HudCamera);
+//TODO: SHow Gizmos on this camera. Check if this is actually needed
+//        .insert(UiCameraConfig {
+//            show_ui: true,
+//            ..default()
+//        });
 
     // light
     /*commands.spawn(PointLightBundle {
@@ -358,10 +360,10 @@ fn setup_graphics(
         ..default()
     });*/
 
-    commands.insert_resource(GizmoConfig {
-        render_layers: RenderLayers::layer(RENDERLAYER_COCKPIT),
-        ..default()
-    });
+
+    let (config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
+    config.render_layers = RenderLayers::layer(RENDERLAYER_COCKPIT);
+
 
 }
 

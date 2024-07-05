@@ -1,4 +1,4 @@
-use bevy::{prelude::{*, shape::Quad}, render::{render_resource::{TextureDimension, Extent3d, TextureFormat}, view::RenderLayers}, reflect::TypeUuid};
+use bevy::{prelude::*, render::{render_asset::RenderAssetUsages, render_resource::{Extent3d, TextureDimension, TextureFormat}, view::RenderLayers}};
 use bevy_mod_billboard::{prelude::*, BillboardDepth};
 use bevy_mod_raycast::prelude::*;
 
@@ -48,8 +48,8 @@ pub enum LightSourceType{
     NONE
 }
 
-#[derive(Resource, TypeUuid, Reflect)]
-#[uuid="58b43f34-80b3-4886-b9a0-93a48bf3ae6f"]
+#[derive(Resource, TypePath)]
+#[type_path = "f117::pointlight::PrefabImages"]
 pub struct PrefabImages {
     red: Handle<Image>,
     green: Handle<Image>,
@@ -83,6 +83,7 @@ pub fn create_texture(light_color: LightColor) -> Image {
         TextureDimension::D2,
         &vec![0; 16 * 16 * 4],
         TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::all()
     );
     let color: [u8; 4];
     match light_color {
@@ -151,7 +152,7 @@ pub fn update_light_billboards(
         let light = commands
             .spawn(BillboardTextureBundle {
                 texture: BillboardTextureHandle(image_handle.clone()),
-                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
+                mesh: BillboardMeshHandle(meshes.add(Rectangle::new(0.01, 0.01).into()).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })

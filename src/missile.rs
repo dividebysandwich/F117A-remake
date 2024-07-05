@@ -209,7 +209,7 @@ fn handle_collision_entity(
     materials: &mut ResMut<'_, Assets<StandardMaterial>>,
     asset_server: &Res<AssetServer>, 
 ) {
-    if missiles.get_component::<Missile>(*entity).is_ok() {
+    if missiles.get(*entity).is_ok() { // TODO: Check if works, was "if missiles.get_component::<Missile>(*entity).is_ok()"
         let missile_transform_result = missiles.get(*entity);
         match missile_transform_result {
             Ok(t) => { 

@@ -1,6 +1,6 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle, render::view::RenderLayers};
 
-use crate::{definitions::{RENDERLAYER_COCKPIT, RADAR_PULSE_TIMEOUT}, radar::RadarDetectable, player::Player, util::get_time_millis};
+use crate::{definitions::{COLOR_ORANGE_RED, COLOR_YELLOW, RADAR_PULSE_TIMEOUT, RENDERLAYER_COCKPIT}, player::Player, radar::RadarDetectable, util::get_time_millis};
 
 #[derive(Component)]
 pub struct RwrRcsBar;
@@ -13,10 +13,10 @@ pub fn setup_rwr(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let rcr_bar = shape::Box::new(600.0, 20., 0.);
+    let rcr_bar = Rectangle::new(600.0, 20.);
     commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(rcr_bar.into()).into(),
-        material: materials.add(ColorMaterial::from(Color::ORANGE_RED)),
+        mesh: meshes.add(rcr_bar).into(),
+        material: materials.add(ColorMaterial::from(COLOR_ORANGE_RED)),
         transform: Transform::from_translation(Vec3::new(0., -500., 0.)),
         ..default()
         }
@@ -24,10 +24,10 @@ pub fn setup_rwr(
     .insert(RwrRcsBar)
     .insert(RenderLayers::layer(RENDERLAYER_COCKPIT));
 
-    let return_energy_bar = shape::Box::new(600.0, 20., 0.);
+    let return_energy_bar = Rectangle::new(600.0, 20.);
     commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(return_energy_bar.into()).into(),
-        material: materials.add(ColorMaterial::from(Color::YELLOW)),
+        mesh: meshes.add(return_energy_bar).into(),
+        material: materials.add(ColorMaterial::from(COLOR_YELLOW)),
         transform: Transform::from_translation(Vec3::new(0., -500., 0.)),
         ..default()
         }

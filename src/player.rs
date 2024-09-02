@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 use bevy::render::view::visibility::RenderLayers;
-use bevy_scene_hook::HookedSceneBundle;
-use bevy_scene_hook::SceneHook;
 
+use crate::bevy_scene_hook::HookedSceneBundle;
+use crate::bevy_scene_hook::SceneHook;
 use crate::coalition::Coalition;
 use crate::coalition::CoalitionType;
 use crate::definitions::*;

@@ -18,29 +18,29 @@ pub fn handle_targeting_controls(
     mut commands: Commands,
     mut vehicles: Query<(Entity, &Vehicle), With<Targetable>>,
     mut target_settings: ResMut<TargetSettings>,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
 ) {
-    if input.just_pressed(KeyCode::Back) { // Clear current target
+    if input.just_pressed(KeyCode::Backspace) { // Clear current target
         target_settings.target_index = -1;
         let vehicles_unsorted = vehicles.iter_mut().collect::<Vec<_>>();
         for (entity, _vehicle) in vehicles_unsorted.iter() {
             commands.entity(*entity).remove::<SensorTarget>();
         }
-    } else if input.just_pressed(KeyCode::N) { // Toggle to next target
+    } else if input.just_pressed(KeyCode::KeyN) { // Toggle to next target
         let mut i: i32 = 0;
         cycle_nearby_target(&mut target_settings, &mut vehicles, &mut i, &mut commands);
         target_settings.target_index += 1;
         if target_settings.target_index >= i {
             target_settings.target_index = 0;
         }
-    } else if input.just_pressed(KeyCode::M) { // Toggle to previous target
+    } else if input.just_pressed(KeyCode::KeyM) { // Toggle to previous target
         let mut i: i32 = 0;
         cycle_nearby_target(&mut target_settings, &mut vehicles, &mut i, &mut commands);
         target_settings.target_index -= 1;
         if target_settings.target_index < 0 {
             target_settings.target_index = i-1;
         }
-    } else if input.just_pressed(KeyCode::T) { // TODO: Lock target near crosshair
+    } else if input.just_pressed(KeyCode::KeyT) { // TODO: Lock target near crosshair
     }
 }
 

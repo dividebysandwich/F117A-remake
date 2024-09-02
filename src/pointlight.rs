@@ -1,4 +1,4 @@
-use bevy::{prelude::{*, shape::Quad}, render::{render_resource::{TextureDimension, Extent3d, TextureFormat}, view::RenderLayers}, reflect::TypeUuid};
+use bevy::{prelude::*, render::{render_asset::RenderAssetUsages, render_resource::{Extent3d, TextureDimension, TextureFormat}, view::RenderLayers}};
 use bevy_mod_billboard::{prelude::*, BillboardDepth};
 use bevy_mod_raycast::prelude::*;
 
@@ -48,8 +48,8 @@ pub enum LightSourceType{
     NONE
 }
 
-#[derive(Resource, TypeUuid, Reflect)]
-#[uuid="58b43f34-80b3-4886-b9a0-93a48bf3ae6f"]
+#[derive(Resource, TypePath)]
+#[type_path = "f117::pointlight::PrefabImages"]
 pub struct PrefabImages {
     red: Handle<Image>,
     green: Handle<Image>,
@@ -83,6 +83,7 @@ pub fn create_texture(light_color: LightColor) -> Image {
         TextureDimension::D2,
         &vec![0; 16 * 16 * 4],
         TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::all()
     );
     let color: [u8; 4];
     match light_color {
@@ -100,11 +101,11 @@ pub fn create_texture(light_color: LightColor) -> Image {
 
 pub fn auto_scale_and_hide_billboards(
     mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, &mut LightBillboard), Without<PointLight>>,
-    camera: Query<(&MainCamera, &GlobalTransform, &Transform, Without<LightBillboard>)>,
+    camera: Query<(&MainCamera, &GlobalTransform, &Transform), Without<LightBillboard>>,
     raycast_query: Query<Entity, With<LightBillboard>>,
     mut raycast: Raycast,
 ) {
-    let (_cam, c_global_transform, _c_transform, _) = camera.single();
+    let (_cam, c_global_transform, _c_transform) = camera.single();
 
     for (mut b_visibility, b_global_transform, mut b_transform, mut billboard) in billboards.iter_mut() {
         let cam_distance = c_global_transform.translation().distance(b_global_transform.translation()) * 0.4;
@@ -151,7 +152,7 @@ pub fn update_light_billboards(
         let light = commands
             .spawn(BillboardTextureBundle {
                 texture: BillboardTextureHandle(image_handle.clone()),
-                mesh: BillboardMeshHandle(meshes.add(Quad::new(Vec2::new(0.01, 0.01)).into()).into()),
+                mesh: BillboardMeshHandle(meshes.add(Rectangle::new(0.01, 0.01)).into()),
                 billboard_depth: BillboardDepth(false),
                 ..default()
             })

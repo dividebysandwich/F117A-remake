@@ -152,7 +152,7 @@ pub fn update_player_weapon_controls(
     aircrafts: Query<(&Aircraft, Entity, &Transform, &Velocity), With<Player>>, 
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     targets: Query<(Entity, &Transform), With<SensorTarget>>,
 ) {
     if input.just_pressed(KeyCode::Space) {
@@ -200,26 +200,26 @@ pub fn update_player_weapon_controls(
     }
 }
 
-pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, With<Player>>, input: Res<Input<KeyCode>>, time: Res<Time>) {
+pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, With<Player>>, input: Res<ButtonInput<KeyCode>>, time: Res<Time>) {
     for mut aircraft in aircrafts.iter_mut() {
         // Throttle
 //        info!("Throttle: {}", aircraft.throttle);
-        if input.pressed(KeyCode::W) {
+        if input.pressed(KeyCode::KeyW) {
             if aircraft.throttle < 1.0 {
                 aircraft.throttle += 0.4 * time.delta_seconds();
             }
         }
-        if input.pressed(KeyCode::S) {
+        if input.pressed(KeyCode::KeyS) {
             if aircraft.throttle > 0.0 {
                 aircraft.throttle -= 0.4 * time.delta_seconds();
             }
         }
         //Pitch
-        if input.pressed(KeyCode::Up) {
+        if input.pressed(KeyCode::ArrowUp) {
             if aircraft.pitch_force > -*MAXFORCES_PITCH.get(&aircraft.aircraft_type).unwrap() {
                 aircraft.pitch_force -= 8.0 * time.delta_seconds();
             }
-        } else if input.pressed(KeyCode::Down) {
+        } else if input.pressed(KeyCode::ArrowDown) {
             if aircraft.pitch_force < *MAXFORCES_PITCH.get(&aircraft.aircraft_type).unwrap() {
                 aircraft.pitch_force += 8.0 * time.delta_seconds();
             }
@@ -228,11 +228,11 @@ pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, With<
             aircraft.pitch_force = 0.0;
         }
         //Roll
-        if input.pressed(KeyCode::Left) {
+        if input.pressed(KeyCode::ArrowLeft) {
             if aircraft.roll_force > -*MAXFORCES_ROLL.get(&aircraft.aircraft_type).unwrap() {
                 aircraft.roll_force -= 8.0 * time.delta_seconds();
             }
-        } else if input.pressed(KeyCode::Right) {
+        } else if input.pressed(KeyCode::ArrowRight) {
             if aircraft.roll_force < *MAXFORCES_ROLL.get(&aircraft.aircraft_type).unwrap() {
                 aircraft.roll_force += 8.0 * time.delta_seconds();
             }
@@ -241,11 +241,11 @@ pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, With<
             aircraft.roll_force = 0.0;
         }
         //Yaw
-        if input.pressed(KeyCode::D) {
+        if input.pressed(KeyCode::KeyD) {
             if aircraft.yaw_force > -*MAXFORCES_YAW.get(&aircraft.aircraft_type).unwrap() {
                 aircraft.yaw_force -= 8.0 * time.delta_seconds();
             }
-        } else if input.pressed(KeyCode::A) {
+        } else if input.pressed(KeyCode::KeyA) {
             if aircraft.yaw_force < *MAXFORCES_YAW.get(&aircraft.aircraft_type).unwrap() {
                 aircraft.yaw_force += 8.0 * time.delta_seconds();
             }

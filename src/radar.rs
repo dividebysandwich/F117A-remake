@@ -101,9 +101,9 @@ pub fn update_radar(
 
             // Now check our orientation relative to the radar emitter, 
             // and attenuate the return signal depending on radar type and our orientation
-			let mut angular_difference = (detectable_transform.translation - radar_transform.translation).angle_between(detectable_transform.forward()).to_degrees();
+			let mut angular_difference = (detectable_transform.translation - radar_transform.translation).angle_between(detectable_transform.forward().as_vec3()).to_degrees();
 			if angular_difference > 90.0 {
-				angular_difference = (detectable_transform.translation - radar_transform.translation).angle_between(-detectable_transform.forward()).to_degrees();
+				angular_difference = (detectable_transform.translation - radar_transform.translation).angle_between(-detectable_transform.forward().as_vec3()).to_degrees();
 			}
 			angular_difference = angular_difference / 90.0; //Make this range from 0.0 to 1.0
 			

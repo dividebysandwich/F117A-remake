@@ -13,8 +13,8 @@ bevy_rapier3d = { version = "0.27.0-rc.1", features = [ "simd-stable", "debug-re
 lazy_static = "1.5.0"
 bevy_third_person_camera = "0.1.10"
 #bevy_prototype_debug_lines = { version = "0.11.1", features = ["3d"] }
-bevy_window = "0.14.0"
-bevy_mod_billboard = "0.6.0"
+bevy_window = "0.14.1"
+bevy_mod_billboard = "0.7.0"
 bevy_mod_raycast = "0.18.0"
 bevy_math = "0.14.0"
 rand = "0.8.5"

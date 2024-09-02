@@ -123,7 +123,7 @@ fn main() {
                 update_dialog_ui,
             )
         )
-        .run()
+        .run();
 }
 
 fn setup_sounds(
@@ -272,7 +272,7 @@ fn apply_skybox(
             for main_camera in main_cameras.iter() {
                 commands
                     .entity(main_camera)
-                    .insert(Skybox(cubemap.image_handle.clone()));
+                    .insert(Skybox{image: cubemap.image_handle.clone(), brightness: 255.0});
             }
             cubemap.is_loaded = true;
         }

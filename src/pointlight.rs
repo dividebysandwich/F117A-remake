@@ -170,7 +170,7 @@ pub fn update_light_billboards(
             info!("Adding light source!");
             let lightsource = commands.spawn(PointLightBundle {
                 point_light: PointLight {
-                    color: Color::rgb(1.0, 1.0, 1.0),
+                    color: Color::srgb(1.0, 1.0, 1.0),
                     intensity: 20000.,
                     range: 10.,
                     shadows_enabled: true,

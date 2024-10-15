@@ -200,8 +200,8 @@ pub fn update_player_weapon_controls(
     }
 }
 
-pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, With<Player>>, input: Res<ButtonInput<KeyCode>>, time: Res<Time>) {
-    for mut aircraft in aircrafts.iter_mut() {
+pub fn update_player_aircraft_controls(mut aircrafts: Query<(&mut Aircraft, &mut Transform), With<Player>>, input: Res<ButtonInput<KeyCode>>, time: Res<Time>) {
+    for (mut aircraft, mut transform) in aircrafts.iter_mut() {
         // Throttle
 //        info!("Throttle: {}", aircraft.throttle);
         if input.pressed(KeyCode::KeyW) {
@@ -253,5 +253,19 @@ pub fn update_player_aircraft_controls(mut aircrafts: Query<&mut Aircraft, With<
             //TODO: Slew to 0 instead of hard reset
             aircraft.yaw_force = 0.0;
         }
+        //Debug
+        if input.pressed(KeyCode::KeyL) {
+            transform.rotate_y(-0.01);
+        }
+        if input.pressed(KeyCode::KeyJ) {
+            transform.rotate_y(0.01);
+        }
+        if input.pressed(KeyCode::KeyI) {
+            transform.rotate_x(-0.01);
+        }
+        if input.pressed(KeyCode::KeyK) {
+            transform.rotate_x(0.01);
+        }
+
     }
 }

@@ -98,6 +98,7 @@ pub fn update_radar(
             
 		    // if signal_strength + radar_cross_section > 1 then we are visible
 		    let raw_return_signal = signal_strength_at_target + detectable.radar_cross_section;
+            info!("raw return: {}", raw_return_signal);
 
             // Now check our orientation relative to the radar emitter, 
             // and attenuate the return signal depending on radar type and our orientation
@@ -105,6 +106,8 @@ pub fn update_radar(
 			if angular_difference > 90.0 {
 				angular_difference = (detectable_transform.translation - radar_transform.translation).angle_between(-detectable_transform.forward().as_vec3()).to_degrees();
 			}
+            angular_difference = 90.0 - angular_difference;
+            info!("angular difference: {}", angular_difference);
 			angular_difference = angular_difference / 90.0; //Make this range from 0.0 to 1.0
 			
 			let mut effective_gain = radar_emitter.radar_gain;
@@ -119,6 +122,7 @@ pub fn update_radar(
 	    			effective_gain = radar_emitter.radar_gain * (1.0 - angular_difference);
                 }
             }
+            info!("effective gain: {}", effective_gain);
 
             let final_return_signal = raw_return_signal * effective_gain;
             info!("Final return signal: {}", final_return_signal);

@@ -61,7 +61,7 @@ pub fn spawn_sam(commands: &mut Commands,
     .insert(Targetable)
     .insert(RadarEmitter{
         radar_type: RadarEmitterType::PULSE, 
-        radar_gain: 100.0, 
+        radar_gain: 10.0, 
         scan_interval: 3.0, 
         ..default()
     });

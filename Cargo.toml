@@ -11,7 +11,7 @@ bevy = { version = "0.14.2" , features = ["dynamic_linking"]}
 #bevy_rapier3d = { version = "0.26.0", features = [ "simd-stable" ] }
 bevy_rapier3d = { version = "0.27.0", features = [ "simd-stable", "debug-render-3d" ] }
 lazy_static = "1.5.0"
-bevy_third_person_camera = "0.1.13"
+bevy_third_person_camera = "0.1.14"
 #bevy_prototype_debug_lines = { version = "0.11.1", features = ["3d"] }
 bevy_window = "0.14.2"
 bevy_mod_billboard = "0.7.0"

@@ -51,11 +51,11 @@ lazy_static! {
 // ── Flight-model constants ──
 
 const WEIGHT: f32 = 98.0;
-/// Lift surplus above stall: 1.05 = 5 % margin to avoid knife-edge equilibrium
-const LIFT_SPEED_CAP: f32 = 1.05;
-/// How much extra lift full pitch-back adds (fraction of WEIGHT).
-/// 1.2 → max 2.2 g → comfortable turn maintenance at moderate bank.
-const AOA_LIFT_FRACTION: f32 = 1.2;
+/// 2% surplus so numerical noise doesn't cause slow sink in level flight
+const LIFT_SPEED_CAP: f32 = 1.02;
+/// Extra lift per unit pitch-pull (fraction of WEIGHT).
+/// 1.5 means half-pull in a 45° bank just about maintains altitude.
+const AOA_LIFT_FRACTION: f32 = 1.5;
 const DRAG_COEFF: f32 = 0.012;
 const AOA_DRAG_FACTOR: f32 = 0.25;
 const MANEUVER_DRAG_FACTOR: f32 = 0.04;
@@ -63,12 +63,14 @@ const CONTROL_REF_SPEED: f32 = 25.0;
 const MIN_CONTROL_EFF: f32 = 0.05;
 const GE_CEIL: f32 = 5.0;
 const GE_BOOST: f32 = 0.20;
-/// Damping applied to vertical velocity to reduce climb/descent inertia.
-/// Simulates aerodynamic pitch stability — aircraft resists uncommanded
-/// vertical speed changes.
-const VERTICAL_DAMPING: f32 = 8.0;
-/// Roll-induced adverse yaw factor.  Rolling left → nose yaws right.
+/// Vertical velocity damping — absorbs the 2% lift surplus so the
+/// aircraft flies level, and dampens climb/descent oscillations.
+const VERTICAL_DAMPING: f32 = 12.0;
 const ADVERSE_YAW_FACTOR: f32 = 0.15;
+/// On the ground with throttle applied, engine exhaust over the tail
+/// provides this fraction of control effectiveness regardless of airspeed.
+const GROUND_PITCH_BOOST: f32 = 0.25;
+
 const CONTROL_CENTER_RATE: f32 = 10.0;
 const INPUT_RAMP: f32 = 6.0;
 
@@ -104,16 +106,17 @@ impl Default for Aircraft {
 // ═══════════════════════════════════════════════════════════════
 // Flight model
 //
-//   base_lift = WEIGHT × min(speed/stall, 1.05)   (auto-trim, slight surplus)
-//   aoa_lift  = pitch_pull × 1.2 × WEIGHT × sr   (stick-back adds g)
-//   lift dir  = aircraft local UP                  (tilts with bank)
-//   v_damp    = −vertical_vel × VERTICAL_DAMPING   (pitch stability)
+// Lift direction is PURELY along aircraft-up (no world-up blend).
+// This eliminates the sideways-slide artifact after banked turns.
 //
-// Aerodynamic coupling:
-//   • Adverse yaw from roll (differential drag)
-//   • Pitch authority reduced at extreme bank angles
-//     (at 90° bank, elevator acts as rudder, not pitch)
-//   • AoA drag costs speed when pulling g
+// To compensate for bank-angle altitude loss, AOA_LIFT_FRACTION is
+// high (1.5) so small amounts of back-pressure easily maintain
+// altitude in moderate banks.
+//
+// Takeoff requires pulling back (rotation).  On the ground, base
+// lift is suppressed unless the pilot commands pitch-up.  A ground
+// pitch-boost gives the elevator enough authority to rotate the
+// nose even at low airspeed (simulates engine exhaust over the tail).
 // ═══════════════════════════════════════════════════════════════
 
 pub fn update_aircraft_forces(
@@ -148,20 +151,27 @@ pub fn update_aircraft_forces(
             1.0 + (1.0 - transform.translation.y / GE_CEIL).max(0.0) * GE_BOOST
         } else { 1.0 };
 
-        let base_lift = WEIGHT * speed_ratio * ge;
-
-        // AoA from pitch input
         let max_pitch = *MAXFORCES_PITCH.get(&ac.aircraft_type).unwrap();
         let pitch_pull = (-ac.pitch_force / max_pitch).clamp(-0.3, 1.0);
-        let aoa_extra = pitch_pull * AOA_LIFT_FRACTION * WEIGHT * speed_ratio;
 
+        // On/near the ground, base lift is suppressed — the pilot must
+        // pull back to generate takeoff lift.  Once airborne (y > ~0)
+        // the auto-trim provides full base lift for level flight.
+        // Uses max(airborne, pitch_pull) so EITHER being in the air OR
+        // pulling back is sufficient.
+        let airborne = ((transform.translation.y + 1.0) / 0.3).clamp(0.0, 1.0);
+        let rotation_factor = airborne.max(pitch_pull.max(0.0));
+
+        let base_lift = WEIGHT * LIFT_SPEED_CAP * speed_ratio * ge * rotation_factor;
+        let aoa_extra = pitch_pull * AOA_LIFT_FRACTION * WEIGHT * speed_ratio;
         let lift_mag = (base_lift + aoa_extra).max(0.0);
+
+        // Lift is PURELY along aircraft-up.  No world-up blend.
+        // This ensures no sideways force artifact after banked turns.
         let lift_vec = aircraft_up * lift_mag;
 
-        // ── Vertical velocity damping (pitch stability) ──
-        // Resists uncommanded vertical speed so the aircraft settles
-        // rather than ballooning up or mushing down indefinitely.
-        let v_damp_vec = Vec3::new(0.0, -velocity.linvel.y * VERTICAL_DAMPING * speed_ratio, 0.0);
+        // ── Vertical velocity damping ──
+        let v_damp = Vec3::new(0.0, -velocity.linvel.y * VERTICAL_DAMPING * speed_ratio, 0.0);
 
         // ── Drag ──
         let parasitic = DRAG_COEFF * ac.speed * ac.speed;
@@ -172,26 +182,32 @@ pub fn update_aircraft_forces(
             -velocity.linvel.normalize() * (parasitic + maneuver_drag + aoa_drag)
         } else { Vec3::ZERO };
 
-        // ── Sum of forces ──
-        ef.force = thrust_vec + weight_vec + lift_vec + v_damp_vec + drag_vec;
+        // ── Sum ──
+        ef.force = thrust_vec + weight_vec + lift_vec + v_damp + drag_vec;
 
         // ── Control authority ──
-        let eff = (ac.speed / CONTROL_REF_SPEED).clamp(MIN_CONTROL_EFF, 1.3);
+        // Airspeed-based effectiveness for all axes
+        let base_eff = (ac.speed / CONTROL_REF_SPEED).clamp(MIN_CONTROL_EFF, 1.3);
 
-        // Bank-angle effect on pitch: at extreme bank angles the elevator
-        // no longer produces useful pitch (it becomes yaw in world-frame).
-        // Reduce pitch authority proportionally.
-        let bank_cos = aircraft_up.y.abs(); // 1.0 = level, 0.0 = 90° bank
+        // Pitch gets a ground boost: engine exhaust over the tail gives
+        // the elevator authority to rotate the nose even at low airspeed.
+        let on_ground = transform.translation.y < 0.0 && ac.thrust_force > 5.0;
+        let pitch_eff = if on_ground {
+            (base_eff + GROUND_PITCH_BOOST).min(1.3)
+        } else {
+            base_eff
+        };
+
+        // At extreme bank, elevator becomes rudder → reduced pitch authority
+        let bank_cos = aircraft_up.y.abs();
         let pitch_bank_factor = bank_cos.clamp(0.2, 1.0);
 
-        // Adverse yaw: rolling generates yaw in the opposite direction
-        // (differential drag on the wings during roll).
         let adverse_yaw = -ac.roll_force * ADVERSE_YAW_FACTOR * speed_ratio;
 
         ef.torque = rot * Vec3::new(
-            ac.roll_force  * eff,
-            (ac.yaw_force + adverse_yaw) * eff,
-            ac.pitch_force * eff * pitch_bank_factor,
+            ac.roll_force  * base_eff,
+            (ac.yaw_force + adverse_yaw) * base_eff,
+            ac.pitch_force * pitch_eff * pitch_bank_factor,
         );
     }
 }

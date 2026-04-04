@@ -69,6 +69,8 @@ pub fn spawn_player(mut commands: Commands,
     .insert(GravityScale(0.0))
     .insert(Damping { linear_damping: 0.08, angular_damping: 6.0 })
     .insert(ColliderMassProperties::Density(35.0))
+    // Smooth physics-to-render interpolation (prevents third-person camera jitter)
+    .insert(TransformInterpolation::default())
     // Player airplane is layer 3 so it can be skipped when rendering cockpit view
     .insert(RenderLayers::layer(RENDERLAYER_AIRCRAFT));
 

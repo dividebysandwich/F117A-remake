@@ -1,6 +1,6 @@
 use bevy::{prelude::*, asset::RenderAssetUsages, camera::visibility::RenderLayers, render::render_resource::{Extent3d, TextureDimension, TextureFormat}};
 
-use crate::{MainCamera, billboard::Billboard, util::get_time_millis, definitions::RENDERLAYER_POINTLIGHTS};
+use crate::{MainCamera, billboard::Billboard, terrain::TerrainChunk, util::get_time_millis, definitions::RENDERLAYER_POINTLIGHTS};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
@@ -100,6 +100,7 @@ pub fn auto_scale_and_hide_billboards(
     mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, &mut LightBillboard), Without<PointLight>>,
     camera: Query<(&MainCamera, &GlobalTransform, &Transform), Without<LightBillboard>>,
     raycast_query: Query<Entity, With<LightBillboard>>,
+    terrain_chunks: Query<Entity, With<TerrainChunk>>,
     mut raycast: MeshRayCast,
 ) {
     let Ok((_cam, c_global_transform, _c_transform)) = camera.single() else { return };
@@ -107,22 +108,34 @@ pub fn auto_scale_and_hide_billboards(
     for (mut b_visibility, b_global_transform, mut b_transform, mut billboard) in billboards.iter_mut() {
         let cam_distance = c_global_transform.translation().distance(b_global_transform.translation()) * 0.4;
 
-        let filter = |entity: Entity| !raycast_query.contains(entity);
+        // Exclude billboard entities AND terrain chunks from the raycast so
+        // ground-level lights are not hidden by the terrain surface they sit on.
+        let filter = |entity: Entity| {
+            !raycast_query.contains(entity) && !terrain_chunks.contains(entity)
+        };
         let settings = MeshRayCastSettings::default()
             .with_filter(&filter)
             .with_early_exit_test(&|_entity| true);
 
-        let hits = raycast.cast_ray(Ray3d::new(c_global_transform.translation(), Dir3::new(b_global_transform.translation() - c_global_transform.translation()).unwrap_or(Dir3::Z)), &settings);
+        let ray_dir = b_global_transform.translation() - c_global_transform.translation();
+        let billboard_dist = ray_dir.length();
+        let hits = raycast.cast_ray(
+            Ray3d::new(c_global_transform.translation(), Dir3::new(ray_dir).unwrap_or(Dir3::Z)),
+            &settings,
+        );
         billboard.occluded = false;
-        if billboard.active == true { // Don't make inactive billboards visible
+        if billboard.active { // Don't make inactive billboards visible
             *b_visibility = Visibility::Visible;
         }
         b_transform.scale = Vec3::new(cam_distance, cam_distance, cam_distance);
-        for (_entity, _intersection) in hits {
-            *b_visibility = Visibility::Hidden;
-            billboard.occluded = true;
+        // Only occlude if a hit is actually between camera and billboard,
+        // not behind the billboard (e.g. the surface it sits on).
+        for (_entity, intersection) in hits {
+            if intersection.distance < billboard_dist * 0.95 {
+                *b_visibility = Visibility::Hidden;
+                billboard.occluded = true;
+            }
         }
-
     }
 }
 
@@ -146,6 +159,8 @@ pub fn update_light_billboards(
             base_color_texture: Some(image_handle),
             unlit: true,
             alpha_mode: AlphaMode::Blend,
+            double_sided: true,
+            cull_mode: None,
             ..default()
         });
         let light = commands

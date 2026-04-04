@@ -47,7 +47,7 @@ use crate::missile::*;
 use crate::player::*;
 use crate::vehicle::*;
 use crate::pointlight::*;
-use crate::terrain::setup_procedural_world;
+use crate::terrain::{setup_procedural_world, origin_shift};
 use crate::mfd::*;
 use crate::targeting::*;
 use crate::explosion::*;
@@ -119,6 +119,7 @@ fn main() {
             Update,
             (
                 update_dialog_ui,
+                origin_shift,
             )
         )
         .run();

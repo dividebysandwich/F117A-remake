@@ -18,6 +18,7 @@
 - [X] DOS style point light sources
 - [X] Missiles with proportional navigation
 - [X] Target destruction
+- [-] IN PROGRESS: Scenery detail generation: Roads, cities, fields, mountains
 - [-] IN PROGRESS: AI assistant chatter
 - [-] IN PROGRESS: Pulse / doppler radar gameplay
 - [-] IN PROGRESS: HUD
@@ -31,7 +32,6 @@
 - [ ] Advanced targeting (LANTIRN)
 - [ ] Advanced flight physics
 - [ ] Bombs
-- [ ] Scenery detail generation: Roads, cities, fields, mountains
 - [ ] Mission system
 - [ ] AI aircraft
 - [ ] IR AAM missiles

@@ -1,8 +1,6 @@
-use bevy::{prelude::*, render::{render_asset::RenderAssetUsages, render_resource::{Extent3d, TextureDimension, TextureFormat}, view::RenderLayers}};
-use bevy_mod_billboard::{prelude::*, BillboardDepth};
-use bevy_mod_raycast::prelude::*;
+use bevy::{prelude::*, asset::RenderAssetUsages, camera::visibility::RenderLayers, render::render_resource::{Extent3d, TextureDimension, TextureFormat}};
 
-use crate::{MainCamera, util::get_time_millis, definitions::RENDERLAYER_POINTLIGHTS};
+use crate::{MainCamera, billboard::Billboard, util::get_time_millis, definitions::RENDERLAYER_POINTLIGHTS};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
@@ -48,8 +46,7 @@ pub enum LightSourceType{
     NONE
 }
 
-#[derive(Resource, TypePath)]
-#[type_path = "f117::pointlight::PrefabImages"]
+#[derive(Resource)]
 pub struct PrefabImages {
     red: Handle<Image>,
     green: Handle<Image>,
@@ -63,7 +60,7 @@ pub fn initialize_textures(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
 ) {
-    commands.insert_resource(PrefabImages { 
+    commands.insert_resource(PrefabImages {
         red: images.add(create_texture(LightColor::RED)),
         green: images.add(create_texture(LightColor::GREEN)),
         blue: images.add(create_texture(LightColor::BLUE)),
@@ -93,7 +90,7 @@ pub fn create_texture(light_color: LightColor) -> Image {
         LightColor::WHITE => color = [255, 255, 255, 255], // RGBA white
         LightColor::YELLOW => color = [255, 255, 0, 255], // RGBA yellow
     }
-    image.data = (0..16 * 16).flat_map(|_| color).collect();
+    image.data = Some((0..16 * 16).flat_map(|_| color).collect());
     image
 }
 
@@ -103,30 +100,25 @@ pub fn auto_scale_and_hide_billboards(
     mut billboards: Query<(&mut Visibility, &GlobalTransform, &mut Transform, &mut LightBillboard), Without<PointLight>>,
     camera: Query<(&MainCamera, &GlobalTransform, &Transform), Without<LightBillboard>>,
     raycast_query: Query<Entity, With<LightBillboard>>,
-    mut raycast: Raycast,
+    mut raycast: MeshRayCast,
 ) {
-    let (_cam, c_global_transform, _c_transform) = camera.single();
+    let Ok((_cam, c_global_transform, _c_transform)) = camera.single() else { return };
 
     for (mut b_visibility, b_global_transform, mut b_transform, mut billboard) in billboards.iter_mut() {
         let cam_distance = c_global_transform.translation().distance(b_global_transform.translation()) * 0.4;
-//        let direction = (b_transform.translation - c_transform.translation).normalize();
-//        let cam_up = c_transform.rotation * Vec3::Y;
-//        let cam_right = cam_up.cross(direction).normalize();
-//        let orthogonal = direction.cross(cam_right).normalize();
 
-        let filter = |entity| !raycast_query.contains(entity);
-        let early_exit_test = |_entity| true;
-        let settings = RaycastSettings::default()
+        let filter = |entity: Entity| !raycast_query.contains(entity);
+        let settings = MeshRayCastSettings::default()
             .with_filter(&filter)
-            .with_early_exit_test(&early_exit_test);
+            .with_early_exit_test(&|_entity| true);
 
-        let hits = raycast.cast_ray(Ray3d::new(c_global_transform.translation(), b_global_transform.translation() - c_global_transform.translation()), &settings);
+        let hits = raycast.cast_ray(Ray3d::new(c_global_transform.translation(), Dir3::new(b_global_transform.translation() - c_global_transform.translation()).unwrap_or(Dir3::Z)), &settings);
         billboard.occluded = false;
         if billboard.active == true { // Don't make inactive billboards visible
             *b_visibility = Visibility::Visible;
         }
         b_transform.scale = Vec3::new(cam_distance, cam_distance, cam_distance);
-        for (_is_first, _intersection) in hits {
+        for (_entity, _intersection) in hits {
             *b_visibility = Visibility::Hidden;
             billboard.occluded = true;
         }
@@ -138,6 +130,7 @@ pub fn update_light_billboards(
     lights_to_add: Query<(Entity, &LightBillboardToBeAdded)>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     image_handles: Res<PrefabImages>,
 ) {
     for (entity, light_billboard_to_be_added) in lights_to_add.iter() {
@@ -149,13 +142,18 @@ pub fn update_light_billboards(
             LightColor::WHITE => image_handle = image_handles.white.clone(),
             LightColor::YELLOW => image_handle = image_handles.yellow.clone(),
         }
+        let material = materials.add(StandardMaterial {
+            base_color_texture: Some(image_handle),
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        });
         let light = commands
-            .spawn(BillboardTextureBundle {
-                texture: BillboardTextureHandle(image_handle.clone()),
-                mesh: BillboardMeshHandle(meshes.add(Rectangle::new(0.01, 0.01)).into()),
-                billboard_depth: BillboardDepth(false),
-                ..default()
-            })
+            .spawn((
+                Mesh3d(meshes.add(Rectangle::new(0.01, 0.01))),
+                MeshMaterial3d(material),
+                Billboard,
+            ))
             .insert(LightBillboard {
                 light_color: light_billboard_to_be_added.light_color,
                 light_type: light_billboard_to_be_added.light_type,
@@ -165,19 +163,18 @@ pub fn update_light_billboards(
             })
             .insert(RenderLayers::layer(RENDERLAYER_POINTLIGHTS))
             .id();
-        commands.entity(entity).push_children(&[light]);
+        commands.entity(light).insert(ChildOf(entity));
         if let LightSourceType::POINT = light_billboard_to_be_added.lightsource_type  {
             info!("Adding light source!");
-            let lightsource = commands.spawn(PointLightBundle {
-                point_light: PointLight {
+            let lightsource = commands.spawn(
+                PointLight {
                     color: Color::srgb(1.0, 1.0, 1.0),
                     intensity: 20000.,
                     range: 10.,
                     shadows_enabled: true,
                     ..default()
                 },
-                ..default()
-            })
+            )
             .insert(LightBillboard {
                 light_color: light_billboard_to_be_added.light_color,
                 light_type: light_billboard_to_be_added.light_type,
@@ -187,7 +184,7 @@ pub fn update_light_billboards(
             })
             .insert(RenderLayers::layer(RENDERLAYER_POINTLIGHTS))
             .id();
-            commands.entity(entity).push_children(&[lightsource]);
+            commands.entity(lightsource).insert(ChildOf(entity));
         }
         commands.entity(entity).remove::<LightBillboardToBeAdded>();
     }
@@ -224,23 +221,19 @@ pub fn update_blinking_lights(
 
 
 for (mut _visibility, billboard, mut lightsource) in lightsources.iter_mut() {
-        match billboard.light_type {        
+        match billboard.light_type {
             LightType::FLASH_SINGLE => {
                 if first_flash_active {
                     lightsource.intensity = 1000.0;
-//                    *visibility = Visibility::Visible;
                 } else {
                     lightsource.intensity = 0.0;
-//                    *visibility = Visibility::Hidden;
                 }
             },
             LightType::FLASH_ALT_SINGLE => {
                 if first_flash_alt_active {
                     lightsource.intensity = 1000.0;
-//                    *visibility = Visibility::Visible;
                 } else {
                     lightsource.intensity = 0.0;
-//                    *visibility = Visibility::Hidden;
                 }
             },
             _ => {},

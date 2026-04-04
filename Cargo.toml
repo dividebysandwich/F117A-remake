@@ -6,21 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-#bevy = { version = "0.14.0" }
-bevy = { version = "0.14.2" , features = ["dynamic_linking"]}
-#bevy_rapier3d = { version = "0.26.0", features = [ "simd-stable" ] }
-bevy_rapier3d = { version = "0.27.0", features = [ "simd-stable", "debug-render-3d" ] }
+bevy = { version = "0.18.1", features = ["dynamic_linking"] }
+bevy_rapier3d = { version = "0.33.0", features = ["simd-stable", "debug-render-3d"] }
 lazy_static = "1.5.0"
-bevy_third_person_camera = "0.1.14"
-#bevy_prototype_debug_lines = { version = "0.11.1", features = ["3d"] }
-bevy_window = "0.14.2"
-bevy_mod_billboard = "0.7.0"
-bevy_mod_raycast = "0.18.0"
-bevy_math = "0.14.2"
-rand = "0.8.5"
-bevy_common_assets = {version = "0.11.0", features = ["toml"] }
+bevy_third_person_camera = "0.4.0"
+bevy_common_assets = { version = "0.15.0", features = ["toml"] }
 serde = { version = "1.0.210", features = ["derive"] }
 toml = "0.8.19"
+rand = "0.8.5"
 
 [profile.dev.package."*"]
 opt-level = 3

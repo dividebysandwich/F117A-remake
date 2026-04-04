@@ -34,10 +34,10 @@ pub fn spawn_explosion(
 
         },
         ExplosionType::LARGE => {
-            
+
         },
         ExplosionType::HUGE => {
-            
+
         },
     };
 
@@ -53,39 +53,35 @@ fn spawn_explosion_giblet(
 ) {
     let explosion_handle = meshes.add(Cuboid::new(size, size, size));
     commands
-        .spawn(PbrBundle {
-            mesh: explosion_handle,
-            material: materials.add(StandardMaterial {
+        .spawn((
+            Mesh3d(explosion_handle),
+            MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: Color::srgb(1.0, 1.0, 0.2),
                 emissive: Color::srgb(1.0, 1.0, 0.2).into(),
                 ..default()
-            }),
-            ..Default::default()
-        })
+            })),
+        ))
         .insert(ExplosionEffect {
             start_time: get_time_millis(),
             life_time: life_time,
         })
         .insert(Collider::cuboid(size, size, size))
-        .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_EFFECT), 
+        .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_EFFECT),
             Group::from_bits_truncate(
                 COLLISION_MASK_TERRAIN
             )))
         .insert(RigidBody::Dynamic)
         .insert(Velocity{linvel: random_vec3(10.0), angvel: random_vec3(10.0)})
         .insert(ColliderMassProperties::Density(100.0))
-        .insert(PointLightBundle {
-            point_light: PointLight {
-                color: Color::srgb(1.0, 1.0, 0.3),
-                intensity: 100.,
-                range: 10.,
-                shadows_enabled: false,
-                ..default()
-            },
+        .insert(PointLight {
+            color: Color::srgb(1.0, 1.0, 0.3),
+            intensity: 100.,
+            range: 10.,
+            shadows_enabled: false,
             ..default()
         })
         .insert(Transform::from_xyz(position.x, position.y, position.z));
-    
+
 }
 
 pub fn handle_explosion_test(
@@ -111,7 +107,7 @@ pub fn update_explosion_effects(
     for (entity, explosion_effect, mut point_light) in explosion_effects.iter_mut() {
         point_light.intensity = 100.0 * (1.0 - (time - explosion_effect.start_time) as f32 / explosion_effect.life_time as f32);
         if time - explosion_effect.start_time > explosion_effect.life_time {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
         }
     }
 }

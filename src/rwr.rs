@@ -1,4 +1,4 @@
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle, render::view::RenderLayers};
+use bevy::{prelude::*, camera::visibility::RenderLayers};
 
 use crate::{definitions::{COLOR_ORANGE_RED, COLOR_YELLOW, RADAR_PULSE_TIMEOUT, RENDERLAYER_COCKPIT}, player::Player, radar::RadarDetectable, util::get_time_millis};
 
@@ -14,24 +14,20 @@ pub fn setup_rwr(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let rcr_bar = Rectangle::new(600.0, 20.);
-    commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(rcr_bar).into(),
-        material: materials.add(ColorMaterial::from(COLOR_ORANGE_RED)),
-        transform: Transform::from_translation(Vec3::new(0., -500., 0.)),
-        ..default()
-        }
-    )
+    commands.spawn((
+        Mesh2d(meshes.add(rcr_bar)),
+        MeshMaterial2d(materials.add(ColorMaterial::from(COLOR_ORANGE_RED))),
+        Transform::from_translation(Vec3::new(0., -500., 0.)),
+    ))
     .insert(RwrRcsBar)
     .insert(RenderLayers::layer(RENDERLAYER_COCKPIT));
 
     let return_energy_bar = Rectangle::new(600.0, 20.);
-    commands.spawn(MaterialMesh2dBundle {
-        mesh: meshes.add(return_energy_bar).into(),
-        material: materials.add(ColorMaterial::from(COLOR_YELLOW)),
-        transform: Transform::from_translation(Vec3::new(0., -500., 0.)),
-        ..default()
-        }
-    )
+    commands.spawn((
+        Mesh2d(meshes.add(return_energy_bar)),
+        MeshMaterial2d(materials.add(ColorMaterial::from(COLOR_YELLOW))),
+        Transform::from_translation(Vec3::new(0., -500., 0.)),
+    ))
     .insert(RwrReturnEnergyBar)
     .insert(RenderLayers::layer(RENDERLAYER_COCKPIT));
 

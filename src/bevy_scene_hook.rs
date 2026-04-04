@@ -16,26 +16,6 @@ impl SceneHook {
     }
 }
 
-/// Bundle a [`SceneHook`] with the standard [`SceneBundle`] components.
-///
-/// See [`HookedDynamicSceneBundle`] for dynamic scene support.
-#[derive(Bundle)]
-#[allow(missing_docs /* field description is trivial */)]
-pub struct HookedSceneBundle {
-    pub hook: SceneHook,
-    pub scene: SceneBundle,
-}
-
-/// Bundle a [`SceneHook`] with dynamic scenes [`DynamicSceneBundle`] components.
-///
-/// Similar to [`HookedSceneBundle`], but for dynamic scenes.
-#[derive(Bundle)]
-#[allow(missing_docs /* field description is trivial */)]
-pub struct HookedDynamicSceneBundle {
-    pub hook: SceneHook,
-    pub scene: DynamicSceneBundle,
-}
-
 pub fn run_hooks(
     unloaded_instances: Query<(Entity, &SceneInstance, &SceneHook), Without<SceneHooked>>,
     scene_manager: Res<SceneSpawner>,
@@ -49,7 +29,7 @@ pub fn run_hooks(
         let entities = scene_manager
             .iter_instance_entities(**instance)
             .chain(std::iter::once(entity));
-        for entity_ref in entities.filter_map(|e| world.get_entity(e)) {
+        for entity_ref in entities.filter_map(|e| world.get_entity(e).ok()) {
             let mut cmd = cmds.entity(entity_ref.id());
             (hooked.hook)(&entity_ref, &mut cmd);
         }

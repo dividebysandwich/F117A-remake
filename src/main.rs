@@ -1,18 +1,14 @@
 use bevy::{
-    asset::LoadState,
+    camera::ScalingMode,
+    camera::visibility::RenderLayers,
     core_pipeline::Skybox,
-    prelude::{*},
-    render::{
-        camera::ScalingMode,
-        render_resource::{
-            TextureViewDescriptor,
-            TextureViewDimension,
-        },
-        texture::CompressedImageFormats,
-        view::visibility::RenderLayers,
+    prelude::*,
+    render::render_resource::{
+        TextureViewDescriptor,
+        TextureViewDimension,
     },
+    image::CompressedImageFormats,
 };
-use bevy_mod_billboard::prelude::*;
 //use bevy_prototype_debug_lines::DebugLinesPlugin;
 use bevy_rapier3d::prelude::*;
 use bevy_scene_hook::HookPlugin;
@@ -22,6 +18,7 @@ use definitions::{RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS, RENDERLAYER_COCKPI
 use radar::{update_rcs, update_radar};
 
 mod bevy_scene_hook;
+mod billboard;
 mod definitions;
 mod explosion;
 mod aircraft;
@@ -43,6 +40,7 @@ mod rwr;
 mod f117_ai;
 
 use crate::aircraft::*;
+use crate::billboard::BillboardPlugin;
 use crate::hud::*;
 use crate::missile::*;
 use crate::player::*;
@@ -60,8 +58,8 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins.set(ImagePlugin::default_nearest()),
-            bevy::diagnostic::FrameTimeDiagnosticsPlugin,
-            bevy::diagnostic::EntityCountDiagnosticsPlugin,
+            bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
+            bevy::diagnostic::EntityCountDiagnosticsPlugin::default(),
             RapierPhysicsPlugin::<NoUserData>::default(),
 //            RapierDebugRenderPlugin::default(),
             ThirdPersonCameraPlugin,
@@ -71,7 +69,7 @@ fn main() {
             TomlAssetPlugin::<F117AI>::new(&["toml"]),
         ))
         .add_systems(
-            PreStartup, 
+            PreStartup,
             (
                 load_f117_ai,
             )
@@ -127,13 +125,10 @@ fn main() {
 }
 
 fn setup_sounds(
-    asset_server: Res<AssetServer>, 
+    asset_server: Res<AssetServer>,
     mut commands: Commands
 ) {
-    commands.spawn(AudioBundle {
-        source: asset_server.load("sounds/radio_takeoff.ogg"),
-        ..default()
-    });
+    commands.spawn(AudioPlayer::new(asset_server.load("sounds/radio_takeoff.ogg")));
 }
 
 //Render layers:
@@ -162,7 +157,7 @@ fn handle_camera_controls(
                 commands
                     .entity(main_camera)
                     .insert(RenderLayers::from_layers(&[
-                        RENDERLAYER_WORLD, 
+                        RENDERLAYER_WORLD,
                         RENDERLAYER_POINTLIGHTS]));
             }
         } else if input.just_pressed(KeyCode::F2) {
@@ -178,9 +173,9 @@ fn handle_camera_controls(
                 commands
                     .entity(main_camera)
                     .insert(RenderLayers::from_layers(&[
-                        RENDERLAYER_WORLD, 
-                        RENDERLAYER_COCKPIT, 
-                        RENDERLAYER_AIRCRAFT, 
+                        RENDERLAYER_WORLD,
+                        RENDERLAYER_COCKPIT,
+                        RENDERLAYER_AIRCRAFT,
                         RENDERLAYER_POINTLIGHTS])); //TODO: Remove Cockpit Layer (1) to remove debug line display
             }
             let mut i: i32 = 0;
@@ -252,8 +247,7 @@ fn apply_skybox(
     mut cubemap: ResMut<Cubemap>,
 ) {
     if !cubemap.is_loaded {
-        let (a_load, _a_deps, _a_rec_deps) = asset_server.get_load_states(&cubemap.image_handle).unwrap();
-        if a_load == LoadState::Loaded
+        if asset_server.is_loaded(&cubemap.image_handle)
         {
             info!("Applying skybox");
             let image = images.get_mut(&cubemap.image_handle).unwrap();
@@ -262,7 +256,7 @@ fn apply_skybox(
             if image.texture_descriptor.array_layer_count() == 1 {
                 image.reinterpret_stacked_2d_as_array(
                     image.texture_descriptor.size.height / image.texture_descriptor.size.width,
-                );
+                ).expect("Failed to reinterpret skybox image as array");
                 image.texture_view_descriptor = Some(TextureViewDescriptor {
                     dimension: Some(TextureViewDimension::Cube),
                     ..default()
@@ -272,7 +266,7 @@ fn apply_skybox(
             for main_camera in main_cameras.iter() {
                 commands
                     .entity(main_camera)
-                    .insert(Skybox{image: cubemap.image_handle.clone(), brightness: 255.0});
+                    .insert(Skybox{image: cubemap.image_handle.clone(), brightness: 255.0, ..default()});
             }
             cubemap.is_loaded = true;
         }
@@ -297,19 +291,14 @@ fn setup_graphics(
 
     // Main 3d camera
     commands
-        .spawn(Camera3dBundle {
-            camera: Camera {
+        .spawn((
+            Camera3d::default(),
+            Camera {
                 // renders first
                 order: 0,
                 ..default()
             },
-            ..Default::default()
-        })
-//TODO: Hide Gizmos on this camera, for example using GizmoConfig
-//        .insert(UiCameraConfig {
-//            show_ui: false,
-//            ..default()
-//        })
+        ))
         .insert(MainCamera)
         .insert(CockpitCamera)
         .insert(RenderLayers::from_layers(&[RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS]));
@@ -317,53 +306,29 @@ fn setup_graphics(
     // HUD camera
     commands
         .spawn((
-            Camera2dBundle {
-                camera: Camera {
-                    // Don't clear the canvas before drawing
-                    clear_color: ClearColorConfig::None,
-                    // renders after / on top of the 3d camera
-                    order: 2,
-                    ..default()
-                },
-                projection: OrthographicProjection {
-                    // Make sure the HUD scales with the window size
-                    scale: 1.0,
-                    scaling_mode: ScalingMode::Fixed {
-                        width: 1920.,
-                        height: 1080.,
-                    },
-                    far: 1000.0, // Changing far and near planes is required to make spritebundles work
-                    near: -1000.0,
-                    ..default()
-                }
-                .into(),
-                ..Default::default()
+            Camera2d,
+            Camera {
+                // Don't clear the canvas before drawing
+                clear_color: ClearColorConfig::None,
+                // renders after / on top of the 3d camera
+                order: 2,
+                ..default()
             },
+            Projection::Orthographic({
+                let mut ortho = OrthographicProjection::default_2d();
+                ortho.scale = 1.0;
+                ortho.scaling_mode = ScalingMode::Fixed {
+                    width: 1920.,
+                    height: 1080.,
+                };
+                ortho.far = 1000.0;
+                ortho.near = -1000.0;
+                ortho
+            }),
             RenderLayers::layer(RENDERLAYER_COCKPIT),
         ))
         .insert(HudCamera);
-//TODO: SHow Gizmos on this camera. Check if this is actually needed
-//        .insert(UiCameraConfig {
-//            show_ui: true,
-//            ..default()
-//        });
-
-    // light
-    /*commands.spawn(PointLightBundle {
-        transform: Transform::from_xyz(50.0, 50.0, 50.0),
-        point_light: PointLight {
-            intensity: 600000.,
-            range: 100.,
-            shadows_enabled: true,
-            ..default()
-        },
-        ..default()
-    });*/
-
 
     let (config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
     config.render_layers = RenderLayers::layer(RENDERLAYER_COCKPIT);
-
-
 }
-

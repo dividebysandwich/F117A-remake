@@ -1,5 +1,4 @@
-use bevy::prelude::*;
-use bevy::render::view::visibility::RenderLayers;
+use bevy::{prelude::*, camera::visibility::RenderLayers};
 
 use crate::definitions::COLOR_GREEN;
 use crate::CameraSettings;
@@ -16,28 +15,31 @@ pub struct LabelCurrentAltitude;
 
 pub fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/Brickshapers-eXPx.ttf");
-    let text_style = TextStyle {
-        font: font.clone(),
-        font_size: 30.0,
-        color: COLOR_GREEN,
-    };
-    commands.spawn(
-        Text2dBundle {
-            text: Text::from_section("0".to_string(), text_style.clone()).with_justify(JustifyText::Left),
-            transform: Transform::from_translation(Vec3::new(-470.0, 0.0, 0.0)),
+    commands.spawn((
+        Text2d::new("0"),
+        TextFont {
+            font: font.clone(),
+            font_size: 30.0,
             ..default()
-        }
-    )
+        },
+        TextColor(COLOR_GREEN),
+        TextLayout::new_with_justify(Justify::Left),
+        Transform::from_translation(Vec3::new(-470.0, 0.0, 0.0)),
+    ))
     .insert(RenderLayers::layer(RENDERLAYER_COCKPIT))
     .insert(LabelCurrentSpeed);
 
-    commands.spawn(
-        Text2dBundle {
-            text: Text::from_section("0".to_string(), text_style.clone()).with_justify(JustifyText::Right),
-            transform: Transform::from_translation(Vec3::new(470.0, 0.0, 0.0)),
+    commands.spawn((
+        Text2d::new("0"),
+        TextFont {
+            font: font.clone(),
+            font_size: 30.0,
             ..default()
-        }
-    )
+        },
+        TextColor(COLOR_GREEN),
+        TextLayout::new_with_justify(Justify::Right),
+        Transform::from_translation(Vec3::new(470.0, 0.0, 0.0)),
+    ))
     .insert(RenderLayers::layer(RENDERLAYER_COCKPIT))
     .insert(LabelCurrentAltitude);
 
@@ -74,27 +76,24 @@ fn draw_vertical_ladder(gizmos: &mut Gizmos, value : f32, xpos : f32, hud_size_y
     }
 }
 
-pub fn update_hud(mut aircrafts: Query<&Aircraft, With<Player>>, 
-    mut speedlabels: Query<&mut Text, (With<LabelCurrentSpeed>, Without<LabelCurrentAltitude>)>, 
-    mut altitudelabels: Query<&mut Text, (With<LabelCurrentAltitude>, Without<LabelCurrentSpeed>)>, 
+pub fn update_hud(mut aircrafts: Query<&Aircraft, With<Player>>,
+    mut speedlabels: Query<&mut Text2d, (With<LabelCurrentSpeed>, Without<LabelCurrentAltitude>)>,
+    mut altitudelabels: Query<&mut Text2d, (With<LabelCurrentAltitude>, Without<LabelCurrentSpeed>)>,
     camera_settings: ResMut<CameraSettings>,
-    mut gizmos: Gizmos, 
+    mut gizmos: Gizmos,
     ) {
-    let mut speedlabel = speedlabels.get_single_mut().unwrap();
-    let mut altitudelabel = altitudelabels.get_single_mut().unwrap();
+    let mut speedlabel = speedlabels.single_mut().unwrap();
+    let mut altitudelabel = altitudelabels.single_mut().unwrap();
     if camera_settings.render_hud == true {
         for aircraft in aircrafts.iter_mut() {
-            speedlabel.sections[0].value = format!("{:.0}", aircraft.speed_knots);
+            speedlabel.0 = format!("{:.0}", aircraft.speed_knots);
             draw_vertical_ladder(&mut gizmos, aircraft.speed_knots * 2.0, -500.0, 400, -1.0);
 
-            altitudelabel.sections[0].value = format!("{:.0}", aircraft.altitude);
+            altitudelabel.0 = format!("{:.0}", aircraft.altitude);
             draw_vertical_ladder(&mut gizmos, aircraft.altitude, 500.0, 400, 1.0);
-
-            //gizmos.line_2d(Vec2::new(-400.0, -400.0), Vec2::new(-400.0, 400.0), Color::GREEN);
-            //gizmos.circle_2d(Vec2::ZERO, 300., Color::GREEN).segments(32);
         }
     } else {
-        speedlabel.sections[0].value = "".to_string();
-        altitudelabel.sections[0].value = "".to_string();
+        speedlabel.0 = "".to_string();
+        altitudelabel.0 = "".to_string();
     }
 }

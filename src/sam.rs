@@ -29,40 +29,33 @@ impl Default for SAM {
     }
 }
 
-pub fn spawn_sam(commands: &mut Commands,    
+pub fn spawn_sam(commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     xpos: f32,
     zpos: f32,
     side: CoalitionType,
 ) {
-//    let mesh: Handle<Mesh> = asset_server.load("models/planes/f117a.gltf#Scene0");
-//    let m = &meshes.get(&mesh);
-//    let x_shape = Collider::from_bevy_mesh(m.unwrap(), &ComputedColliderShape::TriMesh).unwrap();
-    commands.spawn(SceneBundle {
-        scene: asset_server.load("models/vehicles/SA6.gltf#Scene0"),
-//        transform: Transform::from_xyz(0.0, -1.0, 0.0),
-        ..default()
-    })
+    commands.spawn(SceneRoot(asset_server.load("models/vehicles/SA6.gltf#Scene0")))
     .insert(Vehicle{..default()})
     .insert(Coalition{side: side})
     .insert(SAM{name: String::from("SA-6 #1"), ..default() })
     .insert(Collider::cuboid(0.25, 0.35, 0.4))
-    .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_GROUNDVEHICLE), 
+    .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_GROUNDVEHICLE),
         Group::from_bits_truncate(
             COLLISION_MASK_TERRAIN |
-            COLLISION_MASK_AIRCRAFT | 
+            COLLISION_MASK_AIRCRAFT |
             COLLISION_MASK_GROUNDVEHICLE |
             COLLISION_MASK_MISSILE |
             COLLISION_MASK_PLAYER
         )))
     .insert(RigidBody::Dynamic)
     .insert(ColliderMassProperties::Density(100.0))
-    .insert(TransformBundle::from(Transform::from_xyz(xpos, 0.0, zpos)))
+    .insert(Transform::from_xyz(xpos, 0.0, zpos))
     .insert(Targetable)
     .insert(RadarEmitter{
-        radar_type: RadarEmitterType::PULSE, 
-        radar_gain: 10.0, 
-        scan_interval: 3.0, 
+        radar_type: RadarEmitterType::PULSE,
+        radar_gain: 10.0,
+        scan_interval: 3.0,
         ..default()
     });
 

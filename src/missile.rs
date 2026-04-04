@@ -11,7 +11,7 @@ pub struct Missile {
     pub target_transform: Transform,
     pub target_position: Vec3,
     pub max_turn_rate: f32,
-    pub thrust: f32, 
+    pub thrust: f32,
     pub max_thrust: f32,
     pub thrust_ramp: f32,
     pub turn_rate: f32,
@@ -19,7 +19,7 @@ pub struct Missile {
     pub gain: f32,
     pub ignition_delay: u64,
     pub proximity_fuse_distance: f32,
-    pub proximity_fuse_arm_time: u64, 
+    pub proximity_fuse_arm_time: u64,
     pub last_target_distance: f32,
     pub last_position: Vec3,
     pub line_of_sight: Vec3,
@@ -57,11 +57,11 @@ pub fn update_missiles(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>, 
-    mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Missile)>, 
+    asset_server: Res<AssetServer>,
+    mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Missile)>,
     missile_targets: Query<&Transform, (With<Targetable>, Without<Missile>)>,
     all_targets: Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
-    time: Res<Time>, 
+    time: Res<Time>,
 ) {
     for (missile_entity, missile_force, mut missile_transform, mut missile ) in missiles.iter_mut() {
         let target_transform = missile_targets.get(missile.target);
@@ -70,7 +70,7 @@ pub fn update_missiles(
             Err(e) => info!("Missile targeting error: {}", e),
         }
         update_single_missile(missile_entity, &mut commands, &mut meshes, &mut materials, &asset_server, missile, time.clone(), missile_transform, missile_force, &all_targets);
-        
+
     }
 
 }
@@ -80,25 +80,20 @@ fn update_single_missile(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    asset_server: &Res<AssetServer>, 
-    mut missile: Mut<Missile>, 
-    time: Time, 
+    asset_server: &Res<AssetServer>,
+    mut missile: Mut<Missile>,
+    time: Time,
     mut missile_transform: Mut<Transform>,
     mut missile_force: Mut<ExternalForce>,
     all_targets: &Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
 ) {
-		
+
     let current_time = get_time_millis();
     if current_time - missile.start_time < missile.ignition_delay {
         return;
     }
 
-    //We may know our target, or just the coordinates
-//    if missile.target != Entity::PLACEHOLDER {
-        missile.target_position = missile.target_transform.translation;
-//    }/* else if (FLIRSensor) {
-//        targetPosition = FLIRSensor.getCurrentLaserCoordinates();
-//    }*/
+    missile.target_position = missile.target_transform.translation;
 
     //Proximity fuze if we have passed the target
     let target_distance = (missile.target_transform.translation - missile_transform.translation).length();
@@ -111,34 +106,31 @@ fn update_single_missile(
                     //Damage all targets within proximity fuse distance
                     if prox_target_distance < missile.proximity_fuse_distance {
                         info!("Missile proximity detonation");
-                        commands.entity(prox_target_entity).despawn_recursive();
+                        commands.entity(prox_target_entity).despawn();
                         let position = prox_target_transform.translation;
                         spawn_explosion(commands, meshes, materials, ExplosionType::SMALL, &position);
                     }
                 }
-                commands.spawn(AudioBundle {
-                    source: asset_server.load("sounds/xplgmn2.ogg"),
-                    ..default()
-                });    
-                commands.entity(missile_entity).despawn_recursive();
+                commands.spawn(AudioPlayer::new(asset_server.load("sounds/xplgmn2.ogg")));
+                commands.entity(missile_entity).despawn();
             }
         }
     }
-    
+
     missile.last_target_distance = target_distance;
     missile.last_position = missile_transform.translation;
 
-    
+
     // Increase thrust over time
     if missile.thrust < missile.max_thrust {
         // don't go over in case thrustRamp is very small
-        let increase = time.delta_seconds() * missile.max_thrust / missile.thrust_ramp;
+        let increase = time.delta_secs() * missile.max_thrust / missile.thrust_ramp;
         missile.thrust = (missile.thrust + increase).min(missile.max_thrust);
     }
 
     // Increase turn rate over time
     if missile.turn_rate < missile.max_turn_rate {
-        let increase = time.delta_seconds() * missile.max_turn_rate / missile.turn_ramp;
+        let increase = time.delta_secs() * missile.max_turn_rate / missile.turn_ramp;
         missile.turn_rate = (missile.turn_rate + increase).min(missile.max_turn_rate);
     }
 
@@ -150,28 +142,22 @@ fn update_single_missile(
 
     // we only want the component perpendicular to the line of sight
     d_los = d_los - d_los.project_onto(missile.line_of_sight);
-        
+
     // plain PN would be:
-    // acceleration = time.delta_seconds() * missile.line_of_sight + dLos * nc;
+    // acceleration = time.delta_secs() * missile.line_of_sight + dLos * nc;
 
     // Augmented PN takes acceleration into account
-    missile.acceleration = time.delta_seconds() * missile.line_of_sight + d_los * missile.gain + time.delta_seconds() * missile.acceleration * missile.gain / 2.0;
+    missile.acceleration = time.delta_secs() * missile.line_of_sight + d_los * missile.gain + time.delta_secs() * missile.acceleration * missile.gain / 2.0;
     // Acceleration can't be larger than the maximum thrust
     missile.acceleration = (missile.acceleration * missile.thrust).clamp_length_max(missile.thrust);
-        
+
     // Accelerate towards target
     missile_force.force = missile.acceleration;
-
-//    info!("Missile thrust: {}", missile.thrust);
-//    info!("Missile turn_rate: {}", missile.turn_rate);
 
     // Turn towards target
     let mut target_transform:Transform = Transform::default();
     target_transform = target_transform.looking_to(missile.acceleration.normalize(), Vec3::Y);
-    missile_transform.rotation = missile_transform.rotation.lerp(target_transform.rotation, time.delta_seconds() * missile.turn_rate);
-
-    // Simplified version of the above that just makes the missile look at the target:
-    //    missile_transform.look_to(missile.acceleration.normalize(), Vec3::Y);
+    missile_transform.rotation = missile_transform.rotation.lerp(target_transform.rotation, time.delta_secs() * missile.turn_rate);
 
 }
 
@@ -182,9 +168,9 @@ pub fn handle_collision_events(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    asset_server: Res<AssetServer>, 
-    mut collision_events: EventReader<CollisionEvent>,
-    mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
+    asset_server: Res<AssetServer>,
+    mut collision_events: MessageReader<CollisionEvent>,
+    mut missiles: Query<(Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>,
     all_targets: Query<(Entity, &Transform), (With<Targetable>, Without<Missile>)>,
 ) {
     for collision_event in collision_events.read() {
@@ -201,18 +187,18 @@ pub fn handle_collision_events(
 }
 
 fn handle_collision_entity(
-    missiles: &Query<'_, '_, (Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>, 
-    entity: &Entity, 
-    all_targets: &Query<'_, '_, (Entity, &Transform), (With<Targetable>, Without<Missile>)>, 
-    commands: &mut Commands<'_, '_>, 
-    meshes: &mut ResMut<'_, Assets<Mesh>>, 
+    missiles: &Query<'_, '_, (Entity, &mut ExternalForce, &mut Transform, &mut Collider, &mut Missile)>,
+    entity: &Entity,
+    all_targets: &Query<'_, '_, (Entity, &Transform), (With<Targetable>, Without<Missile>)>,
+    commands: &mut Commands<'_, '_>,
+    meshes: &mut ResMut<'_, Assets<Mesh>>,
     materials: &mut ResMut<'_, Assets<StandardMaterial>>,
-    asset_server: &Res<AssetServer>, 
+    asset_server: &Res<AssetServer>,
 ) {
-    if missiles.get(*entity).is_ok() { // TODO: Check if works, was "if missiles.get_component::<Missile>(*entity).is_ok()"
+    if missiles.get(*entity).is_ok() {
         let missile_transform_result = missiles.get(*entity);
         match missile_transform_result {
-            Ok(t) => { 
+            Ok(t) => {
                 info!("Missile contact detonation");
                 let missile_transform = *t.2;
                 let missile = t.4;
@@ -220,7 +206,7 @@ fn handle_collision_entity(
                     let prox_target_distance = (prox_target_transform.translation - missile_transform.translation).length();
                     //Damage all targets within proximity fuse distance
                     if prox_target_distance < missile.proximity_fuse_distance {
-                        commands.entity(prox_target_entity).despawn_recursive();
+                        commands.entity(prox_target_entity).despawn();
                         let position = prox_target_transform.translation;
                         spawn_explosion(commands, meshes, materials, ExplosionType::SMALL, &position);
                     }
@@ -228,12 +214,8 @@ fn handle_collision_entity(
                     },
             Err(e) => info!("Collision handling error: {}", e),
         }
-        //TODO: Missile explosion effect in case of terrain hit
-        commands.spawn(AudioBundle {
-            source: asset_server.load("sounds/xplgmn2.ogg"),
-            ..default()
-        });    
+        commands.spawn(AudioPlayer::new(asset_server.load("sounds/xplgmn2.ogg")));
 
-        commands.entity(*entity).despawn_recursive();
+        commands.entity(*entity).despawn();
         }
 }

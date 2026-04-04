@@ -115,7 +115,7 @@ pub fn update_f117_ai(
     time: Res<Time>,
 ) {
     // Update cooldown timers
-    let deltatime = time.delta_seconds();
+    let deltatime = time.delta_secs();
     f117_ai_state.cooldown_landing = (f117_ai_state.cooldown_landing - deltatime).max(0.0);
     f117_ai_state.cooldown_takeoff = (f117_ai_state.cooldown_takeoff - deltatime).max(0.0);
     f117_ai_state.cooldown_detected = (f117_ai_state.cooldown_detected - deltatime).max(0.0);

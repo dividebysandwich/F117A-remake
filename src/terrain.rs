@@ -17,16 +17,15 @@ use crate::pointlight::*;
 // Constants
 // ============================================================
 
-/// Heightmap covers a 10 km × 10 km land-mass
-const TERRAIN_SIZE: f32 = 10000.0;
-const CHUNKS_PER_SIDE: usize = 8;
+/// Heightmap covers 100 km × 100 km
+const TERRAIN_SIZE: f32 = 100_000.0;
+const CHUNKS_PER_SIDE: usize = 16;
 const CELLS_PER_CHUNK: usize = 64;
-const GRID_RES: usize = CHUNKS_PER_SIDE * CELLS_PER_CHUNK; // 512
-const CELL_SIZE: f32 = TERRAIN_SIZE / GRID_RES as f32;
+const GRID_RES: usize = CHUNKS_PER_SIDE * CELLS_PER_CHUNK; // 1024
+const CELL_SIZE: f32 = TERRAIN_SIZE / GRID_RES as f32;     // ~97.6
 const HALF_SIZE: f32 = TERRAIN_SIZE / 2.0;
 
-/// The ocean plane extends far beyond the landmass
-const OCEAN_SIZE: f32 = 200_000.0;
+const OCEAN_SIZE: f32 = 400_000.0;
 
 const BASE_HEIGHT: f32 = -1.0;
 const WATER_LEVEL: f32 = -2.5;
@@ -36,39 +35,36 @@ const TERRAIN_SEED: u64 = 117;
 
 const AIRBASE_FLAT_RADIUS: f32 = 500.0;
 const AIRBASE_TRANSITION: f32 = 300.0;
-/// Land-mass nominal radius (before noise perturbation)
-const LAND_RADIUS: f32 = 4000.0;
-/// Width of the coastline transition
-const COAST_WIDTH: f32 = 300.0;
+const LAND_RADIUS: f32 = 40_000.0;
+const COAST_WIDTH: f32 = 2000.0;
 
-const NUM_CITIES: usize = 7;
-const MIN_CITY_DIST: f32 = 800.0;
+const NUM_CITIES: usize = 15;
+const MIN_CITY_DIST: f32 = 4000.0;
 const CITY_RADIUS_MIN: f32 = 120.0;
-const CITY_RADIUS_MAX: f32 = 300.0;
+const CITY_RADIUS_MAX: f32 = 400.0;
 const BUILDINGS_PER_CITY_MIN: usize = 15;
-const BUILDINGS_PER_CITY_MAX: usize = 45;
+const BUILDINGS_PER_CITY_MAX: usize = 50;
 
 const ROAD_WIDTH: f32 = 0.4;
-const ROAD_LIGHT_SPACING: f32 = 80.0;
+const ROAD_LIGHT_SPACING: f32 = 200.0;
 const ROAD_MAX_HEIGHT: f32 = 6.0;
-const ROAD_SEGMENT_LEN: f32 = 25.0;
+const ROAD_SEGMENT_LEN: f32 = 50.0;
 
-const FIELD_COUNT: usize = 30;
-const FIELD_SIZE_MIN: f32 = 40.0;
-const FIELD_SIZE_MAX: f32 = 120.0;
+const FIELD_COUNT: usize = 80;
+const FIELD_SIZE_MIN: f32 = 60.0;
+const FIELD_SIZE_MAX: f32 = 200.0;
 
 const RUNWAY_LENGTH: f32 = 172.0;
 const RUNWAY_WIDTH: f32 = 5.0;
 const RUNWAY_Y: f32 = -0.96;
 const RUNWAY_Z: f32 = 0.5;
 
-const NUM_TREES: usize = 400;
-const NUM_FARMS: usize = 20;
-const NUM_COMM_TOWERS: usize = 6;
-const NUM_SHIPS: usize = 8;
+const NUM_TREES: usize = 1500;
+const NUM_FARMS: usize = 60;
+const NUM_COMM_TOWERS: usize = 12;
+const NUM_SHIPS: usize = 15;
 
-/// When the player is further than this from origin, shift everything back
-const ORIGIN_SHIFT_THRESHOLD: f32 = 5000.0;
+const ORIGIN_SHIFT_THRESHOLD: f32 = 10_000.0;
 
 // ============================================================
 // Noise
@@ -265,11 +261,12 @@ fn generate_heightmap(seed: u32) -> TerrainData {
 // ============================================================
 
 fn generate_cities(t: &TerrainData, rng: &mut StdRng) -> Vec<CityData> {
+    let range = LAND_RADIUS * 0.85;
     let mut c = Vec::new(); let mut att = 0;
-    while c.len() < NUM_CITIES && att < 500 { att += 1;
-        let x = rng.gen_range(-3000.0..3000.0_f32);
-        let z = rng.gen_range(-3000.0..3000.0_f32);
-        if x.abs() < 400.0 && z.abs() < 200.0 { continue; }
+    while c.len() < NUM_CITIES && att < 1000 { att += 1;
+        let x = rng.gen_range(-range..range);
+        let z = rng.gen_range(-range..range);
+        if x.abs() < 600.0 && z.abs() < 300.0 { continue; }
         let h = t.get_height_world(x,z);
         if h < WATER_LEVEL+1.0 || h > BASE_HEIGHT+8.0 { continue; }
         if c.iter().any(|ci: &CityData| (ci.pos-Vec2::new(x,z)).length() < MIN_CITY_DIST) { continue; }
@@ -284,15 +281,24 @@ fn route_road(start: Vec2, end: Vec2, terrain: &TerrainData) -> Vec<Vec2> {
     let perp = Vec2::new(-dir.y, dir.x).normalize_or_zero();
     let max_h = BASE_HEIGHT + ROAD_MAX_HEIGHT;
     let mut pts: Vec<Vec2> = (0..=n).map(|i| start.lerp(end, i as f32/n as f32)).collect();
-    for _ in 0..15 { let mut changed = false;
+    let airbase_exclusion = AIRBASE_FLAT_RADIUS + 100.0;
+    for _ in 0..20 { let mut changed = false;
         for i in 1..pts.len()-1 {
+            // Push away from high terrain
             let h = terrain.get_height_world(pts[i].x, pts[i].y);
             if h > max_h {
-                let c1 = pts[i]+perp*35.0; let c2 = pts[i]-perp*35.0;
+                let c1 = pts[i]+perp*50.0; let c2 = pts[i]-perp*50.0;
                 let h1 = terrain.get_height_world(c1.x,c1.y);
                 let h2 = terrain.get_height_world(c2.x,c2.y);
                 let best = if h1<h2 { c1 } else { c2 };
                 if h1.min(h2) < h { pts[i] = best; changed = true; }
+            }
+            // Push away from airbase area
+            let dist = pts[i].length();
+            if dist < airbase_exclusion {
+                let out_dir = pts[i].normalize_or(Vec2::X);
+                pts[i] = out_dir * (airbase_exclusion + 50.0);
+                changed = true;
             }
         }
         if !changed { break; }
@@ -316,8 +322,10 @@ fn generate_roads(cities: &[CityData], terrain: &TerrainData) -> Vec<RoadPath> {
             }
         }
     }
+    // Road from airbase to nearest city — start beyond the runway, not at origin
     if let Some(near) = cities.iter().min_by(|a,b| a.pos.length().partial_cmp(&b.pos.length()).unwrap()) {
-        roads.push(RoadPath { waypoints: route_road(Vec2::ZERO, near.pos, terrain) });
+        let exit = Vec2::new(RUNWAY_LENGTH + 50.0, 0.0);
+        roads.push(RoadPath { waypoints: route_road(exit, near.pos, terrain) });
     }
     roads
 }
@@ -325,10 +333,11 @@ fn generate_roads(cities: &[CityData], terrain: &TerrainData) -> Vec<RoadPath> {
 fn generate_fields(t: &TerrainData, cities: &[CityData], rng: &mut StdRng) -> Vec<FieldRect> {
     let pal = [Color::srgb(0.55,0.50,0.25),Color::srgb(0.30,0.50,0.20),
                Color::srgb(0.45,0.40,0.20),Color::srgb(0.35,0.55,0.25)];
+    let field_range = LAND_RADIUS * 0.8;
     let mut f = Vec::new(); let mut att = 0;
-    while f.len() < FIELD_COUNT && att < 300 { att += 1;
-        let x = rng.gen_range(-3000.0..3000.0_f32);
-        let z = rng.gen_range(-3000.0..3000.0_f32);
+    while f.len() < FIELD_COUNT && att < 500 { att += 1;
+        let x = rng.gen_range(-field_range..field_range);
+        let z = rng.gen_range(-field_range..field_range);
         let h = t.get_height_world(x,z);
         if h < WATER_LEVEL+1.0 || h > BASE_HEIGHT+5.0 { continue; }
         if cities.iter().any(|c| (c.pos-Vec2::new(x,z)).length() < c.radius+50.0) { continue; }
@@ -611,10 +620,11 @@ fn spawn_terrain_features(cmd: &mut Commands, meshes: &mut Assets<Mesh>, mats: &
     let twm = meshes.add(Cuboid::new(1.0,1.0,1.0));
     let twmat = mats.add(StandardMaterial { base_color: Color::srgb(0.40,0.40,0.40), perceptual_roughness: 0.6, ..default() });
 
+    let feature_range = LAND_RADIUS * 0.85;
     let mut cnt = 0; let mut att = 0;
     while cnt < NUM_TREES && att < NUM_TREES*3 { att += 1;
-        let x = rng.gen_range(-3500.0..3500.0_f32);
-        let z = rng.gen_range(-3500.0..3500.0_f32);
+        let x = rng.gen_range(-feature_range..feature_range);
+        let z = rng.gen_range(-feature_range..feature_range);
         let h = terrain.get_height_world(x,z);
         if h < WATER_LEVEL+0.5 || h > BASE_HEIGHT+15.0 { continue; }
         if (x*x+z*z).sqrt() < AIRBASE_FLAT_RADIUS { continue; }
@@ -627,8 +637,8 @@ fn spawn_terrain_features(cmd: &mut Commands, meshes: &mut Assets<Mesh>, mats: &
     }
     cnt = 0; att = 0;
     while cnt < NUM_FARMS && att < NUM_FARMS*5 { att += 1;
-        let x = rng.gen_range(-3000.0..3000.0_f32);
-        let z = rng.gen_range(-3000.0..3000.0_f32);
+        let x = rng.gen_range(-feature_range..feature_range);
+        let z = rng.gen_range(-feature_range..feature_range);
         let h = terrain.get_height_world(x,z);
         if h < WATER_LEVEL+0.5 || h > BASE_HEIGHT+5.0 { continue; }
         if (x*x+z*z).sqrt() < AIRBASE_FLAT_RADIUS { continue; }
@@ -640,8 +650,8 @@ fn spawn_terrain_features(cmd: &mut Commands, meshes: &mut Assets<Mesh>, mats: &
     }
     cnt = 0; att = 0;
     while cnt < NUM_COMM_TOWERS && att < NUM_COMM_TOWERS*10 { att += 1;
-        let x = rng.gen_range(-3000.0..3000.0_f32);
-        let z = rng.gen_range(-3000.0..3000.0_f32);
+        let x = rng.gen_range(-feature_range..feature_range);
+        let z = rng.gen_range(-feature_range..feature_range);
         let h = terrain.get_height_world(x,z);
         if h < WATER_LEVEL+0.5 || h > BASE_HEIGHT+20.0 { continue; }
         if (x*x+z*z).sqrt() < AIRBASE_FLAT_RADIUS+200.0 { continue; }
@@ -664,7 +674,7 @@ fn spawn_ships(cmd: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut Assets<
     for _ in 0..NUM_SHIPS {
         // Place ships in the ocean (outside the land radius)
         let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-        let dist = rng.gen_range(LAND_RADIUS+600.0..LAND_RADIUS+5000.0);
+        let dist = rng.gen_range(LAND_RADIUS+1000.0..LAND_RADIUS+8000.0);
         let sx = angle.cos() * dist;
         let sz = angle.sin() * dist;
         let ship_y = WATER_LEVEL + 0.15;

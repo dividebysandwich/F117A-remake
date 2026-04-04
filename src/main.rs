@@ -32,6 +32,7 @@ mod vehicle;
 mod pointlight;
 mod scenery;
 mod terrain;
+mod map_mfd;
 mod mfd;
 mod targeting;
 mod health;
@@ -91,6 +92,10 @@ fn main() {
             ),
         )
         .add_systems(
+            Startup,
+            map_mfd::setup_map_mfd.after(setup_procedural_world),
+        )
+        .add_systems(
             Update,
             (
                 apply_skybox,
@@ -120,6 +125,7 @@ fn main() {
             (
                 update_dialog_ui,
                 origin_shift,
+                map_mfd::update_map_mfd,
             )
         )
         .run();

@@ -120,6 +120,8 @@ pub struct TerrainData {
     /// Accumulated origin-shift offset (add to current world coords
     /// to recover original heightmap coords).
     pub origin_shift: Vec3,
+    /// City centre positions (original terrain coords) for the map MFD.
+    pub city_positions: Vec<Vec2>,
 }
 
 impl TerrainData {
@@ -255,7 +257,7 @@ fn generate_heightmap(seed: u32) -> TerrainData {
 
         heights[gz*w + gx] = h;
     }}
-    TerrainData { heights, width: w, depth: d, origin_shift: Vec3::ZERO }
+    TerrainData { heights, width: w, depth: d, origin_shift: Vec3::ZERO, city_positions: Vec::new() }
 }
 
 // ============================================================
@@ -474,7 +476,15 @@ fn spawn_cities(cmd: &mut Commands, meshes: &mut Assets<Mesh>, mats: &mut Assets
     let bcols = [Color::srgb(0.55,0.55,0.50),Color::srgb(0.60,0.58,0.52),
         Color::srgb(0.50,0.48,0.45),Color::srgb(0.65,0.63,0.55),Color::srgb(0.45,0.44,0.42)];
     let ub = meshes.add(Cuboid::new(1.0,1.0,1.0));
+    // Dark paved ground underneath each city
+    let pavement_mat = mats.add(StandardMaterial { base_color: Color::srgb(0.18,0.18,0.17), perceptual_roughness: 0.95, ..default() });
     for city in cities {
+        let gh = terrain.get_height_world(city.pos.x, city.pos.y);
+        let pad_size = city.radius * 2.2;
+        cmd.spawn((Mesh3d(meshes.add(make_ground_quad(pad_size, pad_size))),
+            MeshMaterial3d(pavement_mat.clone()),
+            Transform::from_translation(Vec3::new(city.pos.x, gh + 0.02, city.pos.y))));
+
         let nb = rng.gen_range(BUILDINGS_PER_CITY_MIN..BUILDINGS_PER_CITY_MAX);
         for _ in 0..nb {
             let a = rng.gen_range(0.0..std::f32::consts::TAU);
@@ -737,6 +747,7 @@ pub fn setup_procedural_world(
     terrain.flatten_rect(-20.0,-20.0,RUNWAY_LENGTH+20.0,20.0,RUNWAY_Y,60.0);
 
     let cities = generate_cities(&terrain, &mut rng);
+    terrain.city_positions = cities.iter().map(|c| c.pos).collect();
     for c in &cities { terrain.flatten_circle(c.pos.x,c.pos.y,c.radius,BASE_HEIGHT); }
 
     let roads = generate_roads(&cities, &terrain);

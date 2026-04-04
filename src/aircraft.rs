@@ -48,13 +48,9 @@ lazy_static! {
     };
 }
 
-// ── Flight-model constants ──
-
 const WEIGHT: f32 = 98.0;
-/// 2% surplus so numerical noise doesn't cause slow sink in level flight
 const LIFT_SPEED_CAP: f32 = 1.02;
-/// Extra lift per unit pitch-pull (fraction of WEIGHT).
-/// 1.5 means half-pull in a 45° bank just about maintains altitude.
+/// Extra lift from full stick-back (fraction of WEIGHT).
 const AOA_LIFT_FRACTION: f32 = 1.5;
 const DRAG_COEFF: f32 = 0.012;
 const AOA_DRAG_FACTOR: f32 = 0.25;
@@ -63,14 +59,9 @@ const CONTROL_REF_SPEED: f32 = 25.0;
 const MIN_CONTROL_EFF: f32 = 0.05;
 const GE_CEIL: f32 = 5.0;
 const GE_BOOST: f32 = 0.20;
-/// Vertical velocity damping — absorbs the 2% lift surplus so the
-/// aircraft flies level, and dampens climb/descent oscillations.
 const VERTICAL_DAMPING: f32 = 12.0;
 const ADVERSE_YAW_FACTOR: f32 = 0.15;
-/// On the ground with throttle applied, engine exhaust over the tail
-/// provides this fraction of control effectiveness regardless of airspeed.
 const GROUND_PITCH_BOOST: f32 = 0.25;
-
 const CONTROL_CENTER_RATE: f32 = 10.0;
 const INPUT_RAMP: f32 = 6.0;
 
@@ -104,19 +95,22 @@ impl Default for Aircraft {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Flight model
+// Flight model — split lift
 //
-// Lift direction is PURELY along aircraft-up (no world-up blend).
-// This eliminates the sideways-slide artifact after banked turns.
+// BASE LIFT  = world-up, magnitude ≈ WEIGHT.
+//   Counters gravity.  Rolling does NOT tilt this force, so a
+//   pure roll keeps the aircraft flying straight and level.
 //
-// To compensate for bank-angle altitude loss, AOA_LIFT_FRACTION is
-// high (1.5) so small amounts of back-pressure easily maintain
-// altitude in moderate banks.
+// AoA LIFT   = aircraft-up, from stick-back input.
+//   When pulling back wings-level → climbs (force is upward).
+//   When pulling back in a bank  → the aircraft-up component
+//   has a horizontal part → creates a banked turn.
 //
-// Takeoff requires pulling back (rotation).  On the ground, base
-// lift is suppressed unless the pilot commands pitch-up.  A ground
-// pitch-boost gives the elevator enough authority to rotate the
-// nose even at low airspeed (simulates engine exhaust over the tail).
+// The two together mean:
+//   • Roll alone → no altitude or heading change (just attitude)
+//   • Roll + pull back → coordinated banked turn
+//   • Pull back wings-level → climb
+//   • Adverse yaw from roll → slight nose yaw opposite to roll
 // ═══════════════════════════════════════════════════════════════
 
 pub fn update_aircraft_forces(
@@ -154,21 +148,19 @@ pub fn update_aircraft_forces(
         let max_pitch = *MAXFORCES_PITCH.get(&ac.aircraft_type).unwrap();
         let pitch_pull = (-ac.pitch_force / max_pitch).clamp(-0.3, 1.0);
 
-        // On/near the ground, base lift is suppressed — the pilot must
-        // pull back to generate takeoff lift.  Once airborne (y > ~0)
-        // the auto-trim provides full base lift for level flight.
-        // Uses max(airborne, pitch_pull) so EITHER being in the air OR
-        // pulling back is sufficient.
+        // Rotation factor for takeoff: on the ground, need stick-back for lift
         let airborne = ((transform.translation.y + 1.0) / 0.3).clamp(0.0, 1.0);
         let rotation_factor = airborne.max(pitch_pull.max(0.0));
 
-        let base_lift = WEIGHT * LIFT_SPEED_CAP * speed_ratio * ge * rotation_factor;
-        let aoa_extra = pitch_pull * AOA_LIFT_FRACTION * WEIGHT * speed_ratio;
-        let lift_mag = (base_lift + aoa_extra).max(0.0);
+        // BASE LIFT — always world-up, counters gravity.
+        // Rolling does not affect this component at all.
+        let base_lift_mag = WEIGHT * LIFT_SPEED_CAP * speed_ratio * ge * rotation_factor;
+        let base_lift_vec = Vec3::Y * base_lift_mag;
 
-        // Lift is PURELY along aircraft-up.  No world-up blend.
-        // This ensures no sideways force artifact after banked turns.
-        let lift_vec = aircraft_up * lift_mag;
+        // AoA LIFT — along aircraft-up.  Provides climb force (wings level)
+        // or turning force (banked).  Only from pilot pitch input.
+        let aoa_lift_mag = pitch_pull * AOA_LIFT_FRACTION * WEIGHT * speed_ratio;
+        let aoa_lift_vec = aircraft_up * aoa_lift_mag;
 
         // ── Vertical velocity damping ──
         let v_damp = Vec3::new(0.0, -velocity.linvel.y * VERTICAL_DAMPING * speed_ratio, 0.0);
@@ -183,25 +175,17 @@ pub fn update_aircraft_forces(
         } else { Vec3::ZERO };
 
         // ── Sum ──
-        ef.force = thrust_vec + weight_vec + lift_vec + v_damp + drag_vec;
+        ef.force = thrust_vec + weight_vec + base_lift_vec + aoa_lift_vec + v_damp + drag_vec;
 
         // ── Control authority ──
-        // Airspeed-based effectiveness for all axes
         let base_eff = (ac.speed / CONTROL_REF_SPEED).clamp(MIN_CONTROL_EFF, 1.3);
-
-        // Pitch gets a ground boost: engine exhaust over the tail gives
-        // the elevator authority to rotate the nose even at low airspeed.
         let on_ground = transform.translation.y < 0.0 && ac.thrust_force > 5.0;
         let pitch_eff = if on_ground {
             (base_eff + GROUND_PITCH_BOOST).min(1.3)
-        } else {
-            base_eff
-        };
+        } else { base_eff };
 
-        // At extreme bank, elevator becomes rudder → reduced pitch authority
         let bank_cos = aircraft_up.y.abs();
         let pitch_bank_factor = bank_cos.clamp(0.2, 1.0);
-
         let adverse_yaw = -ac.roll_force * ADVERSE_YAW_FACTOR * speed_ratio;
 
         ef.torque = rot * Vec3::new(
@@ -213,9 +197,6 @@ pub fn update_aircraft_forces(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Weapons
-// ═══════════════════════════════════════════════════════════════
-
 pub fn update_player_weapon_controls(
     aircrafts: Query<(&Aircraft, Entity, &Transform, &Velocity), With<Player>>,
     asset_server: Res<AssetServer>,
@@ -253,10 +234,6 @@ pub fn update_player_weapon_controls(
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════
-// Player input
-// ═══════════════════════════════════════════════════════════════
 
 fn slew_to_zero(v: f32, rate: f32, dt: f32) -> f32 {
     if v > 0.0 { (v - rate * dt).max(0.0) } else { (v + rate * dt).min(0.0) }

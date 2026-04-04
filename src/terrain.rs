@@ -145,9 +145,19 @@ impl TerrainData {
         a + lz * (b - a)
     }
 
+    /// Grid-index bounds for a world-space AABB (clamped to grid).
+    fn grid_bounds(min_w: f32, max_w: f32, min_d: f32, max_d: f32, width: usize, depth: usize) -> (usize,usize,usize,usize) {
+        let gx0 = ((min_w + HALF_SIZE) / CELL_SIZE).floor().max(0.0) as usize;
+        let gx1 = ((max_w + HALF_SIZE) / CELL_SIZE).ceil().min(width as f32 - 1.0) as usize;
+        let gz0 = ((min_d + HALF_SIZE) / CELL_SIZE).floor().max(0.0) as usize;
+        let gz1 = ((max_d + HALF_SIZE) / CELL_SIZE).ceil().min(depth as f32 - 1.0) as usize;
+        (gx0, gx1, gz0, gz1)
+    }
+
     fn flatten_rect(&mut self, min_x: f32, min_z: f32, max_x: f32, max_z: f32, target_h: f32, margin: f32) {
         let w = self.width;
-        for gz in 0..self.depth { for gx in 0..w {
+        let (gx0,gx1,gz0,gz1) = Self::grid_bounds(min_x-margin, max_x+margin, min_z-margin, max_z+margin, w, self.depth);
+        for gz in gz0..=gz1 { for gx in gx0..=gx1 {
             let wx = gx as f32 * CELL_SIZE - HALF_SIZE;
             let wz = gz as f32 * CELL_SIZE - HALF_SIZE;
             let dx = if wx < min_x { min_x-wx } else if wx > max_x { wx-max_x } else { 0.0 };
@@ -165,7 +175,8 @@ impl TerrainData {
     fn flatten_circle(&mut self, cx: f32, cz: f32, radius: f32, target_h: f32) {
         let outer = radius*1.3; let o2 = outer*outer; let r2 = radius*radius;
         let w = self.width;
-        for gz in 0..self.depth { for gx in 0..w {
+        let (gx0,gx1,gz0,gz1) = Self::grid_bounds(cx-outer, cx+outer, cz-outer, cz+outer, w, self.depth);
+        for gz in gz0..=gz1 { for gx in gx0..=gx1 {
             let wx = gx as f32*CELL_SIZE - HALF_SIZE;
             let wz = gz as f32*CELL_SIZE - HALF_SIZE;
             let d2 = (wx-cx)*(wx-cx) + (wz-cz)*(wz-cz);
@@ -180,7 +191,15 @@ impl TerrainData {
 
     fn flatten_path(&mut self, points: &[Vec2], half_w: f32, target_h: f32) {
         let margin = half_w*1.5; let w = self.width;
-        for gz in 0..self.depth { for gx in 0..w {
+        // Compute tight bounding box of the path + margin
+        let (mut bmin_x, mut bmax_x) = (f32::MAX, f32::MIN);
+        let (mut bmin_z, mut bmax_z) = (f32::MAX, f32::MIN);
+        for p in points {
+            bmin_x = bmin_x.min(p.x); bmax_x = bmax_x.max(p.x);
+            bmin_z = bmin_z.min(p.y); bmax_z = bmax_z.max(p.y);
+        }
+        let (gx0,gx1,gz0,gz1) = Self::grid_bounds(bmin_x-margin, bmax_x+margin, bmin_z-margin, bmax_z+margin, w, self.depth);
+        for gz in gz0..=gz1 { for gx in gx0..=gx1 {
             let wx = gx as f32*CELL_SIZE - HALF_SIZE;
             let wz = gz as f32*CELL_SIZE - HALF_SIZE;
             let p = Vec2::new(wx,wz);
@@ -212,47 +231,66 @@ struct FieldRect { center: Vec2, half_size: Vec2, color: Color }
 // Heightmap Generation
 // ============================================================
 
+/// Compute the height for one grid cell (pure function, safe to call from any thread).
+fn compute_height(gx: usize, gz: usize, seed: u32) -> f32 {
+    let wx = gx as f32 * CELL_SIZE - HALF_SIZE;
+    let wz = gz as f32 * CELL_SIZE - HALF_SIZE;
+    let dist = (wx*wx + wz*wz).sqrt();
+
+    let suppress = if dist < AIRBASE_FLAT_RADIUS { 0.0 }
+        else if dist < AIRBASE_FLAT_RADIUS+AIRBASE_TRANSITION {
+            smoothstep((dist-AIRBASE_FLAT_RADIUS)/AIRBASE_TRANSITION)
+        } else { 1.0 };
+
+    let mnoise = fbm(wx*0.0003, wz*0.0003, 4, seed);
+    let detail = fbm(wx*0.001, wz*0.001, 3, seed+100);
+    let mut h = BASE_HEIGHT;
+    if mnoise > MOUNTAIN_THRESHOLD {
+        let s = (mnoise-MOUNTAIN_THRESHOLD)/(1.0-MOUNTAIN_THRESHOLD);
+        h += s*s * MAX_MOUNTAIN_HEIGHT * suppress;
+    }
+    h += (detail-0.5)*3.0 * suppress;
+
+    let ln = fbm(wx*0.0005+50.0, wz*0.0005+50.0, 3, seed+200);
+    if ln < 0.25 && h < BASE_HEIGHT+2.0 && dist > AIRBASE_FLAT_RADIUS {
+        h = BASE_HEIGHT + (ln-0.25)*12.0;
+    }
+
+    let coast_noise = fbm(wx*0.0008, wz*0.0008, 2, seed+300) * 800.0;
+    let land_r = LAND_RADIUS + coast_noise;
+    if dist > land_r + COAST_WIDTH {
+        h = WATER_LEVEL - 3.0;
+    } else if dist > land_r {
+        let t = (dist - land_r) / COAST_WIDTH;
+        h = h*(1.0-smoothstep(t)) + (WATER_LEVEL-3.0)*smoothstep(t);
+    }
+    h
+}
+
 fn generate_heightmap(seed: u32) -> TerrainData {
     let w = GRID_RES+1; let d = GRID_RES+1;
-    let mut heights = vec![BASE_HEIGHT; w*d];
-    for gz in 0..d { for gx in 0..w {
-        let wx = gx as f32 * CELL_SIZE - HALF_SIZE;
-        let wz = gz as f32 * CELL_SIZE - HALF_SIZE;
-        let dist = (wx*wx + wz*wz).sqrt();
+    let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(16);
+    let rows_per = (d + cpus - 1) / cpus;
 
-        // Mountain suppression near airbase
-        let suppress = if dist < AIRBASE_FLAT_RADIUS { 0.0 }
-            else if dist < AIRBASE_FLAT_RADIUS+AIRBASE_TRANSITION {
-                smoothstep((dist-AIRBASE_FLAT_RADIUS)/AIRBASE_TRANSITION)
-            } else { 1.0 };
+    // Each thread generates its slice of rows and returns a Vec<f32>
+    let row_chunks: Vec<Vec<f32>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..cpus).map(|t| {
+            let start = t * rows_per;
+            let end = ((t+1) * rows_per).min(d);
+            scope.spawn(move || {
+                let mut buf = Vec::with_capacity((end - start) * w);
+                for gz in start..end {
+                    for gx in 0..w {
+                        buf.push(compute_height(gx, gz, seed));
+                    }
+                }
+                buf
+            })
+        }).collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
 
-        let mnoise = fbm(wx*0.0003, wz*0.0003, 4, seed);
-        let detail = fbm(wx*0.001, wz*0.001, 3, seed+100);
-        let mut h = BASE_HEIGHT;
-        if mnoise > MOUNTAIN_THRESHOLD {
-            let s = (mnoise-MOUNTAIN_THRESHOLD)/(1.0-MOUNTAIN_THRESHOLD);
-            h += s*s * MAX_MOUNTAIN_HEIGHT * suppress;
-        }
-        h += (detail-0.5)*3.0 * suppress;
-
-        // Lakes
-        let ln = fbm(wx*0.0005+50.0, wz*0.0005+50.0, 3, seed+200);
-        if ln < 0.25 && h < BASE_HEIGHT+2.0 && dist > AIRBASE_FLAT_RADIUS {
-            h = BASE_HEIGHT + (ln-0.25)*12.0;
-        }
-
-        // Coastline: heights drop to ocean at terrain edges
-        let coast_noise = fbm(wx*0.0008, wz*0.0008, 2, seed+300) * 800.0;
-        let land_r = LAND_RADIUS + coast_noise;
-        if dist > land_r + COAST_WIDTH {
-            h = WATER_LEVEL - 3.0;
-        } else if dist > land_r {
-            let t = (dist - land_r) / COAST_WIDTH;
-            h = h*(1.0-smoothstep(t)) + (WATER_LEVEL-3.0)*smoothstep(t);
-        }
-
-        heights[gz*w + gx] = h;
-    }}
+    let heights: Vec<f32> = row_chunks.into_iter().flatten().collect();
     TerrainData { heights, width: w, depth: d, origin_shift: Vec3::ZERO, city_positions: Vec::new() }
 }
 
@@ -453,11 +491,23 @@ fn spawn_terrain_chunks(cmd: &mut Commands, meshes: &mut Assets<Mesh>,
     mats: &mut Assets<StandardMaterial>, terrain: &TerrainData)
 {
     let mat = mats.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.9, ..default() });
-    for cz in 0..CHUNKS_PER_SIDE { for cx in 0..CHUNKS_PER_SIDE {
-        let (mesh, center) = build_chunk_mesh(terrain, cx, cz);
+
+    // Build all chunk meshes in parallel, then register serially
+    let total = CHUNKS_PER_SIDE * CHUNKS_PER_SIDE;
+    let chunk_data: Vec<(Mesh, Vec3)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..total).map(|i| {
+            let tref = terrain;
+            let cx = i % CHUNKS_PER_SIDE;
+            let cz = i / CHUNKS_PER_SIDE;
+            scope.spawn(move || build_chunk_mesh(tref, cx, cz))
+        }).collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+
+    for (mesh, center) in chunk_data {
         cmd.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(mat.clone()),
             Transform::from_translation(center), TerrainChunk));
-    }}
+    }
     cmd.spawn((RigidBody::Fixed,
         Collider::heightfield(terrain.heights.clone(), terrain.depth, terrain.width,
             Vec3::new(TERRAIN_SIZE, 1.0, TERRAIN_SIZE))));

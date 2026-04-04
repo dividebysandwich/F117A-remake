@@ -31,6 +31,7 @@ mod util;
 mod vehicle;
 mod pointlight;
 mod scenery;
+mod terrain;
 mod mfd;
 mod targeting;
 mod health;
@@ -46,7 +47,7 @@ use crate::missile::*;
 use crate::player::*;
 use crate::vehicle::*;
 use crate::pointlight::*;
-use crate::scenery::*;
+use crate::terrain::setup_procedural_world;
 use crate::mfd::*;
 use crate::targeting::*;
 use crate::explosion::*;
@@ -79,8 +80,7 @@ fn main() {
             (
                 setup_graphics,
                 initialize_textures,
-                setup_terrain,
-                setup_scenery,
+                setup_procedural_world,
                 spawn_player,
                 setup_hud,
                 setup_dialog_ui,

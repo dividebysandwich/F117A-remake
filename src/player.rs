@@ -150,6 +150,10 @@ fn readout(
 pub const AIRCRAFT_MODEL_SCALE: f64 = crate::world::WU / 8.0;
 /// STFLT model of the player's F-117A in external views (combat.md: own aircraft = 24).
 const F117_MODEL: &str = "stflt_024";
+/// The aircraft position is the ground contact point, the model's origin is at the belly
+/// (gear down: 10 model units below it). Raised by the gear and clear of the coplanar ground
+/// overlays (lifted up to ~0.7 m, world.rs) so the flat wings are not hidden on the runway.
+const OWN_MODEL_LIFT: f32 = (10.0 * AIRCRAFT_MODEL_SCALE) as f32 + 0.7;
 
 #[derive(Component)]
 pub struct OwnModel;
@@ -170,7 +174,11 @@ fn attach_own_model(
     if let Some(model) = assets.spawn(&mut commands, &file, F117_MODEL, crate::palette_material::LEVEL_AIRCRAFT, true) {
         commands
             .entity(model)
-            .insert((OwnModel, Transform::from_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32)), Visibility::Hidden));
+            .insert((
+                OwnModel,
+                Transform::from_xyz(0.0, OWN_MODEL_LIFT, 0.0).with_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32)),
+                Visibility::Hidden,
+            ));
         commands.entity(player).add_child(model);
     }
 }

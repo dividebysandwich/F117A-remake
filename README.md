@@ -54,7 +54,8 @@ well (right stick: rudder). The menu's Graphics column has the same toggles as t
 (lit panel captions, the MFD bezel buttons, the labelled side buttons, gear lever, ejection
 handle) to press them. On the modern panel the bezel buttons select the MFD pages (MAP / TAC,
 TC / WAY / WPN / ORD / FLIR), zoom the map (ZM- / ZM+), switch it between north up and heading up
-(NUP / HUP) and give page functions (camera direction, waypoints, weapon select).
+(NUP / HUP) and give page functions (camera direction, waypoints, weapon select). In the
+external views the right mouse button orbits the camera around the aircraft.
 
 **VR (`--vr`):** the headset is recentred on entering the flight (left menu button or Home
 recentres). Push buttons with your fingertip. Grab the stick (right side) with the grip button:

@@ -28,7 +28,7 @@ use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions};
 
-use crate::camera::{EyeCamera, HeadAnchor, HeadLook, View, ViewState};
+use crate::camera::{EyeCamera, HeadAnchor, HeadLook, Orbit, View, ViewState};
 use crate::flight::Player;
 use crate::input::{Action, ActionEvent};
 use crate::settings::{AppState, Settings};
@@ -45,7 +45,7 @@ impl Plugin for Cockpit3dPlugin {
             .add_systems(Startup, (setup_materials, initial_look))
             .add_systems(
                 Update,
-                (respawn_on_style_change, spawn_cockpit, sync_materials).chain().run_if(in_state(AppState::Flight)),
+                (respawn_on_style_change, spawn_cockpit, sync_materials, cockpit_visibility).chain().run_if(in_state(AppState::Flight)),
             )
             .add_systems(
                 PreUpdate,
@@ -244,6 +244,14 @@ fn cockpit_lamps(settings: Res<Settings>, lighting: Res<crate::lighting::Lightin
     }
 }
 
+/// The cockpit is only drawn from the pilot's seat, not in the external views.
+fn cockpit_visibility(state: Res<ViewState>, mut roots: Query<&mut Visibility, With<CockpitRoot>>) {
+    let inside = matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
+    for mut v in &mut roots {
+        v.set_if_neq(if inside { Visibility::Inherited } else { Visibility::Hidden });
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn spawn_cockpit(
     mut commands: Commands,
@@ -380,12 +388,15 @@ fn set_projection(settings: Res<Settings>, state: Res<ViewState>, mut cams: Quer
 }
 
 /// Desktop mouse look: hold the right button and move the mouse. The look-view keys turn the
-/// head to that side (and reset the free look).
+/// head to that side (and reset the free look). In the external views the mouse orbits the
+/// camera around the aircraft (reset when an external view is selected).
+#[allow(clippy::too_many_arguments)]
 fn mouse_look(
     settings: Res<Settings>,
     buttons: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     mut look: ResMut<HeadLook>,
+    mut orbit: ResMut<Orbit>,
     mut actions: MessageReader<ActionEvent>,
     state: Res<ViewState>,
     mut cursor: Query<&mut CursorOptions>,
@@ -394,10 +405,14 @@ fn mouse_look(
         if matches!(a, Action::ViewCockpit | Action::LookAhead | Action::LookLeft | Action::LookRight | Action::LookRear) {
             *look = HeadLook::default();
         }
+        if matches!(a, Action::ViewChase | Action::ViewSlot | Action::ViewSide | Action::ViewTactical | Action::ViewInverseTactical) {
+            *orbit = Orbit::default();
+        }
     }
-    if settings.vr || !matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear) {
+    if settings.vr {
         return;
     }
+    let cockpit = matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
     let held = buttons.pressed(MouseButton::Right);
     if let Ok(mut c) = cursor.single_mut() {
         let (grab, visible) = if held { (CursorGrabMode::Locked, false) } else { (CursorGrabMode::None, true) };
@@ -406,9 +421,16 @@ fn mouse_look(
             c.visible = visible;
         }
     }
-    if held {
+    if !held {
+        return;
+    }
+    if cockpit {
         look.yaw = (look.yaw - motion.delta.x * 0.004).clamp(-2.6, 2.6);
         look.pitch = (look.pitch - motion.delta.y * 0.004).clamp(-1.2, 1.3);
+    } else {
+        // External views: orbit the camera around the aircraft.
+        orbit.yaw -= motion.delta.x * 0.006;
+        orbit.pitch = (orbit.pitch + motion.delta.y * 0.006).clamp(-1.5, 1.5);
     }
 }
 

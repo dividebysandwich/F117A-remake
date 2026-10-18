@@ -19,6 +19,7 @@ impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ViewState>()
             .init_resource::<HeadLook>()
+            .init_resource::<Orbit>()
             .init_resource::<RigOffset>()
             .init_resource::<XrRoot>()
             .add_systems(Update, (switch_view, update_rig).chain().in_set(RigSystems).after(crate::flight::FlightSystems).run_if(in_state(crate::settings::AppState::Flight)));
@@ -59,6 +60,13 @@ pub struct HeadAnchor;
 /// Free head look in the 3D cockpit (radians, relative to the view's direction).
 #[derive(Resource, Default)]
 pub struct HeadLook {
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
+/// Mouse orbit in the external views (radians, added to the view's direction to the camera).
+#[derive(Resource, Default)]
+pub struct Orbit {
     pub yaw: f32,
     pub pitch: f32,
 }
@@ -171,6 +179,7 @@ fn update_rig(
     state: Res<ViewState>,
     settings: Res<crate::settings::Settings>,
     look: Res<HeadLook>,
+    orbit: Res<Orbit>,
     offset: Res<RigOffset>,
     aircraft: Query<(&Aircraft, &WorldPos), With<Player>>,
     mut head: Query<&mut Transform, (With<HeadAnchor>, Without<EyeCamera>)>,
@@ -179,6 +188,8 @@ fn update_rig(
 ) {
     let (Ok(mut head), Ok(mut cam_tf)) = (head.single_mut(), cam.single_mut()) else { return };
     let Ok((a, _)) = aircraft.single() else { return };
+    // Lowest camera height relative to the aircraft origin in external views (1 m above ground).
+    let floor = 1.0 - (a.altitude - a.ground_altitude) * crate::world::WU as f32;
     viewpoint.altitude_wu = a.altitude + EYE_OFFSET.y / crate::world::WU as f32;
     let yaw = match state.view {
         View::LookLeft => 90f32.to_radians(),
@@ -198,12 +209,12 @@ fn update_rig(
             // Behind and above, looking along the flight direction (camera stays in the aircraft frame).
             let d = 40.0 * 2f32.powi(-state.zoom);
             *head = Transform::IDENTITY;
-            *cam_tf = Transform::from_xyz(0.0, d * 0.25, d).looking_at(Vec3::new(0.0, 0.0, -20.0), Vec3::Y);
+            *cam_tf = orbited(Vec3::new(0.0, d * 0.25, d), Vec3::new(0.0, 0.0, -20.0), &orbit, a.orientation, floor);
         }
         View::Side => {
             let d = 40.0 * 2f32.powi(-state.zoom);
             *head = Transform::IDENTITY;
-            *cam_tf = Transform::from_xyz(d, 2.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y);
+            *cam_tf = orbited(Vec3::new(d, 2.0, 0.0), Vec3::ZERO, &orbit, a.orientation, floor);
         }
         View::Tactical => {
             // Above and behind in world-up terms: undo the aircraft's roll and pitch.
@@ -212,11 +223,27 @@ fn update_rig(
             let world_rot = Quat::from_rotation_y(-h);
             let local = a.orientation.inverse() * world_rot;
             *head = Transform::from_rotation(local);
-            *cam_tf = Transform::from_xyz(0.0, d * 0.5, d).looking_at(Vec3::ZERO, Vec3::Y);
+            *cam_tf = orbited(Vec3::new(0.0, d * 0.5, d), Vec3::ZERO, &orbit, world_rot, floor);
         }
     }
     // Projection (FOV, off-centre frustum) is set by the cockpit module from the original
     // focal length.
+}
+
+/// An external camera at `pos` looking at `target` (rig frame), orbited around the aircraft:
+/// the orbit yaw turns both about the vertical axis, the pitch raises or lowers the camera.
+/// `to_world` rotates the rig frame to the world; the camera stays at least `floor` metres above
+/// the aircraft origin (world up).
+fn orbited(pos: Vec3, target: Vec3, orbit: &Orbit, to_world: Quat, floor: f32) -> Transform {
+    let r = pos.length();
+    let yaw = pos.x.atan2(pos.z) + orbit.yaw;
+    let pitch = ((pos.y / r).asin() + orbit.pitch).clamp(-1.5, 1.5);
+    let mut p = Vec3::new(yaw.sin() * pitch.cos(), pitch.sin(), yaw.cos() * pitch.cos()) * r;
+    let height = (to_world * p).y;
+    if height < floor {
+        p += to_world.inverse() * Vec3::Y * (floor - height);
+    }
+    Transform::from_translation(p).looking_at(Quat::from_rotation_y(orbit.yaw) * target, Vec3::Y)
 }
 
 /// World position of the eye (for systems that need it without the transform hierarchy).

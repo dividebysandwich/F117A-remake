@@ -16,6 +16,7 @@ use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy_mod_openxr::action_binding::{OxrSendActionBindings, OxrSuggestActionBinding};
 use bevy_mod_openxr::action_set_attaching::OxrAttachActionSet;
 use bevy_mod_openxr::action_set_syncing::{OxrActionSetSyncSet, OxrSyncActionSet};
+use bevy_mod_openxr::poll_events::{OxrEventHandlerExt, OxrEventIn};
 use bevy_mod_openxr::resources::OxrInstance;
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_openxr::spaces::OxrSpaceLocationFlags;
@@ -95,7 +96,8 @@ impl Plugin for XrPlugin {
             )
             .add_systems(Update, (setup_cameras, recenter).run_if(session_available))
             .add_systems(PostUpdate, haptics.run_if(openxr_session_running).run_if(resource_exists::<XrActions>))
-            .add_systems(OnEnter(AppState::Flight), |mut r: ResMut<Recenter>| r.0 = true)
+            .add_systems(OnEnter(AppState::Flight), |mut r: ResMut<Recenter>| r.request(0))
+            .add_oxr_event_handler(runtime_recentred)
             .add_systems(OnExit(AppState::Flight), detach_root.before(crate::combat::FlightTeardown))
             .init_resource::<Recenter>();
     }
@@ -140,9 +142,27 @@ struct HandSpace {
     aim: bool,
 }
 
-/// Recentre the headset on the next tracked frame.
+/// Recentre the headset on a tracked frame, after this many frames.
 #[derive(Resource, Default)]
-struct Recenter(bool);
+struct Recenter(Option<u8>);
+
+impl Recenter {
+    fn request(&mut self, frames: u8) {
+        self.0 = Some(frames);
+    }
+}
+
+/// Frames to wait after the runtime moved its reference space (SteamVR's hold-the-system-button
+/// recentre), so the head poses are already in the new space.
+const RUNTIME_RECENTRE_DELAY: u8 = 5;
+
+/// The runtime recentred its play space: our offset was for the old one, so redo it.
+fn runtime_recentred(event: OxrEventIn, mut pending: ResMut<Recenter>) {
+    if let openxr::Event::ReferenceSpaceChangePending(_) = *event {
+        info!("OpenXR: reference space changed, recentring");
+        pending.request(RUNTIME_RECENTRE_DELAY);
+    }
+}
 
 fn create_actions(instance: Res<OxrInstance>, mut commands: Commands) {
     let result = (|| -> openxr::Result<XrActions> {
@@ -341,10 +361,15 @@ fn recenter(
     mut offset: ResMut<RigOffset>,
 ) {
     if keys.just_pressed(KeyCode::Home) || hands.hands[0].just_pressed(BUTTON_MENU) {
-        pending.0 = true;
+        pending.request(0);
     }
-    if !pending.0 {
-        return;
+    match &mut pending.0 {
+        None => return,
+        Some(n @ 1..) => {
+            *n -= 1;
+            return;
+        }
+        Some(0) => {}
     }
     let n = cams.iter().len();
     if n == 0 {
@@ -358,7 +383,7 @@ fn recenter(
     let yaw = (-fwd.x).atan2(-fwd.z);
     let rot = Quat::from_rotation_y(-yaw);
     offset.0 = Transform::from_translation(-(rot * pos)).with_rotation(rot);
-    pending.0 = false;
+    pending.0 = None;
 }
 
 /// Takes the tracking root out of the aircraft before the flight entities are despawned.

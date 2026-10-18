@@ -22,6 +22,10 @@ const GRIP_HEIGHT: f32 = 0.11;
 /// Full deflection (radians).
 const STICK_TILT: f32 = 0.35;
 const STICK_TWIST: f32 = 0.45;
+/// Rudder deadzone (fraction of full twist); a haptic tick on leaving and re-entering it.
+const TWIST_DEADZONE: f32 = 0.15;
+/// Re-entering needs this much less twist, so hand jitter at the edge doesn't buzz.
+const TWIST_HYSTERESIS: f32 = 0.03;
 
 /// Throttle rail on the left console: idle and full positions of the handle.
 const THROTTLE_IDLE: Vec3 = Vec3::new(-0.40, -0.40, -0.02);
@@ -46,6 +50,8 @@ pub(super) struct Grabs {
 
 struct StickGrab {
     rot0: Quat,
+    /// Twist outside the rudder deadzone.
+    twisted: bool,
 }
 
 struct ThrottleGrab {
@@ -194,10 +200,10 @@ pub(super) fn grab_levers(
             right.haptic = right.haptic.max(0.2);
         }
     } else if grabs.stick.is_none() && right.squeeze > 0.6 && right.grip.translation.distance(grip_centre) < GRAB_REACH {
-        grabs.stick = Some(StickGrab { rot0: right.grip.rotation });
+        grabs.stick = Some(StickGrab { rot0: right.grip.rotation, twisted: false });
         right.haptic = right.haptic.max(0.4);
     }
-    if let Some(g) = &grabs.stick {
+    if let Some(g) = &mut grabs.stick {
         let delta = right.grip.rotation * g.rot0.inverse();
         let (p, r) = stick_angles(delta);
         controls.pitch = (p / STICK_TILT).clamp(-1.0, 1.0);
@@ -205,7 +211,17 @@ pub(super) fn grab_levers(
         // Twisting clockwise (seen from above) = nose right.
         let twist = twist_about(delta, Vec3::Y);
         let yaw = -twist / STICK_TWIST;
-        controls.yaw = if yaw.abs() < 0.08 { 0.0 } else { yaw.clamp(-1.0, 1.0) };
+        let edge = if g.twisted { TWIST_DEADZONE - TWIST_HYSTERESIS } else { TWIST_DEADZONE };
+        if (yaw.abs() > edge) != g.twisted {
+            g.twisted = !g.twisted;
+            right.haptic = right.haptic.max(0.15);
+        }
+        // Rescaled past the deadzone so the rudder starts from zero at its edge.
+        controls.yaw = if g.twisted {
+            (yaw.signum() * (yaw.abs() - TWIST_DEADZONE).max(0.0) / (1.0 - TWIST_DEADZONE)).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
         controls.gun |= right.held(BUTTON_PRIMARY);
         if right.trigger_pulled() {
             actions.write(ActionEvent(Action::FireWeapon));

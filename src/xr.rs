@@ -50,10 +50,10 @@ pub fn runtime_available() -> bool {
     }
 }
 
-/// The OpenXR loader. On Windows bevy_mod_openxr links the Khronos loader in; elsewhere it is
-/// the system's, else the `libopenxr_loader.so.1` the Linux packages ship beside the executable
-/// (for systems without the openxr package, such as SteamOS). That one is kept loaded, so
-/// bevy_mod_openxr's own `Entry::load` finds it by its soname.
+/// The OpenXR loader. On Windows bevy_mod_openxr links the Khronos loader in. Elsewhere it is
+/// `libopenxr_loader.so`, loaded as bevy_mod_openxr loads it: from beside the executable (the
+/// Linux packages ship it there, for systems without the openxr package such as SteamOS; the
+/// executable's RUNPATH is `$ORIGIN`, see build.rs), else from the system.
 fn entry() -> Option<openxr::Entry> {
     #[cfg(windows)]
     {
@@ -61,24 +61,13 @@ fn entry() -> Option<openxr::Entry> {
     }
     #[cfg(not(windows))]
     {
-        static BESIDE: std::sync::OnceLock<Option<openxr::Entry>> = std::sync::OnceLock::new();
-        // SAFETY: loads the system OpenXR loader library.
-        unsafe { openxr::Entry::load() }.ok().or_else(|| {
-            BESIDE
-                .get_or_init(|| {
-                    let path = std::env::current_exe().ok()?.parent()?.join("libopenxr_loader.so.1");
-                    // SAFETY: the Khronos loader shipped with the game.
-                    path.is_file().then(|| unsafe { openxr::Entry::load_from(&path) }.ok()).flatten()
-                })
-                .clone()
-        })
+        // SAFETY: loads the OpenXR loader library.
+        unsafe { openxr::Entry::load() }.ok()
     }
 }
 
 /// The default plugins with OpenXR rendering.
 pub fn plugins(plugins: PluginGroupBuilder) -> PluginGroupBuilder {
-    // Before bevy_mod_openxr loads the loader itself (keeps a bundled one loaded).
-    let _ = entry();
     // Pipelined rendering adds a frame of latency to head and hand poses.
     add_xr_plugins(plugins.disable::<PipelinedRenderingPlugin>())
 }

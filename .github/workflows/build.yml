@@ -49,9 +49,10 @@ jobs:
             pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev \
             libx11-dev  # the OpenXR-SDK's configure step wants Xlib headers (default backend)
 
-      # The Linux packages ship libopenxr_loader.so.1 beside f117 with its licence (Apache
-      # 2.0), for systems without the openxr package or that can't install it (SteamOS, the
-      # Steam Frame); src/xr.rs loads it from there when the system has none. Built from
+      # The Linux packages ship the loader beside f117 with its licence (Apache 2.0), for
+      # systems without the openxr package or that can't install it (SteamOS, the Steam
+      # Frame). It is named libopenxr_loader.so, the name the openxr crate opens; f117's
+      # RUNPATH ($ORIGIN, build.rs) makes the dynamic loader look beside it first. Built from
       # Khronos's OpenXR-SDK (pregenerated sources): Khronos publishes no Linux build.
       # Windows needs nothing: bevy_mod_openxr links the loader statically there.
       - name: Build the OpenXR loader (Linux)
@@ -65,8 +66,8 @@ jobs:
             -DDYNAMIC_LOADER=ON -DBUILD_TESTS=OFF -DBUILD_API_LAYERS=OFF -DBUILD_WITH_SYSTEM_JSONCPP=OFF
           cmake --build openxr-build --parallel
           mkdir -p openxr
-          cp -L openxr-build/src/loader/libopenxr_loader.so.1 openxr/
-          strip openxr/libopenxr_loader.so.1
+          cp -L openxr-build/src/loader/libopenxr_loader.so.1 openxr/libopenxr_loader.so
+          strip openxr/libopenxr_loader.so
           cp "OpenXR-SDK-release-$OPENXR_VERSION/LICENSE" openxr/openxr-LICENSE.txt
 
       - uses: dtolnay/rust-toolchain@stable
@@ -125,7 +126,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/f117" $APPDIR/usr/bin/
           strip $APPDIR/usr/bin/f117
           if [[ -d openxr ]]; then
-            cp openxr/libopenxr_loader.so.1 $APPDIR/usr/bin/
+            cp openxr/libopenxr_loader.so $APPDIR/usr/bin/
             cp openxr/openxr-LICENSE.txt $APPDIR/usr/share/doc/f117/
           fi
           cp -r assets $APPDIR/usr/share/f117/

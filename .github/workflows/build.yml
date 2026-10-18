@@ -46,7 +46,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+            pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev \
+            libx11-dev  # the OpenXR-SDK's configure step wants Xlib headers (default backend)
 
       # The Linux packages ship libopenxr_loader.so.1 beside f117 with its licence (Apache
       # 2.0), for systems without the openxr package or that can't install it (SteamOS, the

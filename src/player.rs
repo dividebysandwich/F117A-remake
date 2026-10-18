@@ -1,86 +1,183 @@
-use bevy::{prelude::*, camera::visibility::RenderLayers};
-use bevy_rapier3d::prelude::*;
+//! Spawns the player's aircraft on the home runway, plus a temporary text readout of the
+//! flight state (replaced by the world-space HUD in M3).
 
-use crate::bevy_scene_hook::SceneHook;
-use crate::coalition::Coalition;
-use crate::coalition::CoalitionType;
-use crate::definitions::*;
-use crate::aircraft::*;
-use crate::f117_ai::F117AIEvent;
-use crate::f117_ai::F117AIState;
-use crate::f117_ai::activate_f117_ai;
-use crate::pointlight::LightBillboardToBeAdded;
-use crate::pointlight::get_light_color_from_name;
-use crate::pointlight::get_light_type_from_name;
-use crate::pointlight::get_lightsource_type_from_name;
-use crate::radar::RadarDetectable;
-use crate::vehicle::*;
-use crate::sam::*;
+use bevy::math::DVec3;
+use bevy::prelude::*;
 
-#[derive(Component)]
-pub struct Player;
+use crate::camera::{View, ViewState};
+use crate::settings::{AppState, MissionSetup, SetupSet};
+use crate::flight::{Aircraft, FlightConstants, Player};
+use crate::models::{ModelAssets, ModelLibrary};
+use crate::world::{Theater, WorldPos, bevy_to_wu, map_to_wu, wu_to_bevy};
 
+pub struct PlayerPlugin;
 
-pub fn spawn_player(mut commands: Commands,
-    asset_server: Res<AssetServer>,
-) {
-    let gltf_handle = asset_server.load("models/planes/f117a.glb#Scene0");
-    commands.spawn((
-        SceneRoot(gltf_handle.clone()),
-        SceneHook::new(|entity, cmds| {
-            for n in entity.get::<Name>().iter() {
-                let name = n.as_str();
-                if name.starts_with("PointLight") {
-                    cmds.insert(LightBillboardToBeAdded {
-                        light_color: get_light_color_from_name(name),
-                        light_type: get_light_type_from_name(name),
-                        lightsource_type: get_lightsource_type_from_name(name)
-                    });
-                }
-            }
-        }),
-        Visibility::Hidden,
-    ))
-    .insert(Player)
-    .insert(Coalition{side: CoalitionType::BLUE})
-    .insert(RadarDetectable {
-        base_radar_cross_section: 0.2,
-        ..default()
-    })
-    .insert(Vehicle{..default()})
-    .insert(Aircraft{name: String::from("GHOST 1-1"), aircraft_type: AircraftType::F117A, fuel: 35500.0, ..default() })
-    .insert(ExternalImpulse {
-        ..default()
-    })
-    .insert(ExternalForce {
-        ..default()
-    })
-    .insert(Velocity{..default()})
-    .insert(Collider::cuboid(0.5, 0.15, 0.5))
-    .insert(CollisionGroups::new(Group::from_bits_truncate(COLLISION_MASK_PLAYER),
-        Group::from_bits_truncate(
-            COLLISION_MASK_TERRAIN |
-            COLLISION_MASK_AIRCRAFT |
-            COLLISION_MASK_GROUNDVEHICLE |
-            COLLISION_MASK_MISSILE
-        )))
-    .insert(Restitution::coefficient(0.4))
-    .insert(RigidBody::Dynamic)
-    .insert(GravityScale(0.0))
-    .insert(Damping { linear_damping: 0.08, angular_damping: 6.0 })
-    .insert(ColliderMassProperties::Density(35.0))
-    // Smooth physics-to-render interpolation (prevents third-person camera jitter)
-    .insert(TransformInterpolation::default())
-    // Player airplane is layer 3 so it can be skipped when rendering cockpit view
-    .insert(RenderLayers::layer(RENDERLAYER_AIRCRAFT));
-
-    spawn_sam(&mut commands, &asset_server, 3000.0, 10.0, CoalitionType::RED);
-
+impl Plugin for PlayerPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            OnEnter(AppState::Flight),
+            spawn_player.in_set(SetupSet::Spawn).run_if(|s: Res<MissionSetup>| !s.freecam),
+        )
+        .add_systems(Update, (readout, attach_own_model, own_model_visibility).run_if(in_state(AppState::Flight)))
+        .add_systems(OnExit(AppState::Flight), despawn_readout);
+    }
 }
 
-pub fn prepare_takeoff(
-    mut f117_ai_state: ResMut<F117AIState>,
+/// Distance from the base reference point to the runway start (original: 1800 wu).
+const RUNWAY_OFFSET_WU: f64 = 1800.0;
+
+fn spawn_player(
+    mut commands: Commands,
+    theater: Res<Theater>,
+    constants: Res<FlightConstants>,
+    setup: Res<MissionSetup>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    palette: Res<crate::palette::Palette>,
+    xr_root: Res<crate::camera::XrRoot>,
 ) {
-    println!("Prepare Takeoff");
-    activate_f117_ai (&mut f117_ai_state,F117AIEvent::Takeoff);
+    let base = setup
+        .start_base
+        .clone()
+        .and_then(|name| {
+            theater.world.objects.iter().find(|o| theater.world.name(o.name).eq_ignore_ascii_case(&name))
+        })
+        .or_else(|| theater.world.objects.iter().find(|o| o.target_flags & 0x100 != 0));
+    let (pos, heading) = match setup.start {
+        // Carrier take-offs start on the deck (VGAME 3A92: altitude 0x80).
+        Some(s) => (wu_to_bevy(s.east_wu, s.north_wu, if s.carrier { 128.0 } else { 0.0 }), s.heading),
+        None => {
+            let (east, north) = base.map(|o| map_to_wu(o.x, o.y)).unwrap_or((524_288.0, 524_288.0));
+            (wu_to_bevy(east + 2.0, north - RUNWAY_OFFSET_WU, 0.0), 0.0)
+        }
+    };
+    let mut pos: DVec3 = pos;
+    let mut aircraft_state = Aircraft::new_on_runway(constants.fuel);
+    aircraft_state.altitude = (pos.y / crate::world::WU) as f32;
+    aircraft_state.orientation = Aircraft::from_euler(heading, 0.0, 0.0);
+    if let Some((km, alt, kts)) = start_final() {
+        // Test aid (`--start-final km[,ft[,kts]]`): on final approach to the take-off runway,
+        // gear and flaps down, `km` before the runway start.
+        let (e, n, _) = bevy_to_wu(pos);
+        let d = km as f64 * 1000.0 / crate::world::WU;
+        let (e, n) = (e - heading.sin() as f64 * d, n - heading.cos() as f64 * d);
+        pos = wu_to_bevy(e, n, crate::flight::view_z(alt) as f64);
+        let a = &mut aircraft_state;
+        a.altitude = alt;
+        a.on_ground = false;
+        a.has_flown = true;
+        a.flaps = true;
+        a.velocity = kts * 27.0;
+        a.set_thrust = 50.0;
+        a.thrust = 50.0;
+    }
+    let aircraft = commands
+        .spawn((
+            Player,
+            aircraft_state,
+            WorldPos(pos),
+            Transform::default(),
+            Visibility::default(),
+        ))
+        .id();
+    crate::camera::spawn_rig(&mut commands, aircraft, &mut meshes, &palette, xr_root.0);
+    // Debug text readout of the flight state (opt-in, overlaps the panel).
+    if !std::env::args().any(|a| a == "--readout") {
+        return;
+    }
+    commands.spawn((
+        Text::new(""),
+        Readout,
+        TextFont { font_size: bevy::text::FontSize::Px(16.0), ..default() },
+        Node { position_type: PositionType::Absolute, bottom: px(8), left: px(8), ..default() },
+    ));
+}
+
+/// `--start-final km[,alt ft[,knots]]` (defaults 3 km, 500 ft, 170 kt).
+fn start_final() -> Option<(f32, f32, f32)> {
+    let args: Vec<String> = std::env::args().collect();
+    let v = args.iter().position(|a| a == "--start-final").and_then(|i| args.get(i + 1))?;
+    let mut it = v.split(',').map(|x| x.parse::<f32>().ok());
+    let km = it.next().flatten().unwrap_or(3.0);
+    let alt = it.next().flatten().unwrap_or(500.0);
+    let kts = it.next().flatten().unwrap_or(170.0);
+    Some((km, alt, kts))
+}
+
+#[derive(Component)]
+struct Readout;
+
+fn despawn_readout(mut commands: Commands, q: Query<Entity, With<Readout>>) {
+    for e in &q {
+        commands.entity(e).try_despawn();
+    }
+}
+
+fn readout(
+    q: Query<(&Aircraft, &WorldPos), With<Player>>,
+    mut text: Query<&mut Text, With<Readout>>,
+) {
+    let Ok(mut text) = text.single_mut() else { return };
+    let Ok((a, pos)) = q.single() else { return };
+    let (h, p, r) = a.euler();
+    let (e, n, _) = bevy_to_wu(pos.0);
+    text.0 = format!(
+        "KTS {:4.0}  ALT {:5.0}  HDG {:03.0}  PITCH {:+5.1}  ROLL {:+6.1}  G {:.1}  THR {:3.0}/{:3.0}  FUEL {:5.0}  STALL {:3.0}\n\
+         gear {} flaps {} brakes {} bay {} ap {} ground {} {}  pos {:.0},{:.0}",
+        a.knots(),
+        a.altitude,
+        h.to_degrees(),
+        p.to_degrees(),
+        r.to_degrees(),
+        a.gees / 16.0,
+        a.thrust,
+        a.set_thrust,
+        a.fuel,
+        a.stall_speed / 27.0,
+        a.gear_down as u8,
+        a.flaps as u8,
+        a.brakes as u8,
+        a.bay_open as u8,
+        a.autopilot() as u8,
+        a.on_ground as u8,
+        a.ended.map(|e| format!("{e:?}")).unwrap_or_default(),
+        e,
+        n
+    );
+}
+
+/// Aircraft models (STFLT.3DX) use 1/8 world unit per model unit (F-117 model: 288 units long
+/// = 17.6 m). ASSUMED from model sizes; to be confirmed from VGAME's object drawing code.
+pub const AIRCRAFT_MODEL_SCALE: f64 = crate::world::WU / 8.0;
+/// STFLT model of the player's F-117A in external views (combat.md: own aircraft = 24).
+const F117_MODEL: &str = "stflt_024";
+
+#[derive(Component)]
+pub struct OwnModel;
+
+fn attach_own_model(
+    mut commands: Commands,
+    mut library: ResMut<ModelLibrary>,
+    server: Res<AssetServer>,
+    assets: ModelAssets,
+    player: Query<Entity, With<Player>>,
+    existing: Query<(), With<OwnModel>>,
+) {
+    if !existing.is_empty() {
+        return;
+    }
+    let Ok(player) = player.single() else { return };
+    let file = library.load(&server, "stflt");
+    if let Some(model) = assets.spawn(&mut commands, &file, F117_MODEL, crate::palette_material::LEVEL_AIRCRAFT, true) {
+        commands
+            .entity(model)
+            .insert((OwnModel, Transform::from_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32)), Visibility::Hidden));
+        commands.entity(player).add_child(model);
+    }
+}
+
+fn own_model_visibility(view: Res<ViewState>, mut q: Query<&mut Visibility, With<OwnModel>>) {
+    let external = !matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
+    for mut v in &mut q {
+        v.set_if_neq(if external { Visibility::Inherited } else { Visibility::Hidden });
+    }
 }

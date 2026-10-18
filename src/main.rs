@@ -1,341 +1,111 @@
-use bevy::{
-    camera::ScalingMode,
-    camera::visibility::RenderLayers,
-    core_pipeline::Skybox,
-    prelude::*,
-    render::render_resource::{
-        TextureViewDescriptor,
-        TextureViewDimension,
-    },
-    image::CompressedImageFormats,
-};
-//use bevy_prototype_debug_lines::DebugLinesPlugin;
-use bevy_rapier3d::prelude::*;
-use bevy_scene_hook::HookPlugin;
-use bevy_third_person_camera::*;
-use bevy_common_assets::toml::TomlAssetPlugin;
-use definitions::{RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS, RENDERLAYER_COCKPIT, RENDERLAYER_AIRCRAFT};
-use radar::{update_rcs, update_radar};
-
-mod bevy_scene_hook;
-mod billboard;
-mod definitions;
-mod explosion;
-mod aircraft;
+mod asset_path;
+mod autoshot;
+mod camera;
+mod canvas;
+mod cockpit;
+mod cockpit3d;
+mod combat;
+mod dots;
+mod flight;
+mod font;
+mod freecam;
 mod hud;
-mod dialog_ui;
-mod missile;
-mod player;
-mod sam;
-mod util;
-mod vehicle;
-mod pointlight;
-mod scenery;
-mod terrain;
-mod map_mfd;
+mod input;
+mod lighting;
 mod mfd;
-mod targeting;
-mod health;
-mod coalition;
-mod radar;
-mod rwr;
-mod f117_ai;
+mod menu;
+mod mission;
+mod models;
+mod palette;
+mod palette_material;
+mod panel;
+mod player;
+mod script;
+mod settings;
+mod sound;
+mod sim_render;
+mod trackcam;
+mod viewer;
+mod world;
+#[cfg(feature = "xr")]
+mod xr;
 
-use crate::aircraft::*;
-use crate::billboard::BillboardPlugin;
-use crate::hud::*;
-use crate::missile::*;
-use crate::player::*;
-use crate::vehicle::*;
-use crate::pointlight::*;
-use crate::terrain::{setup_procedural_world, origin_shift};
-use crate::mfd::*;
-use crate::targeting::*;
-use crate::explosion::*;
-use crate::rwr::*;
-use crate::f117_ai::*;
-use crate::dialog_ui::*;
+use bevy::prelude::*;
+
+use settings::{MissionSetup, Settings};
 
 fn main() {
-    App::new()
-        .add_plugins((
-            DefaultPlugins.set(ImagePlugin::default_nearest()),
+    let settings = Settings::from_args();
+    let mut app = App::new();
+    let plugins = DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "F-117A Nighthawk".into(),
+            // --novsync: uncapped frame rate (performance measurements).
+            present_mode: if std::env::args().any(|a| a == "--novsync") {
+                bevy::window::PresentMode::AutoNoVsync
+            } else {
+                bevy::window::PresentMode::AutoVsync
+            },
+            ..default()
+        }),
+        ..default()
+    });
+    // --vr: OpenXR replaces the render plugin (the window stays for the menu / mirror).
+    #[cfg(feature = "xr")]
+    if settings.vr {
+        app.add_plugins(xr::plugins(plugins)).add_plugins(xr::XrPlugin);
+    } else {
+        app.add_plugins(plugins);
+    }
+    #[cfg(not(feature = "xr"))]
+    {
+        if settings.vr {
+            warn!("built without the `xr` feature: --vr ignored");
+        }
+        app.add_plugins(plugins);
+    }
+    app.insert_state(settings.initial_state)
+    .insert_resource(settings.clone())
+    .insert_resource(MissionSetup::from_args())
+    .insert_resource(flight::SimTables::load())
+    .add_plugins(settings::configure)
+    .add_plugins((palette::PalettePlugin, models::ModelsPlugin, dots::DotsPlugin, canvas::CanvasPlugin))
+    .add_plugins((menu::MenuPlugin, viewer::ViewerPlugin))
+    .add_plugins((
+        world::WorldPlugin,
+        freecam::FreeCamPlugin,
+        input::InputPlugin,
+        cockpit::CockpitPlugin,
+        flight::FlightPlugin,
+        camera::CameraPlugin,
+        player::PlayerPlugin,
+        script::ScriptPlugin,
+        sound::SoundPlugin,
+    ))
+    .add_plugins((hud::HudPlugin, mfd::MfdPlugin, panel::PanelPlugin))
+    .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin))
+    .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin));
+    mission::from_args(&mut app);
+    if let Some(scale) = std::env::args()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .find(|w| w[0] == "--time-scale")
+        .and_then(|w| w[1].parse::<f32>().ok())
+    {
+        app.add_systems(Startup, move |mut t: ResMut<Time<Virtual>>| {
+            t.set_max_delta(std::time::Duration::from_secs(1));
+            t.set_relative_speed(scale);
+        });
+    }
+    if std::env::args().any(|a| a == "--diag") {
+        app.add_plugins((
             bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
             bevy::diagnostic::EntityCountDiagnosticsPlugin::default(),
-            RapierPhysicsPlugin::<NoUserData>::default(),
-//            RapierDebugRenderPlugin::default(),
-            ThirdPersonCameraPlugin,
-//            DebugLinesPlugin::default(),
-            BillboardPlugin,
-            HookPlugin,
-            TomlAssetPlugin::<F117AI>::new(&["toml"]),
-        ))
-        .add_systems(
-            PreStartup,
-            (
-                load_f117_ai,
-            )
-        )
-        .add_systems(
-            Startup,
-            (
-                setup_graphics,
-                initialize_textures,
-                setup_procedural_world,
-                spawn_player,
-                setup_hud,
-                setup_dialog_ui,
-                setup_flir,
-                setup_sounds,
-                setup_rwr,
-                prepare_takeoff,
-            ),
-        )
-        .add_systems(
-            Startup,
-            map_mfd::setup_map_mfd.after(setup_procedural_world),
-        )
-        .add_systems(
-            Update,
-            (
-                apply_skybox,
-                handle_camera_controls,
-                handle_targeting_controls,
-                update_cockpit_camera,
-                update_player_aircraft_controls,
-                update_player_weapon_controls,
-                update_missiles,
-                update_aircraft_forces,
-                update_rcs,
-                update_radar,
-                update_hud,
-                update_blinking_lights,
-                auto_scale_and_hide_billboards,
-                update_light_billboards,
-                update_mfd,
-                update_rwr,
-                handle_explosion_test,
-                handle_collision_events,
-                update_explosion_effects,
-                update_f117_ai,
-            ),
-        )
-        .add_systems(
-            Update,
-            (
-                update_dialog_ui,
-                origin_shift,
-                map_mfd::update_map_mfd,
-            )
-        )
-        .run();
-}
-
-fn setup_sounds(
-    asset_server: Res<AssetServer>,
-    mut commands: Commands
-) {
-    commands.spawn(AudioPlayer::new(asset_server.load("sounds/radio_takeoff.ogg")));
-}
-
-//Render layers:
-// 0: World
-// 1: Cockpit HUD / UI
-// 2: MFD Text / UI
-// 3: Player aircraft
-// 4: Point lights
-
-fn handle_camera_controls(
-    main_cameras: Query<Entity, With<MainCamera>>,
-    mut commands: Commands,
-    mut aircrafts: Query<&mut Visibility, With<Player>>,
-    mut vehicles: Query<(Entity, &Vehicle)>,
-    mut camera_settings: ResMut<CameraSettings>,
-    input: Res<ButtonInput<KeyCode>>,
-) {
-    for mut aircraft_visibility in aircrafts.iter_mut() {
-        if input.just_pressed(KeyCode::F1) {
-            *aircraft_visibility = Visibility::Hidden;
-            camera_settings.render_hud = true;
-            for main_camera in main_cameras.iter() {
-                commands.entity(main_camera).remove::<ThirdPersonCamera>();
-                commands.entity(main_camera).insert(CockpitCamera);
-                commands.entity(main_camera).remove::<RenderLayers>();
-                commands
-                    .entity(main_camera)
-                    .insert(RenderLayers::from_layers(&[
-                        RENDERLAYER_WORLD,
-                        RENDERLAYER_POINTLIGHTS]));
-            }
-        } else if input.just_pressed(KeyCode::F2) {
-            *aircraft_visibility = Visibility::Visible;
-            camera_settings.render_hud = false;
-            for main_camera in main_cameras.iter() {
-                commands.entity(main_camera).remove::<CockpitCamera>();
-                commands.entity(main_camera).insert(ThirdPersonCamera {
-                    zoom: Zoom::new(0.2, 500.0),
-                    ..default()
-                });
-                commands.entity(main_camera).remove::<RenderLayers>();
-                commands
-                    .entity(main_camera)
-                    .insert(RenderLayers::from_layers(&[
-                        RENDERLAYER_WORLD,
-                        RENDERLAYER_COCKPIT,
-                        RENDERLAYER_AIRCRAFT,
-                        RENDERLAYER_POINTLIGHTS])); //TODO: Remove Cockpit Layer (1) to remove debug line display
-            }
-            let mut i: i32 = 0;
-            let mut vehicles_sorted = vehicles.iter_mut().collect::<Vec<_>>();
-            vehicles_sorted
-                .sort_by(|(_, a), (_, b)| (a.serialnumber).partial_cmp(&b.serialnumber).unwrap());
-            for (entity, _vehicle) in vehicles_sorted.iter() {
-                if camera_settings.target_index == i {
-                    commands.entity(*entity).insert(ThirdPersonCameraTarget);
-                } else {
-                    commands.entity(*entity).remove::<ThirdPersonCameraTarget>();
-                }
-                i += 1;
-            }
-            camera_settings.target_index += 1;
-            if camera_settings.target_index >= i {
-                camera_settings.target_index = 0;
-            }
-        }
+            bevy::diagnostic::LogDiagnosticsPlugin::default(),
+        ));
     }
-}
-
-fn update_cockpit_camera(
-    mut camera_transforms: Query<
-        &mut Transform,
-        (With<CockpitCamera>, Without<Aircraft>, Without<Player>),
-    >,
-    aircraft_transforms: Query<&Transform, (With<Aircraft>, With<Player>, Without<CockpitCamera>)>,
-) {
-    for aircraft_transform in aircraft_transforms.iter() {
-        for mut camera_transform in camera_transforms.iter_mut() {
-            camera_transform.translation = aircraft_transform.translation;
-            camera_transform.rotation =
-                aircraft_transform.rotation * Quat::from_rotation_y(f32::to_radians(-90.0));
-        }
+    if let Some(shot) = autoshot::from_args() {
+        app.add_plugins(shot);
     }
-}
-
-const CUBEMAPS: &[(&str, CompressedImageFormats)] =
-    &[("skybox/night.png", CompressedImageFormats::NONE)];
-
-#[derive(Resource)]
-struct Cubemap {
-    is_loaded: bool,
-    image_handle: Handle<Image>,
-}
-
-#[derive(Resource)]
-pub struct CameraSettings {
-    pub target_index: i32, // Keeps track of which target is currently being followed
-    pub render_hud: bool,
-}
-
-#[derive(Component)]
-pub struct MainCamera;
-
-#[derive(Component)]
-pub struct CockpitCamera;
-
-#[derive(Component)]
-pub struct HudCamera;
-
-
-fn apply_skybox(
-    main_cameras: Query<Entity, With<MainCamera>>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut images: ResMut<Assets<Image>>,
-    mut cubemap: ResMut<Cubemap>,
-) {
-    if !cubemap.is_loaded {
-        if asset_server.is_loaded(&cubemap.image_handle)
-        {
-            info!("Applying skybox");
-            let image = images.get_mut(&cubemap.image_handle).unwrap();
-            // NOTE: PNGs do not have any metadata that could indicate they contain a cubemap texture,
-            // so they appear as one texture. The following code reconfigures the texture as necessary.
-            if image.texture_descriptor.array_layer_count() == 1 {
-                image.reinterpret_stacked_2d_as_array(
-                    image.texture_descriptor.size.height / image.texture_descriptor.size.width,
-                ).expect("Failed to reinterpret skybox image as array");
-                image.texture_view_descriptor = Some(TextureViewDescriptor {
-                    dimension: Some(TextureViewDimension::Cube),
-                    ..default()
-                });
-            }
-
-            for main_camera in main_cameras.iter() {
-                commands
-                    .entity(main_camera)
-                    .insert(Skybox{image: cubemap.image_handle.clone(), brightness: 255.0, ..default()});
-            }
-            cubemap.is_loaded = true;
-        }
-    }
-}
-
-fn setup_graphics(
-    mut config_store: ResMut<GizmoConfigStore>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-) {
-    commands.insert_resource(Cubemap {
-        is_loaded: false,
-        image_handle: asset_server.load(CUBEMAPS[0].0),
-    });
-
-    // Initialize the third person target storage
-    commands.insert_resource(CameraSettings { target_index: 0, render_hud: true });
-
-    // Initialize the sensor target storage
-    commands.insert_resource(TargetSettings { target_index: -1 });
-
-    // Main 3d camera
-    commands
-        .spawn((
-            Camera3d::default(),
-            Camera {
-                // renders first
-                order: 0,
-                ..default()
-            },
-        ))
-        .insert(MainCamera)
-        .insert(CockpitCamera)
-        .insert(RenderLayers::from_layers(&[RENDERLAYER_WORLD, RENDERLAYER_POINTLIGHTS]));
-
-    // HUD camera
-    commands
-        .spawn((
-            Camera2d,
-            Camera {
-                // Don't clear the canvas before drawing
-                clear_color: ClearColorConfig::None,
-                // renders after / on top of the 3d camera
-                order: 2,
-                ..default()
-            },
-            Projection::Orthographic({
-                let mut ortho = OrthographicProjection::default_2d();
-                ortho.scale = 1.0;
-                ortho.scaling_mode = ScalingMode::Fixed {
-                    width: 1920.,
-                    height: 1080.,
-                };
-                ortho.far = 1000.0;
-                ortho.near = -1000.0;
-                ortho
-            }),
-            RenderLayers::layer(RENDERLAYER_COCKPIT),
-        ))
-        .insert(HudCamera);
-
-    let (config, _) = config_store.config_mut::<DefaultGizmoConfigGroup>();
-    config.render_layers = RenderLayers::layer(RENDERLAYER_COCKPIT);
+    app.run();
 }

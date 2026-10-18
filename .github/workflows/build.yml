@@ -1,0 +1,131 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            features: xr
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            features: xr
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            features: xr
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            features: xr
+          # Both macOS builds run on Apple Silicon; the Intel one cross-compiles.
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            features: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            features: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      # The Linux packages ship libopenxr_loader.so.1 beside f117 with its licence (Apache
+      # 2.0), for systems without the openxr package or that can't install it (SteamOS, the
+      # Steam Frame); src/xr.rs loads it from there when the system has none. Built from
+      # Khronos's OpenXR-SDK (pregenerated sources): Khronos publishes no Linux build.
+      # Windows needs nothing: bevy_mod_openxr links the loader statically there.
+      - name: Build the OpenXR loader (Linux)
+        if: runner.os == 'Linux' && matrix.features == 'xr'
+        env:
+          OPENXR_VERSION: 1.1.63
+        run: |
+          curl -fsSL -o openxr.tar.gz "https://github.com/KhronosGroup/OpenXR-SDK/archive/refs/tags/release-$OPENXR_VERSION.tar.gz"
+          tar xzf openxr.tar.gz
+          cmake -S "OpenXR-SDK-release-$OPENXR_VERSION" -B openxr-build -DCMAKE_BUILD_TYPE=Release \
+            -DDYNAMIC_LOADER=ON -DBUILD_TESTS=OFF -DBUILD_API_LAYERS=OFF -DBUILD_WITH_SYSTEM_JSONCPP=OFF
+          cmake --build openxr-build --parallel
+          mkdir -p openxr
+          cp -L openxr-build/src/loader/libopenxr_loader.so.1 openxr/
+          strip openxr/libopenxr_loader.so.1
+          cp "OpenXR-SDK-release-$OPENXR_VERSION/LICENSE" openxr/openxr-LICENSE.txt
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Release builds drop the default `dev` feature (bevy/dynamic_linking).
+      - name: Build
+        shell: bash
+        run: |
+          cargo build --release --target ${{ matrix.target }} \
+            -p f117 -p f117-convert --no-default-features \
+            ${{ matrix.features && format('--features f117/{0}', matrix.features) || '' }}
+
+      - name: Package
+        id: package
+        shell: bash
+        run: |
+          name="f117-${GITHUB_REF_NAME//\//-}-${{ matrix.target }}"
+          ext=""
+          [[ "${{ runner.os }}" == "Windows" ]] && ext=".exe"
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/f117$ext" \
+             "target/${{ matrix.target }}/release/f117-convert$ext" "dist/$name/"
+          cp -r assets README.md LICENSE "dist/$name/"
+          [[ -d openxr ]] && cp openxr/* "dist/$name/"
+          cd dist
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+            echo "file=dist/$name.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -czf "$name.tar.gz" "$name"
+            echo "file=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: ${{ steps.package.outputs.file }}
+          if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

@@ -1,0 +1,12 @@
+[package]
+name = "f117-sim"
+version.workspace = true
+edition.workspace = true
+description = "F-117A combat, radar and weapons simulation (port of VGAME.EXE game logic, docs/re/radar-threats.md, combat.md, weapons.md)"
+
+[dependencies]
+f117-formats.workspace = true
+f117-mission = { path = "../f117-mission" }
+serde.workspace = true
+anyhow.workspace = true
+postcard = { version = "1", features = ["use-std"] }

@@ -1,0 +1,8 @@
+[package]
+name = "f117-formats"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+anyhow.workspace = true

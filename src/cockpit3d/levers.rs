@@ -1,0 +1,292 @@
+//! Side stick (right console) and throttle (left console).
+//!
+//! VR: squeeze the grip near the stick to take it. Tilting the hand about the stick pivot
+//! deflects pitch (pull back = nose up) and roll; twisting the controller about the stick's
+//! axis is the rudder. Trigger = fire weapon, A = gun, B = select weapon, stick click =
+//! designate target. Letting go re-centres the stick.
+//! Squeeze near the throttle handle and slide it: forward = more thrust; it stays where it is
+//! released. X = flare, Y = chaff, left stick click = decoy.
+//! The ejection handle is pulled up with either hand.
+//! Without VR both animate from the keyboard/gamepad controls.
+
+use bevy::camera::visibility::NoFrustumCulling;
+use bevy::prelude::*;
+
+use super::{BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_THUMB, CockpitMaterials, Hands};
+use crate::flight::{Aircraft, Player};
+use crate::input::{Action, ActionEvent, FlightControls};
+
+const STICK_PIVOT: Vec3 = Vec3::new(0.40, -0.48, -0.12);
+/// Grip centre above the pivot.
+const GRIP_HEIGHT: f32 = 0.11;
+/// Full deflection (radians).
+const STICK_TILT: f32 = 0.35;
+const STICK_TWIST: f32 = 0.45;
+
+/// Throttle rail on the left console: idle and full positions of the handle.
+const THROTTLE_IDLE: Vec3 = Vec3::new(-0.40, -0.40, -0.02);
+const THROTTLE_FULL: Vec3 = Vec3::new(-0.40, -0.40, -0.20);
+const THROTTLE_PIVOT_Y: f32 = -0.49;
+
+/// Reach for grabbing (metres from the grip centre).
+const GRAB_REACH: f32 = 0.10;
+
+#[derive(Component)]
+pub(super) struct Stick;
+
+#[derive(Component)]
+pub(super) struct ThrottleLever;
+
+#[derive(Default)]
+pub(super) struct Grabs {
+    stick: Option<StickGrab>,
+    throttle: Option<ThrottleGrab>,
+    eject: Option<(usize, f32)>,
+}
+
+struct StickGrab {
+    pitch0: f32,
+    roll0: f32,
+    rot0: Quat,
+}
+
+struct ThrottleGrab {
+    z0: f32,
+    t0: f32,
+}
+
+pub(super) fn spawn_levers(commands: &mut Commands, root: Entity, mats: &CockpitMaterials, meshes: &mut Assets<Mesh>) {
+    // Stick: boot, shaft and grip under a pivot entity rotated by the deflection.
+    let boot = commands
+        .spawn((
+            Mesh3d(meshes.add(Cylinder::new(0.035, 0.02))),
+            MeshMaterial3d(mats.rubber.clone()),
+            Transform::from_translation(STICK_PIVOT + Vec3::new(0.0, -0.005, 0.0)),
+            NoFrustumCulling,
+        ))
+        .id();
+    commands.entity(root).add_child(boot);
+    let shaft = commands
+        .spawn((
+            Mesh3d(meshes.add(Cylinder::new(0.008, 0.07))),
+            MeshMaterial3d(mats.metal.clone()),
+            Transform::from_xyz(0.0, 0.035, 0.0),
+            NoFrustumCulling,
+        ))
+        .id();
+    let grip = commands
+        .spawn((
+            Mesh3d(meshes.add(Capsule3d::new(0.017, 0.07))),
+            MeshMaterial3d(mats.rubber.clone()),
+            Transform::from_xyz(0.0, GRIP_HEIGHT, 0.0).with_rotation(Quat::from_rotation_x(-0.15)),
+            NoFrustumCulling,
+        ))
+        .id();
+    let trigger = commands
+        .spawn((
+            Mesh3d(mats.unit_cube.clone()),
+            MeshMaterial3d(mats.metal.clone()),
+            Transform::from_xyz(0.0, GRIP_HEIGHT + 0.02, -0.02).with_scale(Vec3::new(0.008, 0.02, 0.008)),
+            NoFrustumCulling,
+        ))
+        .id();
+    let hat = commands
+        .spawn((
+            Mesh3d(meshes.add(Sphere::new(0.006))),
+            MeshMaterial3d(mats.metal.clone()),
+            Transform::from_xyz(0.0, GRIP_HEIGHT + 0.055, -0.005),
+            NoFrustumCulling,
+        ))
+        .id();
+    let stick = commands
+        .spawn((Stick, Transform::from_translation(STICK_PIVOT), Visibility::default()))
+        .add_children(&[shaft, grip, trigger, hat])
+        .id();
+    commands.entity(root).add_child(stick);
+
+    // Throttle: slot plate, arm and handle; the arm leans from its pivot below the console.
+    let slot_len = THROTTLE_IDLE.z - THROTTLE_FULL.z + 0.03;
+    let slot = commands
+        .spawn((
+            Mesh3d(mats.unit_cube.clone()),
+            MeshMaterial3d(mats.black.clone()),
+            Transform::from_xyz(THROTTLE_IDLE.x, -0.4805, (THROTTLE_IDLE.z + THROTTLE_FULL.z) / 2.0).with_scale(Vec3::new(0.02, 0.002, slot_len)),
+            NoFrustumCulling,
+        ))
+        .id();
+    commands.entity(root).add_child(slot);
+    let arm = commands
+        .spawn((
+            Mesh3d(mats.unit_cube.clone()),
+            MeshMaterial3d(mats.metal.clone()),
+            Transform::from_xyz(0.0, -0.045, 0.0).with_scale(Vec3::new(0.012, 0.09, 0.012)),
+            NoFrustumCulling,
+        ))
+        .id();
+    let handle = commands
+        .spawn((
+            Mesh3d(meshes.add(Cuboid::new(0.045, 0.05, 0.06))),
+            MeshMaterial3d(mats.panel_grey.clone()),
+            Transform::from_xyz(-0.005, 0.0, 0.0),
+            NoFrustumCulling,
+        ))
+        .id();
+    let buttons = commands
+        .spawn((
+            Mesh3d(mats.unit_cube.clone()),
+            MeshMaterial3d(mats.rubber.clone()),
+            Transform::from_xyz(0.018, 0.02, -0.01).with_scale(Vec3::new(0.012, 0.012, 0.03)),
+            NoFrustumCulling,
+        ))
+        .id();
+    let lever = commands
+        .spawn((ThrottleLever, Transform::from_translation(THROTTLE_IDLE), Visibility::default()))
+        .add_children(&[arm, handle, buttons])
+        .id();
+    commands.entity(root).add_child(lever);
+}
+
+fn throttle_handle(t: f32) -> Vec3 {
+    THROTTLE_IDLE.lerp(THROTTLE_FULL, t.clamp(0.0, 1.0))
+}
+
+/// Twist of a rotation about an axis (swing-twist decomposition), radians.
+fn twist_about(q: Quat, axis: Vec3) -> f32 {
+    let v = Vec3::new(q.x, q.y, q.z);
+    let p = axis * v.dot(axis);
+    let t = Quat::from_xyzw(p.x, p.y, p.z, q.w);
+    if t.length_squared() < 1e-9 {
+        return 0.0;
+    }
+    let t = t.normalize();
+    let angle = 2.0 * t.w.clamp(-1.0, 1.0).acos();
+    let sign = if Vec3::new(t.x, t.y, t.z).dot(axis) >= 0.0 { 1.0 } else { -1.0 };
+    let a = sign * angle;
+    // Wrap to -pi..pi.
+    (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
+}
+
+/// Stick angles of a hand position: (pitch: back = +, roll: right = +).
+fn stick_angles(hand: Vec3) -> (f32, f32) {
+    let v = hand - STICK_PIVOT;
+    (v.z.atan2(v.y), v.x.atan2(v.y))
+}
+
+/// VR grabbing: writes `FlightControls` (after the keyboard/gamepad) and the HOTAS buttons.
+pub(super) fn grab_levers(
+    mut hands: ResMut<Hands>,
+    mut grabs: Local<Grabs>,
+    mut controls: ResMut<FlightControls>,
+    mut actions: MessageWriter<ActionEvent>,
+    aircraft: Query<&Aircraft, With<Player>>,
+) {
+    let set_thrust = aircraft.single().map_or(0.0, |a| a.set_thrust / 100.0);
+    let [left, right] = &mut hands.hands;
+
+    // --- stick (right hand)
+    let grip_centre = STICK_PIVOT + Vec3::Y * GRIP_HEIGHT;
+    if !right.active || right.squeeze < 0.4 {
+        if grabs.stick.take().is_some() {
+            right.haptic = right.haptic.max(0.2);
+        }
+    } else if grabs.stick.is_none() && right.squeeze > 0.6 && right.grip.translation.distance(grip_centre) < GRAB_REACH {
+        let (p, r) = stick_angles(right.grip.translation);
+        grabs.stick = Some(StickGrab { pitch0: p, roll0: r, rot0: right.grip.rotation });
+        right.haptic = right.haptic.max(0.4);
+    }
+    if let Some(g) = &grabs.stick {
+        let (p, r) = stick_angles(right.grip.translation);
+        controls.pitch = ((p - g.pitch0) / STICK_TILT).clamp(-1.0, 1.0);
+        controls.roll = ((r - g.roll0) / STICK_TILT).clamp(-1.0, 1.0);
+        // Twisting clockwise (seen from above) = nose right.
+        let twist = twist_about(right.grip.rotation * g.rot0.inverse(), Vec3::Y);
+        let yaw = -twist / STICK_TWIST;
+        controls.yaw = if yaw.abs() < 0.08 { 0.0 } else { yaw.clamp(-1.0, 1.0) };
+        controls.gun |= right.held(BUTTON_PRIMARY);
+        if right.trigger_pulled() {
+            actions.write(ActionEvent(Action::FireWeapon));
+        }
+        if right.just_pressed(BUTTON_SECONDARY) {
+            actions.write(ActionEvent(Action::SelectWeapon));
+        }
+        if right.just_pressed(BUTTON_THUMB) {
+            actions.write(ActionEvent(Action::DesignateTarget));
+        }
+    }
+
+    // --- throttle (left hand)
+    let handle = throttle_handle(set_thrust);
+    if !left.active || left.squeeze < 0.4 {
+        if grabs.throttle.take().is_some() {
+            left.haptic = left.haptic.max(0.2);
+        }
+    } else if grabs.throttle.is_none() && left.squeeze > 0.6 && left.grip.translation.distance(handle) < GRAB_REACH {
+        grabs.throttle = Some(ThrottleGrab { z0: left.grip.translation.z, t0: set_thrust });
+        left.haptic = left.haptic.max(0.4);
+    }
+    if let Some(g) = &grabs.throttle {
+        let t = (g.t0 + (g.z0 - left.grip.translation.z) / (THROTTLE_IDLE.z - THROTTLE_FULL.z)).clamp(0.0, 1.0);
+        // A tick at idle and full.
+        let before = set_thrust;
+        if (t >= 1.0 && before < 1.0) || (t <= 0.0 && before > 0.0) {
+            left.haptic = left.haptic.max(0.5);
+        }
+        controls.throttle = Some(t);
+    }
+    if left.active {
+        if left.just_pressed(BUTTON_PRIMARY) {
+            actions.write(ActionEvent(Action::Flare));
+        }
+        if left.just_pressed(BUTTON_SECONDARY) {
+            actions.write(ActionEvent(Action::Chaff));
+        }
+        if left.just_pressed(BUTTON_THUMB) {
+            actions.write(ActionEvent(Action::Decoy));
+        }
+    }
+
+    // --- ejection handle: grab with either hand and pull up 6 cm
+    let handle = super::controls::EJECT_HANDLE;
+    for (i, h) in [&mut *left, &mut *right].into_iter().enumerate() {
+        let is_grabbing_other = (i == 1 && grabs.stick.is_some()) || (i == 0 && grabs.throttle.is_some());
+        match grabs.eject {
+            Some((who, y0)) if who == i => {
+                if !h.active || h.squeeze < 0.4 {
+                    grabs.eject = None;
+                } else if h.grip.translation.y - y0 > 0.06 {
+                    actions.write(ActionEvent(Action::Eject));
+                    h.haptic = 1.0;
+                    grabs.eject = None;
+                }
+            }
+            None if h.active && !is_grabbing_other && h.squeeze > 0.6 && h.grip.translation.distance(handle) < 0.07 => {
+                grabs.eject = Some((i, h.grip.translation.y));
+                h.haptic = h.haptic.max(0.3);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Stick and throttle follow the controls (whatever the input source).
+pub(super) fn animate_levers(
+    controls: Res<FlightControls>,
+    aircraft: Query<&Aircraft, With<Player>>,
+    mut stick: Query<&mut Transform, (With<Stick>, Without<ThrottleLever>)>,
+    mut throttle: Query<&mut Transform, With<ThrottleLever>>,
+) {
+    if let Ok(mut tf) = stick.single_mut() {
+        tf.rotation = Quat::from_rotation_x(controls.pitch * STICK_TILT)
+            * Quat::from_rotation_z(-controls.roll * STICK_TILT)
+            * Quat::from_rotation_y(-controls.yaw * STICK_TWIST);
+    }
+    if let (Ok(mut tf), Ok(a)) = (throttle.single_mut(), aircraft.single()) {
+        let t = controls.throttle.unwrap_or(a.set_thrust / 100.0);
+        let pos = throttle_handle(t);
+        tf.translation = pos;
+        // Lean the arm about its pivot below the console.
+        let mid = (THROTTLE_IDLE.z + THROTTLE_FULL.z) / 2.0;
+        let lean = ((pos.z - mid) / (pos.y - THROTTLE_PIVOT_Y)).atan();
+        tf.rotation = Quat::from_rotation_x(lean);
+    }
+}

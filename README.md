@@ -23,16 +23,31 @@ Command-line options:
 | `--freecam [--at Gutersloh\|primary] [--pos x,z]` | free debug camera |
 
 ## Controls (original keyboard layout)
-Arrows / keypad: stick (tap twice for full deflection, Ins: sensitivity) · `=` `-` throttle,
-Shift `=` full, Shift `-` idle · Space: select weapon · Enter: fire · Backspace: cannon ·
-1 flare · 2 chaff · 3 IR jammer · 4 ECM · 5 decoy · 6 gear · 7 autopilot · 8 bay doors · 9 flaps ·
-0 brakes · Shift F10 eject · F1 cockpit · Shift `/` `.` `,` M look ahead/rear/left/right ·
-Shift F1..F6 external views · F2 HUD mode · V declutter · F3 maps · F4 day/night HUD ·
-F5 ordnance · F6 FLIR · F7/F8/PgUp/PgDn waypoints · F10 orders · `/` `.` `,` M tracking camera ·
-N designate · B next target · Z/X zoom · C wide angle · Shift Z/X time acceleration ·
-Alt P pause · Alt D detail · Alt V sound level · Alt T training · Alt R resupply · Alt Q quit.
-The full table is in `docs/re/keys.md`. A gamepad works as stick and throttle as well (right
-stick: rudder). The menu's Graphics column has the same toggles as the options above.
+
+| Action | Key |
+|---|---|
+| Stick | Arrows / keypad (tap twice for full deflection, Ins: sensitivity) |
+| Throttle up / down | `=` / `-` |
+| Full / idle throttle | Shift `=` / Shift `-` |
+| Select weapon / fire / cannon | Space / Enter / Backspace |
+| Flare / chaff / IR jammer / ECM / decoy | 1 / 2 / 3 / 4 / 5 |
+| Gear / autopilot / bay doors / flaps / brakes | 6 / 7 / 8 / 9 / 0 |
+| Eject | Shift F10 |
+| Cockpit / look ahead, rear, left, right | F1 / Shift `/` `.` `,` M |
+| External views | Shift F1 .. Shift F6 |
+| HUD mode / declutter / day-night HUD | F2 / V / F4 |
+| Maps / ordnance / FLIR | F3 / F5 / F6 |
+| Waypoints | F7 / F8 / PgUp / PgDn |
+| Mission orders | F10 |
+| Tracking camera ahead, rear, right, left | `/` / `.` / `,` / M |
+| Designate / next target | N / B |
+| Zoom / unzoom / wide angle | Z / X / C |
+| Time acceleration / normal | Shift Z / Shift X |
+| Pause / detail / sound level | Alt P / Alt D / Alt V |
+| Training / resupply / quit | Alt T / Alt R / Alt Q |
+
+The full key list is in [docs/keys.md](docs/keys.md). A gamepad works as stick and throttle as
+well (right stick: rudder). The menu's Graphics column has the same toggles as the options above.
 
 **3D cockpit (desktop):** hold the right mouse button to look around, click the panel buttons
 (lit panel captions, the labelled side buttons, gear lever, ejection handle) to press them.

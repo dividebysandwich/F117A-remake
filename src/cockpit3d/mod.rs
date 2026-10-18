@@ -3,8 +3,9 @@
 //! The instrument panel keeps the original art: the 256PIT panel with the live MFDs, lights,
 //! LEDs and attitude ball is drawn every frame into a 320x200 canvas and
 //! textured onto a tilted panel plane (`geometry`), with the MFD screens recessed into it.
-//! Around it: glare shield, HUD combiner (the HUD is a separate canvas on a quad 4 m out,
-//! sized to the original 256 px/rad so it overlays the world correctly), canopy frame,
+//! Around it: glare shield, HUD combiner (the HUD is a separate canvas shown through the
+//! combiner glass collimated to infinity, at the original 256 px/rad, so it overlays the
+//! world correctly from any head position), canopy frame,
 //! consoles, seat with ejection handle, side stick (right) and throttle (left).
 //!
 //! The panel's lit buttons are physical caps showing their part of the panel picture, so
@@ -17,6 +18,7 @@
 mod controls;
 mod displays;
 pub mod geometry;
+mod hud_glass;
 mod levers;
 
 use bevy::camera::visibility::NoFrustumCulling;
@@ -35,7 +37,8 @@ pub struct Cockpit3dPlugin;
 
 impl Plugin for Cockpit3dPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Hands>()
+        app.add_plugins(MaterialPlugin::<hud_glass::HudGlassMaterial>::default())
+            .init_resource::<Hands>()
             .add_message::<PressControl>()
             .add_systems(Startup, (setup_materials, initial_look))
             .add_systems(
@@ -237,6 +240,7 @@ fn spawn_cockpit(
     mats: Res<CockpitMaterials>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut hud_materials: ResMut<Assets<hud_glass::HudGlassMaterial>>,
     mut images: ResMut<Assets<Image>>,
     fonts: Res<crate::font::Fonts>,
     tc_image: Option<Res<crate::trackcam::TrackCamImage>>,
@@ -251,6 +255,8 @@ fn spawn_cockpit(
     commands.entity(aircraft).add_child(root);
 
     displays::spawn_panel(&mut commands, root, &mats, &mut meshes, &mut materials, &mut images, tc_image.as_deref());
+    displays::spawn_hud(&mut commands, root, &mut meshes, &mut hud_materials, &mut images);
+    displays::spawn_approach_indexer(&mut commands, root, &mut meshes, &mut materials, &mut images);
     displays::spawn_structure(&mut commands, root, &mats, &mut meshes);
     controls::spawn_controls(&mut commands, root, &mats, &mut meshes, &mut materials, &mut images, &fonts);
     levers::spawn_levers(&mut commands, root, &mats, &mut meshes);

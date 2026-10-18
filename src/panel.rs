@@ -293,22 +293,29 @@ impl PanelParams<'_, '_> {
         }
     }
 
-    /// HUD posts and the approach indexer, drawn after the HUD.
-    pub fn draw_posts(&self, c: &mut Canvas, art: &CockpitArt) {
-        posts(c, &art.pit, self.approach.0);
+    /// The approach indexer into its own 10x21 canvas.
+    pub fn draw_approach(&self, c: &mut Canvas, art: &CockpitArt) {
+        approach_indexer(c, &art.pit, self.approach.0, 0, 0);
     }
 }
 
-/// HUD posts and the approach indexer (`1A18:D9A3`): atlas (264,33) and (271,33) 6x58 to
+/// HUD posts and the approach indexer (`1A18:D9A3`), replaced by the modelled combiner
+/// (kept for the snapshot comparison): atlas (264,33) and (271,33) 6x58 to
 /// (43,33) and (272,33); indexer atlas (251,67) 10x21 to (33,70) with the lit part recoloured
 /// 30 -> 41 (top chevron), 47 (circle) or 14 (bottom chevron).
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn posts(c: &mut Canvas, atlas: &Canvas, approach: u8) {
     c.copy_rect(atlas, 264, 33, 6, 58, 43, 33);
     c.copy_rect(atlas, 271, 33, 6, 58, 272, 33);
-    c.copy_rect(atlas, 251, 67, 10, 21, 33, 70);
-    const PARTS: [(i32, i32, u8); 3] = [(72, 4, 41), (77, 7, 47), (85, 4, 14)];
-    if let Some(&(y, h, colour)) = (approach as usize).checked_sub(1).and_then(|i| PARTS.get(i)) {
-        c.recolor_rect(34, y, 41, y + h, 30, colour);
+    approach_indexer(c, atlas, approach, 33, 70);
+}
+
+/// The approach indexer (10x21) with its top-left at (x, y).
+pub fn approach_indexer(c: &mut Canvas, atlas: &Canvas, approach: u8, x: i32, y: i32) {
+    c.copy_rect(atlas, 251, 67, 10, 21, x, y);
+    const PARTS: [(i32, i32, u8); 3] = [(2, 4, 41), (7, 7, 47), (15, 4, 14)];
+    if let Some(&(dy, h, colour)) = (approach as usize).checked_sub(1).and_then(|i| PARTS.get(i)) {
+        c.recolor_rect(x + 1, y + dy, x + 8, y + dy + h, 30, colour);
     }
 }
 

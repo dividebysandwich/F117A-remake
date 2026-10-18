@@ -387,6 +387,19 @@ pub fn draw(c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, f: &HudFrame) {
     c.reset_clip();
 }
 
+/// The original's drawn HUD frame (part of `2AC0:000C`), replaced by the modelled combiner
+/// (kept for the snapshot comparison).
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn border(c: &mut Canvas) {
+    c.line(46, 90, 46, 14, 15);
+    c.line(274, 90, 274, 14, 15);
+    c.line(45, 90, 45, 14, 8);
+    c.line(275, 90, 275, 14, 8);
+    c.line(275, 14, 232, 2, 8);
+    c.line(232, 2, 90, 2, 8);
+    c.line(45, 14, 89, 2, 8);
+}
+
 /// `1A18:7898`: texts, flight path marker, bars, sights, digital readouts, waypoint cue,
 /// messages.
 fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8, col2: u8) {
@@ -569,7 +582,7 @@ fn tape_ticks(c: &mut Canvas, x: i32, tick0: i32, floor: Option<i32>, col: u8, r
     }
 }
 
-/// `2AC0:000C`: tapes, heading scale, HUD frame, nose cross, G, pitch ladder.
+/// `2AC0:000C`: tapes, heading scale, nose cross, G, pitch ladder.
 fn instruments(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8, col2: u8) {
     let decl = f.state.declutter;
     if decl == 0 {
@@ -586,14 +599,7 @@ fn instruments(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col:
         }
         heading_scale(c, atlas, fonts, f.heading, col);
     }
-    // HUD frame.
-    c.line(46, 90, 46, 14, 15);
-    c.line(274, 90, 274, 14, 15);
-    c.line(45, 90, 45, 14, 8);
-    c.line(275, 90, 275, 14, 8);
-    c.line(275, 14, 232, 2, 8);
-    c.line(232, 2, 90, 2, 8);
-    c.line(45, 14, 89, 2, 8);
+    // (The HUD frame is the 3D cockpit's combiner: `border`.)
     // Nose cross: atlas (69,73) 25x15 at (147,44).
     c.blit(atlas, 69, 73, 25, 15, 147, 44, Some(0), None);
     // G readout "1.0G" at (60,16): integer part and eighths (gees & 14) / 2.
@@ -815,6 +821,7 @@ mod tests {
         let (art, fonts) = art()?;
         let mut c = Canvas::new(320, 200);
         draw(&mut c, &art, &fonts, f);
+        border(&mut c);
         crate::panel::posts(&mut c, &art.pit, 0);
         let out = std::env::var("HUD_DUMP_DIR").ok();
         if let Some(dir) = out {

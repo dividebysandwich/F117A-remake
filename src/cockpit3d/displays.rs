@@ -1,10 +1,13 @@
 //! Panel picture, MFD screens, HUD and the fixed cockpit structure.
 
+use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::light::NotShadowCaster;
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 
 use super::geometry::{beam, panel_patch, panel_patch_uv, panel_point, pixel_dir, recess_walls, uv_quad};
+use super::hud_glass::HudGlassMaterial;
 use super::{CockpitMaterials, spawn_box};
 use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit::{CockpitArt, Displays};
@@ -13,9 +16,11 @@ use crate::mfd::{LEFT, RIGHT, RightMfd};
 
 /// How far the MFD screens sit behind the panel face (metres).
 const SCREEN_DEPTH: f32 = 0.014;
-/// Distance of the HUD image (metres): far enough to read as "out there", near enough not
-/// to sink into the ground while taxiing.
-const HUD_DISTANCE: f32 = 4.0;
+/// Distance of the HUD combiner glass from the eye (metres).
+const COMBINER_DEPTH: f32 = 0.80;
+/// Outline of the combiner glass in original screen pixels: the original's HUD frame
+/// (`hud::instruments`), posts at columns 45 and 275 and a bevelled top.
+const COMBINER: [(f32, f32); 6] = [(45.0, 90.0), (45.0, 14.0), (89.0, 2.0), (232.0, 2.0), (275.0, 14.0), (275.0, 90.0)];
 /// Emissive strength of the displays and lit lights when the cockpit is lit.
 const GLOW_NITS: f32 = 1.0;
 
@@ -39,6 +44,9 @@ pub(super) struct HudTexture;
 
 #[derive(Component)]
 pub(super) struct TrackCamScreen;
+
+#[derive(Component)]
+pub(super) struct ApproachTexture;
 
 /// Panel regions that glow (displays, lights, LED readouts, attitude ball, EMV bar):
 /// (x, y, w, h).
@@ -128,30 +136,59 @@ pub(super) fn spawn_panel(
         let e = add(commands, mesh, m);
         commands.entity(e).insert((TrackCamScreen, Visibility::Hidden));
     }
+}
 
-    // HUD: transparent canvas on a quad sized to the original projection.
+/// HUD: a transparent canvas seen through the combiner glass, collimated to infinity.
+pub(super) fn spawn_hud(commands: &mut Commands, root: Entity, meshes: &mut Assets<Mesh>, materials: &mut Assets<HudGlassMaterial>, images: &mut Assets<Image>) {
     let hud_tex = CanvasTexture::new(Canvas::new(320, 200), images, true);
-    let hud_mat = materials.add(StandardMaterial {
-        base_color_texture: Some(hud_tex.image.clone()),
+    let material = materials.add(HudGlassMaterial { tint: Vec4::ZERO, image: hud_tex.image.clone() });
+    // Flat glass in the plane z = -COMBINER_DEPTH (a fan around the centre).
+    let corners: Vec<Vec3> = COMBINER.iter().map(|&(x, y)| pixel_dir(x, y) * COMBINER_DEPTH).collect();
+    let centre = corners.iter().sum::<Vec3>() / corners.len() as f32;
+    let mut pos = vec![centre.to_array()];
+    pos.extend(corners.iter().map(|c| c.to_array()));
+    let n = corners.len() as u32;
+    let idx: Vec<u32> = (0..n).flat_map(|k| [0, 1 + k, 1 + (k + 1) % n]).collect();
+    let mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_indices(Indices::U32(idx));
+    let hud = commands
+        .spawn((HudTexture, hud_tex, Mesh3d(meshes.add(mesh)), MeshMaterial3d(material), Transform::default(), NoFrustumCulling, NotShadowCaster))
+        .id();
+    commands.entity(root).add_child(hud);
+}
+
+/// Approach indexer beside the left combiner post (where the original draws it, pixels
+/// (33, 70) 10x21).
+pub(super) fn spawn_approach_indexer(
+    commands: &mut Commands,
+    root: Entity,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+) {
+    let tex = CanvasTexture::new(Canvas::new(10, 21), images, true);
+    let material = materials.add(StandardMaterial {
+        base_color_texture: Some(tex.image.clone()),
         unlit: true,
         alpha_mode: AlphaMode::Mask(0.5),
         cull_mode: None,
         fog_enabled: false,
         ..default()
     });
-    let size = Vec2::new(320.0 / crate::cockpit::FOCAL, 200.0 / (crate::cockpit::VSCALE * crate::cockpit::FOCAL)) * HUD_DISTANCE;
-    let hud = commands
+    let size = Vec2::new(10.0 / crate::cockpit::FOCAL, 21.0 / (crate::cockpit::VSCALE * crate::cockpit::FOCAL)) * COMBINER_DEPTH;
+    let e = commands
         .spawn((
-            HudTexture,
-            hud_tex,
+            ApproachTexture,
+            tex,
             Mesh3d(meshes.add(uv_quad(size, Vec2::ZERO, Vec2::ONE))),
-            MeshMaterial3d(hud_mat),
-            Transform::from_translation(pixel_dir(160.0, 100.0) * HUD_DISTANCE),
+            MeshMaterial3d(material),
+            Transform::from_translation(pixel_dir(38.0, 80.5) * COMBINER_DEPTH),
             NoFrustumCulling,
             NotShadowCaster,
         ))
         .id();
-    commands.entity(root).add_child(hud);
+    commands.entity(root).add_child(e);
 }
 
 /// Glare shield, combiner, canopy frame, consoles, seat and the body around the pilot.
@@ -163,8 +200,9 @@ pub(super) fn spawn_structure(commands: &mut Commands, root: Entity, mats: &Cock
         spawn_box(commands, root, mats, m, beam(a, z, Vec2::splat(t)))
     };
 
-    // Glare shield over the centre of the panel (art columns 64..256 reach up to row 91).
-    let (el, er) = (panel_point(64.0, 91.0, 0.0), panel_point(256.0, 91.0, 0.0));
+    // Glare shield over the centre of the panel (art columns 64..256 reach up to row 91),
+    // wide enough to carry the combiner posts.
+    let (el, er) = (panel_point(36.0, 91.0, 0.0), panel_point(284.0, 91.0, 0.0));
     let fwd = Vec3::new(0.0, -0.03, -0.32);
     let top = Mesh::from(Rectangle::new(1.0, 1.0));
     let width = er.x - el.x;
@@ -181,8 +219,8 @@ pub(super) fn spawn_structure(commands: &mut Commands, root: Entity, mats: &Cock
         ))
         .id();
     commands.entity(root).add_child(e);
-    // Coaming along the glare shield edge.
-    spawn_box(commands, root, mats, &mats.rubber, beam(el + Vec3::new(0.0, 0.006, 0.0), er + Vec3::new(0.0, 0.006, 0.0), Vec2::new(0.025, 0.02)));
+    // Coaming along the glare shield edge (kept low: the HUD weapon line sits just above it).
+    spawn_box(commands, root, mats, &mats.rubber, beam(el + Vec3::new(0.0, -0.006, 0.0), er + Vec3::new(0.0, -0.006, 0.0), Vec2::new(0.025, 0.02)));
     // Body behind the panel and the knee panel below it.
     b(commands, &mats.dark, Vec3::new(0.0, -0.55, -1.0), Vec3::new(1.1, 0.75, 0.4));
     b(commands, &mats.panel_grey, Vec3::new(0.0, -0.84, -0.75), Vec3::new(0.95, 0.62, 0.14));
@@ -196,14 +234,14 @@ pub(super) fn spawn_structure(commands: &mut Commands, root: Entity, mats: &Cock
     }
     b(commands, &mats.dark, Vec3::new(0.0, -1.15, -0.35), Vec3::new(1.1, 0.05, 1.7));
 
-    // HUD combiner frame on two posts (art columns ~70..250 above the panel).
-    let d = 0.80;
-    let corner = |px: f32, py: f32| pixel_dir(px, py) * d;
-    let (tl, tr, bl, br) = (corner(70.0, 2.0), corner(250.0, 2.0), corner(70.0, 90.0), corner(250.0, 90.0));
-    for (top, bottom) in [(tl, bl), (tr, br)] {
-        beam_box(commands, &mats.frame, top, bottom - Vec3::new(0.0, 0.05, 0.0), 0.012);
+    // HUD combiner frame around the glass, on two posts down into the glare shield.
+    let c: Vec<Vec3> = COMBINER.iter().map(|&(x, y)| pixel_dir(x, y) * COMBINER_DEPTH).collect();
+    let post = Vec3::new(0.0, 0.05, 0.0);
+    beam_box(commands, &mats.frame, c[1], c[0] - post, 0.012);
+    beam_box(commands, &mats.frame, c[4], c[5] - post, 0.012);
+    for k in 1..4 {
+        beam_box(commands, &mats.frame, c[k], c[k + 1], 0.01);
     }
-    beam_box(commands, &mats.frame, tl, tr, 0.01);
 
     // Canopy frame: the windscreen's lower edge and the rear arch (the original's inverted V
     // over the HUD and the spine over the head are left out; they cut through the view).
@@ -232,9 +270,10 @@ pub(super) fn update_displays(
     art: Res<CockpitArt>,
     fonts: Res<Fonts>,
     d: Displays,
-    mut panel: Query<(&PanelTexture, &mut CanvasTexture), (Without<GlowTexture>, Without<HudTexture>)>,
-    mut glow: Query<&mut CanvasTexture, (With<GlowTexture>, Without<HudTexture>)>,
-    mut hud: Query<&mut CanvasTexture, With<HudTexture>>,
+    mut panel: Query<(&PanelTexture, &mut CanvasTexture), (Without<GlowTexture>, Without<HudTexture>, Without<ApproachTexture>)>,
+    mut glow: Query<&mut CanvasTexture, (With<GlowTexture>, Without<HudTexture>, Without<ApproachTexture>)>,
+    mut hud: Query<&mut CanvasTexture, (With<HudTexture>, Without<ApproachTexture>)>,
+    mut approach: Query<&mut CanvasTexture, (With<ApproachTexture>, Without<HudTexture>)>,
     mut tc: Query<&mut Visibility, With<TrackCamScreen>>,
 ) {
     let Ok((pt, mut tex)) = panel.single_mut() else { return };
@@ -277,8 +316,11 @@ pub(super) fn update_displays(
         if let Some(frame) = d.hud.frame(d.mfd.state.right == RightMfd::Camera) {
             crate::hud::draw(&mut h.canvas, &art, &fonts, &frame);
         }
-        h.canvas.reset_clip();
-        d.panel.draw_posts(&mut h.canvas, &art);
         h.dirty = true;
+    }
+    if let Ok(mut a) = approach.single_mut() {
+        let a = a.as_mut();
+        d.panel.draw_approach(&mut a.canvas, &art);
+        a.dirty = true;
     }
 }

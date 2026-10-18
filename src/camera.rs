@@ -31,6 +31,9 @@ pub struct RigSystems;
 /// Pilot eye point above the aircraft origin (metres).
 pub const EYE_OFFSET: Vec3 = Vec3::new(0.0, 1.6, -3.0);
 
+/// Desktop forward cockpit view tilts down slightly so the lower panel stays in view (radians).
+const COCKPIT_DOWN_PITCH: f32 = -0.1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum View {
     #[default]
@@ -186,7 +189,8 @@ fn update_rig(
     match state.view {
         View::Cockpit | View::LookLeft | View::LookRight | View::LookRear => {
             // Looks are head turns in the cockpit (in VR the headset turns).
-            let (y, p) = if settings.vr { (0.0, 0.0) } else { (yaw + look.yaw, look.pitch) };
+            let base_pitch = if state.view == View::Cockpit { COCKPIT_DOWN_PITCH } else { 0.0 };
+            let (y, p) = if settings.vr { (0.0, 0.0) } else { (yaw + look.yaw, base_pitch + look.pitch) };
             *head = Transform::from_translation(EYE_OFFSET).with_rotation(Quat::from_rotation_y(y) * Quat::from_rotation_x(p));
             *cam_tf = offset.0;
         }

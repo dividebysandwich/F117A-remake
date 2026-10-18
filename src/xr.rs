@@ -29,10 +29,25 @@ use crate::camera::{EyeCamera, MAIN_BACKGROUND_LAYER, RigOffset, View, ViewState
 use crate::cockpit3d::{BUTTON_MENU, BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_THUMB, Hands, HandsUpdate};
 use crate::settings::AppState;
 
-/// Whether an OpenXR runtime is installed and active (cheap: loads the loader and asks the
-/// runtime for its extensions, without creating an instance).
+/// Whether an OpenXR runtime is installed and active and offers Vulkan through
+/// `XR_KHR_vulkan_enable2`, the only way bevy_mod_openxr renders (cheap: loads the loader and
+/// asks the runtime for its extensions, without creating an instance, which would start
+/// SteamVR on a PC).
 pub fn runtime_available() -> bool {
-    entry().is_some_and(|e| e.enumerate_extensions().is_ok())
+    let Some(entry) = entry() else {
+        info!("OpenXR: no loader");
+        return false;
+    };
+    match entry.enumerate_extensions() {
+        Ok(exts) => {
+            info!("OpenXR: runtime found, XR_KHR_vulkan_enable2 {}", exts.khr_vulkan_enable2);
+            exts.khr_vulkan_enable2
+        }
+        Err(e) => {
+            info!("OpenXR: no runtime ({e})");
+            false
+        }
+    }
 }
 
 /// The OpenXR loader. On Windows bevy_mod_openxr links the Khronos loader in; elsewhere it is

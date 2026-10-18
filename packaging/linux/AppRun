@@ -15,4 +15,11 @@ if [ -z "$BEVY_ASSET_ROOT" ]; then
     mkdir -p "$BEVY_ASSET_ROOT/assets" && cp -rf "$HERE/usr/share/f117/assets/." "$BEVY_ASSET_ROOT/assets/"
     export BEVY_ASSET_ROOT
 fi
+# Started from a launcher (Steam, a file manager, the Steam Frame), not a terminal: the log goes
+# to the data folder, f117-vr.log for VR starts ("Fly in VR" relaunches with --vr).
+if [ ! -t 2 ]; then
+    log=f117.log
+    case " $* " in *" --vr "*) log=f117-vr.log ;; esac
+    NO_COLOR=1 exec "$HERE/usr/bin/f117" "$@" > "$BEVY_ASSET_ROOT/$log" 2>&1
+fi
 exec "$HERE/usr/bin/f117" "$@"

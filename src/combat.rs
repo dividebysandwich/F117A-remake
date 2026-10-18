@@ -402,6 +402,9 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                 SimEvent::Sound { id, priority } => {
                     sounds.write(crate::sound::PlaySound { id, priority });
                 }
+                SimEvent::Rwr(tone) => {
+                    sounds.write(crate::sound::PlaySound { id: crate::sound::rwr_id(tone), priority: 1 });
+                }
                 SimEvent::FuelTransfer { lbs } => a.fuel += lbs as f32,
                 SimEvent::Resupplied => a.fuel = 5000.0,
                 SimEvent::CollisionBounce => {
@@ -441,7 +444,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
 /// `--log-flight` / `--log-sim`: simulation events on stdout (test automation).
 fn log_event(data: &SimData, e: &SimEvent, t: f32) {
     match e {
-        SimEvent::Sound { .. } | SimEvent::Log(_) | SimEvent::CancelTimeAccel => {}
+        SimEvent::Sound { .. } | SimEvent::Rwr(_) | SimEvent::Log(_) | SimEvent::CancelTimeAccel => {}
         SimEvent::MissileLaunched { slot, spec, launcher } => {
             println!("sim t={t:.1} launch slot {slot} {} by {launcher:?}", data.missile(*spec).name)
         }

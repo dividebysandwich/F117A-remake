@@ -351,6 +351,21 @@ pub enum Launcher {
     Player,
 }
 
+/// Radar warning receiver tones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RwrTone {
+    /// A radar signal is received but the player is not detected.
+    Track,
+    /// Detected by a Doppler radar.
+    Scan,
+    /// Detected by a non-Doppler radar.
+    SearchWarning,
+    /// A SAM site launched a missile at the player.
+    SamLaunch,
+    /// An enemy aircraft launched a missile at the player.
+    AirLaunch,
+}
+
 /// Output events of one frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SimEvent {
@@ -358,6 +373,8 @@ pub enum SimEvent {
     Message(String),
     /// `sound(id, priority)` (V:D6BF).
     Sound { id: u8, priority: u8 },
+    /// Radar warning receiver tone (replaces the original's sounds 8 and 9).
+    Rwr(RwrTone),
     /// Time acceleration must be cancelled (V:D7BB).
     CancelTimeAccel,
     MissileLaunched { slot: usize, spec: i32, launcher: Launcher },

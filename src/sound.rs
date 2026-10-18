@@ -6,6 +6,9 @@
 //!   0 = none; Alt-V cycles). Gear, bay doors, the error buzz and speech bypass the level.
 //! - The engine drone follows airspeed only (pitch `(0x83 + (knots & ~1)) * 49716 / 2^18` Hz),
 //!   is silent at 0 kt and with the throttle closed, and only plays at level 3.
+//! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.wav or .ogg) register under id NN, and a
+//!   requested id with no sample stays silent, so speech can be added later by dropping files in.
+//! - Radar warning tones come from `sounds/rwr/` instead of the original sounds 8 and 9.
 
 use std::collections::HashMap;
 
@@ -39,6 +42,29 @@ pub struct PlaySound {
 }
 
 pub const DIRECT: u8 = 255;
+
+/// Sound ids of the radar warning tones (above the original's ids).
+pub fn rwr_id(tone: f117_sim::RwrTone) -> u8 {
+    use f117_sim::RwrTone::*;
+    match tone {
+        Track => 100,
+        Scan => 101,
+        SearchWarning => 102,
+        SamLaunch => 103,
+        AirLaunch => 104,
+    }
+}
+
+const RWR_FILES: [(f117_sim::RwrTone, &str); 5] = {
+    use f117_sim::RwrTone::*;
+    [
+        (Track, "Track.ogg"),
+        (Scan, "Scan.ogg"),
+        (SearchWarning, "SearchWarning.ogg"),
+        (SamLaunch, "Launch.ogg"),
+        (AirLaunch, "LaunchWarningUS.ogg"),
+    ]
+};
 
 /// Alt-V sound level (3 = all sounds .. 0 = none).
 #[derive(Resource)]
@@ -76,7 +102,7 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     };
     for e in dir.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        let Some(stem) = name.strip_suffix(".wav") else { continue };
+        let Some(stem) = name.strip_suffix(".wav").or_else(|| name.strip_suffix(".ogg")) else { continue };
         let path = format!("sounds/{name}");
         if let Some(k) = stem.strip_prefix("engine_").and_then(|k| k.parse::<f32>().ok()) {
             bank.engine.push((k, server.load(path)));
@@ -85,6 +111,11 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
             if let Ok(id) = digits.parse::<u8>() {
                 bank.sfx.entry(id).or_default().push(server.load(path));
             }
+        }
+    }
+    for (tone, file) in RWR_FILES {
+        if crate::asset_path::asset(&format!("sounds/rwr/{file}")).exists() {
+            bank.sfx.entry(rwr_id(tone)).or_default().push(server.load(format!("sounds/rwr/{file}")));
         }
     }
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));

@@ -70,6 +70,11 @@ pub fn detect(sx: i32, sy: i32, salt: i32, typ: i32, threat: Option<(i32, i32, i
     (score, brg, rng)
 }
 
+/// RWR tone when a radar detects the player.
+fn detected_tone(doppler: bool) -> RwrTone {
+    if doppler { RwrTone::Scan } else { RwrTone::SearchWarning }
+}
+
 impl Sim {
     pub(crate) fn detect_ctx(&self) -> DetectCtx<'_> {
         DetectCtx {
@@ -205,7 +210,7 @@ impl Sim {
         }
         if score + emv > 100 {
             self.emv_lamp = 2 * self.fs;
-            self.sound(8, 1);
+            self.emit(SimEvent::Rwr(detected_tone(doppler)));
             let gain = ((self.roe + self.diff + 1) << 4) >> (self.ecm_on() as i32);
             let alert = (self.objects[i].alert + gain).min(255);
             self.objects[i].alert = alert;
@@ -220,7 +225,7 @@ impl Sim {
                     self.radar_ids += 1;
                     let n = self.place_name(i);
                     self.msg(format!("{n} - Radar ID"));
-                    self.sound(8, 1);
+                    self.emit(SimEvent::Rwr(detected_tone(doppler)));
                     self.log_event(7, i as i32);
                 } else {
                     let k = i & 7;
@@ -231,6 +236,9 @@ impl Sim {
             }
             self.objects[i].flags |= oflags::TRACKING;
         } else {
+            if score > 0 {
+                self.emit(SimEvent::Rwr(RwrTone::Track));
+            }
             let s = &mut self.objects[i];
             s.flags &= !oflags::TRACKING;
             s.alert = (s.alert - 16).max(0);
@@ -271,6 +279,7 @@ impl Sim {
         let rt = self.ac_type(u.spec).radar as i32;
         let (mut score, brg, range) = self.detect(u.x, u.y, u.alt, rt);
         let emv = self.emv;
+        let doppler = self.threat_type(rt).is_some_and(|t| t.flags & 1 != 0);
         if score > 0 {
             let omni = self.threat_type(rt).is_some_and(|t| t.flags & 2 != 0);
             let mut arc = None;
@@ -288,7 +297,6 @@ impl Sim {
             let colour = if emv + score > 100 { 15 } else { 11 };
             self.ear = Some(SignalBar { length: score.min(99), colour });
             self.sweep_anim = self.fs;
-            let doppler = self.threat_type(rt).is_some_and(|t| t.flags & 1 != 0);
             self.arc = Some(RadarArc {
                 source: -1 - i as i32,
                 x: u.x,
@@ -302,7 +310,7 @@ impl Sim {
         }
         if score + emv > 100 {
             self.emv_lamp = 2 * self.fs;
-            self.sound(8, 1);
+            self.emit(SimEvent::Rwr(detected_tone(doppler)));
             let gain = ((self.roe + self.diff + 2) << 4) >> (self.ecm_on() as i32);
             self.flights[i].heat += gain;
             if self.flights[i].heat > 0xC0 {
@@ -336,6 +344,9 @@ impl Sim {
             }
             self.flights[i].flags |= fflags::CONTACT;
         } else {
+            if score > 0 {
+                self.emit(SimEvent::Rwr(RwrTone::Track));
+            }
             self.flights[i].flags &= !fflags::CONTACT;
             self.flights[i].heat -= 32;
         }

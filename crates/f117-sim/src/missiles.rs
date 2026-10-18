@@ -155,7 +155,9 @@ impl Sim {
                 }
                 if self.frame & 3 == 0 && (self.proj[s].speed << 4) > best {
                     self.lights.klaxon = true;
-                    self.sound(9, 1);
+                    // Site launchers are object indices > 2, aircraft are -flight index.
+                    let tone = if self.proj[s].launcher > 2 { RwrTone::SamLaunch } else { RwrTone::AirLaunch };
+                    self.emit(SimEvent::Rwr(tone));
                 }
             }
             // Steering.

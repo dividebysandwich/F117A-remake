@@ -1,11 +1,11 @@
 //! Side stick (right console) and throttle (left console).
 //!
-//! VR: squeeze the grip near the stick to take it. Tilting the hand about the stick pivot
-//! deflects pitch (pull back = nose up) and roll; twisting the controller about the stick's
-//! axis is the rudder. Trigger = fire weapon, A = gun, B = select weapon, stick click =
+//! VR: squeeze the grip near the stick to take it. Tilting the controller (relative to how it
+//! was held when grabbed) deflects pitch (tilt back = nose up) and roll; twisting it about the
+//! stick's axis is the rudder. Trigger = fire weapon, A = gun, B = select weapon, stick click =
 //! designate target. Letting go re-centres the stick.
 //! Squeeze near the throttle handle and slide it: forward = more thrust; it stays where it is
-//! released. X = flare, Y = chaff, left stick click = decoy.
+//! released, with a haptic tick every 10 %. X = flare, Y = chaff, left stick click = decoy.
 //! The ejection handle is pulled up with either hand.
 //! Without VR both animate from the keyboard/gamepad controls.
 
@@ -45,15 +45,18 @@ pub(super) struct Grabs {
 }
 
 struct StickGrab {
-    pitch0: f32,
-    roll0: f32,
     rot0: Quat,
 }
 
 struct ThrottleGrab {
     z0: f32,
     t0: f32,
+    /// Last 10 % detent passed (for the haptic ticks).
+    notch: i32,
 }
+
+/// Throttle detents per full travel (one haptic tick each).
+const THROTTLE_NOTCHES: f32 = 10.0;
 
 pub(super) fn spawn_levers(commands: &mut Commands, root: Entity, mats: &CockpitMaterials, meshes: &mut Assets<Mesh>) {
     // Stick: boot, shaft and grip under a pivot entity rotated by the deflection.
@@ -166,9 +169,10 @@ fn twist_about(q: Quat, axis: Vec3) -> f32 {
     (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
 
-/// Stick angles of a hand position: (pitch: back = +, roll: right = +).
-fn stick_angles(hand: Vec3) -> (f32, f32) {
-    let v = hand - STICK_PIVOT;
+/// Stick angles of a hand rotation since the grab: (pitch: back = +, roll: right = +).
+/// The stick axis is tilted as the controller was; twist about the axis is ignored here.
+fn stick_angles(delta: Quat) -> (f32, f32) {
+    let v = delta * Vec3::Y;
     (v.z.atan2(v.y), v.x.atan2(v.y))
 }
 
@@ -190,16 +194,16 @@ pub(super) fn grab_levers(
             right.haptic = right.haptic.max(0.2);
         }
     } else if grabs.stick.is_none() && right.squeeze > 0.6 && right.grip.translation.distance(grip_centre) < GRAB_REACH {
-        let (p, r) = stick_angles(right.grip.translation);
-        grabs.stick = Some(StickGrab { pitch0: p, roll0: r, rot0: right.grip.rotation });
+        grabs.stick = Some(StickGrab { rot0: right.grip.rotation });
         right.haptic = right.haptic.max(0.4);
     }
     if let Some(g) = &grabs.stick {
-        let (p, r) = stick_angles(right.grip.translation);
-        controls.pitch = ((p - g.pitch0) / STICK_TILT).clamp(-1.0, 1.0);
-        controls.roll = ((r - g.roll0) / STICK_TILT).clamp(-1.0, 1.0);
+        let delta = right.grip.rotation * g.rot0.inverse();
+        let (p, r) = stick_angles(delta);
+        controls.pitch = (p / STICK_TILT).clamp(-1.0, 1.0);
+        controls.roll = (r / STICK_TILT).clamp(-1.0, 1.0);
         // Twisting clockwise (seen from above) = nose right.
-        let twist = twist_about(right.grip.rotation * g.rot0.inverse(), Vec3::Y);
+        let twist = twist_about(delta, Vec3::Y);
         let yaw = -twist / STICK_TWIST;
         controls.yaw = if yaw.abs() < 0.08 { 0.0 } else { yaw.clamp(-1.0, 1.0) };
         controls.gun |= right.held(BUTTON_PRIMARY);
@@ -221,15 +225,22 @@ pub(super) fn grab_levers(
             left.haptic = left.haptic.max(0.2);
         }
     } else if grabs.throttle.is_none() && left.squeeze > 0.6 && left.grip.translation.distance(handle) < GRAB_REACH {
-        grabs.throttle = Some(ThrottleGrab { z0: left.grip.translation.z, t0: set_thrust });
+        let notch = (set_thrust * THROTTLE_NOTCHES).floor() as i32;
+        grabs.throttle = Some(ThrottleGrab { z0: left.grip.translation.z, t0: set_thrust, notch });
         left.haptic = left.haptic.max(0.4);
     }
-    if let Some(g) = &grabs.throttle {
+    if let Some(g) = &mut grabs.throttle {
         let t = (g.t0 + (g.z0 - left.grip.translation.z) / (THROTTLE_IDLE.z - THROTTLE_FULL.z)).clamp(0.0, 1.0);
-        // A tick at idle and full.
+        // A light tick at each detent, a firm one at the idle and full stops.
         let before = set_thrust;
         if (t >= 1.0 && before < 1.0) || (t <= 0.0 && before > 0.0) {
             left.haptic = left.haptic.max(0.5);
+        }
+        // Hysteresis so hand jitter on a detent doesn't buzz.
+        let pos = t * THROTTLE_NOTCHES;
+        if pos >= (g.notch + 1) as f32 + 0.1 || pos < g.notch as f32 - 0.1 {
+            g.notch = pos.floor() as i32;
+            left.haptic = left.haptic.max(0.15);
         }
         controls.throttle = Some(t);
     }

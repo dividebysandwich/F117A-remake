@@ -1,5 +1,3 @@
-//! Tile objects, `findObjectAt`, kills of ground objects and aircraft (combat.md §1.6, §6.4).
-
 use serde::{Deserialize, Serialize};
 
 use crate::Sim;

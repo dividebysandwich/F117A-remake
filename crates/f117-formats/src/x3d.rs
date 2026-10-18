@@ -1,6 +1,3 @@
-//! F-117A `.3DX` model files (theater XX.3DX, STFLT.3DX, PHOTO.3DX).
-//! Format: docs/re/formats-3d.md section 6 (decoded from VGAME far segment 2C03).
-//!
 //! Axes: x = east, y = up, z = -north (model units; tile objects are in their LOD's units).
 
 use anyhow::{Context, Result, bail, ensure};

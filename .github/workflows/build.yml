@@ -82,7 +82,7 @@ jobs:
         shell: bash
         run: |
           cargo build --release --target ${{ matrix.target }} \
-            -p f117 -p f117-convert --no-default-features \
+            -p f117 --no-default-features \
             ${{ matrix.features && format('--features f117/{0}', matrix.features) || '' }}
 
       - name: Package
@@ -93,8 +93,7 @@ jobs:
           ext=""
           [[ "${{ runner.os }}" == "Windows" ]] && ext=".exe"
           mkdir -p "dist/$name"
-          cp "target/${{ matrix.target }}/release/f117$ext" \
-             "target/${{ matrix.target }}/release/f117-convert$ext" "dist/$name/"
+          cp "target/${{ matrix.target }}/release/f117$ext" "dist/$name/"
           cp -r assets README.md LICENSE "dist/$name/"
           [[ -d openxr ]] && cp openxr/* "dist/$name/"
           cd dist
@@ -107,10 +106,55 @@ jobs:
           fi
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
+      # An AppImage per architecture: one file to download, mark executable and run, for
+      # SteamOS (Steam Deck, Steam Frame) and other desktops. It has f117 and the OpenXR
+      # loader in usr/bin and the shipped
+      # assets (shaders) in usr/share/f117; packaging/linux/AppRun picks the writable data
+      # folder the game reads. The update information lets AppImageUpdate / Gear Lever fetch
+      # the latest release's file.
+      - name: Package (AppImage)
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGETOOL_VERSION: 1.9.1
+          APPIMAGE_RUNTIME_VERSION: "20251108"
+        run: |
+          ARCH=$(uname -m)
+          APPDIR=AppDir
+          mkdir -p $APPDIR/usr/bin $APPDIR/usr/share/f117 $APPDIR/usr/share/applications \
+            $APPDIR/usr/share/icons/hicolor/256x256/apps $APPDIR/usr/share/doc/f117
+          cp "target/${{ matrix.target }}/release/f117" $APPDIR/usr/bin/
+          strip $APPDIR/usr/bin/f117
+          if [[ -d openxr ]]; then
+            cp openxr/libopenxr_loader.so.1 $APPDIR/usr/bin/
+            cp openxr/openxr-LICENSE.txt $APPDIR/usr/share/doc/f117/
+          fi
+          cp -r assets $APPDIR/usr/share/f117/
+          cp README.md LICENSE $APPDIR/usr/share/doc/f117/
+          cp packaging/linux/AppRun $APPDIR/
+          cp packaging/linux/f117.desktop $APPDIR/
+          cp packaging/linux/f117.desktop $APPDIR/usr/share/applications/
+          cp packaging/linux/f117.png $APPDIR/
+          cp packaging/linux/f117.png $APPDIR/usr/share/icons/hicolor/256x256/apps/
+          ln -s f117.png $APPDIR/.DirIcon
+
+          curl -fsSL -o appimagetool "https://github.com/AppImage/appimagetool/releases/download/$APPIMAGETOOL_VERSION/appimagetool-$ARCH.AppImage"
+          curl -fsSL -o runtime "https://github.com/AppImage/type2-runtime/releases/download/$APPIMAGE_RUNTIME_VERSION/runtime-$ARCH"
+          chmod +x appimagetool
+          # The runner has no FUSE to mount appimagetool with.
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$ARCH ./appimagetool --no-appstream --runtime-file runtime \
+            -u "gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}|latest|f117-*-$ARCH.AppImage.zsync" \
+            $APPDIR "dist/f117-${GITHUB_REF_NAME//\//-}-$ARCH.AppImage"
+          # appimagetool writes the .zsync in the working directory.
+          mv f117-*.AppImage.zsync dist/
+          ls -l dist
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.package.outputs.name }}
-          path: ${{ steps.package.outputs.file }}
+          path: |
+            ${{ steps.package.outputs.file }}
+            dist/*.AppImage
+            dist/*.AppImage.zsync
           if-no-files-found: error
 
   release:

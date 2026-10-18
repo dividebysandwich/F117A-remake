@@ -1,6 +1,3 @@
-//! `.WLD` theater world / target database (START's `parseWorld`, with 128-entry tables in
-//! F-117A). Format: docs/re/formats-3d.md section 8 and docs/re/f15se2-gamelogic.md.
-
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 

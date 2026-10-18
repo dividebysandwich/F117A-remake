@@ -1,9 +1,5 @@
-//! MSC C runtime `rand()` as used by START.EXE (spec §2).
-
 use serde::{Deserialize, Serialize};
 
-/// MSC 5.x `rand()` (1A18:96CE): `holdrand = holdrand * 214013 + 2531011`, result
-/// `(holdrand >> 16) & 0x7FFF`. START's `random(n)` (1A18:76C0) is `rand() % n`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MscRand {
     /// `holdrand` (DS:AE8C).

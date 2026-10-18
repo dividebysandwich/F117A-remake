@@ -1,6 +1,3 @@
-//! Flight-unit AI `updateAircraft` (V:5730), scrambles, base traffic, enemy guns, smoke and the
-//! wreck (combat.md §2.5..§2.7, §1.5).
-
 use crate::Sim;
 use crate::math::{abs16, approx, bearing, cdiv, clamp_q, s16};
 use crate::types::*;

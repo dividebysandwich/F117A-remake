@@ -1,6 +1,3 @@
-//! Keys, bay doors, jammers, countermeasure release, `fireMissile`, cannon and gun rounds
-//! (weapons.md §5.2, §5.3, combat.md §4.4..§4.5, §6.3).
-
 use crate::Sim;
 use crate::math::{abs16, approx, cdiv, clamp_v, isqrt, s16};
 use crate::types::*;

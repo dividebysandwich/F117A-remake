@@ -1,7 +1,3 @@
-//! Integer helpers of VGAME (docs/re/radar-threats.md §0, f15se2-gamelogic.md §0).
-//!
-//! All values are carried as `i32` but represent the original 16-bit words; [`s16`] applies
-//! the 16-bit wrap where the original arithmetic wraps.
 
 /// Wrap to a signed 16-bit value.
 #[inline]

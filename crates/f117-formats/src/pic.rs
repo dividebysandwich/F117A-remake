@@ -1,11 +1,3 @@
-//! MicroProse 256-colour `.PIC` images (F-117A 2.0, 1991).
-//!
-//! Layout: one header byte (0xF5), then an LSB-first LZW bitstream (codes start at 9 bits,
-//! grow to 11 bits, dictionary resets when full; code 256 is reserved so the first new entry
-//! is 257). The LZW output is run-length encoded with 0x90 as the marker:
-//! `0x90 0x00` = literal 0x90, `0x90 n` = repeat the previous byte so it occurs n times in total.
-//! The decoded result is always a 320x200 indexed (mode 13h) screen.
-
 use anyhow::{Result, bail, ensure};
 
 pub const WIDTH: usize = 320;

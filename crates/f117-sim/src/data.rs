@@ -1,9 +1,3 @@
-//! Static tables read from VGAME.EXE (DGROUP at image offset `(0x383B-0x1A18)*16`) plus the
-//! per-theater tile-object data the weapon impact code searches (.3DG/.3DT/.3DX).
-//!
-//! No game data is embedded in the source; [`SimData::load`] reads an original installation
-//! and f117-convert ships the result as `assets/sim/sim_data.bin` (postcard).
-
 use anyhow::{Context, Result, ensure};
 use f117_formats::{GameDir, THEATERS, terrain};
 use serde::{Deserialize, Serialize};

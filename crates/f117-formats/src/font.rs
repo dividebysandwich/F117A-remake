@@ -1,16 +1,3 @@
-//! Bitmap fonts of the MCGA graphics driver (`MGRAPHIC.EXE`). Format: docs/re/cockpit.md
-//! section 6 (reference implementation `tools/re/py/extract_font.py`).
-//!
-//! The driver's data segment starts at the EXE image start. Word `0xD0` = highest font index,
-//! words `0xD2 + 2i` = pointer P to font i's bitmap. Header bytes before P:
-//! `P-8` first char, `P-7` last char, `P-6` log2(bytes per glyph row)+1, `P-5` fixed width
-//! (0 = proportional), `P-4` height, `P-3` spacing (added to the width), `P-2` extra rows painted
-//! in opaque mode, `P-1` unused; the per-char width table (proportional fonts) ends at `P-9`.
-//! Bitmap: row r of char c is the big-endian word at `P + r*stride + ((c-first) << shift)`,
-//! `stride = (last-first+1) << shift`, MSB = leftmost pixel.
-//!
-//! In strings, bytes >= 0x80 set the foreground colour (`b & 0x7F`) and 0 ends the string.
-
 use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 

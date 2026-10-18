@@ -40,6 +40,8 @@ fn main() {
     let plugins = DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "F-117A Nighthawk".into(),
+            // Wayland app id / X11 class, matching packaging/linux/f117.desktop.
+            name: Some("f117".into()),
             // --novsync: uncapped frame rate (performance measurements).
             present_mode: if std::env::args().any(|a| a == "--novsync") {
                 bevy::window::PresentMode::AutoNoVsync

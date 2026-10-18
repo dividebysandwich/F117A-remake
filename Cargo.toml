@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/f117-formats", "crates/f117-convert", "crates/f117-mission", "crates/f117-sim"]
+members = [".", "crates/f117-formats", "crates/f117-mission", "crates/f117-sim"]
 resolver = "3"
 
 [workspace.package]

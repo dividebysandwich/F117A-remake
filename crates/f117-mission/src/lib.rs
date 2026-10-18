@@ -1,20 +1,3 @@
-//! F-117A Nighthawk 2.0 random mission generator, ported from START.EXE (`missionGenerate`
-//! 1A18:40F0 / `runGenerator` 1A18:4239) via the validated Python reference
-//! `tools/re/py/mission_gen.py`. Algorithm: `docs/re/mission-generation.md` (cited as §n).
-//!
-//! All constant tables are read at run time from the original START.EXE and the theater files
-//! (`<th>.WLD/.3DG/.3DT`) of a [`GameDir`]; no game data is embedded.
-//!
-//! ```no_run
-//! # use f117_mission::*;
-//! let game = f117_formats::GameDir::default_location().unwrap();
-//! let data = GameData::load(&game).unwrap();
-//! let m = generate(&data, &MissionSettings::default(), Seed::Srand(0x1234)).unwrap();
-//! println!("{}", m.orders.primary);
-//! let block = handoff_block(&m); // START -> VGAME block (COMM+0x7A)
-//! # let _ = block;
-//! ```
-
 mod generator;
 pub mod rng;
 pub mod tables;

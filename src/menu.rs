@@ -88,7 +88,11 @@ fn vr_available() -> bool {
 /// Starts the game again in VR, straight into the menu's mission (OpenXR has to replace the
 /// renderer at startup, so this cannot happen in the running process).
 fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> std::io::Result<()> {
-    let exe = std::env::current_exe()?;
+    // From an AppImage, the AppImage itself: the mounted copy goes away when this process exits.
+    let exe = match std::env::var_os("APPIMAGE") {
+        Some(appimage) => appimage.into(),
+        None => std::env::current_exe()?,
+    };
     let mut cmd = std::process::Command::new(exe);
     cmd.args(["--vr", "--mission", &state.seed.to_string(), "--theater-index", &state.theater.to_string()])
         .args(["--roe", &state.roe.to_string(), "--kind", &(state.kind as u8).to_string()])

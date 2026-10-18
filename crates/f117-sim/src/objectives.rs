@@ -1,6 +1,3 @@
-//! Objectives, deadlines, landing corridor, crash, collision, ejection and mission end
-//! (combat.md §1.6 markTargetReached, §6.4.2 deadline rubble, §6.5).
-
 use crate::Sim;
 use crate::math::{abs16, cdiv, clamp_q, s16};
 use crate::types::*;

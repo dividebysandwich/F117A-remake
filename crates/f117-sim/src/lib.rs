@@ -1,25 +1,3 @@
-//! F-117A Nighthawk 2.0 combat simulation: radar detection, threats, enemy aircraft AI, SAM /
-//! AAM guidance, countermeasures, player weapons, targeting, damage and objectives, ported from
-//! VGAME.EXE (docs/re/radar-threats.md, combat.md, weapons.md). Pure Rust, no engine.
-//!
-//! The simulation runs on discrete frames like the original: the game calls [`Sim::step`] at a
-//! fixed rate with the player's state and the nominal frame rate `fs` (frames per sim second,
-//! normally 15). All maths is the original integer / BAM / map-unit arithmetic.
-//!
-//! ```no_run
-//! # use f117_sim::*;
-//! let game = f117_formats::GameDir::default_location().unwrap();
-//! let data = SimData::load(&game).unwrap();
-//! let gd = f117_mission::GameData::load(&game).unwrap();
-//! let m = f117_mission::generate(&gd, &Default::default(), f117_mission::Seed::Srand(1)).unwrap();
-//! let mut sim = Sim::new(&data, &m);
-//! let mut p = sim.start_state();
-//! for _ in 0..100 {
-//!     for e in sim.step(&p, 15) { println!("{e:?}"); }
-//!     p.cmd = Default::default();
-//! }
-//! ```
-
 pub mod data;
 pub mod math;
 pub mod rng;

@@ -1,0 +1,18 @@
+#!/bin/sh
+# The AppImage's entry point. The AppImage is read-only and has no game data, so the game
+# reads its files from a data folder: $BEVY_ASSET_ROOT if set, else the folder holding the
+# .AppImage when it has an assets/ folder (the tarball's layout), else
+# ${XDG_DATA_HOME:-~/.local/share}/f117. The shipped assets (shaders) are copied into it on
+# every start, so they match this build.
+HERE="$(dirname "$(readlink -f "$0")")"
+if [ -z "$BEVY_ASSET_ROOT" ]; then
+    beside="$(dirname "${APPIMAGE:-$HERE}")"
+    if [ -d "$beside/assets" ]; then
+        BEVY_ASSET_ROOT="$beside"
+    else
+        BEVY_ASSET_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/f117"
+    fi
+    mkdir -p "$BEVY_ASSET_ROOT/assets" && cp -rf "$HERE/usr/share/f117/assets/." "$BEVY_ASSET_ROOT/assets/"
+    export BEVY_ASSET_ROOT
+fi
+exec "$HERE/usr/bin/f117" "$@"

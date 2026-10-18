@@ -1,5 +1,3 @@
-//! Parsers for the original F-117A Nighthawk 2.0 data files. Format notes: `docs/re/formats.md`.
-
 pub mod font;
 pub mod lzexe;
 pub mod pal;

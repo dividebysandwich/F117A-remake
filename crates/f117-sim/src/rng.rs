@@ -1,5 +1,3 @@
-//! VGAME random numbers: MSC `rand()` (V:F322, `holdrand` DS:926E) and `random(n)` (V:CB62).
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

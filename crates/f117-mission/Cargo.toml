@@ -2,7 +2,7 @@
 name = "f117-mission"
 version.workspace = true
 edition.workspace = true
-description = "F-117A random mission generator (port of START.EXE missionGenerate, docs/re/mission-generation.md)"
+description = "F-117A random mission generator"
 
 [dependencies]
 f117-formats.workspace = true

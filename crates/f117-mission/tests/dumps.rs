@@ -1,8 +1,3 @@
-//! Byte-exact check against the emulator dumps in `re-work/mis/runs/*` (spec §9), mirroring
-//! `mission_gen.py --check`, plus a robustness run over random missions.
-//!
-//! Skipped (with a message) when `re-work/` or the original game is not available.
-
 use std::path::{Path, PathBuf};
 
 use f117_formats::GameDir;
@@ -12,7 +7,6 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The game directory the dumps were made with (`re-work/game-mis`), else the default one.
 fn game() -> Option<GameDir> {
     let g = root().join("re-work/game-mis");
     if g.join("START.EXE").exists() {
@@ -33,7 +27,6 @@ fn rd16(b: &[u8], o: usize) -> i16 {
     i16::from_le_bytes([b[o], b[o + 1]])
 }
 
-/// Regenerate one run from its pre-state and compare like `check()` in mission_gen.py.
 fn check_run(data: &GameData, dir: &Path) -> Result<(), String> {
     let read = |n: &str| std::fs::read(dir.join(n)).map_err(|e| format!("{n}: {e}"));
     let (pre, prec, ds, comm) = (read("pre_ds.bin")?, read("pre_comm.bin")?, read("ds.bin")?, read("comm.bin")?);

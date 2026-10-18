@@ -1,6 +1,3 @@
-//! Projectile update `updateMissiles` (V:671A): enemy SAM / AAM guidance, jamming,
-//! countermeasures, player missiles and bombs, impacts (combat.md §4.2/§4.3, weapons.md §5.5).
-
 use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, sign};
 use crate::types::*;
 use crate::{N_PROJ, Sim};

@@ -1,8 +1,3 @@
-//! Constant tables of the generator, read at run time from START.EXE's DGROUP (spec §5, §6).
-//!
-//! START.EXE is LZEXE packed; the unpacked load module holds DGROUP (DS = 24AD when loaded at
-//! 1A18) at image offset 0xA950, so `DS:x` is image offset `0xA950 + x`.
-
 use anyhow::{Context, Result};
 use f117_formats::{GameDir, lzexe};
 use serde::{Deserialize, Serialize};

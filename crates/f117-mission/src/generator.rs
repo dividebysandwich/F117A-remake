@@ -1,6 +1,3 @@
-//! The generator proper: `missionGenerate` (1A18:40F0) and `runGenerator` (1A18:4239),
-//! reproducing every `rand()` call (spec §4, §5). Ported 1:1 from tools/re/py/mission_gen.py.
-//!
 //! All arithmetic follows the original int16 wrap-around; `s16()` marks every place where the
 //! 16-bit truncation matters (or may matter).
 

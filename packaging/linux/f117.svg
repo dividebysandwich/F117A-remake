@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1840"/>
+      <stop offset="0.7" stop-color="#3a2456"/>
+      <stop offset="1" stop-color="#6a2a5a"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="40" fill="url(#sky)"/>
+  <!-- F-117 planform: swept faceted wing, W trailing edge, V tails -->
+  <path d="M128 30 L230 196 L178 190 L160 214 L128 204 L96 214 L78 190 L26 196 Z" fill="#2b2f36" stroke="#0e1014" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M128 30 L128 204 M128 30 L104 150 L78 190 M128 30 L152 150 L178 190 M104 150 L152 150" fill="none" stroke="#4a515c" stroke-width="2"/>
+  <path d="M114 176 L96 236 L104 236 L120 180 Z M142 176 L160 236 L152 236 L136 180 Z" fill="#3a3f48" stroke="#0e1014" stroke-width="2" stroke-linejoin="round"/>
+  <!-- HUD reticle -->
+  <circle cx="128" cy="112" r="14" fill="none" stroke="#5cff7a" stroke-width="3" opacity="0.85"/>
+  <path d="M128 92 V102 M128 122 V132 M108 112 H118 M138 112 H148" stroke="#5cff7a" stroke-width="3" opacity="0.85"/>
+</svg>

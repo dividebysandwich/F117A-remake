@@ -1,5 +1,3 @@
-//! EMV, radar detection, ground sites, theater alarm, aircraft radar (radar-threats.md §1..§4).
-
 use crate::Sim;
 use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, u16v};
 use crate::types::*;

@@ -1,6 +1,3 @@
-//! Target selection, HUD lock oval, designation, bombsights, camera photo, radio beacon
-//! (weapons.md §5.4).
-
 use crate::Sim;
 use crate::math::{abs16, approx, bearing, cdiv, s16};
 use crate::types::*;

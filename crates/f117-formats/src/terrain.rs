@@ -1,6 +1,3 @@
-//! Terrain tile grid (`.3DG` + the LOD4 grid in VGAME) and per-tile object lists (`.3DT`).
-//! Format: docs/re/formats-3d.md sections 1-4.
-//!
 //! There is no height field: the ground is a flat plane plus models placed per tile. Each LOD
 //! level L (1..=4) tiles the 2^20-unit world with tiles of `TILE_WORLD[L]` world units; an
 //! object in a level-L tile is positioned and modelled in level-L units (4^(L-1) world units).

@@ -1,6 +1,3 @@
-//! Runtime records (the VGAME tables in flight, combat.md §1) and the public input / output
-//! types of the simulation.
-
 use serde::{Deserialize, Serialize};
 
 /// World-object flags (combat.md §1.2).

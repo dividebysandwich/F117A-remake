@@ -1,11 +1,7 @@
-//! Theater world data exactly as START loads it (spec §3): `parseWorld` (1A18:54BB) for the
-//! `.WLD`, 1A18:7D71 for the `.3DG` grid and 1A18:7E88 for the `.3DT` tile objects.
-
 use anyhow::{Context, Result, ensure};
 use f117_formats::{GameDir, THEATERS, terrain::TileSets};
 use serde::{Deserialize, Serialize};
 
-/// Size of the name block in the hand-off (spec §7).
 pub const NAMES_BYTES: usize = 750;
 /// Size of the shape-indexed tables (buf7, buf8, objectTypeTable) and of the name table.
 pub const TABLE: usize = 128;

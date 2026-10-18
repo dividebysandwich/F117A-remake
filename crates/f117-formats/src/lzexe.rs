@@ -1,9 +1,3 @@
-//! LZEXE 0.91 unpacker. All main F-117A executables (START, VGAME, END) are packed with it.
-//!
-//! Produces the original load module (image as it is before DOS relocation, i.e. at base
-//! segment 0) plus the relocation list and register entry values, so data at known
-//! DGROUP offsets can be read straight from the original EXE without running it.
-
 use anyhow::{Context, Result, bail, ensure};
 
 #[derive(Debug, Clone)]

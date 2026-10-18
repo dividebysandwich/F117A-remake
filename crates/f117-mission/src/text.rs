@@ -1,6 +1,3 @@
-//! Briefing text (START 1A18:20D6 / 24F7 / 2651 / 25D9, spec §6) and the in-flight orders MFD
-//! page (VGAME V:97A4).
-
 use serde::{Deserialize, Serialize};
 
 use crate::generator::{GenResult, s16};

@@ -124,7 +124,6 @@ jobs:
           mkdir -p $APPDIR/usr/bin $APPDIR/usr/share/f117 $APPDIR/usr/share/applications \
             $APPDIR/usr/share/icons/hicolor/256x256/apps $APPDIR/usr/share/doc/f117
           cp "target/${{ matrix.target }}/release/f117" $APPDIR/usr/bin/
-          strip $APPDIR/usr/bin/f117
           if [[ -d openxr ]]; then
             cp openxr/libopenxr_loader.so $APPDIR/usr/bin/
             cp openxr/openxr-LICENSE.txt $APPDIR/usr/share/doc/f117/

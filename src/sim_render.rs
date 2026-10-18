@@ -109,11 +109,11 @@ fn cleanup(mut commands: Commands, q: Query<Entity, With<SimObject>>, mut vis: R
 }
 
 /// World position (Bevy metres) of a map point at a viewZ altitude.
-fn map_point(x: f64, y: f64, alt: f64) -> bevy::math::DVec3 {
+pub fn map_point(x: f64, y: f64, alt: f64) -> bevy::math::DVec3 {
     wu_to_bevy(x * 32.0, (0x8000 as f64 - y) * 32.0, alt)
 }
 
-fn attitude(heading: i32, pitch: i32, roll: i32) -> Quat {
+pub fn attitude(heading: i32, pitch: i32, roll: i32) -> Quat {
     Aircraft::from_euler(bam(heading as u16 as f32), bam(pitch as i16 as f32), bam(roll as i16 as f32))
 }
 
@@ -245,7 +245,7 @@ fn sync_objects(
         if vis.proj[s].is_none() {
             let Some(e) = spawn_model(&mut commands, &assets, &file, model) else { continue };
             // Rocket motor glow on missiles (not on bombs / equipment), so they can be followed.
-            if !matches!(m.spec, 28..=30 | 38) {
+            if crate::trails::is_missile(m.spec) {
                 let material = vis.material(&mut materials, &globals, TRACER);
                 let dot = commands
                     .spawn((

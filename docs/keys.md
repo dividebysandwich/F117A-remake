@@ -23,6 +23,7 @@ To be cross-checked against VGAME's keyboard dispatch table (M2).
 | | eject | Shift F10 |
 | Displays | HUD modes / declutter | F2 / V |
 | | maps (left MFD) | F3 |
+| | map zoom in / out, north up / heading up (remake, modern panel) | Alt Z / Alt X / Alt F3 |
 | | day/night HUD | F4 |
 | | ordnance (right MFD) | F5 |
 | | FLIR on/off | F6 |

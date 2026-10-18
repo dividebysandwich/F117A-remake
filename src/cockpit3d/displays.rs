@@ -1,4 +1,12 @@
-//! Panel picture, MFD screens, HUD and the fixed cockpit structure.
+//! Instrument panel, MFD screens, HUD and the fixed cockpit structure.
+//!
+//! The panel is modelled from a `layout::PanelLayout`: the face and solid parts take their
+//! colours from a 16x16 palette swatch texture (so they follow the flight palette like the
+//! original art did); lamp, LED, gauge, label and bezel button faces are slots of one
+//! instrument atlas canvas redrawn every frame (with a glow twin for the lit ones); each MFD
+//! and the attitude ball have their own canvas.
+
+use std::collections::HashMap;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
@@ -6,16 +14,21 @@ use bevy::light::NotShadowCaster;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 
-use super::geometry::{beam, panel_patch, panel_patch_uv, panel_point, pixel_dir, recess_walls, uv_quad};
+use super::geometry::{
+    beam, panel_patch_uv, panel_point, panel_polygon, panel_rect, panel_rotation, pixel_dir, recess_walls, rect_minus_holes, uv_quad,
+    with_swatch,
+};
 use super::hud_glass::HudGlassMaterial;
+use super::layout::{Elem, OUTLINE, PanelLayout, PanelStyle, PxRect, Shape};
 use super::{CockpitMaterials, spawn_box};
 use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit::{CockpitArt, Displays};
 use crate::font::Fonts;
-use crate::mfd::{LEFT, RIGHT, RightMfd};
+use crate::mfd::{CLASSIC, HIRES, MfdSide, osb};
+use crate::panel::{LAMPS, draw_gauge, draw_label, draw_lamp, draw_led};
 
 /// How far the MFD screens sit behind the panel face (metres).
-const SCREEN_DEPTH: f32 = 0.014;
+const SCREEN_DEPTH: f32 = 0.003;
 /// Distance of the HUD combiner glass from the eye (metres).
 const COMBINER_DEPTH: f32 = 0.80;
 /// Outline of the combiner glass in original screen pixels: the original's HUD frame
@@ -23,119 +36,274 @@ const COMBINER_DEPTH: f32 = 0.80;
 const COMBINER: [(f32, f32); 6] = [(45.0, 90.0), (45.0, 14.0), (89.0, 2.0), (232.0, 2.0), (275.0, 14.0), (275.0, 90.0)];
 /// Emissive strength of the displays and lit lights when the cockpit is lit.
 const GLOW_NITS: f32 = 1.0;
+/// Instrument atlas texels per panel pixel.
+pub(super) const TEXELS: i32 = 3;
+/// Instrument atlas size (texels).
+const ATLAS: usize = 512;
+/// Faces stand this far above their surface (metres).
+const FACE_LIFT: f32 = 0.0006;
 
 /// A cockpit material whose `unlit` follows the lighting options (see `sync_materials`).
 #[derive(Component)]
 pub struct LitMaterial(pub Handle<StandardMaterial>);
 
-#[derive(Component)]
-pub(super) struct PanelTexture {
-    /// 256PIT without the sprite rows: the panel picture the instruments are drawn onto.
-    base: Canvas,
-    /// See-through window area of the panel picture.
-    window: Vec<bool>,
+/// What a canvas shows (`update_displays` draws them).
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CanvasRole {
+    Atlas,
+    Glow,
+    Left,
+    Right,
+    Adi,
+    Hud,
+    Approach,
 }
 
-#[derive(Component)]
-pub(super) struct GlowTexture;
+/// A face in the instrument atlas.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum Face {
+    Item(Elem),
+    Osb(MfdSide, u8),
+}
 
+/// The instrument atlas' faces and their texel rectangles (x, y, w, h).
 #[derive(Component)]
-pub(super) struct HudTexture;
+pub(super) struct InstrumentAtlas {
+    faces: Vec<(Face, [i32; 4])>,
+}
 
 #[derive(Component)]
 pub(super) struct TrackCamScreen;
 
-#[derive(Component)]
-pub(super) struct ApproachTexture;
-
-/// Panel regions that glow (displays, lights, LED readouts, attitude ball, EMV bar):
-/// (x, y, w, h).
-fn glow_rects() -> Vec<(i32, i32, i32, i32)> {
-    let mut v: Vec<_> = crate::panel::LIGHTS.iter().map(|&(x, y, w, h, _)| (x, y, w + 1, h + 1)).collect();
-    for r in [LEFT, RIGHT] {
-        v.push((r[0], r[1], r[2] - r[0] + 1, r[3] - r[1] + 1));
-    }
-    v.extend_from_slice(&[(35, 149, 10, 27), (261, 179, 15, 19), (265, 138, 33, 33), (86, 187, 51, 11)]);
-    v
+/// Atlas material and texture rectangles (uv min, max) of the faces the controls carry.
+pub(super) struct Faces {
+    pub material: Handle<StandardMaterial>,
+    /// Per layout item.
+    pub items: Vec<(Vec2, Vec2)>,
+    pub osbs: HashMap<(u8, u8), (Vec2, Vec2)>,
 }
 
+/// Key of an MFD side for `Faces::osbs`.
+pub(super) fn side_key(s: MfdSide) -> u8 {
+    match s {
+        MfdSide::Left => 0,
+        MfdSide::Right => 1,
+    }
+}
+
+/// Packs rectangles into the atlas in rows.
+fn pack(sizes: &[(i32, i32)]) -> Vec<[i32; 4]> {
+    let (mut x, mut y, mut row) = (0, 0, 0);
+    let mut out = Vec::new();
+    for &(w, h) in sizes {
+        if x + w > ATLAS as i32 {
+            x = 0;
+            y += row + 1;
+            row = 0;
+        }
+        assert!(y + h <= ATLAS as i32, "instrument atlas full");
+        out.push([x, y, w, h]);
+        x += w + 1;
+        row = row.max(h);
+    }
+    out
+}
+
+fn texels(r: &PxRect) -> (i32, i32) {
+    ((r.w * TEXELS as f32).ceil() as i32, (r.h * TEXELS as f32).ceil() as i32)
+}
+
+/// Yellow and black diagonal stripes.
+fn hazard(c: &mut Canvas, r: [i32; 4]) {
+    let band = 4 * TEXELS;
+    for y in 0..r[3] {
+        for x in 0..r[2] {
+            let colour = if (x + y) / band % 2 == 0 { 18 } else { 38 };
+            c.set(r[0] + x, r[1] + y, colour);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn spawn_panel(
     commands: &mut Commands,
     root: Entity,
+    layout: &PanelLayout,
     mats: &CockpitMaterials,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     images: &mut Assets<Image>,
     tc_image: Option<&crate::trackcam::TrackCamImage>,
-) {
-    let mut base = crate::cockpit::load_idx("256pit");
-    for i in 0..91 * base.w {
-        base.px[i] = 0;
+) -> Faces {
+    let add = |commands: &mut Commands, mesh: Handle<Mesh>, material: Handle<StandardMaterial>, tf: Transform| {
+        let e = commands.spawn((Mesh3d(mesh), MeshMaterial3d(material), tf, NoFrustumCulling)).id();
+        commands.entity(root).add_child(e);
+        e
+    };
+
+    // Palette swatch for the solid parts.
+    let mut swatch = Canvas::new(16, 16);
+    for (i, p) in swatch.px.iter_mut().enumerate() {
+        *p = i as u8;
     }
-    let window = crate::cockpit::window_mask(&base, 91);
-    let mut panel_tex = CanvasTexture::new(base.clone(), images, true);
-    panel_tex.mask = Some(window.clone());
-    let glow_tex = CanvasTexture::new(Canvas::new(320, 200), images, false);
-    let material = materials.add(StandardMaterial {
-        base_color_texture: Some(panel_tex.image.clone()),
-        emissive_texture: Some(glow_tex.image.clone()),
-        emissive: LinearRgba::rgb(GLOW_NITS, GLOW_NITS, GLOW_NITS),
-        alpha_mode: AlphaMode::Mask(0.5),
-        perceptual_roughness: 0.75,
+    let swatch = CanvasTexture::new(swatch, images, false);
+    let solid = materials.add(StandardMaterial {
+        base_color_texture: Some(swatch.image.clone()),
+        perceptual_roughness: 0.8,
         cull_mode: None,
         unlit: true,
         fog_enabled: false,
         ..default()
     });
-    let holder = commands
-        .spawn((PanelTexture { base, window }, panel_tex, LitMaterial(material.clone()), Transform::default(), Visibility::Hidden))
-        .id();
-    commands.entity(root).add_child(holder);
-    let glow = commands.spawn((GlowTexture, glow_tex)).id();
-    commands.entity(root).add_child(glow);
+    let e = commands.spawn((swatch, LitMaterial(solid.clone()))).id();
+    commands.entity(root).add_child(e);
 
-    let mut add = |commands: &mut Commands, mesh: Mesh, material: Handle<StandardMaterial>| {
-        let e = commands.spawn((Mesh3d(meshes.add(mesh)), MeshMaterial3d(material), Transform::default(), NoFrustumCulling)).id();
-        commands.entity(root).add_child(e);
-        e
-    };
-    // Panel face around the MFD holes.
-    let (l, r) = (LEFT.map(|v| v as f32), RIGHT.map(|v| v as f32));
-    for (x0, y0, x1, y1) in [
-        (0.0, 91.0, 320.0, l[1]),
-        (0.0, l[1], l[0], l[3] + 1.0),
-        (l[2] + 1.0, l[1], r[0], l[3] + 1.0),
-        (r[2] + 1.0, l[1], 320.0, l[3] + 1.0),
-        (0.0, l[3] + 1.0, 320.0, 200.0),
-    ] {
-        add(commands, panel_patch(x0, y0, x1, y1, 0.0), material.clone());
+    // Panel face: the top edge's trapezoid, the rest around the MFD screens.
+    let holes: Vec<[f32; 4]> = layout.mfds.iter().map(|m| [m.screen.x, m.screen.y, m.screen.x + m.screen.w, m.screen.y + m.screen.h]).collect();
+    let top = with_swatch(panel_polygon(&OUTLINE[..4], 0.0), layout.face);
+    add(commands, meshes.add(top), solid.clone(), Transform::default());
+    for r in rect_minus_holes(0.0, OUTLINE[0].1, 320.0, 200.0, &holes) {
+        let quad = panel_polygon(&[(r[0], r[1]), (r[2], r[1]), (r[2], r[3]), (r[0], r[3])], 0.0);
+        add(commands, meshes.add(with_swatch(quad, layout.face)), solid.clone(), Transform::default());
     }
-    // Recessed MFD screens with their wells and raised bezel frames.
-    for s in [l, r] {
-        let (x0, y0, x1, y1) = (s[0], s[1], s[2] + 1.0, s[3] + 1.0);
-        add(commands, panel_patch(x0, y0, x1, y1, -SCREEN_DEPTH), material.clone());
-        add(commands, recess_walls(x0, y0, x1, y1, SCREEN_DEPTH), mats.black.clone());
-        let c = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
-        for k in 0..4 {
-            let (a, b) = (c[k], c[(k + 1) % 4]);
-            let tf = beam(panel_point(a.0, a.1, 0.004), panel_point(b.0, b.1, 0.004), Vec2::splat(0.009));
-            spawn_box(commands, root, mats, &mats.frame, tf);
+
+    // Solid parts.
+    let mut cubes: HashMap<u8, Handle<Mesh>> = HashMap::new();
+    let mut knobs: HashMap<u8, Handle<Mesh>> = HashMap::new();
+    for b in &layout.blocks {
+        let (cx, cy) = b.rect.centre();
+        let (_, size) = panel_rect(b.rect.x, b.rect.y, b.rect.w, b.rect.h, b.base);
+        let centre = panel_point(cx, cy, b.base + b.height / 2.0);
+        let (mesh, tf) = match b.shape {
+            Shape::Box => (
+                cubes.entry(b.colour).or_insert_with(|| meshes.add(with_swatch(Cuboid::new(1.0, 1.0, 1.0).into(), b.colour))).clone(),
+                Transform::from_translation(centre).with_rotation(panel_rotation()).with_scale(size.extend(b.height)),
+            ),
+            Shape::Knob => (
+                knobs.entry(b.colour).or_insert_with(|| meshes.add(with_swatch(Cylinder::new(0.5, 1.0).into(), b.colour))).clone(),
+                Transform::from_translation(centre)
+                    .with_rotation(panel_rotation() * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2))
+                    .with_scale(Vec3::new(size.x, b.height, size.x)),
+            ),
+        };
+        add(commands, mesh, solid.clone(), tf);
+    }
+
+    // Instrument atlas: every lamp, readout, label and bezel button face.
+    let mut faces: Vec<(Face, PxRect)> = layout.items.iter().map(|p| (Face::Item(p.elem), p.rect)).collect();
+    for m in &layout.mfds {
+        faces.extend(layout.osbs(m).into_iter().map(|(slot, r)| (Face::Osb(m.side, slot), r)));
+    }
+    let slots = pack(&faces.iter().map(|(_, r)| texels(r)).collect::<Vec<_>>());
+    let uv = |s: &[i32; 4]| {
+        let n = ATLAS as f32;
+        (Vec2::new(s[0] as f32 / n, s[1] as f32 / n), Vec2::new((s[0] + s[2]) as f32 / n, (s[1] + s[3]) as f32 / n))
+    };
+    let atlas_tex = CanvasTexture::new(Canvas::new(ATLAS, ATLAS), images, false);
+    let glow_tex = CanvasTexture::new(Canvas::new(ATLAS, ATLAS), images, false);
+    let atlas_mat = materials.add(StandardMaterial {
+        base_color_texture: Some(atlas_tex.image.clone()),
+        emissive_texture: Some(glow_tex.image.clone()),
+        emissive: LinearRgba::rgb(GLOW_NITS, GLOW_NITS, GLOW_NITS),
+        perceptual_roughness: 0.6,
+        cull_mode: None,
+        unlit: true,
+        fog_enabled: false,
+        ..default()
+    });
+    let atlas = InstrumentAtlas { faces: faces.iter().zip(&slots).map(|((f, _), s)| (*f, *s)).collect() };
+    let e = commands.spawn((CanvasRole::Atlas, atlas, atlas_tex, LitMaterial(atlas_mat.clone()))).id();
+    commands.entity(root).add_child(e);
+    let e = commands.spawn((CanvasRole::Glow, glow_tex)).id();
+    commands.entity(root).add_child(e);
+    let mut out = Faces { material: atlas_mat.clone(), items: Vec::new(), osbs: HashMap::new() };
+    for ((face, _), slot) in faces.iter().zip(&slots) {
+        let (uv0, uv1) = uv(slot);
+        match face {
+            Face::Item(_) => out.items.push((uv0, uv1)),
+            Face::Osb(side, s) => {
+                out.osbs.insert((side_key(*side), *s), (uv0, uv1));
+            }
         }
     }
-    // Tracking camera picture behind the right screen (seen where the page is see-through).
-    if let Some(img) = tc_image {
-        let m = materials.add(StandardMaterial {
-            base_color_texture: Some(img.0.clone()),
-            unlit: true,
+    // Faces that are not button caps sit on the panel.
+    for (p, &(uv0, uv1)) in layout.items.iter().zip(&out.items) {
+        if p.cap.is_some() {
+            continue;
+        }
+        let (cx, cy) = p.rect.centre();
+        let (_, size) = panel_rect(p.rect.x, p.rect.y, p.rect.w, p.rect.h, 0.0);
+        let tf = Transform::from_translation(panel_point(cx, cy, layout.surface(cx, cy) + FACE_LIFT)).with_rotation(panel_rotation());
+        let e = add(commands, meshes.add(uv_quad(size, uv0, uv1)), atlas_mat.clone(), tf);
+        commands.entity(e).insert(NotShadowCaster);
+    }
+
+    // MFD screens recessed into the panel, each with its own canvas.
+    let res = if layout.style == PanelStyle::Classic { CLASSIC } else { HIRES };
+    for m in &layout.mfds {
+        let s = m.screen;
+        let (x0, y0, x1, y1) = (s.x, s.y, s.x + s.w, s.y + s.h);
+        let tex = CanvasTexture::new(Canvas::new(res.0, res.1), images, false);
+        let material = materials.add(StandardMaterial {
+            base_color_texture: Some(tex.image.clone()),
+            emissive_texture: Some(tex.image.clone()),
+            emissive: LinearRgba::rgb(GLOW_NITS, GLOW_NITS, GLOW_NITS),
+            alpha_mode: AlphaMode::Mask(0.5),
+            perceptual_roughness: 0.3,
             cull_mode: None,
+            unlit: true,
             fog_enabled: false,
             ..default()
         });
-        let (x0, y0, x1, y1) = (r[0], r[1], r[2] + 1.0, r[3] + 1.0);
-        let mesh = panel_patch_uv(x0, y0, x1, y1, -SCREEN_DEPTH - 0.001, |px, py| Vec2::new((px - x0) / (x1 - x0), (py - y0) / (y1 - y0)));
-        let e = add(commands, mesh, m);
-        commands.entity(e).insert((TrackCamScreen, Visibility::Hidden));
+        let role = if m.side == MfdSide::Left { CanvasRole::Left } else { CanvasRole::Right };
+        let mesh = panel_patch_uv(x0, y0, x1, y1, -SCREEN_DEPTH, |px, py| Vec2::new((px - x0) / (x1 - x0), (py - y0) / (y1 - y0)));
+        let e = add(commands, meshes.add(mesh), material, Transform::default());
+        // Self-luminous: always unlit.
+        commands.entity(e).insert((role, tex));
+        add(commands, meshes.add(recess_walls(x0, y0, x1, y1, SCREEN_DEPTH)), mats.black.clone(), Transform::default());
+        // Tracking camera picture behind the right screen (seen where the page is see-through).
+        if m.side == MfdSide::Right
+            && let Some(img) = tc_image
+        {
+            let tc = materials.add(StandardMaterial {
+                base_color_texture: Some(img.0.clone()),
+                unlit: true,
+                cull_mode: None,
+                fog_enabled: false,
+                ..default()
+            });
+            let mesh = panel_patch_uv(x0, y0, x1, y1, -SCREEN_DEPTH - 0.001, |px, py| Vec2::new((px - x0) / (x1 - x0), (py - y0) / (y1 - y0)));
+            let e = add(commands, meshes.add(mesh), tc, Transform::default());
+            commands.entity(e).insert((TrackCamScreen, Visibility::Hidden));
+        }
     }
+
+    // Attitude ball: its own canvas in a ring bezel.
+    let a = layout.adi;
+    let (cx, cy) = a.centre();
+    let n = (a.w * TEXELS as f32) as usize;
+    let tex = CanvasTexture::new(Canvas::new(n, n), images, true);
+    let material = materials.add(StandardMaterial {
+        base_color_texture: Some(tex.image.clone()),
+        emissive_texture: Some(tex.image.clone()),
+        emissive: LinearRgba::rgb(GLOW_NITS, GLOW_NITS, GLOW_NITS),
+        alpha_mode: AlphaMode::Mask(0.5),
+        cull_mode: None,
+        unlit: true,
+        fog_enabled: false,
+        ..default()
+    });
+    let (_, size) = panel_rect(a.x, a.y, a.w, a.h, 0.0);
+    let base = layout.surface(cx, cy);
+    let tf = Transform::from_translation(panel_point(cx, cy, base + FACE_LIFT)).with_rotation(panel_rotation());
+    let e = add(commands, meshes.add(uv_quad(size, Vec2::ZERO, Vec2::ONE)), material, tf);
+    commands.entity(e).insert((CanvasRole::Adi, tex));
+    let r = size.x / 2.0;
+    let ring = with_swatch(Annulus::new(r * 0.98, r * 1.2).into(), 79);
+    let tf = Transform::from_translation(panel_point(cx, cy, base + 0.002)).with_rotation(panel_rotation());
+    add(commands, meshes.add(ring), solid, tf);
+
+    out
 }
 
 /// HUD: a transparent canvas seen through the combiner glass, collimated to infinity.
@@ -153,7 +321,7 @@ pub(super) fn spawn_hud(commands: &mut Commands, root: Entity, meshes: &mut Asse
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
         .with_inserted_indices(Indices::U32(idx));
     let hud = commands
-        .spawn((HudTexture, hud_tex, Mesh3d(meshes.add(mesh)), MeshMaterial3d(material), Transform::default(), NoFrustumCulling, NotShadowCaster))
+        .spawn((CanvasRole::Hud, hud_tex, Mesh3d(meshes.add(mesh)), MeshMaterial3d(material), Transform::default(), NoFrustumCulling, NotShadowCaster))
         .id();
     commands.entity(root).add_child(hud);
 }
@@ -179,7 +347,7 @@ pub(super) fn spawn_approach_indexer(
     let size = Vec2::new(10.0 / crate::cockpit::FOCAL, 21.0 / (crate::cockpit::VSCALE * crate::cockpit::FOCAL)) * COMBINER_DEPTH;
     let e = commands
         .spawn((
-            ApproachTexture,
+            CanvasRole::Approach,
             tex,
             Mesh3d(meshes.add(uv_quad(size, Vec2::ZERO, Vec2::ONE))),
             MeshMaterial3d(material),
@@ -264,63 +432,94 @@ pub(super) fn spawn_structure(commands: &mut Commands, root: Entity, mats: &Cock
     }
 }
 
-/// Draws the panel, glow and HUD canvases (as `cockpit::draw_screen` does for the pictures).
-#[allow(clippy::type_complexity)]
+/// Draws the instrument atlas, the MFD, attitude ball, HUD and approach indexer canvases.
 pub(super) fn update_displays(
     art: Res<CockpitArt>,
     fonts: Res<Fonts>,
     d: Displays,
-    mut panel: Query<(&PanelTexture, &mut CanvasTexture), (Without<GlowTexture>, Without<HudTexture>, Without<ApproachTexture>)>,
-    mut glow: Query<&mut CanvasTexture, (With<GlowTexture>, Without<HudTexture>, Without<ApproachTexture>)>,
-    mut hud: Query<&mut CanvasTexture, (With<HudTexture>, Without<ApproachTexture>)>,
-    mut approach: Query<&mut CanvasTexture, (With<ApproachTexture>, Without<HudTexture>)>,
+    roles: Query<(Entity, &CanvasRole)>,
+    mut texes: Query<&mut CanvasTexture>,
+    atlas: Query<&InstrumentAtlas>,
     mut tc: Query<&mut Visibility, With<TrackCamScreen>>,
 ) {
-    let Ok((pt, mut tex)) = panel.single_mut() else { return };
-    let tex = tex.as_mut();
-    tex.canvas.px.copy_from_slice(&pt.base.px);
-    tex.canvas.reset_clip();
-    d.mfd.draw(&mut tex.canvas, &art, &fonts);
-    tex.canvas.reset_clip();
-    d.panel.draw(&mut tex.canvas, &art, &fonts);
-    // The right screen is see-through over the live tracking camera picture.
-    let live = d.mfd.cam.live;
-    if let Some(mask) = tex.mask.as_mut() {
-        mask.copy_from_slice(&pt.window);
-        if live {
-            for y in RIGHT[1] as usize..=RIGHT[3] as usize {
-                for x in RIGHT[0] as usize..=RIGHT[2] as usize {
-                    mask[y * 320 + x] = true;
+    let find = |r: CanvasRole| roles.iter().find(|(_, x)| **x == r).map(|(e, _)| e);
+    let see_through = d.mfd.camera_see_through();
+    for mut v in &mut tc {
+        v.set_if_neq(if see_through { Visibility::Inherited } else { Visibility::Hidden });
+    }
+    for role in [CanvasRole::Left, CanvasRole::Right, CanvasRole::Adi, CanvasRole::Hud, CanvasRole::Approach] {
+        let Some(mut tex) = find(role).and_then(|e| texes.get_mut(e).ok()) else { continue };
+        let tex = tex.as_mut();
+        tex.canvas.reset_clip();
+        match role {
+            CanvasRole::Left => d.mfd.draw_left(&mut tex.canvas, &art, &fonts),
+            CanvasRole::Right => {
+                tex.transparent = see_through;
+                d.mfd.draw_right(&mut tex.canvas, &art, &fonts);
+            }
+            CanvasRole::Adi => d.panel.draw_adi(&mut tex.canvas),
+            CanvasRole::Hud => {
+                tex.canvas.px.fill(0);
+                if let Some(frame) = d.hud.frame(d.mfd.state.right == crate::mfd::RightMfd::Camera) {
+                    crate::hud::draw(&mut tex.canvas, &art, &fonts, &frame);
                 }
             }
+            _ => d.panel.draw_approach(&mut tex.canvas, &art),
         }
-    }
-    tex.dirty = true;
-    for mut v in &mut tc {
-        v.set_if_neq(if live { Visibility::Inherited } else { Visibility::Hidden });
+        tex.dirty = true;
     }
 
-    if let Ok(mut g) = glow.single_mut() {
-        let g = g.as_mut();
-        g.canvas.px.fill(0);
-        for (x, y, w, h) in glow_rects() {
-            g.canvas.copy_rect(&tex.canvas, x, y, w, h, x, y);
+    let (Some(a), Some(g)) = (find(CanvasRole::Atlas), find(CanvasRole::Glow)) else { return };
+    let Ok(info) = atlas.get(a) else { return };
+    let Ok([mut a, mut g]) = texes.get_many_mut([a, g]) else { return };
+    let (c, glow) = (&mut a.canvas, &mut g.canvas);
+    glow.px.fill(0);
+    let lit = d.panel.lamp_states();
+    let (emv, egr, ear) = d.panel.gauge_values();
+    let k = TEXELS;
+    for &(face, r) in &info.faces {
+        let glows = match face {
+            Face::Item(Elem::Lamp(id, label)) => {
+                let on = lit[id as usize];
+                let style = LAMPS[id as usize].2;
+                draw_lamp(c, &fonts, r, label.unwrap_or_else(|| d.panel.lamp_label(id)), if on { style.on } else { style.off }, k);
+                on
+            }
+            Face::Item(Elem::Led(id)) => {
+                draw_led(c, &art.sprites, r, &d.panel.led_text(id), k);
+                true
+            }
+            Face::Item(Elem::Gauge) => {
+                draw_gauge(c, r, emv, egr, ear);
+                true
+            }
+            Face::Item(Elem::Label(text, fg, bg)) => {
+                draw_label(c, &fonts, r, text, fg, bg, k);
+                true
+            }
+            Face::Item(Elem::Hazard) => {
+                hazard(c, r);
+                false
+            }
+            Face::Osb(side, slot) => match osb(side, slot, &d.mfd.state) {
+                Some((label, _, true)) => {
+                    draw_lamp(c, &fonts, r, label, (38, 47), k);
+                    true
+                }
+                Some((label, _, false)) => {
+                    draw_lamp(c, &fonts, r, label, (47, 38), k);
+                    true
+                }
+                None => {
+                    draw_lamp(c, &fonts, r, "", (35, 38), k);
+                    false
+                }
+            },
+        };
+        if glows {
+            glow.copy_rect(c, r[0], r[1], r[2], r[3], r[0], r[1]);
         }
-        g.dirty = true;
     }
-
-    if let Ok(mut h) = hud.single_mut() {
-        let h = h.as_mut();
-        h.canvas.px.fill(0);
-        h.canvas.reset_clip();
-        if let Some(frame) = d.hud.frame(d.mfd.state.right == RightMfd::Camera) {
-            crate::hud::draw(&mut h.canvas, &art, &fonts, &frame);
-        }
-        h.dirty = true;
-    }
-    if let Ok(mut a) = approach.single_mut() {
-        let a = a.as_mut();
-        d.panel.draw_approach(&mut a.canvas, &art);
-        a.dirty = true;
-    }
+    a.dirty = true;
+    g.dirty = true;
 }

@@ -1,5 +1,6 @@
-//! Instrument panel (256PIT rows 91..199): indicator lights, LED digit readouts,
-//! EMV/EGR/EAR gauge, attitude ball, HUD posts and the approach indexer.
+//! Instrument panel state and faces: indicator lamps, LED digit readouts, EMV/EGR/EAR gauge,
+//! attitude ball and the approach indexer. The faces are drawn into canvas slots that the
+//! modelled panel (`cockpit3d`) shows on its lamp caps and instrument windows.
 //! docs/re/cockpit.md section 3 ("Lights", "LED digit readouts", "EMV / EGR / EAR gauge",
 //! "ADI") and VGAME `1A18:D83E`, `1A18:D92D`, `1A18:8316`, `1A18:17A3`, `1A18:D9A3`.
 
@@ -89,99 +90,230 @@ fn reset_panel(mut cm: ResMut<Countermeasures>, mut emv: ResMut<Emv>, mut w: Res
     *ap = Approach::default();
 }
 
-/// Light rectangles `[x, y, w, h, colour set]` (table `DS:46D8`); rect = (x,y)-(x+w,y+h).
-pub const LIGHTS: [(i32, i32, i32, i32, usize); 37] = [
-    (119, 94, 18, 8, 0),  // 0 NAV
-    (139, 94, 18, 8, 0),  // 1 AIR
-    (159, 94, 18, 8, 0),  // 2 GND
-    (184, 94, 21, 8, 2),  // 3 LOCK
-    (38, 105, 24, 8, 3),  // 4 STALL
-    (4, 117, 18, 8, 4),   // 5 MW
-    (24, 117, 18, 8, 2),  // 6 ENG
-    (44, 117, 18, 8, 2),  // 7 FC
-    (4, 127, 18, 8, 2),   // 8 JAM
-    (24, 127, 18, 8, 2),  // 9 FIRE
-    (44, 127, 18, 8, 2),  // 10 FUEL (damage)
-    (4, 137, 18, 8, 2),   // 11 BD
-    (24, 137, 18, 8, 2),  // 12 AV
-    (44, 137, 18, 8, 2),  // 13 (blank)
-    (51, 149, 11, 6, 2),  // 14 chaff active
-    (51, 159, 11, 6, 2),  // 15 flare active
-    (51, 169, 11, 6, 2),  // 16 decoy active
-    (4, 179, 28, 8, 0),   // 17 ECM
-    (36, 179, 26, 8, 0),  // 18 IRJ
-    (4, 191, 18, 8, 2),   // 19 RAD
-    (24, 191, 18, 8, 2),  // 20 IR
-    (44, 191, 18, 8, 2),  // 21 TRAK
-    (80, 173, 18, 8, 0),  // 22 MAP
-    (100, 173, 18, 8, 0), // 23 TAC
-    (142, 193, 14, 5, 1), // 24 EMV warning
-    (232, 184, 17, 8, 2), // 25 FLIR
-    (190, 181, 18, 8, 0), // 26 WPN
-    (190, 191, 38, 8, 0), // 27 camera direction
-    (170, 181, 18, 8, 0), // 28 WAY
-    (210, 181, 18, 8, 0), // 29 ORD
-    (170, 191, 18, 8, 0), // 30 TC
-    (257, 103, 25, 8, 3), // 31 BAY
-    (257, 113, 25, 8, 2), // 32 AUTO
-    (284, 113, 25, 8, 4), // 33 FLAPS
-    (257, 123, 25, 8, 2), // 34 GEAR
-    (284, 123, 25, 8, 2), // 35 BRAKE
-    (302, 179, 13, 7, 2), // 36 low fuel
-];
+/// Panel lamps (the original's lights, table `DS:46D8`). The index is the original light number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LampId {
+    Nav,
+    Air,
+    Gnd,
+    Lock,
+    Stall,
+    Mw,
+    Eng,
+    Fc,
+    Jam,
+    Fire,
+    Fuel,
+    Bd,
+    Av,
+    Blank,
+    ChaffAct,
+    FlareAct,
+    DecoyAct,
+    Ecm,
+    Irj,
+    Rad,
+    Ir,
+    Trak,
+    Map,
+    Tac,
+    EmvWarn,
+    Flir,
+    Wpn,
+    CamDir,
+    Way,
+    Ord,
+    Tc,
+    Bay,
+    Auto,
+    Flaps,
+    Gear,
+    Brake,
+    LowFuel,
+}
 
-/// Colour sets (`DS:4672`): unlit -> lit pairs.
-const COLOUR_SETS: [&[(u8, u8)]; 5] = [
-    &[(45, 47), (44, 46)],
-    &[(38, 41), (55, 42)],
-    &[(54, 41), (55, 42)],
-    &[(16, 41), (43, 42)],
-    &[(16, 40), (43, 39), (54, 41), (55, 42)],
-];
+pub const LAMP_COUNT: usize = 37;
 
-/// Lights a panel light (`1A18:D83E` with on = 1).
-pub fn light(c: &mut Canvas, idx: usize) {
-    let (x, y, w, h, set) = LIGHTS[idx];
-    for &(from, to) in COLOUR_SETS[set] {
-        c.recolor_rect(x, y, x + w, y + h, from, to);
+/// Lamp colours, (text and border, fill) unlit and lit: the original's colour sets (`DS:4672`)
+/// as they recolour the panel art.
+#[derive(Debug, Clone, Copy)]
+pub struct LampStyle {
+    pub off: (u8, u8),
+    pub on: (u8, u8),
+}
+
+const GREEN: LampStyle = LampStyle { off: (45, 44), on: (47, 46) };
+const EMV: LampStyle = LampStyle { off: (38, 55), on: (41, 42) };
+const RED: LampStyle = LampStyle { off: (54, 55), on: (41, 42) };
+const DARK_RED: LampStyle = LampStyle { off: (16, 43), on: (41, 42) };
+const AMBER: LampStyle = LampStyle { off: (16, 43), on: (40, 39) };
+
+/// Label and colours of every lamp, indexed by `LampId`.
+pub const LAMPS: [(LampId, &str, LampStyle); LAMP_COUNT] = {
+    use LampId::*;
+    [
+        (Nav, "NAV", GREEN),
+        (Air, "AIR", GREEN),
+        (Gnd, "GND", GREEN),
+        (Lock, "LOCK", RED),
+        (Stall, "STALL", DARK_RED),
+        (Mw, "MW", AMBER),
+        (Eng, "ENG", RED),
+        (Fc, "FC", RED),
+        (Jam, "JAM", RED),
+        (Fire, "FIRE", RED),
+        (Fuel, "FUEL", RED),
+        (Bd, "BD", RED),
+        (Av, "AV", RED),
+        (Blank, "", RED),
+        (ChaffAct, "", RED),
+        (FlareAct, "", RED),
+        (DecoyAct, "", RED),
+        (Ecm, "ECM", GREEN),
+        (Irj, "IRJ", GREEN),
+        (Rad, "RAD", RED),
+        (Ir, "IR", RED),
+        (Trak, "TRAK", RED),
+        (Map, "MAP", GREEN),
+        (Tac, "TAC", GREEN),
+        (EmvWarn, "", EMV),
+        (Flir, "FLIR", RED),
+        (Wpn, "WPN", GREEN),
+        (CamDir, "", GREEN),
+        (Way, "WAY", GREEN),
+        (Ord, "ORD", GREEN),
+        (Tc, "TC", GREEN),
+        (Bay, "BAY", DARK_RED),
+        (Auto, "AUTO", RED),
+        (Flaps, "FLAPS", AMBER),
+        (Gear, "GEAR", RED),
+        (Brake, "BRAKE", RED),
+        (LowFuel, "", RED),
+    ]
+};
+
+/// LED digit readouts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedId {
+    Chaff,
+    Flares,
+    Decoys,
+    /// Fuel / 10.
+    Fuel,
+    /// Thrust %.
+    Thrust,
+}
+
+/// Draws a lamp face into the rectangle (x, y, w, h) of a canvas at `k` canvas pixels per
+/// panel pixel: fill, a one-pixel border and the centred label in the text colour.
+pub fn draw_lamp(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, colours: (u8, u8), k: i32) {
+    let (fg, bg) = colours;
+    let [x, y, w, h] = r;
+    c.fill_rect(x, y, w, h, bg);
+    c.fill_rect(x, y, w, k, fg);
+    c.fill_rect(x, y + h - k, w, k, fg);
+    c.fill_rect(x, y, k, h, fg);
+    c.fill_rect(x + w - k, y, k, h, fg);
+    text_in(c, fonts, [x + k, y + k, w - 2 * k, h - 2 * k], label, fg, k);
+}
+
+/// Draws a label face: fill and centred text (lines separated by '\n').
+pub fn draw_label(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, fg: u8, bg: u8, k: i32) {
+    c.fill_rect(r[0], r[1], r[2], r[3], bg);
+    text_in(c, fonts, r, label, fg, k);
+}
+
+/// Centred text at up to `k` times the font size, smaller if it does not fit with a margin.
+fn text_in(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, fg: u8, k: i32) {
+    let lines: Vec<Vec<u8>> = label.split('\n').filter(|l| !l.is_empty()).map(upper).collect();
+    if lines.is_empty() {
+        return;
+    }
+    let n = lines.len() as i32;
+    let widest = lines.iter().map(|l| fonts.width(l) - 1).max().unwrap_or(0).max(1);
+    let line_h = fonts.height() + 1;
+    // At least one (scaled) pixel of space around the text.
+    let mut s = k;
+    while s > 1 && (widest * s > r[2] - 2 * s || (n * line_h - 1) * s > r[3] - 2 * s) {
+        s -= 1;
+    }
+    let total = (n * line_h - 1) * s;
+    let mut y = r[1] + (r[3] - total + 1) / 2;
+    for l in &lines {
+        let w = (fonts.width(l) - 1) * s;
+        fonts.text_scaled(c, r[0] + (r[2] - w + 1) / 2, y, l, fg, s);
+        y += line_h * s;
     }
 }
 
-/// LED digits (`1A18:D92D`): atlas (67+5d, 31) 4x7, 5 px advance; non-digits show "0".
-pub fn led(c: &mut Canvas, atlas: &Canvas, x: i32, y: i32, s: &str) {
-    for (k, ch) in s.bytes().enumerate() {
+/// LED readout (`1A18:D92D`: atlas digits (67+5d, 31) 4x7, 5 px advance; non-digits show "0"),
+/// centred in the rectangle at `k` canvas pixels per panel pixel, over unlit "8" segments.
+pub fn draw_led(c: &mut Canvas, sprites: &Canvas, r: [i32; 4], s: &str, k: i32) {
+    c.fill_rect(r[0], r[1], r[2], r[3], 38);
+    let n = s.len() as i32;
+    let x0 = r[0] + (r[2] - (5 * n - 1) * k) / 2;
+    let y0 = r[1] + (r[3] - 7 * k) / 2;
+    for (i, ch) in s.bytes().enumerate() {
         let d = if ch.is_ascii_digit() { (ch - b'0') as i32 } else { 0 };
-        c.copy_rect(atlas, 67 + 5 * d, 31, 4, 7, x + 5 * k as i32, y);
+        let x = x0 + 5 * k * i as i32;
+        c.blit_scaled(sprites, 67 + 5 * 8, 31, 4, 7, x, y0, k, Some(0), Some(44));
+        c.blit_scaled(sprites, 67 + 5 * d, 31, 4, 7, x, y0, k, Some(0), None);
     }
 }
 
-/// EMV gauge bar (`1A18:8316`): value > 0 grows from the left edge (x 86), < 0 from the right
-/// edge (x 136), length |value|/2 (value 0 still fills the rightmost column).
-fn gauge_bar(c: &mut Canvas, value: i32, colour: u8, y0: i32, y1: i32) {
-    if value > 0 {
-        c.fill_rect(86, 187 + y0, value / 2 + 1, y1 - y0 + 1, colour);
-    } else {
-        let x0 = 136 + value / 2;
-        c.fill_rect(x0, 187 + y0, 136 - x0 + 1, y1 - y0 + 1, colour);
+/// EMV / EGR / EAR gauge (`1A18:8316`, originally 51x11 at (86, 187)) scaled into the
+/// rectangle: EMV blue from the left and red from the right, EGR (upper) and EAR (lower) bars.
+pub fn draw_gauge(c: &mut Canvas, r: [i32; 4], emv: i32, egr: i32, ear: i32) {
+    let (sx, sy) = (r[2] as f32 / 51.0, r[3] as f32 / 11.0);
+    // Value > 0 grows from the left edge, < 0 from the right edge, length |value|/2 (value 0
+    // still fills the rightmost column).
+    let mut bar = |value: i32, colour: u8, y0: i32, y1: i32| {
+        let (a, b) = if value > 0 { (0, value / 2 + 1) } else { (50 + value / 2, 51) };
+        let (px0, px1) = (r[0] + (a as f32 * sx).round() as i32, r[0] + (b as f32 * sx).round() as i32);
+        let (py0, py1) = (r[1] + (y0 as f32 * sy).round() as i32, r[1] + ((y1 + 1) as f32 * sy).round() as i32);
+        c.fill_rect(px0, py0, px1 - px0, py1 - py0, colour);
+    };
+    bar(100 - emv, 1, 0, 10);
+    bar(-emv, 42, 0, 10);
+    if egr > 0 {
+        let colour = if emv + egr > 100 { 17 } else if emv + egr > 50 { 41 } else { 42 };
+        bar(egr, colour, 1, 4);
+    }
+    if ear > 0 {
+        bar(ear, if emv + ear > 100 { 15 } else { 11 }, 6, 9);
     }
 }
 
-/// Attitude ball (`1A18:17A3`): sky 9, ground polygon 1 in the 32x28 window at (265,140),
-/// then the bezel with the aircraft symbol, atlas (284,33) 33x33 at (265,138).
-pub fn adi(c: &mut Canvas, atlas: &Canvas, pitch: f32, roll: f32) {
+/// Attitude ball (`1A18:17A3`: sky 9, ground 1) as a disc filling the canvas, index 0 outside;
+/// a fixed aircraft symbol (15) in the middle.
+pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
     let (s, co) = roll.sin_cos();
-    // Horizon offset 16*tan(pitch) in ball units (x units = 2 px, y units = 1.5 px).
+    let n = c.w.min(c.h) as f32;
+    // Ball units: the original's 32 px wide window is 16 units.
+    let unit = n / 16.0;
     let off = 16.0 * pitch.clamp(-1.5, 1.5).tan();
-    for py in 0..28 {
-        for px in 0..32 {
-            let x = (px as f32 + 0.5 - 16.0) / 2.0;
-            let y = (py as f32 + 0.5 - 14.0) / 1.5;
+    let r2 = (n / 2.0) * (n / 2.0);
+    for py in 0..c.h {
+        for px in 0..c.w {
+            let (dx, dy) = (px as f32 + 0.5 - c.w as f32 / 2.0, py as f32 + 0.5 - c.h as f32 / 2.0);
+            if dx * dx + dy * dy > r2 {
+                c.set(px as i32, py as i32, 0);
+                continue;
+            }
+            let (x, y) = (dx / unit, dy / unit);
             // Ground side of the horizon (rotated with the bank, shifted by pitch).
             let ground = x * s + y * co > -off;
-            c.set(265 + px, 140 + py, if ground { 1 } else { 9 });
+            c.set(px as i32, py as i32, if ground { 1 } else { 9 });
         }
     }
-    c.blit(atlas, 284, 33, 33, 33, 265, 138, Some(0), None);
+    // Aircraft symbol: wings and a centre chevron (the original bezel's "W").
+    let (cx, cy, u) = (c.w as i32 / 2, c.h as i32 / 2, (n / 16.0).max(1.0) as i32);
+    c.fill_rect(cx - 6 * u, cy - u / 2, 4 * u, u.max(1), 15);
+    c.fill_rect(cx + 2 * u, cy - u / 2, 4 * u, u.max(1), 15);
+    for i in 0..2 * u {
+        c.fill_rect(cx - 2 * u + i, cy + i / 2, u.max(1), u.max(1), 15);
+        c.fill_rect(cx + 2 * u - i - u, cy + i / 2, u.max(1), u.max(1), 15);
+    }
 }
 
 #[derive(SystemParam)]
@@ -200,166 +332,109 @@ pub struct PanelParams<'w, 's> {
 const LOW_FUEL: f32 = 1500.0;
 
 impl PanelParams<'_, '_> {
-    /// Draws the panel instruments onto the cockpit picture.
-    pub fn draw(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
-        let atlas = &art.pit;
+    /// Which lamps are lit, indexed by `LampId`.
+    pub fn lamp_states(&self) -> [bool; LAMP_COUNT] {
+        use LampId::*;
         let blink = crate::hud::blink(&self.time);
         let a = self.aircraft.single().ok();
         let w = &self.warnings;
-        let mut lit = [false; 37];
+        let mut lit = [false; LAMP_COUNT];
         lit[match self.hud.mode {
-            HudMode::Nav => 0,
-            HudMode::Air => 1,
-            HudMode::Gnd => 2,
-        }] = true;
+            HudMode::Nav => Nav,
+            HudMode::Air => Air,
+            HudMode::Gnd => Gnd,
+        } as usize] = true;
         // LOCK blinks while the oval is up and is steady in range (the simulation blinks it).
-        lit[3] = w.lock;
+        lit[Lock as usize] = w.lock;
         if let Some(a) = a {
-            lit[4] = !a.on_ground && a.velocity < a.stall_speed && blink;
-            lit[31] = a.bay_open;
-            lit[32] = a.autopilot();
-            lit[33] = a.flaps;
-            lit[34] = a.gear_down;
-            lit[35] = a.brakes;
-            lit[36] = a.fuel < LOW_FUEL && blink;
+            lit[Stall as usize] = !a.on_ground && a.velocity < a.stall_speed && blink;
+            lit[Bay as usize] = a.bay_open;
+            lit[Auto as usize] = a.autopilot();
+            lit[Flaps as usize] = a.flaps;
+            lit[Gear as usize] = a.gear_down;
+            lit[Brake as usize] = a.brakes;
+            lit[LowFuel as usize] = a.fuel < LOW_FUEL && blink;
         }
-        lit[5] = w.missile_warning;
-        lit[6] = w.engine;
-        lit[7] = w.fire_control;
-        lit[8] = w.jammer;
-        lit[9] = w.fire;
-        lit[10] = w.fuel;
-        lit[11] = w.bay_doors;
-        lit[12] = w.avionics;
-        for k in 0..3 {
-            lit[14 + k] = self.cm.active[k] > 0.0;
+        lit[Mw as usize] = w.missile_warning;
+        lit[Eng as usize] = w.engine;
+        lit[Fc as usize] = w.fire_control;
+        lit[Jam as usize] = w.jammer;
+        lit[Fire as usize] = w.fire;
+        lit[Fuel as usize] = w.fuel;
+        lit[Bd as usize] = w.bay_doors;
+        lit[Av as usize] = w.avionics;
+        for (k, id) in [ChaffAct, FlareAct, DecoyAct].into_iter().enumerate() {
+            lit[id as usize] = self.cm.active[k] > 0.0;
         }
-        lit[17] = self.cm.ecm;
-        lit[18] = self.cm.ir_jammer;
-        lit[19] = w.radar_missile;
-        lit[20] = w.ir_missile;
-        lit[21] = w.tracked;
-        lit[22] = self.mfd.left == LeftMfd::Map;
-        lit[23] = self.mfd.left == LeftMfd::Tac;
-        let emv = (self.emv.emv.clamp(0.0, 1.0) * 99.0) as i32;
-        let egr = (self.emv.egr.clamp(0.0, 1.0) * 99.0) as i32;
-        let ear = (self.emv.ear.clamp(0.0, 1.0) * 99.0) as i32;
-        lit[24] = w.emv_warning;
-        lit[25] = self.mfd.flir;
-        lit[26] = self.mfd.right == RightMfd::Wpn;
-        lit[27] = self.mfd.right == RightMfd::Camera;
-        lit[28] = self.mfd.right == RightMfd::Way;
-        lit[29] = self.mfd.right == RightMfd::Ord;
-        lit[30] = self.mfd.right == RightMfd::Camera;
-        for (i, on) in lit.iter().enumerate() {
-            if *on {
-                light(c, i);
-            }
-        }
-        // Camera direction text in light 27.
-        if self.mfd.right == RightMfd::Camera {
-            let s = match self.mfd.cam_dir {
-                CamDir::Ahead => " Ahead ",
-                CamDir::Right => " Right ",
-                CamDir::Rear => " Rear  ",
-                CamDir::Left => " Left  ",
+        lit[Ecm as usize] = self.cm.ecm;
+        lit[Irj as usize] = self.cm.ir_jammer;
+        lit[Rad as usize] = w.radar_missile;
+        lit[Ir as usize] = w.ir_missile;
+        lit[Trak as usize] = w.tracked;
+        lit[Map as usize] = self.mfd.left == LeftMfd::Map;
+        lit[Tac as usize] = self.mfd.left == LeftMfd::Tac;
+        lit[EmvWarn as usize] = w.emv_warning;
+        lit[Flir as usize] = self.mfd.flir;
+        lit[Wpn as usize] = self.mfd.right == RightMfd::Wpn;
+        lit[CamDir as usize] = self.mfd.right == RightMfd::Camera;
+        lit[Way as usize] = self.mfd.right == RightMfd::Way;
+        lit[Ord as usize] = self.mfd.right == RightMfd::Ord;
+        lit[Tc as usize] = self.mfd.right == RightMfd::Camera;
+        lit
+    }
+
+    /// Label of a lamp; the camera direction lamp shows the direction on the camera page.
+    pub fn lamp_label(&self, id: LampId) -> &'static str {
+        if id == LampId::CamDir && self.mfd.right == RightMfd::Camera {
+            return match self.mfd.cam_dir {
+                CamDir::Ahead => "AHEAD",
+                CamDir::Right => "RIGHT",
+                CamDir::Rear => "REAR",
+                CamDir::Left => "LEFT",
             };
-            fonts.text_opaque(c, 197, 193, &upper(s), 47, 46);
         }
+        LAMPS[id as usize].1
+    }
 
-        // LED readouts: CHAFF, FLARE, DECOY (2 digits), FUEL (fuel/10, max 999), THRUST %.
-        led(c, atlas, 35, 149, &format!("{:02}", self.cm.chaff.min(99)));
-        led(c, atlas, 35, 159, &format!("{:02}", self.cm.flares.min(99)));
-        led(c, atlas, 35, 169, &format!("{:02}", self.cm.decoys.min(99)));
-        if let Some(a) = a {
-            led(c, atlas, 261, 179, &format!("{:03}", ((a.fuel / 10.0) as i32).clamp(0, 999)));
-            led(c, atlas, 261, 191, &format!("{:03}", (a.thrust.round() as i32).clamp(0, 999)));
+    /// LED readout text: CHAFF, FLARE, DECOY (2 digits), FUEL (fuel/10, max 999), THRUST %.
+    pub fn led_text(&self, id: LedId) -> String {
+        let a = self.aircraft.single().ok();
+        match id {
+            LedId::Chaff => format!("{:02}", self.cm.chaff.min(99)),
+            LedId::Flares => format!("{:02}", self.cm.flares.min(99)),
+            LedId::Decoys => format!("{:02}", self.cm.decoys.min(99)),
+            LedId::Fuel => format!("{:03}", a.map_or(0, |a| ((a.fuel / 10.0) as i32).clamp(0, 999))),
+            LedId::Thrust => format!("{:03}", a.map_or(0, |a| (a.thrust.round() as i32).clamp(0, 999))),
         }
+    }
 
-        // EMV (blue from the left, red from the right), EGR and EAR bars.
-        gauge_bar(c, 100 - emv, 1, 0, 10);
-        gauge_bar(c, -emv, 42, 0, 10);
-        if egr > 0 {
-            let colour = if emv + egr > 100 { 17 } else if emv + egr > 50 { 41 } else { 42 };
-            gauge_bar(c, egr, colour, 1, 4);
-        }
-        if ear > 0 {
-            gauge_bar(c, ear, if emv + ear > 100 { 15 } else { 11 }, 6, 9);
-        }
+    /// EMV, EGR, EAR on the gauge's 0..99 scale.
+    pub fn gauge_values(&self) -> (i32, i32, i32) {
+        let v = |x: f32| (x.clamp(0.0, 1.0) * 99.0) as i32;
+        (v(self.emv.emv), v(self.emv.egr), v(self.emv.ear))
+    }
 
-        if let Some(a) = a {
+    /// The attitude ball into its own canvas.
+    pub fn draw_adi(&self, c: &mut Canvas) {
+        let (p, r) = self.aircraft.single().map_or((0.0, 0.0), |a| {
             let (_, p, r) = a.euler();
-            adi(c, atlas, p, r);
-        }
+            (p, r)
+        });
+        adi(c, p, r);
     }
 
     /// The approach indexer into its own 10x21 canvas.
     pub fn draw_approach(&self, c: &mut Canvas, art: &CockpitArt) {
-        approach_indexer(c, &art.pit, self.approach.0, 0, 0);
+        approach_indexer(c, &art.sprites, self.approach.0, 0, 0);
     }
 }
 
-/// HUD posts and the approach indexer (`1A18:D9A3`), replaced by the modelled combiner
-/// (kept for the snapshot comparison): atlas (264,33) and (271,33) 6x58 to
-/// (43,33) and (272,33); indexer atlas (251,67) 10x21 to (33,70) with the lit part recoloured
-/// 30 -> 41 (top chevron), 47 (circle) or 14 (bottom chevron).
-#[cfg_attr(not(test), allow(dead_code))]
-pub fn posts(c: &mut Canvas, atlas: &Canvas, approach: u8) {
-    c.copy_rect(atlas, 264, 33, 6, 58, 43, 33);
-    c.copy_rect(atlas, 271, 33, 6, 58, 272, 33);
-    approach_indexer(c, atlas, approach, 33, 70);
-}
-
-/// The approach indexer (10x21) with its top-left at (x, y).
+/// The approach indexer (`1A18:D9A3`, atlas (251,67) 10x21) with its top-left at (x, y), the
+/// lit part recoloured 30 -> 41 (top chevron), 47 (circle) or 14 (bottom chevron).
 pub fn approach_indexer(c: &mut Canvas, atlas: &Canvas, approach: u8, x: i32, y: i32) {
     c.copy_rect(atlas, 251, 67, 10, 21, x, y);
     const PARTS: [(i32, i32, u8); 3] = [(2, 4, 41), (7, 7, 47), (15, 4, 14)];
     if let Some(&(dy, h, colour)) = (approach as usize).checked_sub(1).and_then(|i| PARTS.get(i)) {
         c.recolor_rect(x + 1, y + dy, x + 8, y + dy + h, 30, colour);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Reads a file relative to the asset root's directory (`assets/...`, `re-work/...`).
-    fn load(name: &str) -> Option<Vec<u8>> {
-        std::fs::read(crate::asset_path::root().join(name)).ok()
-    }
-
-    /// Panel of the emulator snapshot on the runway (re-work/hud/snaps/base.vram, optional):
-    /// NAV, MAP, ORD, GEAR lit; chaff 18, flares 12, decoys 3, fuel 999, thrust 0; EMV 0.
-    #[test]
-    fn base_panel() {
-        let (Some(pit), Some(vram)) = (load("assets/images/256pit.idx"), load("re-work/hud/snaps/base.vram")) else {
-            return;
-        };
-        let atlas = Canvas::from_pixels(320, 200, pit);
-        let mut c = atlas.clone();
-        for i in [0, 22, 29, 34] {
-            light(&mut c, i);
-        }
-        led(&mut c, &atlas, 35, 149, "18");
-        led(&mut c, &atlas, 35, 159, "12");
-        led(&mut c, &atlas, 35, 169, "03");
-        led(&mut c, &atlas, 261, 179, "999");
-        led(&mut c, &atlas, 261, 191, "000");
-        gauge_bar(&mut c, 100, 1, 0, 10);
-        gauge_bar(&mut c, 0, 42, 0, 10);
-        adi(&mut c, &atlas, 0.0, 0.0);
-        let mut diffs = Vec::new();
-        for y in 91..200 {
-            for x in 0..320 {
-                let in_mfd = (110..=169).contains(&y) && ((74..=150).contains(&x) || (169..=245).contains(&x));
-                // See-through corners of the panel strip show the 3D view.
-                let window = y < 107 && atlas.px[y * 320 + x] == 0;
-                if !in_mfd && !window && c.px[y * 320 + x] != vram[y * 320 + x] {
-                    diffs.push((x, y, c.px[y * 320 + x], vram[y * 320 + x]));
-                }
-            }
-        }
-        eprintln!("{} panel pixels differ: {:?}", diffs.len(), &diffs[..diffs.len().min(40)]);
-        assert!(diffs.is_empty());
     }
 }

@@ -32,10 +32,22 @@ impl Fonts {
         draw_text(c, self.font(HUD_FONT), x, y, s, fg, None)
     }
 
-    /// Opaque variant: every character cell (advance x height+extra) is painted `bg` first.
-    pub fn text_opaque(&self, c: &mut Canvas, x: i32, y: i32, s: &[u8], fg: u8, bg: u8) -> i32 {
-        draw_text(c, self.font(HUD_FONT), x, y, s, fg, Some(bg))
+    /// `text` with every font pixel drawn as a `scale` x `scale` block.
+    pub fn text_scaled(&self, c: &mut Canvas, x: i32, y: i32, s: &[u8], fg: u8, scale: i32) -> i32 {
+        draw_text_scaled(c, self.font(HUD_FONT), x, y, s, fg, None, scale)
     }
+
+    /// Width of `s` in unscaled pixels (colour-change bytes take no room).
+    pub fn width(&self, s: &[u8]) -> i32 {
+        let f = self.font(HUD_FONT);
+        s.iter().take_while(|&&b| b != 0).filter(|&&b| b < 0x80).filter_map(|&b| f.glyph(b)).map(|g| g.advance as i32).sum()
+    }
+
+    /// Glyph height of the flight font in unscaled pixels.
+    pub fn height(&self) -> i32 {
+        self.font(HUD_FONT).height as i32
+    }
+
 }
 
 /// Colour-change byte for strings.
@@ -48,7 +60,12 @@ pub fn upper(s: &str) -> Vec<u8> {
     s.bytes().map(|b| b.to_ascii_uppercase()).collect()
 }
 
-pub fn draw_text(c: &mut Canvas, f: &Font, mut x: i32, y: i32, s: &[u8], mut fg: u8, bg: Option<u8>) -> i32 {
+pub fn draw_text(c: &mut Canvas, f: &Font, x: i32, y: i32, s: &[u8], fg: u8, bg: Option<u8>) -> i32 {
+    draw_text_scaled(c, f, x, y, s, fg, bg, 1)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn draw_text_scaled(c: &mut Canvas, f: &Font, mut x: i32, y: i32, s: &[u8], mut fg: u8, bg: Option<u8>, scale: i32) -> i32 {
     let rows = if bg.is_some() { (f.height + f.extra_height) as i32 } else { f.height as i32 };
     for &b in s {
         if b == 0 {
@@ -60,16 +77,20 @@ pub fn draw_text(c: &mut Canvas, f: &Font, mut x: i32, y: i32, s: &[u8], mut fg:
         }
         let Some(g) = f.glyph(b) else { continue };
         if let Some(bg) = bg {
-            c.fill_rect(x, y, g.advance as i32, rows, bg);
+            c.fill_rect(x, y, g.advance as i32 * scale, rows * scale, bg);
         }
         for r in 0..f.height as usize {
             for col in 0..g.width as usize {
                 if g.pixel(col, r) {
-                    c.set(x + col as i32, y + r as i32, fg);
+                    if scale == 1 {
+                        c.set(x + col as i32, y + r as i32, fg);
+                    } else {
+                        c.fill_rect(x + col as i32 * scale, y + r as i32 * scale, scale, scale, fg);
+                    }
                 }
             }
         }
-        x += g.advance as i32;
+        x += g.advance as i32 * scale;
     }
     x
 }

@@ -16,9 +16,9 @@ Command-line options:
 | `--mission <seed> [--theater-index N]` | fly a generated mission directly |
 | `--theater ce` / `--fly` | fly from the menu's defaults, skipping it |
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
-| `--cockpit3d` | modelled 3D cockpit instead of the original cockpit pictures |
+| `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons) |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |
-| `--vr` | OpenXR headset (implies the 3D cockpit; without a runtime it runs on the desktop) |
+| `--vr` | OpenXR headset (without a runtime it runs on the desktop) |
 | `--viewer [--file stflt --model 24]` | browse the converted models |
 | `--freecam [--at Gutersloh\|primary] [--pos x,z]` | free debug camera |
 
@@ -42,6 +42,7 @@ Command-line options:
 | Tracking camera ahead, rear, right, left | `/` / `.` / `,` / M |
 | Designate / next target | N / B |
 | Zoom / unzoom / wide angle | Z / X / C |
+| Map zoom in / out, north up / heading up (modern panel) | Alt Z / Alt X / Alt F3 |
 | Time acceleration / normal | Shift Z / Shift X |
 | Pause / detail / sound level | Alt P / Alt D / Alt V |
 | Training / resupply / quit | Alt T / Alt R / Alt Q |
@@ -50,7 +51,10 @@ The full key list is in [docs/keys.md](docs/keys.md). A gamepad works as stick a
 well (right stick: rudder). The menu's Graphics column has the same toggles as the options above.
 
 **3D cockpit (desktop):** hold the right mouse button to look around, click the panel buttons
-(lit panel captions, the labelled side buttons, gear lever, ejection handle) to press them.
+(lit panel captions, the MFD bezel buttons, the labelled side buttons, gear lever, ejection
+handle) to press them. On the modern panel the bezel buttons select the MFD pages (MAP / TAC,
+TC / WAY / WPN / ORD / FLIR), zoom the map (ZM- / ZM+), switch it between north up and heading up
+(NUP / HUP) and give page functions (camera direction, waypoints, weapon select).
 
 **VR (`--vr`):** the headset is recentred on entering the flight (left menu button or Home
 recentres). Push buttons with your fingertip. Grab the stick (right side) with the grip button:

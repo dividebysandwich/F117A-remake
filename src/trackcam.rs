@@ -1,8 +1,9 @@
 //! Right-MFD tracking camera (VGAME `1A18:BF71`, projection 0xC470): a second 3D camera at the
 //! aircraft looking at the locked target, or along the camera direction keys (`/ , . m`) with
 //! the photo lens depression, rendered into a small texture with the original focal length
-//! `256 << zoom` over the 77x60 MFD rectangle. `cockpit.rs` shows the texture behind the MFD
-//! hole (the page's text is drawn over it).
+//! `256 << zoom` over the 77x60 MFD rectangle. The cockpit shows the texture behind the right
+//! MFD screen (the page's text is drawn over it); it is rendered at the screen's resolution
+//! (2x the original for the classic panel, 6x for the modern one's 231x180 display).
 
 use bevy::camera::RenderTarget;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -29,9 +30,9 @@ impl Plugin for TrackCamPlugin {
 }
 
 /// Render scale over the original MFD pixels (77x60).
-const SCALE: u32 = 2;
-pub const WIDTH: u32 = 77 * SCALE;
-pub const HEIGHT: u32 = 60 * SCALE;
+fn scale(settings: &crate::settings::Settings) -> u32 {
+    if settings.classic_cockpit { 2 } else { 6 }
+}
 /// Photo lens depression below the nose (weapons.md 5.4.6: 0x6EF BAM).
 const LENS_DEPRESSION: f32 = 0x6EF as f32;
 
@@ -42,8 +43,8 @@ pub struct TrackCamera;
 #[derive(Resource)]
 pub struct TrackCamImage(pub Handle<Image>);
 
-fn create_image(images: &mut Assets<Image>) -> Handle<Image> {
-    let mut image = Image::new_target_texture(WIDTH, HEIGHT, TextureFormat::Rgba8Unorm, Some(TextureFormat::Rgba8UnormSrgb));
+fn create_image(images: &mut Assets<Image>, scale: u32) -> Handle<Image> {
+    let mut image = Image::new_target_texture(77 * scale, 60 * scale, TextureFormat::Rgba8Unorm, Some(TextureFormat::Rgba8UnormSrgb));
     image.sampler = ImageSampler::nearest();
     images.add(image)
 }
@@ -62,11 +63,13 @@ fn spawn_camera(
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     palette: Option<Res<crate::palette::Palette>>,
+    settings: Res<crate::settings::Settings>,
 ) {
-    let image = match image {
+    let scale = scale(&settings);
+    let image = match image.filter(|i| images.get(&i.0).is_some_and(|img| img.width() == 77 * scale)) {
         Some(i) => i.0.clone(),
         None => {
-            let h = create_image(&mut images);
+            let h = create_image(&mut images, scale);
             commands.insert_resource(TrackCamImage(h.clone()));
             h
         }

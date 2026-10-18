@@ -148,6 +148,34 @@ impl Canvas {
     }
 }
 
+impl Canvas {
+    /// `blit` with every source pixel drawn as a `scale` x `scale` block.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blit_scaled(&mut self, src: &Canvas, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32, scale: i32, key: Option<u8>, recolor: Option<u8>) {
+        for y in 0..h {
+            for x in 0..w {
+                let c = src.get(sx + x, sy + y);
+                if Some(c) == key {
+                    continue;
+                }
+                self.fill_rect(dx + x * scale, dy + y * scale, scale, scale, recolor.unwrap_or(c));
+            }
+        }
+    }
+
+    /// Circle outline (polyline).
+    pub fn circle(&mut self, cx: f32, cy: f32, r: f32, c: u8) {
+        let steps = ((r * 1.5) as i32).clamp(12, 256);
+        let mut prev = (cx + r, cy);
+        for i in 1..=steps {
+            let t = i as f32 / steps as f32 * std::f32::consts::TAU;
+            let p = (cx + r * t.cos(), cy + r * t.sin());
+            self.line(prev.0 as i32, prev.1 as i32, p.0 as i32, p.1 as i32, c);
+            prev = p;
+        }
+    }
+}
+
 /// A canvas shown through a texture. Set `dirty` after drawing.
 #[derive(Component)]
 pub struct CanvasTexture {

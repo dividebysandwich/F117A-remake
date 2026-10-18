@@ -39,6 +39,9 @@ pub struct Settings {
     pub shadows: bool,
     /// Local lights: cockpit flood/display lights, explosions, plumes, runway lights.
     pub local_lights: bool,
+    /// `--classic-cockpit`: the original instrument panel layout and 77x60 displays instead
+    /// of the modern panel with high-resolution displays and bezel buttons.
+    pub classic_cockpit: bool,
 }
 
 /// What the next flight looks like (filled by the menu or command-line flags).
@@ -92,6 +95,7 @@ impl Settings {
             vr,
             shadows: has("--shadows"),
             local_lights: has("--local-lights"),
+            classic_cockpit: has("--classic-cockpit"),
         }
     }
 }

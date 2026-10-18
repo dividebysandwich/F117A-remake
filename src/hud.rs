@@ -379,7 +379,7 @@ fn bcos(a: i32) -> f32 {
 /// Draws the whole HUD for the cockpit view.
 pub fn draw(c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, f: &HudFrame) {
     let (col, col2) = f.state.colours();
-    let atlas = if f.state.night { &art.atlas_night } else { &art.pit };
+    let atlas = if f.state.night { &art.atlas_night } else { &art.sprites };
     // HUD text and lines are clipped to the HUD area of the back page (y 0..90).
     c.set_clip(0, 0, 319, 90);
     overlay(c, atlas, fonts, f, col, col2);
@@ -807,11 +807,20 @@ mod tests {
     }
 
     fn art() -> Option<(CockpitArt, Fonts)> {
-        let pit = Canvas::from_pixels(320, 200, load("assets/images/256pit.idx")?);
+        let sprites = Canvas::from_pixels(320, 91, load("assets/images/sprites.idx")?);
         let ordnance = Canvas::from_pixels(320, 200, load("assets/images/ordnance.idx")?);
         load("assets/fonts/fonts.ron")?;
         let fonts = Fonts::load();
-        Some((CockpitArt { atlas_night: crate::cockpit::night_atlas(&pit), pit, ordnance }, fonts))
+        Some((CockpitArt { atlas_night: crate::cockpit::night_atlas(&sprites), sprites, ordnance }, fonts))
+    }
+
+    /// HUD posts and the approach indexer as the original draws them (`1A18:D9A3`; the 3D
+    /// cockpit models the combiner instead): atlas (264,33) and (271,33) 6x58 to (43,33) and
+    /// (272,33); indexer to (33,70).
+    fn posts(c: &mut Canvas, atlas: &Canvas, approach: u8) {
+        c.copy_rect(atlas, 264, 33, 6, 58, 43, 33);
+        c.copy_rect(atlas, 271, 33, 6, 58, 272, 33);
+        crate::panel::approach_indexer(c, atlas, approach, 33, 70);
     }
 
     /// Compares the HUD drawn for the state of an emulator snapshot with its VRAM dump
@@ -822,7 +831,7 @@ mod tests {
         let mut c = Canvas::new(320, 200);
         draw(&mut c, &art, &fonts, f);
         border(&mut c);
-        crate::panel::posts(&mut c, &art.pit, 0);
+        posts(&mut c, &art.sprites, 0);
         let out = std::env::var("HUD_DUMP_DIR").ok();
         if let Some(dir) = out {
             std::fs::write(format!("{dir}/{snap}_mine.raw"), &c.px).unwrap();

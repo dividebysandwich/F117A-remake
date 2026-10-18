@@ -72,6 +72,11 @@ pub enum Action {
     ViewInverseTactical,
     Zoom,
     Unzoom,
+    /// Map display only (bezel buttons; Z/X also zoom the external views).
+    MapZoomIn,
+    MapZoomOut,
+    /// Modern map: north up / heading up.
+    MapOrientation,
     WideAngle,
     TimeAccel,
     TimeNormal,
@@ -175,6 +180,9 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (Shift, K::F6, ViewInverseTactical),
         (None, K::KeyZ, Zoom),
         (None, K::KeyX, Unzoom),
+        (Alt, K::KeyZ, MapZoomIn),
+        (Alt, K::KeyX, MapZoomOut),
+        (Alt, K::F3, MapOrientation),
         (None, K::KeyC, WideAngle),
         (Shift, K::KeyZ, TimeAccel),
         (Shift, K::KeyX, TimeNormal),

@@ -12,7 +12,7 @@ pub fn root() -> &'static PathBuf {
     ROOT.get_or_init(bevy::asset::io::file::FileAssetReader::get_base_path)
 }
 
-/// Path of a file under `assets/`, e.g. `asset("images/256pit.idx")`.
+/// Path of a file under `assets/`, e.g. `asset("images/sprites.idx")`.
 pub fn asset(rel: &str) -> PathBuf {
     root().join("assets").join(rel)
 }

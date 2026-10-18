@@ -1,8 +1,9 @@
 //! Pushable cockpit controls.
 //!
-//! Panel buttons are caps over the original panel lights (their face shows that part of the
-//! live panel picture, so lit/unlit comes from `panel::PanelParams::draw`). Extra buttons on
-//! two side panels carry text labels. Every control has a local frame with +Z pointing out of
+//! Panel buttons are caps carrying a face of the instrument atlas (a lamp or label, so lit/unlit
+//! comes from the panel drawing code); the layout says which faces are caps. The modern
+//! panel's MFD bezel buttons are caps too, with page-dependent labels (`mfd::osb`). Extra
+//! buttons on two side panels carry text labels. Every control has a local frame with +Z pointing out of
 //! its face; a VR fingertip pushing the cap in by most of its travel fires it once (with a
 //! haptic tick), a mouse click or a script `press=` fires it directly.
 
@@ -10,7 +11,9 @@ use bevy::camera::visibility::NoFrustumCulling;
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 
+use super::displays::{Faces, side_key};
 use super::geometry::{panel_point, panel_rect, panel_rotation, uv_quad};
+use super::layout::{Effect, PanelLayout};
 use super::{CockpitMaterials, CockpitRoot, Hands, spawn_box};
 use crate::camera::{EyeCamera, View, ViewState};
 use crate::canvas::{Canvas, CanvasTexture};
@@ -18,38 +21,34 @@ use crate::flight::{Aircraft, Player};
 use crate::font::Fonts;
 use crate::hud::{HudMode, HudState};
 use crate::input::{Action, ActionEvent};
-use crate::mfd::{CamDir, LeftMfd, MfdState};
+use crate::mfd::{CamDir, MfdCommand, MfdState, OsbFn, cmd_action, osb};
 
 /// Presses the 3D-cockpit control bound to an action (scripts).
 #[derive(Message, Debug, Clone, Copy)]
 pub struct PressControl(pub Action);
 
-#[derive(Clone, Copy, PartialEq)]
-enum Effect {
-    Action(Action),
-    /// Select a HUD mode (0 NAV, 1 AIR, 2 GND) by cycling.
-    HudMode(u8),
-    /// Select a left MFD page.
-    LeftPage(LeftMfd),
-    /// Next tracking camera direction.
-    CamCycle,
-}
-
 impl Effect {
-    fn action(self) -> Action {
-        match self {
+    /// The key action a script `press=` names for this control (None: blank bezel button).
+    fn action(self, mfd: &MfdState) -> Option<Action> {
+        Some(match self {
             Effect::Action(a) => a,
             Effect::HudMode(_) => Action::HudMode,
             Effect::LeftPage(_) => Action::Maps,
             Effect::CamCycle => Action::CamAhead,
-        }
+            Effect::Osb(side, slot) => match osb(side, slot, mfd)?.1 {
+                OsbFn::Cmd(c) => cmd_action(c),
+                OsbFn::Action(a) => a,
+            },
+        })
     }
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
-    /// Cap on the panel picture, (x, y, w, h) in panel pixels.
-    PanelCap(i32, i32, i32, i32),
+    /// Cap on the panel carrying an atlas face (uv min, max), size in panel pixels.
+    Cap,
+    /// MFD bezel button.
+    Osb,
     /// Labelled button on a side panel (side -1 left / 1 right, row, column).
     Side(f32, u8, u8, &'static str),
     /// Landing gear lever (left of the panel).
@@ -58,43 +57,11 @@ enum Kind {
     EjectHandle,
 }
 
-struct Def {
-    kind: Kind,
-    effect: Effect,
+const fn side(s: f32, row: u8, col: u8, label: &'static str, a: Action) -> (Kind, Effect) {
+    (Kind::Side(s, row, col, label), Effect::Action(a))
 }
 
-const fn cap(i: usize, effect: Effect) -> Def {
-    let (x, y, w, h, _) = crate::panel::LIGHTS[i];
-    Def { kind: Kind::PanelCap(x, y, w + 1, h + 1), effect }
-}
-
-const fn side(s: f32, row: u8, col: u8, label: &'static str, a: Action) -> Def {
-    Def { kind: Kind::Side(s, row, col, label), effect: Effect::Action(a) }
-}
-
-const DEFS: &[Def] = &[
-    cap(0, Effect::HudMode(0)),
-    cap(1, Effect::HudMode(1)),
-    cap(2, Effect::HudMode(2)),
-    cap(3, Effect::Action(Action::DesignateTarget)),
-    Def { kind: Kind::PanelCap(4, 147, 25, 9), effect: Effect::Action(Action::Chaff) },
-    Def { kind: Kind::PanelCap(4, 157, 25, 9), effect: Effect::Action(Action::Flare) },
-    Def { kind: Kind::PanelCap(4, 167, 25, 9), effect: Effect::Action(Action::Decoy) },
-    cap(17, Effect::Action(Action::Ecm)),
-    cap(18, Effect::Action(Action::IrJammer)),
-    cap(22, Effect::LeftPage(LeftMfd::Map)),
-    cap(23, Effect::LeftPage(LeftMfd::Tac)),
-    cap(25, Effect::Action(Action::Flir)),
-    cap(26, Effect::Action(Action::Ordnance)),
-    cap(27, Effect::CamCycle),
-    cap(28, Effect::Action(Action::SelectWaypoint)),
-    cap(29, Effect::Action(Action::MissionOrders)),
-    cap(30, Effect::Action(Action::CamAhead)),
-    cap(31, Effect::Action(Action::BayDoors)),
-    cap(32, Effect::Action(Action::Autopilot)),
-    cap(33, Effect::Action(Action::Flaps)),
-    cap(34, Effect::Action(Action::Gear)),
-    cap(35, Effect::Action(Action::Brakes)),
+const SIDE_BUTTONS: &[(Kind, Effect)] = &[
     side(-1.0, 0, 0, "DCLT", Action::HudDeclutter),
     side(-1.0, 0, 1, "NITE", Action::DayNightHud),
     side(-1.0, 1, 0, "ZM+", Action::Zoom),
@@ -107,8 +74,8 @@ const DEFS: &[Def] = &[
     side(1.0, 1, 1, "TGT", Action::SelectTarget),
     side(1.0, 2, 0, "RST", Action::ResetWaypoint),
     side(1.0, 2, 1, "NORM", Action::TimeNormal),
-    Def { kind: Kind::GearLever, effect: Effect::Action(Action::Gear) },
-    Def { kind: Kind::EjectHandle, effect: Effect::Action(Action::Eject) },
+    (Kind::GearLever, Effect::Action(Action::Gear)),
+    (Kind::EjectHandle, Effect::Action(Action::Eject)),
 ];
 
 /// Ejection handle position (grabbed and pulled in VR, see `levers`).
@@ -124,7 +91,8 @@ const FINGER: f32 = 0.008;
 
 #[derive(Component)]
 pub(super) struct Control {
-    def: usize,
+    kind: Kind,
+    effect: Effect,
     half: Vec2,
     height: f32,
     travel: f32,
@@ -145,43 +113,59 @@ pub(super) struct Moving;
 pub(super) fn spawn_controls(
     commands: &mut Commands,
     root: Entity,
+    layout: &PanelLayout,
+    faces: &Faces,
     mats: &CockpitMaterials,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     images: &mut Assets<Image>,
     fonts: &Fonts,
 ) {
-    // Cap faces get the panel material in `animate` (spawned in the same command batch).
-    for (i, def) in DEFS.iter().enumerate() {
-        match def.kind {
-            Kind::PanelCap(x, y, w, h) => {
-                let (centre, size) = panel_rect(x, y, w, h, 0.0);
-                let tf = Transform::from_translation(centre).with_rotation(panel_rotation());
-                let uv0 = Vec2::new(x as f32 / 320.0, y as f32 / 200.0);
-                let uv1 = Vec2::new((x + w) as f32 / 320.0, (y + h) as f32 / 200.0);
-                let face = commands
-                    .spawn((
-                        PanelCapFace,
-                        Mesh3d(meshes.add(uv_quad(size, uv0, uv1))),
-                        Transform::from_xyz(0.0, 0.0, CAP_HEIGHT),
-                        NoFrustumCulling,
-                    ))
-                    .id();
-                let skirt = commands
-                    .spawn((
-                        Mesh3d(mats.unit_cube.clone()),
-                        MeshMaterial3d(mats.dark.clone()),
-                        Transform::from_xyz(0.0, 0.0, CAP_HEIGHT / 2.0 - 0.0005).with_scale(Vec3::new(size.x * 0.98, size.y * 0.96, CAP_HEIGHT)),
-                        NoFrustumCulling,
-                    ))
-                    .id();
-                let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[face, skirt]).id();
-                let c = commands
-                    .spawn((Control::new(i, size / 2.0, CAP_HEIGHT, TRAVEL), tf, Visibility::default()))
-                    .add_child(moving)
-                    .id();
-                commands.entity(root).add_child(c);
-            }
+    // Panel caps and bezel buttons: (rect, uv, kind, effect).
+    let mut caps = Vec::new();
+    for (p, &uv) in layout.items.iter().zip(&faces.items) {
+        if let Some(effect) = p.cap {
+            caps.push((p.rect, uv, Kind::Cap, effect));
+        }
+    }
+    for m in &layout.mfds {
+        for (slot, r) in layout.osbs(m) {
+            caps.push((r, faces.osbs[&(side_key(m.side), slot)], Kind::Osb, Effect::Osb(m.side, slot)));
+        }
+    }
+    for (r, (uv0, uv1), kind, effect) in caps {
+        let (cx, cy) = r.centre();
+        let base = layout.surface(cx, cy);
+        let (_, size) = panel_rect(r.x, r.y, r.w, r.h, base);
+        let tf = Transform::from_translation(panel_point(cx, cy, base)).with_rotation(panel_rotation());
+        let face = commands
+            .spawn((
+                Mesh3d(meshes.add(uv_quad(size, uv0, uv1))),
+                MeshMaterial3d(faces.material.clone()),
+                Transform::from_xyz(0.0, 0.0, CAP_HEIGHT),
+                NoFrustumCulling,
+                NotShadowCaster,
+            ))
+            .id();
+        let skirt = commands
+            .spawn((
+                Mesh3d(mats.unit_cube.clone()),
+                MeshMaterial3d(mats.dark.clone()),
+                Transform::from_xyz(0.0, 0.0, CAP_HEIGHT / 2.0 - 0.0005).with_scale(Vec3::new(size.x * 0.98, size.y * 0.96, CAP_HEIGHT)),
+                NoFrustumCulling,
+            ))
+            .id();
+        let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[face, skirt]).id();
+        let c = commands
+            .spawn((Control::new(kind, effect, size / 2.0, CAP_HEIGHT, TRAVEL), tf, Visibility::default()))
+            .add_child(moving)
+            .id();
+        commands.entity(root).add_child(c);
+    }
+
+    for &(kind, effect) in SIDE_BUTTONS {
+        match kind {
+            Kind::Cap | Kind::Osb => {}
             Kind::Side(s, row, col, label) => {
                 let size = Vec2::new(0.034, 0.022);
                 let (centre, rot) = side_slot(s, row, col);
@@ -221,7 +205,7 @@ pub(super) fn spawn_controls(
                 let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[face, skirt]).id();
                 let tf = Transform::from_translation(centre).with_rotation(rot);
                 let c = commands
-                    .spawn((Control::new(i, size / 2.0, SIDE_HEIGHT, TRAVEL), tf, Visibility::default()))
+                    .spawn((Control::new(kind, effect, size / 2.0, SIDE_HEIGHT, TRAVEL), tf, Visibility::default()))
                     .add_child(moving)
                     .id();
                 commands.entity(root).add_child(c);
@@ -257,7 +241,7 @@ pub(super) fn spawn_controls(
                     .id();
                 let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[arm, wheel]).id();
                 let c = commands
-                    .spawn((Control::new(i, Vec2::splat(0.02), 0.07, 0.01), Transform::from_translation(centre).with_rotation(rot), Visibility::default()))
+                    .spawn((Control::new(kind, effect, Vec2::splat(0.02), 0.07, 0.01), Transform::from_translation(centre).with_rotation(rot), Visibility::default()))
                     .add_child(moving)
                     .id();
                 commands.entity(root).add_child(c);
@@ -291,7 +275,7 @@ pub(super) fn spawn_controls(
                 }
                 let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&kids).id();
                 let c = commands
-                    .spawn((Control::new(i, Vec2::new(0.065, 0.02), 0.04, 0.02), Transform::from_translation(centre).with_rotation(rot), Visibility::default()))
+                    .spawn((Control::new(kind, effect, Vec2::new(0.065, 0.02), 0.04, 0.02), Transform::from_translation(centre).with_rotation(rot), Visibility::default()))
                     .add_child(moving)
                     .id();
                 commands.entity(root).add_child(c);
@@ -306,10 +290,6 @@ pub(super) fn spawn_controls(
     }
 }
 
-/// Marks the cap faces that show the panel picture (they get the panel material).
-#[derive(Component)]
-pub(super) struct PanelCapFace;
-
 /// Side panel button slot: the panels sit left/right of the instrument panel, turned to face
 /// the pilot.
 fn side_slot(s: f32, row: u8, col: u8) -> (Vec3, Quat) {
@@ -322,14 +302,15 @@ fn side_slot(s: f32, row: u8, col: u8) -> (Vec3, Quat) {
 }
 
 impl Control {
-    fn new(def: usize, half: Vec2, height: f32, travel: f32) -> Self {
-        Self { def, half, height, travel, depth: 0.0, latched: false, armed: [false; 2], click: 0.0 }
+    fn new(kind: Kind, effect: Effect, half: Vec2, height: f32, travel: f32) -> Self {
+        Self { kind, effect, half, height, travel, depth: 0.0, latched: false, armed: [false; 2], click: 0.0 }
     }
 }
 
 #[derive(bevy::ecs::system::SystemParam)]
 pub(super) struct Fire<'w, 's> {
     actions: MessageWriter<'w, ActionEvent>,
+    mfd_commands: MessageWriter<'w, MfdCommand>,
     hud: Res<'w, HudState>,
     mfd: Res<'w, MfdState>,
     _p: std::marker::PhantomData<&'s ()>,
@@ -356,6 +337,15 @@ impl Fire<'_, '_> {
                     self.actions.write(ActionEvent(Action::Maps));
                 }
             }
+            Effect::Osb(side, slot) => match osb(side, slot, &self.mfd).map(|o| o.1) {
+                Some(OsbFn::Cmd(c)) => {
+                    self.mfd_commands.write(MfdCommand(c));
+                }
+                Some(OsbFn::Action(a)) => {
+                    self.actions.write(ActionEvent(a));
+                }
+                None => {}
+            },
             Effect::CamCycle => {
                 let next = match self.mfd.cam_dir {
                     CamDir::Ahead => Action::CamRight,
@@ -389,9 +379,16 @@ pub(super) fn interact(
 ) {
     let dt = time.delta_secs();
     for PressControl(a) in presses.read() {
-        if let Some((mut c, _)) = controls.iter_mut().find(|(c, _)| DEFS[c.def].effect.action() == *a) {
+        // Panel caps and bezel buttons before the side panel duplicates; of two bezel buttons
+        // with the same key action (MAP / TAC), the one not selected.
+        let mfd = fire.mfd.clone();
+        let rank = |c: &Control| {
+            let lit = matches!(c.effect, Effect::Osb(side, slot) if osb(side, slot, &mfd).is_some_and(|o| o.2));
+            (!matches!(c.kind, Kind::Cap | Kind::Osb), lit)
+        };
+        if let Some((mut c, _)) = controls.iter_mut().filter(|(c, _)| c.effect.action(&mfd) == Some(*a)).min_by_key(|(c, _)| rank(c)) {
             c.click = CLICK_SECONDS;
-            fire.fire(DEFS[c.def].effect);
+            fire.fire(c.effect);
         } else {
             warn!("no 3D cockpit control for {a:?}");
         }
@@ -428,7 +425,7 @@ pub(super) fn interact(
         }
         if let Some((_, mut c)) = best {
             c.click = CLICK_SECONDS;
-            fire.fire(DEFS[c.def].effect);
+            fire.fire(c.effect);
         }
     }
 
@@ -438,7 +435,7 @@ pub(super) fn interact(
         let mut depth: f32 = 0.0;
         for (h, hand) in hands.hands.iter_mut().enumerate() {
             // The ejection handle has to be grabbed and pulled (no accidental pokes).
-            if !hand.active || !cockpit_view || DEFS[c.def].kind == Kind::EjectHandle {
+            if !hand.active || !cockpit_view || c.kind == Kind::EjectHandle {
                 c.armed[h] = false;
                 continue;
             }
@@ -462,7 +459,7 @@ pub(super) fn interact(
         }
         if !c.latched && depth >= c.travel * 0.7 {
             c.latched = true;
-            fire.fire(DEFS[c.def].effect);
+            fire.fire(c.effect);
         } else if c.latched && depth < c.travel * 0.3 {
             c.latched = false;
         }
@@ -471,25 +468,13 @@ pub(super) fn interact(
 }
 
 /// Moves the caps in, and the gear lever to the gear position.
-pub(super) fn animate(
-    controls: Query<(&Control, &Children)>,
-    mut moving: Query<&mut Transform, With<Moving>>,
-    aircraft: Query<&Aircraft, With<Player>>,
-    panel_mat: Query<&super::displays::LitMaterial, With<super::displays::PanelTexture>>,
-    faces: Query<Entity, (With<PanelCapFace>, Without<MeshMaterial3d<StandardMaterial>>)>,
-    mut commands: Commands,
-) {
-    if let Ok(m) = panel_mat.single() {
-        for e in &faces {
-            commands.entity(e).insert((MeshMaterial3d(m.0.clone()), NotShadowCaster));
-        }
-    }
+pub(super) fn animate(controls: Query<(&Control, &Children)>, mut moving: Query<&mut Transform, With<Moving>>, aircraft: Query<&Aircraft, With<Player>>) {
     let gear = aircraft.single().is_ok_and(|a| a.gear_down);
     for (c, children) in &controls {
         for child in children.iter() {
             if let Ok(mut tf) = moving.get_mut(child) {
                 let mut t = Transform::from_xyz(0.0, 0.0, -c.depth);
-                if DEFS[c.def].kind == Kind::GearLever {
+                if c.kind == Kind::GearLever {
                     t.rotation = Quat::from_rotation_x(if gear { 0.5 } else { -0.5 });
                 }
                 if *tf != t {

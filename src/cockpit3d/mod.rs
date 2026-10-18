@@ -1,15 +1,16 @@
 //! The modelled 3D cockpit (desktop and VR).
 //!
-//! The instrument panel keeps the original art: the 256PIT panel with the live MFDs, lights,
-//! LEDs and attitude ball is drawn every frame into a 320x200 canvas and
-//! textured onto a tilted panel plane (`geometry`), with the MFD screens recessed into it.
+//! The instrument panel is modelled on a tilted plane laid out in the original screen's pixels
+//! (`geometry`), from one of two layouts (`layout`): the original arrangement (classic) or a
+//! modern one with high-resolution MFDs and bezel buttons. Lamps, readouts and labels are faces
+//! of a live instrument atlas; the MFD screens are recessed into the panel.
 //! Around it: glare shield, HUD combiner (the HUD is a separate canvas shown through the
 //! combiner glass collimated to infinity, at the original 256 px/rad, so it overlays the
 //! world correctly from any head position), canopy frame,
 //! consoles, seat with ejection handle, side stick (right) and throttle (left).
 //!
-//! The panel's lit buttons are physical caps showing their part of the panel picture, so
-//! their state comes from the original drawing code (`controls`). Controls are pushed by VR
+//! The panel's lit buttons are physical caps showing their lamp face, so their state comes
+//! from the panel drawing code (`controls`). Controls are pushed by VR
 //! fingertips, clicked with the mouse on the desktop, or by scripts (`press=Gear`).
 //! The stick and throttle are grabbed with the VR controllers (`levers`).
 //!
@@ -19,6 +20,7 @@ mod controls;
 mod displays;
 pub mod geometry;
 mod hud_glass;
+pub mod layout;
 mod levers;
 
 use bevy::camera::visibility::NoFrustumCulling;
@@ -43,7 +45,7 @@ impl Plugin for Cockpit3dPlugin {
             .add_systems(Startup, (setup_materials, initial_look))
             .add_systems(
                 Update,
-                (spawn_cockpit, sync_materials).run_if(in_state(AppState::Flight)),
+                (respawn_on_style_change, spawn_cockpit, sync_materials).chain().run_if(in_state(AppState::Flight)),
             )
             .add_systems(
                 PreUpdate,
@@ -110,9 +112,20 @@ impl Hand {
     }
 }
 
-/// Root of the cockpit model (child of the aircraft at the design eye point).
+/// Root of the cockpit model (child of the aircraft at the design eye point), with the panel
+/// layout it was built with.
 #[derive(Component)]
-pub struct CockpitRoot;
+pub struct CockpitRoot(pub layout::PanelStyle);
+
+/// Rebuilds the cockpit when the panel layout setting changes.
+fn respawn_on_style_change(mut commands: Commands, settings: Res<Settings>, roots: Query<(Entity, &CockpitRoot)>) {
+    let want = if settings.classic_cockpit { layout::PanelStyle::Classic } else { layout::PanelStyle::Modern };
+    for (e, root) in &roots {
+        if root.0 != want {
+            commands.entity(e).despawn();
+        }
+    }
+}
 
 /// Shared cockpit materials.
 #[derive(Resource)]
@@ -244,21 +257,23 @@ fn spawn_cockpit(
     mut images: ResMut<Assets<Image>>,
     fonts: Res<crate::font::Fonts>,
     tc_image: Option<Res<crate::trackcam::TrackCamImage>>,
+    settings: Res<Settings>,
 ) {
     if !existing.is_empty() {
         return;
     }
     let (Ok(aircraft), Ok(head)) = (player.single(), head.single()) else { return };
+    let layout = layout::PanelLayout::for_classic(settings.classic_cockpit);
     let root = commands
-        .spawn((CockpitRoot, Transform::from_translation(crate::camera::EYE_OFFSET), Visibility::default()))
+        .spawn((CockpitRoot(layout.style), Transform::from_translation(crate::camera::EYE_OFFSET), Visibility::default()))
         .id();
     commands.entity(aircraft).add_child(root);
 
-    displays::spawn_panel(&mut commands, root, &mats, &mut meshes, &mut materials, &mut images, tc_image.as_deref());
+    let faces = displays::spawn_panel(&mut commands, root, &layout, &mats, &mut meshes, &mut materials, &mut images, tc_image.as_deref());
     displays::spawn_hud(&mut commands, root, &mut meshes, &mut hud_materials, &mut images);
     displays::spawn_approach_indexer(&mut commands, root, &mut meshes, &mut materials, &mut images);
     displays::spawn_structure(&mut commands, root, &mats, &mut meshes);
-    controls::spawn_controls(&mut commands, root, &mats, &mut meshes, &mut materials, &mut images, &fonts);
+    controls::spawn_controls(&mut commands, root, &layout, &faces, &mats, &mut meshes, &mut materials, &mut images, &fonts);
     levers::spawn_levers(&mut commands, root, &mats, &mut meshes);
 
     for i in 0..2 {

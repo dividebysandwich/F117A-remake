@@ -1,10 +1,11 @@
 //! Cockpit geometry in the cockpit frame: origin at the design eye point (`camera::EYE_OFFSET`),
 //! -Z forward, +Y up, +X right, metres.
 //!
-//! The instrument panel is a tilted plane textured with the original 320x200 panel picture.
-//! Each panel pixel keeps the direction it had from the original eye (`sx = cx + f*x/z`,
-//! `sy = cy - 0.75*f*y/z`), so from the design eye the panel looks exactly like the original
-//! and the HUD lines up; the panel meshes are grids so that mapping stays projective.
+//! The instrument panel is a tilted plane laid out in the original 320x200 screen's pixels:
+//! each panel pixel keeps the direction it had from the original eye (`sx = cx + f*x/z`,
+//! `sy = cy - 0.75*f*y/z`), so from the design eye the classic panel sits where the original
+//! picture was and the HUD lines up. Textured patches are grids so that mapping stays
+//! projective; solid parts are flat polygons.
 
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
@@ -44,12 +45,8 @@ pub fn panel_point(px: f32, py: f32, offset: f32) -> Vec3 {
     d * (n.dot(p0) / n.dot(d))
 }
 
-/// Grid patch of the panel plane covering pixels [x0, x1) x [y0, y1), UVs in the 320x200 picture.
-pub fn panel_patch(x0: f32, y0: f32, x1: f32, y1: f32, offset: f32) -> Mesh {
-    panel_patch_uv(x0, y0, x1, y1, offset, |px, py| Vec2::new(px / 320.0, py / 200.0))
-}
-
-/// Grid patch with custom UVs (e.g. 0..1 over the patch for the tracking camera picture).
+/// Grid patch of the panel plane covering pixels [x0, x1) x [y0, y1) with custom UVs (e.g.
+/// 0..1 over the patch for a screen).
 pub fn panel_patch_uv(x0: f32, y0: f32, x1: f32, y1: f32, offset: f32, uv: impl Fn(f32, f32) -> Vec2) -> Mesh {
     let nx = ((x1 - x0) / 8.0).ceil().max(1.0) as u32;
     let ny = ((y1 - y0) / 8.0).ceil().max(1.0) as u32;
@@ -124,8 +121,8 @@ pub fn beam(a: Vec3, b: Vec3, thickness: Vec2) -> Transform {
 }
 
 /// Centre, size (metres, along panel x/y) of a panel pixel rectangle (x, y, w, h).
-pub fn panel_rect(x: i32, y: i32, w: i32, h: i32, offset: f32) -> (Vec3, Vec2) {
-    let (x0, y0, x1, y1) = (x as f32, y as f32, (x + w) as f32, (y + h) as f32);
+pub fn panel_rect(x: f32, y: f32, w: f32, h: f32, offset: f32) -> (Vec3, Vec2) {
+    let (x0, y0, x1, y1) = (x, y, x + w, y + h);
     let c = panel_point((x0 + x1) / 2.0, (y0 + y1) / 2.0, offset);
     let width = panel_point(x0, (y0 + y1) / 2.0, offset).distance(panel_point(x1, (y0 + y1) / 2.0, offset));
     let height = panel_point((x0 + x1) / 2.0, y0, offset).distance(panel_point((x0 + x1) / 2.0, y1, offset));
@@ -146,4 +143,68 @@ pub fn uv_quad(size: Vec2, uv_min: Vec2, uv_max: Vec2) -> Mesh {
             vec![[uv_min.x, uv_max.y], [uv_max.x, uv_max.y], [uv_max.x, uv_min.y], [uv_min.x, uv_min.y]],
         )
         .with_inserted_indices(Indices::U32(vec![0, 1, 2, 0, 2, 3]))
+}
+
+/// Texture coordinate of palette index `c` in the 16x16 palette swatch texture.
+pub fn swatch_uv(c: u8) -> [f32; 2] {
+    [((c % 16) as f32 + 0.5) / 16.0, ((c / 16) as f32 + 0.5) / 16.0]
+}
+
+/// Sets every texture coordinate of a mesh to one palette swatch colour.
+pub fn with_swatch(mut mesh: Mesh, c: u8) -> Mesh {
+    let n = mesh.count_vertices();
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![swatch_uv(c); n]);
+    mesh
+}
+
+/// Flat convex polygon on the panel plane (panel pixels, `offset` metres along the normal).
+pub fn panel_polygon(points: &[(f32, f32)], offset: f32) -> Mesh {
+    let n = panel_normal();
+    let pos: Vec<[f32; 3]> = points.iter().map(|&(x, y)| panel_point(x, y, offset).to_array()).collect();
+    let count = pos.len() as u32;
+    // Fan; the winding faces the pilot.
+    let mut idx: Vec<u32> = (1..count - 1).flat_map(|k| [0, k, k + 1]).collect();
+    let a = Vec3::from(pos[0]);
+    let face = (Vec3::from(pos[1]) - a).cross(Vec3::from(pos[2]) - a);
+    if face.dot(n) < 0.0 {
+        for t in idx.as_chunks_mut::<3>().0 {
+            t.swap(1, 2);
+        }
+    }
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![n.to_array(); count as usize])
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 0.0]; count as usize])
+        .with_inserted_indices(Indices::U32(idx))
+}
+
+/// Splits the rectangle (x0, y0)-(x1, y1) into rectangles that cover it except the holes.
+pub fn rect_minus_holes(x0: f32, y0: f32, x1: f32, y1: f32, holes: &[[f32; 4]]) -> Vec<[f32; 4]> {
+    let mut xs = vec![x0, x1];
+    let mut ys = vec![y0, y1];
+    for h in holes {
+        xs.extend([h[0], h[2]].into_iter().filter(|v| *v > x0 && *v < x1));
+        ys.extend([h[1], h[3]].into_iter().filter(|v| *v > y0 && *v < y1));
+    }
+    xs.sort_by(f32::total_cmp);
+    xs.dedup();
+    ys.sort_by(f32::total_cmp);
+    ys.dedup();
+    let mut out: Vec<[f32; 4]> = Vec::new();
+    for yw in ys.windows(2) {
+        let mut row: Vec<[f32; 4]> = Vec::new();
+        for xw in xs.windows(2) {
+            let (cx, cy) = ((xw[0] + xw[1]) / 2.0, (yw[0] + yw[1]) / 2.0);
+            if holes.iter().any(|h| cx > h[0] && cx < h[2] && cy > h[1] && cy < h[3]) {
+                continue;
+            }
+            // Merge with the cell to the left.
+            match row.last_mut() {
+                Some(r) if r[2] == xw[0] => r[2] = xw[1],
+                _ => row.push([xw[0], yw[0], xw[1], yw[1]]),
+            }
+        }
+        out.extend(row);
+    }
+    out
 }

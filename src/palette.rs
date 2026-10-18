@@ -309,6 +309,7 @@ fn update_globals(
     g.sun = lighting.sun;
     g.ambient = lighting.ambient;
     g.light_info.x = lighting.lights.len() as f32;
+    g.light_info.y = lighting.daylight;
     g.dots.x = if settings.vr { crate::dots::XR_ANGLE } else { 0.0 };
     for (i, (p, c)) in lighting.lights.iter().enumerate() {
         g.local_lights[2 * i] = *p;

@@ -8,10 +8,20 @@
     view_transformations::position_world_to_clip,
 }
 
-// Leading part of the shared palette globals (palette_material.rs `Globals`): the live palette.
+// Leading part of the shared palette globals (palette_material.rs `Globals`).
 struct Globals {
     palette: array<vec4<f32>, 256>,
+    sky_ring: array<vec4<f32>, 4>,
+    ground_g: array<vec4<f32>, 4>,
+    params: vec4<f32>,
+    sun: vec4<f32>,
+    ambient: vec4<f32>,
+    // y: daylight 0 (night) .. 1 (day).
+    light_info: vec4<f32>,
 };
+
+// Brightness of the trails at night (unlit smoke reads as grey against the dark sky).
+const NIGHT: f32 = 0.22;
 
 struct TrailMaterial {
     // x: palette index, y: opacity.
@@ -63,5 +73,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if (a <= 0.003) {
         discard;
     }
-    return vec4<f32>(globals.palette[u32(material.params.x) & 0xFFu].rgb, a);
+    let light = mix(NIGHT, 1.0, clamp(globals.light_info.y, 0.0, 1.0));
+    return vec4<f32>(globals.palette[u32(material.params.x) & 0xFFu].rgb * light, a);
 }

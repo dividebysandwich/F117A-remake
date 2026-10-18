@@ -88,7 +88,7 @@ pub struct Globals {
     pub sun: Vec4,
     /// Ambient light (rgb); w: lighting flags (`LIGHT_SHADOWS` | `LIGHT_LOCAL`).
     pub ambient: Vec4,
-    /// x: number of local lights.
+    /// x: number of local lights, y: daylight 0 (night) .. 1 (day).
     pub light_info: Vec4,
     /// x: XR dot angular size in radians (0 = flat screen; see dots.rs).
     pub dots: Vec4,

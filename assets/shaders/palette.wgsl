@@ -26,7 +26,7 @@ struct Globals {
     sun: vec4<f32>,
     // Ambient (rgb), lighting flags (w).
     ambient: vec4<f32>,
-    // x: local light count.
+    // x: local light count, y: daylight 0 (night) .. 1 (day).
     light_info: vec4<f32>,
     // x: XR dot angular size in radians (0 = flat screen).
     dots: vec4<f32>,

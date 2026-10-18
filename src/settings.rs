@@ -30,7 +30,7 @@ pub fn configure(app: &mut App) {
 
 #[derive(Resource, Debug, Clone)]
 pub struct Settings {
-    /// Modern touches: MSAA, subtle directional shading, smooth haze.
+    /// Modern shading: MSAA, subtle directional shading, smooth haze.
     pub modern_shading: bool,
     pub initial_state: AppState,
     /// `--vr`: OpenXR headset (chosen at launch; falls back to the window without a runtime).

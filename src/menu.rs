@@ -182,7 +182,7 @@ fn menu_ui(
                 cols[2].separator();
                 cols[2].label("Graphics");
                 let mut modern = settings.modern_shading;
-                if cols[2].checkbox(&mut modern, "Modern touches").changed() {
+                if cols[2].checkbox(&mut modern, "Modern shading").changed() {
                     settings.modern_shading = modern;
                 }
                 let mut shadows = settings.shadows;

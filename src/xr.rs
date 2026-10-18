@@ -313,9 +313,17 @@ fn haptics(actions: Res<XrActions>, session: Res<OxrSession>, mut hands: ResMut<
 }
 
 /// Headset cameras: the main render layers (world + background sphere), no tonemapping.
-fn setup_cameras(mut commands: Commands, cams: Query<Entity, Added<XrCamera>>) {
+/// bevy_mod_openxr spawns them unparented with their poses in the tracking space, so they are
+/// made children of the tracking root: otherwise they sit at the raw tracking-space pose in the
+/// world (the aircraft's origin, metres behind the cockpit) for everything that uses the
+/// camera's GlobalTransform.
+fn setup_cameras(mut commands: Commands, cams: Query<Entity, Added<XrCamera>>, root: Query<Entity, With<XrTrackingRoot>>) {
+    let root = root.single().ok();
     for e in &cams {
         commands.entity(e).insert((RenderLayers::from_layers(&[0, MAIN_BACKGROUND_LAYER, crate::camera::MAIN_LOD_LAYER]), Tonemapping::None));
+        if let Some(r) = root {
+            commands.entity(r).add_child(e);
+        }
     }
 }
 

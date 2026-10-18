@@ -204,8 +204,11 @@ pub struct TheaterData {
     /// `tiles[level][tile type]` = (x, y, shape).
     pub(crate) tiles: Vec<Vec<Vec<(i16, i16, u8)>>>,
     /// Pre-built candidate lists per shape for the LOD1/LOD2 search and the LOD3 search
-    /// (same order as the original scan; spec §4 findRandomObjectOfShape).
+    /// (same order as the original scan; spec §4 findRandomObjectOfShape). Derived, so not
+    /// serialised: rebuilt by [`TheaterData::from_json`].
+    #[serde(skip)]
     pub(crate) cand_lod12: Vec<Vec<Candidate>>,
+    #[serde(skip)]
     pub(crate) cand_lod3: Vec<Vec<Candidate>>,
     /// Grid size per LOD level (START DS:107E).
     pub(crate) grid_size: [i16; 5],
@@ -226,6 +229,13 @@ impl TheaterData {
             .map(|lv| lv.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect())
             .collect();
         let mut td = Self { index: theater, world, g, tiles, cand_lod12: vec![Vec::new(); 256], cand_lod3: vec![Vec::new(); 256], grid_size };
+        td.build_candidates();
+        Ok(td)
+    }
+
+    /// Decode a theater exported with [`serde_json`] and rebuild the candidate lists.
+    pub fn from_json(json: &[u8]) -> Result<Self> {
+        let mut td: Self = serde_json::from_slice(json)?;
         td.build_candidates();
         Ok(td)
     }

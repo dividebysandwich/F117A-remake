@@ -1,0 +1,1441 @@
+{
+  "missions": [
+    {
+      "theater_mask": 2,
+      "roe_mask": 7,
+      "mission_type": 4,
+      "category": 1,
+      "code": 47,
+      "special": 0
+    },
+    {
+      "theater_mask": 2,
+      "roe_mask": 7,
+      "mission_type": 4,
+      "category": 1,
+      "code": 47,
+      "special": 0
+    },
+    {
+      "theater_mask": 2,
+      "roe_mask": 1,
+      "mission_type": 3,
+      "category": 1,
+      "code": 58,
+      "special": 0
+    },
+    {
+      "theater_mask": 2,
+      "roe_mask": 6,
+      "mission_type": 3,
+      "category": 1,
+      "code": 58,
+      "special": 0
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 2,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 2,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 9,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 3,
+      "code": 0,
+      "special": 1
+    },
+    {
+      "theater_mask": 12,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 4,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 12,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 4,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 0,
+      "roe_mask": 1,
+      "mission_type": 1,
+      "category": 5,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 0,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 5,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 67,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 6,
+      "code": 0,
+      "special": 9
+    },
+    {
+      "theater_mask": 67,
+      "roe_mask": 4,
+      "mission_type": 2,
+      "category": 6,
+      "code": 0,
+      "special": 9
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 7,
+      "code": 0,
+      "special": 4
+    },
+    {
+      "theater_mask": 127,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 7,
+      "code": 0,
+      "special": 4
+    },
+    {
+      "theater_mask": 384,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 7,
+      "code": 0,
+      "special": 4
+    },
+    {
+      "theater_mask": 15,
+      "roe_mask": 7,
+      "mission_type": 1,
+      "category": 22,
+      "code": 0,
+      "special": 5
+    },
+    {
+      "theater_mask": 15,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 22,
+      "code": 0,
+      "special": 5
+    },
+    {
+      "theater_mask": 15,
+      "roe_mask": 7,
+      "mission_type": 1,
+      "category": 22,
+      "code": 0,
+      "special": 6
+    },
+    {
+      "theater_mask": 15,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 22,
+      "code": 0,
+      "special": 6
+    },
+    {
+      "theater_mask": 15,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 22,
+      "code": 34,
+      "special": 6
+    },
+    {
+      "theater_mask": 15,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 22,
+      "code": 34,
+      "special": 6
+    },
+    {
+      "theater_mask": 161,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 23,
+      "code": 0,
+      "special": 11
+    },
+    {
+      "theater_mask": 161,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 23,
+      "code": 2,
+      "special": 11
+    },
+    {
+      "theater_mask": 260,
+      "roe_mask": 1,
+      "mission_type": 1,
+      "category": 10,
+      "code": 0,
+      "special": 3
+    },
+    {
+      "theater_mask": 260,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 10,
+      "code": 0,
+      "special": 3
+    },
+    {
+      "theater_mask": 415,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 12,
+      "code": 0,
+      "special": 32
+    },
+    {
+      "theater_mask": 287,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 12,
+      "code": 2,
+      "special": 7
+    },
+    {
+      "theater_mask": 384,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 12,
+      "code": 2,
+      "special": 7
+    },
+    {
+      "theater_mask": 415,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 12,
+      "code": 0,
+      "special": 7
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 37,
+      "code": 0,
+      "special": 35
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 37,
+      "code": 0,
+      "special": 35
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 13,
+      "code": 0,
+      "special": 1
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 13,
+      "code": 0,
+      "special": 1
+    },
+    {
+      "theater_mask": 66,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 14,
+      "code": 0,
+      "special": 8
+    },
+    {
+      "theater_mask": 66,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 14,
+      "code": 0,
+      "special": 8
+    },
+    {
+      "theater_mask": 99,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 15,
+      "code": 0,
+      "special": 2
+    },
+    {
+      "theater_mask": 99,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 15,
+      "code": 0,
+      "special": 2
+    },
+    {
+      "theater_mask": 4,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 16,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 4,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 16,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 492,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 17,
+      "code": 34,
+      "special": 0
+    },
+    {
+      "theater_mask": 364,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 17,
+      "code": 34,
+      "special": 0
+    },
+    {
+      "theater_mask": 12,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 18,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 12,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 18,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 16,
+      "roe_mask": 1,
+      "mission_type": 1,
+      "category": 19,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 16,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 19,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 7,
+      "mission_type": 1,
+      "category": 9,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 127,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 9,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 384,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 9,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 508,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 9,
+      "code": 2,
+      "special": 0
+    },
+    {
+      "theater_mask": 378,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 20,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 378,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 20,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 444,
+      "roe_mask": 7,
+      "mission_type": 5,
+      "category": 21,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 499,
+      "roe_mask": 7,
+      "mission_type": 5,
+      "category": 21,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 316,
+      "roe_mask": 6,
+      "mission_type": 7,
+      "category": 21,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 499,
+      "roe_mask": 3,
+      "mission_type": 7,
+      "category": 21,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 507,
+      "roe_mask": 1,
+      "mission_type": 7,
+      "category": 21,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 63,
+      "roe_mask": 3,
+      "mission_type": 6,
+      "category": 21,
+      "code": 0,
+      "special": -15
+    },
+    {
+      "theater_mask": 60,
+      "roe_mask": 6,
+      "mission_type": 8,
+      "category": 21,
+      "code": 0,
+      "special": -15
+    },
+    {
+      "theater_mask": 61,
+      "roe_mask": 6,
+      "mission_type": 8,
+      "category": 21,
+      "code": 0,
+      "special": -5
+    },
+    {
+      "theater_mask": 127,
+      "roe_mask": 7,
+      "mission_type": 8,
+      "category": 21,
+      "code": 0,
+      "special": -2
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 24,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 24,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 25,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 25,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 26,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 26,
+      "code": 2,
+      "special": 0
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 8,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 511,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 8,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 27,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 27,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 28,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 29,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 30,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 31,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 31,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 128,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 35,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 128,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 35,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 128,
+      "roe_mask": 7,
+      "mission_type": 2,
+      "category": 36,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 128,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 36,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 3,
+      "mission_type": 1,
+      "category": 33,
+      "code": 0,
+      "special": 0
+    },
+    {
+      "theater_mask": 64,
+      "roe_mask": 6,
+      "mission_type": 2,
+      "category": 33,
+      "code": 0,
+      "special": 0
+    }
+  ],
+  "mission_text": [
+    "Our agents have captured enemy equipment of great importance to national security. You will fly to a secret airstrip and load this equipment aboard. One bay will be allocated for this equipment. Other bays may be used for normal ordnance as usual.\r",
+    "Guerilla freedom fighters need Stinger missiles for upcoming operations. You will land them at a secret airstrip. The other bays may be used for normal ordnance, selected at your discretion.\r",
+    "A group of covert agents involved in a hostage rescue operation lost their arms and equipment. To save this operation from failure, you must airdrop replacement equipment. The drop point is designated by an on-ground radio beacon.\r",
+    "A guerilla group needs weapons and explosives to strike a decisive blow against an enemy HQ. You will take this equipment to their hideout and drop it onto their radio beacon.\r",
+    "An experimental search and tracking radar system is being installed at an enemy SAM site. Sources indicate it may already be operational. Detailed, low-altitude photos are required as soon as possible.\r",
+    "An upcoming operation requires a corridor through enemy air defenses. Your role is to eliminate the search and tracking radar of a key SAM battery in the enemy defense network.\r",
+    "Enemy mobile SAM batteries have inflicted unacceptable losses on our tactical air attacks. Air support of ground operations cannot resume until these vehicles are destroyed.\r",
+    "A new Soviet over-the-horizon radar system has nearly been completed. Due to space-launch delays no KH-11 satellite overflights are available at the moment. You must overfly the site and bring back detailed photos.\r",
+    "The new Soviet Over-The-Horizon radar system must be destroyed immediately. As long as it is operational, the enemy receives long-range advance warning of all our sea and air movements.\r",
+    "The new Soviet long-range phased array radar for their ABM system may violate some arms agreements. A closeup photo overflight is needed to confirm satellite data.  Delicate negotiations are about to begin.\r",
+    "Washington needs to send a strong political signal. Destruction of an LPAR in their ABM system should persuade the enemy to negotiate more faithfully.\r",
+    "Pentagon strategic planners need a detailed update on an enemy oil refinery complex. As usual, our spies are committed elsewhere, so you will fly over the target area and get the necessary photos.\r",
+    "We intend to strike the enemy's fuel resources before he can place them on a more efficient war footing. Destruction of these facilities could ruin the enemy economy for years.\r",
+    "A strike is planned against a large oil storage facility. To make sure the attack is correctly planned, you must overfly it and get up-to-date photos. Computer-aided structural analysis and infrared views will show whether the tanks are full.\r",
+    "High command has decided to destroy a major enemy oil storage facility to temporarily reduce his exports, and ruin his capacity to resupply his army. This action could even bring him to the bargaining table.\r",
+    "High command has decided to destroy a major enemy oil storage facility to temporarily reduce his exports, and ruin his capacity to resupply his army. This action could even bring him to the bargaining table.\r",
+    "Recent information indicates that Soviet stealth-technology bombers have been moved into the region. You will make a recon overflight to determine if this is true, and if so, photograph the aircraft.\r",
+    "The new Russian stealth bomber has deployed to forward airfields in the region. We must destroy this plane before it inflicts crippling damage on our forces.\r",
+    "Intelligence reports a new squadron of enemy aircraft entering the region. Washington requires an immediate reconnaissance of the base and photographs of the aircraft there.\r",
+    "To protect a forthcoming bombing raid from interception, you must knock out an enemy fighter squadron. In-place agents indicate that an immediate attack on the MiGs' base will catch them on the ground.\r",
+    "Intelligence reports a Soviet An-72 entering the region with a secret cargo. Washington wants photos of this plane and its cargo before it leaves the base.\r",
+    "A Soviet An-72 carrying a nuclear device should have been intercepted three hours ago... but wasn't. You must rectify the situation by destroying the cargo while it is being unloaded.\r",
+    "Intelligence sources indicate that the enemy has organized a new terrorist training camp. As usual, the KH-11 is out of position and malfunctioning, so you must perform a photo overflight of the area.\r",
+    "Key terrorist leaders have gathered for a planning meeting at one of their training camps. A well-timed retaliatory strike will disrupt their operations and deter future violent acts. This opportunity may not occur again.\r",
+    "A Soviet nuclear aircraft carrier is in the area and may be used for aggressive action. Washington requires photo close-ups of this powerful warship.\r",
+    "A Soviet carrier task force has sailed from Murmansk. Intelligence believes it is part of a raid into the Norwegian Sea. It is unlikely that you will be able to sink her, but setting her afire with multiple hits will ruin the flight deck and weapons systems, making the ship useless.\r",
+    "Intelligence sources report that enemy naval units are deploying for a sudden attack against our forces. To verify the accuracy of these reports, Washington requires a recon overflight immediately.\r",
+    "A US Special Forces raid will begin late tonight. To protect their insertion and subsequent withdrawal, enemy missile patrol boats must be eliminated. Remember, this is a combined arms operation, so timing is essential.\r",
+    "A US Special Forces raid will begin late tonight. To protect their insertion and subsequent withdrawal, enemy missile patrol boats must be eliminated. Remember, this is a combined arms operation, so timing is essential.\r",
+    "Enemy missile boats now at sea have attacked friendly ships. A quick counterattack is desired. Destroy these boats before they do more damage.\r",
+    "Satellite photos indicate the presence of new enemy surface-to-surface missiles. Washington needs photographic evidence to confirm this information. You will fly to the target and get the photos.\r",
+    "The enemy has placed a large battery of surface-to-surface missiles in range of some of our important ground facilities. These SSMs must be destroyed as quickly as possible.\r",
+    "Satellite photos indicate the presence of new enemy surface-to-air missiles. Washington needs photographic evidence to confirm this information. You will fly to the target and get the photos.\r",
+    "The enemy has placed a large battery of surface-to-air missiles in range of some of our important air facilities. These SAMs must be destroyed as quickly as possible.\r",
+    "Washington has learned of an enemy military base on an offshore oil platform. A detailed, low-level photo reconnaissance is required. Remember, Washington insists that the enemy remain unaware of your presence.\r",
+    "The enemy is using an offshore oil platform as a base for speedboat attacks on friendly ships. You must eliminate this problem and the fanatics in a single quick, surgical strike.\r",
+    "A European consortium, in violation of treaties, is helping the enemy build a plutonium breeder reactor. The project must be kept under constant observation, and weather has blocked satellite photos.\r",
+    "The enemy is ready to bring a nuclear power plant on line. Although officially for civilian purposes, it could produce material for nuclear weapons. You will launch a strike to eliminate this plant immediately.\r",
+    "A new Soviet submarine base was finished this week. Washington wants a full evaluation of this new weaponand you're elected to provide it. Watch out for elements of the Northern Fleet cruising offshore. Good luck.\r",
+    "Destruction of the new Soviet submarine base on the Kola coastline will cripple the Red Banner Northern Fleet by eliminating a major refueling and repair center.  The area is too well-defended for a major air raid, but Washington hopes your stealth plane will be successful.\r",
+    "Local intelligence sources report that a Soviet merchant ship has arrived with a super-secret cargo. Washington suspects the cargo, which is deck-loaded, is a new type of nuclear weapon. Photos of the ship and its cargo are therefore very important.\r",
+    "A merchant ship controlled by a terrorist group is carrying a large nuclear device. Washington is afraid this weapon will be used for political demands or attacks. The ship and cargo must be destroyed before it finishes unloading.\r",
+    "Satellite photos reveal that a new Typhoon class ballistic missile sub has suffered minor damage and must run on the surface. Washington is eager to exploit the situation by getting plenty of close-up photos of this new vessel.\r",
+    "A Typhoon-class ballistic missile sub has been spotted undergoing hurried resupply and missile replenishment at a naval port complex. This naval threat should be eliminated before it returns to the deep.\r",
+    "Intelligence sources report suspicious activity at a hostile army depot. Washington is worried that this could be preparations for a surprise attack. They want an immediate photo reconnaissance of the depot.\r",
+    "Intelligence has confirmed enemy preparations for a a surprise attack. To forestall this attack, you will destroy the main military depot that holds their supplies and ammunition.\r",
+    "Washington is planning a raid on an enemy HQ. You will make a last minute photo reconnaissance of the headquarters, to give the raid force up-to-date information on the target area.\r",
+    "Despite repeated warnings and an air raid, the enemy persists in supporting international terrorism. The time has come to deal with this outlaw dictator. Due to the strong air defenses around his HQ, your stealth aircraft has the best chance of success.\r",
+    "Despite repeated warnings and an air raid, the enemy persists in supporting international terrorism. The time has come to deal with this outlaw dictator. Due to the strong air defenses around his HQ, your stealth aircraft has the best chance of success.\r",
+    "Our ground troops are launching a new offensive. Washington hopes a well-timed raid on an enemy headquarters complex will cripple the enemy command and control apparatus and leave their combat forces unable to respond to the attack.\r",
+    "A big bridge-busting raid is being planned. The F-111 squadron commander has requested last-minute photos of the target area. You will make a photo overflight to get the goods for him.\r",
+    "Repeated major air raids have failed against this well-defended and strongly built bridge. Headquarters has decided the only chance of success is a sneak attack with a stealth fighter.\r",
+    "Intelligence reports the military genius behind recent enemy operations is travelling with his staff to a new headquarters. He is worth ten thousand troops. You must ambush and destroy his plane.\r",
+    "Intelligence reports that a terrorist leader, the mastermind behind recent incidents, is traveling by plane. This plane must not be allowed to reach its destination.\r",
+    "Intelligence has learned that enemy SPETSNAZ commandos will soon strike a blow. Their transport will be surrounded by a strong fighter escort. Fight your way through these defenses and destroy this plane before the commandos reach their target.\r",
+    "Friendly agents report a group of well-known international terrorists are travelling by transport plane to an unknown destination. Washington wants you to find and eliminate this plane before further mischief is done.\r",
+    "Intelligence reports a terrorist plot to fly an An-72 transport plane full of explosives into a friendly nation and explode it at the airport. You must intercept this \"flying bomb\" before it arrives.\r",
+    "A Soviet Tu-95D Bear recon plane has discovered one of our super-secret operations in a chance overflight. The Bear must be destroyed before returning to base. The destruction must be clandestine to avoid an international incident.\r",
+    "The Russians have just escalated the danger of nuclear war by putting their Tu-95H cruise missile bombers into the air, orbiting deep behind their lines. We must eliminate this new nuclear threat. A conventional fighter attack could never sneak up on them, but we hope your stealth fighter can do it. Good luck!\r",
+    "Soviet Il-76 Mainstay AWACS planes have been efficient at watching our aircraft movements and vectoring Russian fighters into intercepts. Washington hopes that your stealth fighter can surprise and destroy one. Good hunting!\r",
+    "An upcoming raid requires a clear shot directly through the enemy defenses. Unfortunately, the enemy has a fighter patrol blocking this route. You must eliminate this fighter patrol to clear the route.\r",
+    "Central Command is considering a direct attack on the presidential palace of Saddam Hussein. You will make a photo reconnaissance of the palace to give CentCom up-to-date information. You must avoid detection.\r",
+    "Central Command has ordered an attack on the presidential palace of Saddam Hussein and the Baath party. AAA and SAM missiles in the target area should not present any problems.\r",
+    "In the event of expansion of the Gulf War, Central Command is planning to destroy all enemy chemical weapons facilities to stop Iraqi production of such weapons. CentCom needs current photos of these facilities.\r",
+    "Central Command has ordered the destruction of a chemical weapons manufacturing facility that is producing mustard gas and phosgene. Destruction of this plant will seriously damage the ability of Saddam Hussein and the Iraqi military to produce such weapons.\r",
+    "Intelligence has learned the location of several mobile Scud launchers. These must be photograhped to determine their operational capabilities. \r",
+    "Intelligence has learned the location of several mobile Scud launchers. These must be destroyed to prevent terror strikes on Israel and friendly Arab allies. We must strike quickly before the launchers are moved out of the area.\r",
+    "Intelligence suspects that enemy aircraft, capable of delivering non-conventional weapons, are being housed in hardened bunkers. Photos are needed to determine proper munitions for penetration and destruction of these hangars.\r",
+    "Central Command has ordered the destruction of hardened shelters used to protect the enemy's Air Force. Aircraft inside these shelters may be capable of delivering biological or chemical weapons and must be destroyed by a direct hit.\r",
+    "Central Command has information that the Iraqi military is operating a new biological/chemical weapons plant. You are to photograph this facility to confirm the existence of non-conventional munitions. \r",
+    "CentCom has ordered the destruction of a biological weapons production facility. If accomplished, your mission will substantially reduce enemy biological weapons production capacity.\r",
+    "Soviet made OSA-II guided missile boats have been spotted and pose a significant threat to U.S. and Allied naval operations in the Persian Gulf. Central Command has ordered the destruction of these boats.\r",
+    "Iraqi forces have sabatoged a Kuwaiti offshore oil pumping station. Crude oil is being dumped into the Persian Gulf in alarming quantities, causing untold ecological and environmental damage. Saudi experts believe a direct hit on the oil pumping manifold will stem the flow of crude into the Gulf.\r",
+    "Central Command has learned the location of several fixed Scud launchers in the area. These weapons are capable of delivering conventional or chemical warheads and must be destroyed to prevent Saddam Hussein from launching terror strikes against Israel and friendly Arab allies.\r",
+    "As tensions escalate in the Gulf, Central Command is preparing for offensive operations. It will be necessary to knock out the Iraqi Air Force and establish air superiority as soon as possible. CentCom needs up-to-date photos of the Iraqi Air Defense Command Center.\r",
+    "Central Command has ordered the destruction of the Iraqi Air Defense Command Center. Destroying this command and control center will aid the Allied effort to destroy the Iraqi Air Force and establish air superiority over the theater of operations.\r",
+    "Several Cuban surveilance boats have been operating in US waters. With the current state of tensions, Washington has approved a plan of demonstration in retaliation. You will destroy one of these craft as an example.\r",
+    "Intelligence reports that the Cubans have fitted out fishing boats with sophisticated surveilance equipment and are using them for covert missions against US forces. You must photograph one of these trawlers so that analyst can determine the extent of the risk to national security.\r",
+    "A Cuban supply and replinishmet center reportedly will be shipping a cargo of Soviet missiles and launchers to communist guerillas in Central America. To warn the enemy of grave consequences for such actions in the Western hemisphere, you will proceed to the depot and destroy it at once.\r",
+    "Intelligence reports a new shipment of Soviet shoulder launched SAMs at a supply center, probably earmarked for distribution to various guerilla organizations in Central America. You must get good clean photos of this installation so the experts can determine the veracity of the the report.\r",
+    "Saddam's Elite Republican Guards are known to be the primary threat to our ground forces when the ground war begins. Accordingly, CENTCOM has ordered the destruction of these units by our air forces to commence immediately.\r",
+    "Intelligence reports large concentrations of Republican Guard Units near the Kuwait border. To determine the threat to our ground forces, and the strength of their air defenses, you must get clear, clean photos of these units.\r"
+  ],
+  "weapon_qty": [
+    4,
+    3,
+    1,
+    2,
+    1,
+    2,
+    2,
+    2,
+    2,
+    3,
+    3,
+    2,
+    2,
+    2,
+    2,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "unit_remap": [
+    [
+      0,
+      0
+    ],
+    [
+      2,
+      0
+    ],
+    [
+      6,
+      1
+    ],
+    [
+      7,
+      3
+    ],
+    [
+      6,
+      2
+    ],
+    [
+      5,
+      7
+    ],
+    [
+      4,
+      2
+    ],
+    [
+      5,
+      3
+    ],
+    [
+      8,
+      0
+    ],
+    [
+      8,
+      0
+    ],
+    [
+      10,
+      11
+    ],
+    [
+      11,
+      9
+    ],
+    [
+      12,
+      13
+    ],
+    [
+      12,
+      14
+    ],
+    [
+      13,
+      14
+    ],
+    [
+      15,
+      0
+    ]
+  ],
+  "planes": [
+    {
+      "name": "MIG-23",
+      "nick": " Flogger",
+      "speed": 740,
+      "range": 560
+    },
+    {
+      "name": "MIG-25",
+      "nick": " Foxbat",
+      "speed": 570,
+      "range": 700
+    },
+    {
+      "name": "MIG-29",
+      "nick": " Fulcrum",
+      "speed": 700,
+      "range": 400
+    },
+    {
+      "name": "MIG-31",
+      "nick": " Foxhound",
+      "speed": 790,
+      "range": 930
+    },
+    {
+      "name": "Su-27",
+      "nick": " Flanker",
+      "speed": 725,
+      "range": 715
+    },
+    {
+      "name": "IL-76",
+      "nick": " Mainstay",
+      "speed": 400,
+      "range": 4000
+    },
+    {
+      "name": "F-4E",
+      "nick": " Phantom",
+      "speed": 800,
+      "range": 520
+    },
+    {
+      "name": "F-14",
+      "nick": " Tomcat",
+      "speed": 800,
+      "range": 800
+    },
+    {
+      "name": "F-18",
+      "nick": " Hornet",
+      "speed": 660,
+      "range": 461
+    },
+    {
+      "name": "An-72",
+      "nick": " Coaler",
+      "speed": 350,
+      "range": 620
+    },
+    {
+      "name": "F-18",
+      "nick": " Hornet",
+      "speed": 660,
+      "range": 461
+    },
+    {
+      "name": "MIG-23",
+      "nick": " Flogger",
+      "speed": 740,
+      "range": 560
+    },
+    {
+      "name": "F-14",
+      "nick": " Tomcat",
+      "speed": 800,
+      "range": 800
+    },
+    {
+      "name": "F-4E",
+      "nick": " Phantom",
+      "speed": 800,
+      "range": 520
+    },
+    {
+      "name": "Yak-38",
+      "nick": " Forger",
+      "speed": 550,
+      "range": 300
+    },
+    {
+      "name": "Tu-95",
+      "nick": " Bear",
+      "speed": 410,
+      "range": 5100
+    },
+    {
+      "name": "Mi-24",
+      "nick": " Hind",
+      "speed": 200,
+      "range": 300
+    },
+    {
+      "name": "F-5",
+      "nick": " Tiger",
+      "speed": 500,
+      "range": 250
+    },
+    {
+      "name": "767",
+      "nick": " Boeing",
+      "speed": 400,
+      "range": 1000
+    },
+    {
+      "name": "MIG-17",
+      "nick": " Fresco",
+      "speed": 570,
+      "range": 560
+    },
+    {
+      "name": "F-1",
+      "nick": " Mirage",
+      "speed": 790,
+      "range": 560
+    },
+    {
+      "name": "F-15",
+      "nick": " Eagle",
+      "speed": 800,
+      "range": 800
+    },
+    {
+      "name": "F-16",
+      "nick": " Falcon",
+      "speed": 800,
+      "range": 800
+    },
+    {
+      "name": "UH-60",
+      "nick": " Blackhawk",
+      "speed": 200,
+      "range": 200
+    },
+    {
+      "name": "A-6",
+      "nick": " Intruder",
+      "speed": 600,
+      "range": 800
+    },
+    {
+      "name": "MIG-21",
+      "nick": " Fishbed",
+      "speed": 750,
+      "range": 400
+    },
+    {
+      "name": "EF-111",
+      "nick": " Aardvark",
+      "speed": 800,
+      "range": 3000
+    },
+    {
+      "name": "C-5",
+      "nick": " Galaxy",
+      "speed": 400,
+      "range": 1000
+    },
+    {
+      "name": "A-10",
+      "nick": " Tbolt II",
+      "speed": 400,
+      "range": 300
+    }
+  ],
+  "suit": [
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      5,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      6,
+      6,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8,
+      7,
+      0,
+      0
+    ],
+    [
+      2,
+      0,
+      2,
+      3,
+      4,
+      4,
+      3,
+      3,
+      4,
+      4,
+      4,
+      0,
+      4,
+      0,
+      6,
+      0
+    ],
+    [
+      4,
+      1,
+      2,
+      4,
+      5,
+      5,
+      4,
+      4,
+      5,
+      4,
+      4,
+      0,
+      3,
+      4,
+      4,
+      0
+    ],
+    [
+      0,
+      0,
+      4,
+      4,
+      0,
+      0,
+      5,
+      5,
+      4,
+      4,
+      5,
+      0,
+      4,
+      0,
+      6,
+      0
+    ],
+    [
+      0,
+      8,
+      0,
+      0,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      3,
+      1,
+      3,
+      4,
+      1,
+      1,
+      4,
+      2,
+      3,
+      3,
+      4,
+      0,
+      3,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      4,
+      4,
+      0,
+      0,
+      4,
+      0,
+      2,
+      0,
+      4,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      4,
+      4,
+      0,
+      0,
+      4,
+      4,
+      4,
+      4,
+      4,
+      0,
+      3,
+      0,
+      4,
+      0
+    ],
+    [
+      2,
+      0,
+      4,
+      4,
+      0,
+      2,
+      5,
+      3,
+      3,
+      2,
+      5,
+      1,
+      3,
+      3,
+      0,
+      0
+    ],
+    [
+      4,
+      0,
+      0,
+      6,
+      0,
+      5,
+      6,
+      2,
+      2,
+      4,
+      6,
+      5,
+      2,
+      3,
+      3,
+      0
+    ],
+    [
+      1,
+      0,
+      6,
+      4,
+      0,
+      0,
+      6,
+      6,
+      3,
+      6,
+      6,
+      0,
+      3,
+      0,
+      2,
+      0
+    ],
+    [
+      0,
+      6,
+      0,
+      3,
+      0,
+      0,
+      2,
+      3,
+      0,
+      0,
+      3,
+      0,
+      0,
+      0,
+      2,
+      0
+    ]
+  ],
+  "avail_map": [
+    1,
+    0,
+    12,
+    4,
+    3,
+    9,
+    11,
+    5,
+    15,
+    12,
+    7,
+    6,
+    9,
+    255,
+    9,
+    8
+  ],
+  "weapon_names": [
+    "4X AIM-9M SIDEWINDER",
+    "3X AIM-120A AMRAAM",
+    "1X AGM-88A HARM",
+    "2X PENGUIN-3 ASM",
+    "1X AGM-84A HARPOON",
+    "2X AGM-650 MAVERICK",
+    "2X GBU-12 PAVEWAY",
+    "2X MK 20 ROCKEYE",
+    "2X DURANDAL BOMB",
+    "3X MK 82-0 SLICK",
+    "3X MK 82-1 SNAKEYE",
+    "2X MK 20 ROCKEYE II",
+    "2X MK 122 FIREYE",
+    "2X CBU-72 FAE",
+    "2X MK 35 IN CLUSTER",
+    "1X ISCB-1 MINELETS",
+    "1X 135MM/IR CAMERA",
+    "1X 1900 LBS. FUEL",
+    "1X SPECIAL EQUIP"
+  ],
+  "roe_text": [
+    "This mission is clandestine.  Avoid detection, especially visual identification by military aircraft.  You may fire upon targets authorized for elimination, enemies who attack you, or enemy military aircraft or installations that detect you.",
+    "All military targets may be attacked freely.  After achieving your objectives, you are expected to cause maximum damage to enemy aircraft and ground installations. Avoid detection if possible.  You must avoid damage to civilian personnel and property at all costs.  Remember, this is a LIMITED war situation.",
+    "A full state of war exists.  Any and all targets within enemy territory may be attacked.  After achieving your objectives, you may attack any target of military value.  Targets that most help the war effort are enemy combat forces, including aircraft and missile sites."
+  ],
+  "dir_dx": [
+    -1,
+    1,
+    1,
+    -1,
+    0,
+    1,
+    0,
+    -1,
+    0
+  ],
+  "dir_dy": [
+    1,
+    1,
+    -1,
+    -1,
+    1,
+    0,
+    -1,
+    0,
+    0
+  ],
+  "dir_off": [
+    -4096,
+    0,
+    4096
+  ],
+  "grid_size": [
+    1024,
+    256,
+    64,
+    16,
+    4
+  ],
+  "date_month": [
+    4,
+    9,
+    6,
+    8,
+    2,
+    11,
+    1,
+    10,
+    6
+  ],
+  "date_day": [
+    15,
+    23,
+    15,
+    14,
+    13,
+    22,
+    15,
+    10,
+    7
+  ],
+  "date_year": [
+    1986,
+    1984,
+    1985,
+    1986,
+    1994,
+    1989,
+    1991,
+    1995,
+    1997
+  ],
+  "month_names": [
+    "",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec"
+  ],
+  "month_len": [
+    0,
+    31,
+    28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+    80
+  ],
+  "dot": "."
+}

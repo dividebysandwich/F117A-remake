@@ -2730,7 +2730,6 @@ dependencies = [
  "f117-mission",
  "f117-sim",
  "openxr",
- "postcard",
  "rand 0.9.5",
  "ron",
  "serde",

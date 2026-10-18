@@ -15,11 +15,8 @@ fn data() -> Option<&'static Data> {
     D.get_or_init(|| {
         let game = f117_formats::GameDir::default_location()?;
         let sim = SimData::load(&game).ok()?;
-        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/mission/game_data.bin");
-        let gdata = std::fs::read(p)
-            .ok()
-            .and_then(|b| postcard::from_bytes::<GameData>(&b).ok())
-            .or_else(|| GameData::load(&game).ok())?;
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/mission");
+        let gdata = GameData::load_json(&p).or_else(|_| GameData::load(&game)).ok()?;
         Some(Data { sim, gdata })
     })
     .as_ref()

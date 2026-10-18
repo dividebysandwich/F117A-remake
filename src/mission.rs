@@ -1,5 +1,5 @@
 //! Missions: the original START generator (crate f117-mission, byte-exact with the original)
-//! running on data exported by f117-convert (assets/mission/game_data.bin).
+//! running on data exported by f117-convert (assets/mission/*.json).
 
 use std::sync::Arc;
 
@@ -14,9 +14,7 @@ pub struct MissionData(pub Arc<GameData>);
 
 impl MissionData {
     pub fn load() -> anyhow::Result<Self> {
-        let path = crate::asset_path::asset("mission/game_data.bin");
-        let bytes = std::fs::read(&path).map_err(|e| anyhow::anyhow!("{}: {e} (run tools/build-assets.sh)", path.display()))?;
-        Ok(Self(Arc::new(postcard::from_bytes(&bytes)?)))
+        Ok(Self(Arc::new(GameData::load_json(&crate::asset_path::asset("mission"))?)))
     }
 }
 

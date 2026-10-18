@@ -8,6 +8,4 @@ description = "F-117A random mission generator"
 f117-formats.workspace = true
 serde.workspace = true
 anyhow.workspace = true
-
-[dev-dependencies]
 serde_json = "1"

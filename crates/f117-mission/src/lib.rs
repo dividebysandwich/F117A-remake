@@ -4,7 +4,9 @@ pub mod tables;
 mod text;
 pub mod world;
 
-use anyhow::{Result, ensure};
+use std::path::Path;
+
+use anyhow::{Context, Result, ensure};
 use f117_formats::{GameDir, THEATERS};
 use serde::{Deserialize, Serialize};
 
@@ -99,8 +101,8 @@ pub struct GenInput {
     pub stale_cbdc: i16,
 }
 
-/// START.EXE tables plus all nine theaters, loaded once from the game directory
-/// (serialisable, so f117-convert can ship it as an asset).
+/// START.EXE tables plus all nine theaters, loaded once from the game directory and shipped
+/// as JSON in `assets/mission` (`tables.json`, `theaters/<code>.json`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameData {
     pub tables: StartTables,
@@ -112,6 +114,30 @@ impl GameData {
         let tables = StartTables::load(game)?;
         let theaters = (0..THEATERS.len()).map(|t| TheaterData::load(game, t, tables.grid_size)).collect::<Result<_>>()?;
         Ok(Self { tables, theaters })
+    }
+
+    /// Read the JSON export written by [`GameData::write_json`].
+    pub fn load_json(dir: &Path) -> Result<Self> {
+        let read = |name: String| std::fs::read(dir.join(&name)).with_context(|| format!("{}", dir.join(&name).display()));
+        let tables = serde_json::from_slice(&read("tables.json".into())?).context("tables.json")?;
+        let theaters = THEATERS
+            .iter()
+            .map(|code| {
+                let name = format!("theaters/{}.json", code.to_ascii_lowercase());
+                TheaterData::from_json(&read(name.clone())?).context(name)
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self { tables, theaters })
+    }
+
+    /// Write `tables.json` and `theaters/<code>.json` under `dir`.
+    pub fn write_json(&self, dir: &Path) -> Result<()> {
+        std::fs::create_dir_all(dir.join("theaters"))?;
+        std::fs::write(dir.join("tables.json"), serde_json::to_string_pretty(&self.tables)?)?;
+        for (t, code) in self.theaters.iter().zip(THEATERS) {
+            std::fs::write(dir.join(format!("theaters/{}.json", code.to_ascii_lowercase())), serde_json::to_string(t)?)?;
+        }
+        Ok(())
     }
 }
 

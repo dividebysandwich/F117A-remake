@@ -11,7 +11,7 @@ use bevy::gltf::{Gltf, GltfMaterial, GltfMesh, GltfNode};
 use bevy::prelude::*;
 
 use crate::palette::{Palette, index_from_name};
-use crate::palette_material::mesh_tag;
+use crate::palette_material::{LEVEL_AIRCRAFT, mesh_tag};
 use bevy::mesh::MeshTag;
 
 pub struct ModelsPlugin;
@@ -369,6 +369,11 @@ impl ModelAssets<'_> {
                         self.palette.material(color)
                     };
                     let child = commands.spawn((Mesh3d(prim.mesh.clone()), MeshMaterial3d(material), tag.clone())).id();
+                    // Flat ground overlays are stacked a few centimetres apart (world.rs painter's
+                    // order); as sun shadow casters they would only shadow the overlays below.
+                    if tag.0 & 7 != LEVEL_AIRCRAFT && self.is_flat(&prim.mesh) {
+                        commands.entity(child).insert(bevy::light::NotShadowCaster);
+                    }
                     if let Some(l) = lod {
                         commands.entity(child).insert((LodMesh(l), bevy::camera::visibility::RenderLayers::layer(0)));
                     }
@@ -389,6 +394,13 @@ impl ModelAssets<'_> {
             Some(bevy::mesh::VertexAttributeValues::Float32x3(v)) => v.iter().map(|&p| Vec3::from(p)).collect(),
             _ => vec![],
         }
+    }
+
+    /// Whether all of a mesh's vertices lie in the model's ground plane (original coordinates
+    /// are integers; the converter lifts coplanar polygons by fractions of a unit).
+    fn is_flat(&self, mesh: &Handle<Mesh>) -> bool {
+        let p = self.positions(mesh);
+        !p.is_empty() && p.iter().all(|v| v.y.abs() < 1.0)
     }
 }
 

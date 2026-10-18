@@ -207,6 +207,10 @@ fn shade(world: vec3<f32>, dir: vec3<f32>) -> f32 {
 fn lit(rgb: vec3<f32>, world: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32) -> vec3<f32> {
     var n = normalize(cross(dpdx(world), dpdy(world)));
     if (dot(n, dir) > 0.0) { n = -n; }
+    return lit_surface(rgb, world, n, clip, flags);
+}
+
+fn lit_surface(rgb: vec3<f32>, world: vec3<f32>, n: vec3<f32>, clip: vec4<f32>, flags: u32) -> vec3<f32> {
     var light = globals.ambient.rgb;
     if ((flags & LIGHT_SHADOWS) != 0u) {
         let ndl = max(dot(n, globals.sun.xyz), 0.0);
@@ -245,13 +249,24 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         if ((material.flags & 4u) != 0u) {
             return vec4<f32>(pal(select(0x7Cu, 0x88u, dir.y >= 0.0)), 1.0);
         }
+        var bg: vec3<f32>;
         if (modern) {
             let b = band_f(dir);
             let k = u32(b.y);
             let k1 = min(k + 1u, 15u);
-            return vec4<f32>(mix(pal(u32(b.x) + k), pal(u32(b.x) + k1), b.z), 1.0);
+            bg = mix(pal(u32(b.x) + k), pal(u32(b.x) + k1), b.z);
+        } else {
+            bg = pal(band(dir).x);
         }
-        return vec4<f32>(pal(band(dir).x), 1.0);
+        // Lighting options: the ground gradient is lit like flat ground where the view ray
+        // meets the ground plane (y = 0), so it takes shadows and local lights.
+        let flags = u32(globals.ambient.w);
+        let eye = view.world_position;
+        if (flags != 0u && dir.y < 0.0 && eye.y > 0.0) {
+            let ground = eye + dir * (-eye.y / dir.y);
+            bg = lit_surface(bg, ground, vec3<f32>(0.0, 1.0, 0.0), in.clip_position, flags);
+        }
+        return vec4<f32>(bg, 1.0);
     }
 
     let word = material.word;

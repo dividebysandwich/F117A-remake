@@ -2,7 +2,8 @@
 //!
 //! - Sun: one `DirectionalLight` from the modern-mode light vector, strength from the live sky
 //!   colour (off at night). It lights the 3D cockpit (StandardMaterial) and, through the shadow
-//!   maps, the palette-material world (palette.wgsl `lit`).
+//!   maps, the palette-material world (palette.wgsl `lit`), including the background's ground
+//!   gradient (shadows taken on the ground plane).
 //! - Local lights: `LightEmitter` entities (missile motors, flares, impact flashes, cockpit
 //!   lamps) plus nearby runway/city dot lights. The nearest ones go to the world shader
 //!   (`Globals.lights`) and a few become Bevy `PointLight`s so they also light the cockpit.
@@ -78,6 +79,13 @@ fn spawn_sun(mut commands: Commands) {
         Sun,
         DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, ..default() },
         Transform::IDENTITY.looking_to(-sun_direction(), Vec3::Y),
+        // Detail levels picked by only one view are moved off layer 0 (models::LodShown); they
+        // still cast shadows.
+        bevy::camera::visibility::RenderLayers::from_layers(&[
+            0,
+            crate::camera::MAIN_LOD_LAYER,
+            crate::camera::TRACKCAM_LOD_LAYER,
+        ]),
         CascadeShadowConfigBuilder {
             num_cascades: 4,
             minimum_distance: 0.1,

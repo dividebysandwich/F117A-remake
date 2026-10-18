@@ -21,7 +21,7 @@ use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_openxr::spaces::OxrSpaceLocationFlags;
 use bevy_mod_openxr::{add_xr_plugins, openxr_session_running};
 use bevy_mod_xr::camera::XrCamera;
-use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated, XrTrackingRoot, session_available};
+use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated, XrState, XrTrackingRoot, session_available};
 use bevy_mod_xr::spaces::XrSpaceSyncSet;
 use openxr::{Haptic, Posef};
 
@@ -76,8 +76,7 @@ pub struct XrPlugin;
 
 impl Plugin for XrPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (create_actions, find_root).run_if(session_available))
-            .add_systems(Startup, no_runtime.run_if(not(session_available)))
+        app.add_systems(Startup, create_actions.run_if(session_available))
             .add_systems(OxrSendActionBindings, suggest_bindings)
             .add_systems(XrSessionCreated, (attach_set, spawn_hand_spaces))
             .add_systems(XrPreDestroySession, despawn_hand_spaces)
@@ -99,6 +98,22 @@ impl Plugin for XrPlugin {
             .add_systems(OnEnter(AppState::Flight), |mut r: ResMut<Recenter>| r.0 = true)
             .add_systems(OnExit(AppState::Flight), detach_root.before(crate::combat::FlightTeardown))
             .init_resource::<Recenter>();
+    }
+
+    /// Before any schedule runs: a game started straight into the flight (`--fly`,
+    /// `--mission`) spawns the pilot rig in the initial `OnEnter(Flight)`, ahead of `Startup`,
+    /// and the rig needs the tracking root (or the desktop fallback) by then.
+    fn finish(&self, app: &mut App) {
+        let world = app.world_mut();
+        if world.get_resource::<XrState>().is_some_and(|s| *s != XrState::Unavailable) {
+            let root = world.query_filtered::<Entity, With<XrTrackingRoot>>().iter(world).next();
+            world.insert_resource(XrRoot(root));
+        } else {
+            warn!("no OpenXR runtime available, running on the desktop");
+            if let Some(mut settings) = world.get_resource_mut::<crate::settings::Settings>() {
+                settings.vr = false;
+            }
+        }
     }
 }
 
@@ -151,16 +166,6 @@ fn create_actions(instance: Res<OxrInstance>, mut commands: Commands) {
         Ok(a) => commands.insert_resource(a),
         Err(e) => error!("OpenXR actions: {e}"),
     }
-}
-
-/// No OpenXR runtime: carry on as a desktop game (keeping the 3D cockpit).
-fn no_runtime(mut settings: ResMut<crate::settings::Settings>) {
-    warn!("no OpenXR runtime available, running on the desktop");
-    settings.vr = false;
-}
-
-fn find_root(root: Query<Entity, With<XrTrackingRoot>>, mut xr_root: ResMut<XrRoot>) {
-    xr_root.0 = root.single().ok();
 }
 
 fn suggest_bindings(actions: Option<Res<XrActions>>, mut out: MessageWriter<OxrSuggestActionBinding>) {
@@ -371,3 +376,4 @@ fn detach_root(
     }
     commands.entity(r).remove::<(ChildOf, EyeCamera)>().insert(Transform::IDENTITY);
 }
+

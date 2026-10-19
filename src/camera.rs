@@ -76,6 +76,14 @@ pub struct Orbit {
 #[derive(Resource, Default)]
 pub struct RigOffset(pub Transform);
 
+impl RigOffset {
+    /// The offset with the headset's tracking space scaled by `1 / cockpit_scale`: a larger
+    /// tracking space makes the cockpit look smaller.
+    pub fn scaled(&self, cockpit_scale: f32) -> Transform {
+        Transform::from_scale(Vec3::splat(1.0 / cockpit_scale)) * self.0
+    }
+}
+
 /// The XR tracking root while a headset session exists (set by the XR module).
 #[derive(Resource, Default)]
 pub struct XrRoot(pub Option<Entity>);
@@ -203,7 +211,7 @@ fn update_rig(
             let base_pitch = if state.view == View::Cockpit { COCKPIT_DOWN_PITCH } else { 0.0 };
             let (y, p) = if settings.vr { (0.0, 0.0) } else { (yaw + look.yaw, base_pitch + look.pitch) };
             *head = Transform::from_translation(EYE_OFFSET).with_rotation(Quat::from_rotation_y(y) * Quat::from_rotation_x(p));
-            *cam_tf = offset.0;
+            *cam_tf = if settings.vr { offset.scaled(settings.vr_cockpit_scale) } else { offset.0 };
         }
         View::Chase => {
             // Behind and above, looking along the flight direction (camera stays in the aircraft frame).

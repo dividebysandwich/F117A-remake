@@ -47,7 +47,15 @@ pub struct Settings {
     pub classic_flight: bool,
     /// `--no-crashes`: crash protection (auto pull-up, no ground crashes, collisions bounce).
     pub no_crashes: bool,
+    /// `--vr-cockpit-scale <percent>`: size of the cockpit (and the world) in the headset
+    /// relative to life size.
+    pub vr_cockpit_scale: f32,
 }
+
+/// Default VR cockpit scale: a little smaller than life size.
+pub const DEFAULT_VR_COCKPIT_SCALE: f32 = 0.9;
+/// Range of the VR cockpit scale.
+pub const VR_COCKPIT_SCALE_RANGE: std::ops::RangeInclusive<f32> = 0.7..=1.3;
 
 /// What the next flight looks like (filled by the menu or command-line flags).
 #[derive(Resource, Debug, Clone)]
@@ -117,6 +125,9 @@ impl Settings {
             classic_cockpit: has("--classic-cockpit"),
             classic_flight: has("--classic-flight") || (has("--script") && !has("--modern-flight")),
             no_crashes: has("--no-crashes"),
+            vr_cockpit_scale: get(&a, "--vr-cockpit-scale")
+                .and_then(|s| s.parse::<f32>().ok())
+                .map_or(DEFAULT_VR_COCKPIT_SCALE, |p| (p / 100.0).clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end())),
         }
     }
 }

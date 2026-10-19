@@ -292,16 +292,18 @@ fn despawn_hand_spaces(mut commands: Commands, q: Query<Entity, With<HandSpace>>
     }
 }
 
-/// Controller state and poses into `Hands` (cockpit frame = rig offset * tracking-root frame).
+/// Controller state and poses into `Hands` (cockpit frame = scaled rig offset * tracking-root frame).
 fn read_hands(
     actions: Res<XrActions>,
     session: Res<OxrSession>,
     offset: Res<RigOffset>,
+    settings: Res<crate::settings::Settings>,
     view: Res<ViewState>,
     spaces: Query<(&HandSpace, &Transform, &OxrSpaceLocationFlags)>,
     mut hands: ResMut<Hands>,
 ) {
     let cockpit_view = view.view == View::Cockpit;
+    let offset = offset.scaled(settings.vr_cockpit_scale);
     for (i, hand) in hands.hands.iter_mut().enumerate() {
         let path = actions.hands[i];
         let f = |a: &openxr::Action<f32>| a.state(&session, path).map(|s| s.current_state).unwrap_or(0.0);
@@ -326,7 +328,7 @@ fn read_hands(
         let mut aim = None;
         for (s, tf, flags) in &spaces {
             if s.hand == i && flags.pos_valid() && flags.rot_valid() {
-                let t = offset.0 * *tf;
+                let t = offset * *tf;
                 if s.aim { aim = Some(t) } else { grip = Some(t) }
             }
         }

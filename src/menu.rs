@@ -122,6 +122,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
             cmd.arg(flag);
         }
     }
+    cmd.args(["--vr-cockpit-scale", &format!("{:.0}", settings.vr_cockpit_scale * 100.0)]);
     cmd.spawn().map(|_| ())
 }
 
@@ -420,6 +421,19 @@ fn menu_ui(
                     }
                     s.classic_cockpit = !cockpit;
                     s.classic_flight = !flight;
+                    section(ui, "VR");
+                    // Read every frame by the rig: no change detection needed.
+                    let range = crate::settings::VR_COCKPIT_SCALE_RANGE;
+                    let mut pct = (s.vr_cockpit_scale * 100.0).round() as u32;
+                    let slider = egui::Slider::new(&mut pct, (*range.start() * 100.0) as u32..=(*range.end() * 100.0) as u32).suffix("%").text("cockpit scale");
+                    if facts(
+                        ui.add_enabled(vr.0 || s.vr, slider),
+                        &["Size of the cockpit in the headset", "100%: life size; default 90%", "Smaller puts more of the panel in view"],
+                    )
+                    .changed()
+                    {
+                        s.vr_cockpit_scale = pct as f32 / 100.0;
+                    }
                     if toggled {
                         settings.set_changed();
                     }

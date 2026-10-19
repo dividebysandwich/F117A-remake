@@ -218,6 +218,9 @@ fn update_camera_distance(
     }
 }
 
+/// Range multiplier for a model's last (coarsest) detail level.
+const LAST_LOD_RANGE: f32 = 4.0;
+
 fn apply_model_state(
     roots: Query<(&ModelState, &CameraDistance)>,
     mut lods: Query<(&LodLevel, &mut LodShown, &mut Visibility), (Without<CondNode>, Without<ArticulatedPart>)>,
@@ -235,7 +238,10 @@ fn apply_model_state(
             .filter(|l| l.root == lod.root && l.level < lod.level)
             .map(|l| l.max_dist)
             .fold(0.0, f32::max);
-        let picks = |d: f32| d <= lod.max_dist && (lod.level == 0 || d > prev);
+        // The last level stays drawn LAST_LOD_RANGE times further than its model says.
+        let last = !all_lods.iter().any(|l| l.root == lod.root && l.level > lod.level);
+        let max_dist = if last { lod.max_dist * LAST_LOD_RANGE } else { lod.max_dist };
+        let picks = |d: f32| d <= max_dist && (lod.level == 0 || d > prev);
         let main = picks(dist.main);
         let track = dist.track.map_or(main, picks);
         *shown = LodShown { main, track };

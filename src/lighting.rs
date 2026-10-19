@@ -74,7 +74,7 @@ pub fn sun_direction() -> Vec3 {
     Vec3::new(-36.0, 36.0, 36.0).normalize()
 }
 
-fn spawn_sun(mut commands: Commands) {
+fn spawn_sun(mut commands: Commands, settings: Res<Settings>) {
     commands.spawn((
         Sun,
         DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, ..default() },
@@ -95,6 +95,12 @@ fn spawn_sun(mut commands: Commands) {
         }
         .build(),
     ));
+    // Only with the local lighting option: point lights put the PBR shader's clustered light
+    // loop to work in every lit pixel, and on the Steam Frame (Turnip, Adreno 750) that loop
+    // hangs the GPU.
+    if !settings.local_lights {
+        return;
+    }
     for i in 0..MIRRORED {
         commands.spawn((
             MirrorLight(i),

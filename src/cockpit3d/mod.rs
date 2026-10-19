@@ -325,12 +325,18 @@ fn spawn_cockpit(
         commands.entity(root).add_children(&[palm, finger]);
     }
     // Flood lamps: two red side lamps on the canopy sills and a white one under the glare
-    // shield lighting the panel (local lighting option).
-    for (pos, color) in [
-        (Vec3::new(-0.45, -0.18, 0.05), Color::srgb(1.0, 0.35, 0.25)),
-        (Vec3::new(0.45, -0.18, 0.05), Color::srgb(1.0, 0.35, 0.25)),
-        (Vec3::new(0.0, -0.17, -0.55), Color::srgb(1.0, 0.92, 0.8)),
-    ] {
+    // shield lighting the panel. Only with the local lighting option (see `lighting::spawn_sun`:
+    // point lights hang the Steam Frame's GPU).
+    let lamps: &[(Vec3, Color)] = if settings.local_lights {
+        &[
+            (Vec3::new(-0.45, -0.18, 0.05), Color::srgb(1.0, 0.35, 0.25)),
+            (Vec3::new(0.45, -0.18, 0.05), Color::srgb(1.0, 0.35, 0.25)),
+            (Vec3::new(0.0, -0.17, -0.55), Color::srgb(1.0, 0.92, 0.8)),
+        ]
+    } else {
+        &[]
+    };
+    for &(pos, color) in lamps {
         let lamp = commands
             .spawn((CockpitLamp, PointLight { intensity: 0.0, range: 1.6, color, shadow_maps_enabled: false, ..default() }, Transform::from_translation(pos)))
             .id();

@@ -101,6 +101,7 @@ fn status(
     materials: Res<Assets<StandardMaterial>>,
     player: Query<&Aircraft, With<Player>>,
     cameras: Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<TrackCamera>)>,
+    lamps: Query<(&crate::scenery::LampBatch, &InheritedVisibility)>,
 ) {
     let now = time.elapsed_secs_f64();
     let dt = time.delta_secs_f64();
@@ -142,8 +143,10 @@ fn status(
         let look = look(a, &cameras).map_or("?".into(), |(r, u)| format!("right {r:.0} up {u:.0}"));
         format!(" | alt {:.0} ft speed {:.0} kt ground {} look {look}", a.altitude, a.velocity / 27.0, a.on_ground)
     });
+    // Night: every lit scenery lamp is a quad (two triangles) in every view.
+    let (batches, dots) = lamps.iter().filter(|(_, v)| v.get()).fold((0, 0), |(b, d), (l, _)| (b + 1, d + l.points.len()));
     info!(
-        "diag: {:.0} fps worst {:.0} ms | rss {} MB avail {} MB swap free {} MB | temp {} | entities {} meshes {} images {} materials {}{}",
+        "diag: {:.0} fps worst {:.0} ms | rss {} MB avail {} MB swap free {} MB | temp {} | entities {} meshes {} images {} materials {} | lit lamps {dots} in {batches} batches{}",
         fps,
         stats.worst * 1000.0,
         status_kb("VmRSS").map_or(-1, |k| k / 1024),

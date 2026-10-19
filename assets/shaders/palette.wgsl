@@ -50,6 +50,10 @@ struct Globals {
     noise: vec4<f32>,
     // Stratus layer coverage: threshold 0..1 (x), noise seed (y), floating origin x/z (z, w).
     stratus: vec4<f32>,
+    // Lightning channel as a line light: one end (xyz) and intensity (w), the other end (xyz)
+    // and reach in metres (w).
+    bolt_a: vec4<f32>,
+    bolt_b: vec4<f32>,
 };
 
 struct PaletteMaterial {
@@ -537,6 +541,7 @@ fn cloud_volume(in: VertexOutput, front: bool, dir: vec3<f32>, modern: bool) -> 
     let sun = in.puff_sun * 0.12;
     var trans = 1.0;
     var light = 0.0;
+    var glow = 0.0;
     for (var i = 0u; i < CLOUD_STEPS; i++) {
         let p = ro + rd * (t0 + (f32(i) + jitter) * dt);
         let dens = volume_density(p, cumulus, aspect, in.puff_pos.w, true);
@@ -547,12 +552,17 @@ fn cloud_volume(in: VertexOutput, front: bool, dir: vec3<f32>, modern: bool) -> 
         let towards_sun = volume_density(p + sun, cumulus, aspect, in.puff_pos.w, false);
         let lit = clamp(0.45 + (dens - towards_sun) * 1.2 + 0.35 * (p.y - 0.4), 0.0, 1.0);
         light += trans * a * lit;
+        // Lightning inside or near the cloud lights it from within.
+        if (globals.bolt_a.w > 0.0) {
+            glow += trans * a * bolt_glow(view.world_position + dir * (t0 + (f32(i) + jitter) * dt));
+        }
         trans *= 1.0 - a;
         if (trans < 0.03) { break; }
     }
     var alpha = 1.0 - trans;
     if (alpha < 0.01) { discard; }
-    let rgb = flash(whiteout(cloud_ramp((1.0 - light / alpha) * 11.0, dist, modern), dist));
+    let base = whiteout(cloud_ramp((1.0 - light / alpha) * 11.0, dist, modern), dist);
+    let rgb = base + BOLT_COLOR * (globals.weather.y + glow / alpha) * flash_scale();
     if (!modern) {
         // Classic: a screen door instead of blending.
         if (alpha < bayer4(vec2<u32>(in.clip_position.xy) + vec2<u32>(2u, 1u))) { discard; }
@@ -561,9 +571,32 @@ fn cloud_volume(in: VertexOutput, front: bool, dir: vec3<f32>, modern: bool) -> 
     return vec4<f32>(rgb, alpha);
 }
 
-// Lightning: a brief flash over the world.
-fn flash(rgb: vec3<f32>) -> vec3<f32> {
-    return rgb + vec3<f32>(0.55, 0.55, 0.65) * globals.weather.y;
+const BOLT_COLOR: vec3<f32> = vec3<f32>(0.55, 0.58, 0.75);
+
+// Light of the current lightning channel at a point: falls off with the distance from the
+// channel (a line light), zero beyond its reach.
+fn bolt_glow(world: vec3<f32>) -> f32 {
+    let i = globals.bolt_a.w;
+    if (i <= 0.0) { return 0.0; }
+    let a = globals.bolt_a.xyz;
+    let ab = globals.bolt_b.xyz - a;
+    let t = clamp(dot(world - a, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0);
+    let d = length(world - (a + ab * t));
+    let reach = globals.bolt_b.w;
+    // A bright core around the channel and a wide, weaker halo.
+    let core = d / (reach * 0.06);
+    let halo = d / (reach * 0.3);
+    return i * (1.0 - smoothstep(0.3 * reach, reach, d)) * (1.6 / (1.0 + core * core) + 0.3 / (1.0 + halo * halo));
+}
+
+// Lightning reads far brighter at night than by day.
+fn flash_scale() -> f32 {
+    return mix(1.0, 0.3, globals.light_info.y);
+}
+
+// Lightning: the far-reaching flash over everything plus the channel's local light.
+fn flash(rgb: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
+    return rgb + BOLT_COLOR * (globals.weather.y + bolt_glow(world)) * flash_scale();
 }
 
 @fragment
@@ -586,7 +619,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         var n = normalize(cross(dpdx(in.world_position), dpdy(in.world_position)));
         if (dot(n, dir) > 0.0) { n = -n; }
         let noise = cloud_noise(in.world_position, d);
-        return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d)), cover);
+        return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d), in.world_position), cover);
     }
     if ((material.flags & 1u) != 0u) {
         // Background: sky bands above the horizon, ground gradient below.
@@ -631,7 +664,14 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
                 bg = mix(bg, c, stratus_cover(hit));
             }
         }
-        return vec4<f32>(flash(whiteout(bg, 1e4)), 1.0);
+        // Lightning: the channel's light where the view ray meets cloud or ground, and the
+        // glow of a strike over the sky in its direction.
+        let to_bolt = (globals.bolt_a.xyz + globals.bolt_b.xyz) * 0.5 - eye;
+        let bolt_d = length(to_bolt);
+        let along = min(bolt_d, 60000.0);
+        let sheet = pow(max(dot(normalize(dir), to_bolt / max(bolt_d, 1.0)), 0.0), 6.0) * globals.bolt_a.w * 0.25 * flash_scale();
+        bg = flash(whiteout(bg, 1e4), eye + normalize(dir) * along) + BOLT_COLOR * sheet;
+        return vec4<f32>(bg, 1.0);
     }
 
     let word = material.word;
@@ -677,5 +717,5 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     } else if (modern && !is_line) {
         rgb = rgb * shade(in.world_position, dir);
     }
-    return vec4<f32>(flash(whiteout(rgb, length(dir))), 1.0);
+    return vec4<f32>(flash(whiteout(rgb, length(dir)), in.world_position), 1.0);
 }

@@ -318,6 +318,7 @@ fn update_globals(
         g.local_lights[2 * i + 1] = *c;
     }
     (g.clouds, g.weather, g.noise, g.stratus) = weather.globals(origin.origin);
+    (g.bolt_a, g.bolt_b) = weather.bolt_light(origin.origin);
     buf.set_data(g);
 }
 

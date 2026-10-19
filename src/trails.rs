@@ -35,9 +35,9 @@ const SHADER: &str = "shaders/trail.wgsl";
 pub const CONTRAIL_VIEW_Z: i32 = 6000;
 
 /// Trail direction at a point (per vertex).
-const ATTRIBUTE_TANGENT: MeshVertexAttribute = MeshVertexAttribute::new("TrailTangent", 0x7A11_0001, VertexFormat::Float32x3);
+pub(crate) const ATTRIBUTE_TANGENT: MeshVertexAttribute = MeshVertexAttribute::new("TrailTangent", 0x7A11_0001, VertexFormat::Float32x3);
 /// Signed half width (metres) and alpha (per vertex).
-const ATTRIBUTE_SIDE: MeshVertexAttribute = MeshVertexAttribute::new("TrailSide", 0x7A11_0002, VertexFormat::Float32x2);
+pub(crate) const ATTRIBUTE_SIDE: MeshVertexAttribute = MeshVertexAttribute::new("TrailSide", 0x7A11_0002, VertexFormat::Float32x2);
 
 pub struct TrailsPlugin;
 

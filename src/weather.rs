@@ -28,7 +28,8 @@ pub struct WeatherPlugin;
 
 impl Plugin for WeatherPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<WeatherState>()
+        app.add_plugins(MaterialPlugin::<crate::lightning::BoltMaterial>::default())
+            .init_resource::<WeatherState>()
             .add_systems(OnEnter(AppState::Flight), setup_weather.in_set(SetupSet::Spawn))
             .add_systems(OnExit(AppState::Flight), teardown_weather)
             .add_systems(
@@ -68,7 +69,11 @@ pub struct WeatherState {
     /// Lightning flash brightness.
     pub flash: f32,
     next_flash: f32,
-    flash_left: f32,
+    /// The current lightning strike.
+    bolt: Option<Strike>,
+    /// `--strike ground|cloud` (test automation): a strike of that kind after 2 s, held at
+    /// its peak.
+    test_strike: Option<bool>,
     /// Seconds until the thunder of the last flash.
     thunder_in: Option<f32>,
     /// Eye position last frame (Bevy metres), for the rain's relative wind.
@@ -92,6 +97,18 @@ impl WeatherState {
             (20.0 / self.weather.vis_km.max(1) as f32).max(1.0)
         } else {
             1.0
+        }
+    }
+
+    /// The lightning channel as a line light in render space: (end, intensity), (other end,
+    /// reach in metres).
+    pub fn bolt_light(&self, origin: DVec3) -> (Vec4, Vec4) {
+        match &self.bolt {
+            Some(b) if b.light > 0.0 => (
+                (b.light_a - origin).as_vec3().extend(b.light),
+                (b.light_b - origin).as_vec3().extend(BOLT_REACH),
+            ),
+            _ => (Vec4::ZERO, Vec4::ZERO),
         }
     }
 
@@ -199,10 +216,13 @@ fn setup_weather(
         params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | coverage, ..default() },
         globals: palette.globals.clone(),
     });
+    let args: Vec<String> = std::env::args().collect();
+    let test_strike = args.iter().position(|a| a == "--strike").and_then(|i| args.get(i + 1)).map(|k| k == "ground");
     *state = WeatherState {
         weather,
+        test_strike,
         rng: weather.seed | 1,
-        next_flash: 3.0,
+        next_flash: if test_strike.is_some() { 2.0 } else { 3.0 },
         puff_material: materials.add(PaletteMaterial {
             params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | FLAG_CLOUD_SOFT, ..default() },
             globals: palette.globals.clone(),
@@ -319,21 +339,110 @@ fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state:
     }
 }
 
-/// Storms: random lightning flashes (a double flicker), more often under the deck, and
-/// the thunder a moment later.
-fn lightning(time: Res<Time>, mut state: ResMut<WeatherState>, mut sounds: MessageWriter<crate::sound::PlaySound>) {
+/// Reach of a strike's light (metres from the channel).
+const BOLT_REACH: f32 = 10000.0;
+/// Strikes happen in storm cells this far around the viewpoint (map units).
+const STRIKE_RADIUS: i32 = 45 * 64;
+
+/// One lightning strike: its mesh and stroke timeline.
+struct Strike {
+    entity: Entity,
+    /// Seconds since the strike began.
+    age: f32,
+    /// Return strokes: start time and duration (s).
+    strokes: Vec<(f32, f32)>,
+    /// Cloud-to-ground (with a continuing current between strokes) or in-cloud.
+    ground: bool,
+    /// Light of the channel (world metres) and its current intensity.
+    light_a: DVec3,
+    light_b: DVec3,
+    light: f32,
+    /// Distance to the viewpoint (m), for the far-reaching flash and the thunder.
+    distance: f32,
+}
+
+impl Strike {
+    fn end(&self) -> f32 {
+        self.strokes.last().map_or(0.0, |&(t, d)| t + d + 0.15)
+    }
+
+    /// Brightness 0..1 at the strike's age: each return stroke flares and decays; a
+    /// cloud-to-ground channel glows faintly between them.
+    fn intensity(&self) -> f32 {
+        let mut v: f32 = 0.0;
+        for &(t, d) in &self.strokes {
+            let x = self.age - t;
+            if (0.0..d + 0.12).contains(&x) {
+                v = v.max(if x < d { 1.0 - 0.4 * x / d } else { 0.6 * (1.0 - (x - d) / 0.12) });
+            }
+        }
+        if self.ground && self.age < self.end() - 0.15 {
+            v = v.max(0.12);
+        }
+        v
+    }
+}
+
+/// A lightning channel from `a` to `b`: recursive midpoint displacement (the jagged
+/// tortuous path) with forked side branches. Returns line segments with their widths.
+fn bolt_path(state: &mut WeatherState, a: Vec3, b: Vec3, ground: bool, out: &mut Vec<(Vec3, Vec3, f32)>, width: f32, depth: u32) {
+    let mut pts = vec![a, b];
+    let mut rough = 0.22;
+    for _ in 0..7 {
+        let mut next = Vec::with_capacity(pts.len() * 2);
+        for w in pts.windows(2) {
+            let (p, q) = (w[0], w[1]);
+            let len = p.distance(q);
+            let off = Vec3::new(state.random() - 0.5, (state.random() - 0.5) * if ground { 0.3 } else { 0.6 }, state.random() - 0.5) * 2.0 * len * rough;
+            next.push(p);
+            next.push((p + q) * 0.5 + off);
+        }
+        next.push(*pts.last().unwrap());
+        pts = next;
+        rough *= 0.62;
+    }
+    for w in pts.windows(2) {
+        out.push((w[0], w[1], width));
+    }
+    if depth == 0 {
+        return;
+    }
+    // Branches fork off downwards (cloud-to-ground) or sideways (in-cloud, "spider").
+    let n = if ground { 3 + (state.random() * 4.0) as usize } else { 4 + (state.random() * 5.0) as usize };
+    let span = a.distance(b);
+    for _ in 0..n {
+        let i = (state.random() * (pts.len() - 1) as f32 * if ground { 0.8 } else { 1.0 }) as usize;
+        let start = pts[i];
+        let main = (b - a).normalize_or_zero();
+        let side = Vec3::new(state.random() - 0.5, 0.0, state.random() - 0.5).normalize_or_zero();
+        let dir = if ground { (main * 0.7 + side * 0.6).normalize_or_zero() } else { (side + Vec3::Y * (state.random() - 0.5) * 0.3).normalize_or_zero() };
+        let len = span * (0.12 + 0.25 * state.random());
+        bolt_path(state, start, start + dir * len, ground, out, width * 0.5, depth - 1);
+    }
+}
+
+/// Storms: lightning strikes in the storm cells around the viewpoint, cloud-to-ground or
+/// in-cloud, each a generated channel mesh with a few return strokes. The channel lights
+/// the ground and the clouds around it, a strike's flash reaches far (weaker with distance),
+/// and its thunder arrives at the speed of sound.
+#[allow(clippy::too_many_arguments)]
+fn lightning(
+    mut commands: Commands,
+    time: Res<Time>,
+    origin: Res<FloatingOrigin>,
+    eyes: Eyes,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<crate::lightning::BoltMaterial>>,
+    mut bolts: Query<&MeshMaterial3d<crate::lightning::BoltMaterial>>,
+    mut sounds: MessageWriter<crate::sound::PlaySound>,
+    mut state: ResMut<WeatherState>,
+) {
     if !state.weather.has_storms() {
         state.flash = 0.0;
         return;
     }
     let dt = time.delta_secs();
-    state.next_flash -= dt;
-    if state.next_flash <= 0.0 {
-        let near = state.under_storm;
-        state.next_flash = if near { 3.0 + 9.0 * state.random() } else { 8.0 + 20.0 * state.random() };
-        state.flash_left = 0.35;
-        state.thunder_in = Some(0.5 + 3.0 * state.random());
-    }
+    let Some(eye) = eye_position(&eyes, &origin) else { return };
     if let Some(t) = state.thunder_in.as_mut() {
         *t -= dt;
         if *t <= 0.0 {
@@ -342,14 +451,123 @@ fn lightning(time: Res<Time>, mut state: ResMut<WeatherState>, mut sounds: Messa
             sounds.write(crate::sound::PlaySound { id: 5, priority: 0 });
         }
     }
-    if state.flash_left > 0.0 {
-        state.flash_left -= dt;
-        let t = 0.35 - state.flash_left;
-        // Two strokes: 0..0.08 s and 0.16..0.3 s.
-        state.flash = if t < 0.08 || (0.16..0.3).contains(&t) { if state.under_storm { 0.6 } else { 0.3 } } else { 0.0 };
-    } else {
-        state.flash = 0.0;
+    // The running strike.
+    if let Some(mut b) = state.bolt.take() {
+        b.age = if state.test_strike.is_some() { 0.01 } else { b.age + dt };
+        b.light = b.intensity();
+        if let Ok(m) = bolts.get_mut(b.entity)
+            && let Some(mut m) = materials.get_mut(&m.0)
+        {
+            m.params.x = b.light;
+        }
+        // Far-reaching: the sky and the whole scene brighten, less for distant strikes.
+        state.flash = b.light * (0.05 + 0.3 / (1.0 + (b.distance / 6000.0).powi(2)));
+        if b.age > b.end() {
+            commands.entity(b.entity).try_despawn();
+        } else {
+            state.bolt = Some(b);
+        }
+        return;
     }
+    state.flash = 0.0;
+    state.next_flash -= dt;
+    if state.next_flash > 0.0 {
+        return;
+    }
+    state.next_flash = if state.under_storm { 2.5 + 7.0 * state.random() } else { 5.0 + 15.0 * state.random() };
+    // A storm cell near the viewpoint.
+    let w = state.weather;
+    let (ex, ey) = state.eye_map;
+    let cells: Vec<Cloud> = w.clouds_near(ex, ey, STRIKE_RADIUS).filter(|c| c.kind == CloudKind::Cumulonimbus).collect();
+    if cells.is_empty() {
+        return;
+    }
+    let ground = state.test_strike.unwrap_or_else(|| state.random() < 0.4);
+    let c = if state.test_strike == Some(false)
+        && let Some((tf, _)) = eyes.iter().max_by_key(|(_, e)| *e)
+    {
+        // Test in-cloud strikes: the cell most straight ahead of the view.
+        let f = tf.forward();
+        let ahead = |c: &Cloud| {
+            let p = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, eye.y / WU) - eye;
+            (p.as_vec3().normalize_or_zero().dot(*f) * 1000.0) as i32
+        };
+        *cells.iter().max_by_key(|c| ahead(c)).unwrap()
+    } else {
+        cells[(state.random() * cells.len() as f32) as usize % cells.len()]
+    };
+    let ft_m = WU as f32;
+    let mut centre = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, 0.0);
+    if state.test_strike == Some(true)
+        && let Some((tf, _)) = eyes.iter().max_by_key(|(_, e)| *e)
+    {
+        // Test strikes: 8 km ahead of the view.
+        let f = tf.forward().as_vec3().with_y(0.0).normalize_or_zero().as_dvec3();
+        centre = DVec3::new(eye.x, 0.0, eye.z) + f * 8000.0;
+    }
+    let r_m = c.r as f32 * 32.0 * ft_m;
+    let at = |k: f32, alt_ft: f32, st: &mut WeatherState| {
+        let a = st.random() * std::f32::consts::TAU;
+        let d = r_m * k * st.random().sqrt();
+        Vec3::new(centre.x as f32 + a.cos() * d, alt_ft * ft_m, centre.z as f32 + a.sin() * d)
+    };
+    let base = c.base_ft as f32;
+    let (a, b) = if ground {
+        // From the cloud base down to the ground below it.
+        let top = at(0.6, base + 1500.0 + 3000.0 * state.random(), &mut state);
+        let foot = top + Vec3::new((state.random() - 0.5) * 3000.0, 0.0, (state.random() - 0.5) * 3000.0);
+        (top, Vec3::new(foot.x, 0.0, foot.z))
+    } else {
+        // Inside the cell: a long, mostly horizontal discharge.
+        let h = base + (c.top_ft as f32 - base) * (0.15 + 0.4 * state.random());
+        (at(0.7, h, &mut state), at(0.7, h + (state.random() - 0.5) * 6000.0, &mut state))
+    };
+    let mut segs = Vec::new();
+    bolt_path(&mut state, a, b, ground, &mut segs, if ground { 3.0 } else { 2.0 }, 2);
+    let eye_f = eye.as_vec3();
+    let main_width = if ground { 9.0 } else { 6.0 };
+    let mesh = meshes.add(crate::lightning::bolt_mesh(&segs, a, main_width));
+    let material = materials.add(crate::lightning::BoltMaterial {
+        params: Vec4::new(0.0, crate::lightning::MIN_HALF_ANGLE, 0.0, 0.0),
+    });
+    let world_a = a.as_dvec3();
+    let entity = commands
+        .spawn((
+            CloudEntity,
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            WorldPos(world_a),
+            Transform::from_translation((world_a - origin.origin).as_vec3()),
+            bevy::camera::visibility::NoFrustumCulling,
+            bevy::light::NotShadowCaster,
+        ))
+        .id();
+    // 1-4 return strokes (cloud-to-ground), in-cloud discharges flicker once or twice.
+    let n = if ground { 1 + (state.random() * 4.0) as usize } else { 1 + (state.random() * 2.0) as usize };
+    let mut t = 0.0;
+    let mut strokes = Vec::new();
+    for _ in 0..n {
+        let d = 0.04 + 0.04 * state.random();
+        strokes.push((t, d));
+        t += d + 0.05 + 0.12 * state.random();
+    }
+    let mid = (a + b) * 0.5;
+    let distance = mid.distance(eye_f);
+    // Thunder at the speed of sound (inaudible beyond ~25 km).
+    if distance < 25_000.0 {
+        state.thunder_in = Some(distance / 343.0);
+    }
+    state.bolt = Some(Strike {
+        entity,
+        age: 0.0,
+        strokes,
+        ground,
+        // In-cloud: the channel itself; cloud-to-ground: from the ground up to the base.
+        light_a: a.as_dvec3(),
+        light_b: b.as_dvec3(),
+        light: 0.0,
+        distance,
+    });
 }
 
 /// Rain streaks around the eye (under storm cells, and under the storm preset's stratus).

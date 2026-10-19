@@ -142,7 +142,8 @@ fn update_sun(
     }
     // Cockpit ambient: palette-independent, dim at night (the instrument lights take over).
     ambient.color = Color::linear_rgb(0.8, 0.85, 1.0);
-    ambient.brightness = 600.0 + 800.0 * daylight;
+    // Lightning lights the cockpit too.
+    ambient.brightness = 600.0 + 800.0 * daylight + 6000.0 * weather.flash;
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]

@@ -129,6 +129,10 @@ pub struct Globals {
     pub noise: Vec4,
     /// Stratus coverage: threshold 0..1, noise seed, floating origin x / z.
     pub stratus: Vec4,
+    /// Lightning channel as a line light: end (xyz) and intensity (w), other end (xyz) and
+    /// reach in metres (w).
+    pub bolt_a: Vec4,
+    pub bolt_b: Vec4,
 }
 
 /// Lighting flags in `Globals.ambient.w`.
@@ -153,6 +157,8 @@ impl Default for Globals {
             weather: Vec4::new(1.0, 0.0, 20_000.0, 0.0),
             noise: Vec4::ZERO,
             stratus: Vec4::ZERO,
+            bolt_a: Vec4::ZERO,
+            bolt_b: Vec4::ZERO,
         }
     }
 }

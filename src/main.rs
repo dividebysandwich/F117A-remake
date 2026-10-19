@@ -12,6 +12,7 @@ mod freecam;
 mod hud;
 mod input;
 mod lighting;
+mod lightning;
 mod mfd;
 mod menu;
 mod mission;

@@ -4,6 +4,8 @@
 
 A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations with VR support
 
+> **📖 [User Manual](docs/manual.md)**
+
 ## Running
 ```sh
 cargo run --release

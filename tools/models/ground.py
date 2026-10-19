@@ -540,10 +540,10 @@ def subtree(o):
         yield from subtree(c)
 
 
-def original_shape(lod0):
-    """Bounding radius and horizontal extent of the original LOD 0 (without lights and fires)."""
-    pts = [o.matrix_world @ v.co for o in subtree(lod0) if o.type == "MESH" and "_dots_" not in o.name and "_s1v1" not in o.name
-           for v in o.data.vertices]
+def original_shape(stem, name):
+    """Bounding radius and horizontal extent of the original LOD 0 (without lights and fires), from
+    the original conversion: the .blend holds the remodel."""
+    pts = mklib.raw_points(stem, name, ("_dots_", "_s1v1"))
     lo = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
     hi = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
     return max(p.length for p in pts), lo, hi
@@ -571,7 +571,7 @@ def apply(stem):
     done = []
     for name, kind in MODELS.get(stem, {}).items():
         build = RADARS[stem] if kind == "radar" else LAUNCHERS[stem] if kind == "launcher" else kind
-        r, lo, hi = original_shape(bpy.data.objects[name + "_lod0"])
+        r, lo, hi = original_shape(stem, name + "_lod0")
         detailed = build(cam, 0)
         s = r / radius(detailed)
         a = 0.0 if kind == "radar" else heading(lo, hi)

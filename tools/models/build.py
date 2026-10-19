@@ -1,12 +1,12 @@
-"""Rebuilds the remodelled vehicles inside a converted .blend and exports it.
+"""Builds a model file from its .blend master and exports it.
 
     blender -b assets-src/blend/<file>.blend --python tools/models/build.py -- <out.glb> [--save]
 
-Only the models listed in aircraft.BUILDERS (stflt) or ground.MODELS (theaters) are touched;
-`merge_glb.py` then splices exactly those into the shipped .glb.
+The masters hold every model as shipped. The remodels (aircraft.BUILDERS for stflt,
+ground.MODELS for the theaters) are rebuilt, then detail.py adds the detail to the other theater
+and photo models and stores.py's remodels to STFLT; the whole file is exported.
 """
 
-import json
 import os
 import sys
 
@@ -16,6 +16,7 @@ from mathutils import Vector
 sys.path.insert(0, os.path.dirname(__file__))
 
 import aircraft  # noqa: E402
+import detail  # noqa: E402
 import ground  # noqa: E402
 import mklib  # noqa: E402
 
@@ -28,9 +29,9 @@ def subtree(o):
         yield from subtree(c)
 
 
-def extent(ob, skip=("_dots_", "_s1v1", "_s13v1", "_s14v1")):
-    pts = [o.matrix_world @ v.co for o in subtree(ob) if o.type == "MESH" and not any(s in o.name for s in skip)
-           for v in o.data.vertices]
+def extent(stem, name, skip=("_dots_", "_s1v1", "_s13v1", "_s14v1")):
+    """Bounds of a node in the original conversion (the .blend holds the remodel)."""
+    pts = mklib.raw_points(stem, name, skip)
     lo = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
     hi = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
     return lo, hi
@@ -52,7 +53,7 @@ def place_dots(node, anchors):
 def apply_aircraft(index, craft):
     root = bpy.data.objects["stflt_%03d" % index]
     lod0 = bpy.data.objects["stflt_%03d_lod0" % index]
-    lo, hi = extent(lod0)
+    lo, hi = extent("stflt", lod0.name)
     mlo, mhi = craft.body.bounds()
     s = (hi.y - lo.y) / (mhi.y - mlo.y)
     off = Vector((0, 0, 0)) if craft.pivot else Vector((0, lo.y - mlo.y * s, 0))
@@ -88,12 +89,12 @@ def main():
     stem = os.path.splitext(os.path.basename(bpy.data.filepath))[0].split("_")[0]
     theater = stem if stem in ground.THEATERS else "ce"
     mklib.load_palette(os.path.join(ROOT, "assets", "palettes", "tod_%s.ron" % theater))
-    changed = []
     if stem == "stflt":
         for index, build in sorted(aircraft.BUILDERS.items()):
-            changed.append(apply_aircraft(index, build()))
+            apply_aircraft(index, build())
     else:
-        changed += ground.apply(stem)
+        ground.apply(stem)
+    detail.apply(stem, skip=set(ground.MODELS.get(stem, {})))
     if "--save" in argv:
         bpy.context.preferences.filepaths.save_version = 0
         bpy.ops.wm.save_mainfile(compress=True)
@@ -102,8 +103,6 @@ def main():
         export_normals=False, export_materials="EXPORT", use_visible=False, export_animations=False,
         use_mesh_edges=True, use_mesh_vertices=True,
     )
-    with open(out + ".models.json", "w") as f:
-        json.dump(changed, f)
 
 
 main()

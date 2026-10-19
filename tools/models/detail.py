@@ -1,12 +1,10 @@
 """Detail for the original buildings, ships and structures, and the STFLT stores remodels.
 
-    blender -b --factory-startup --python tools/models/detail.py -- [ce cu ... ua photo stflt]
-
-Works on the shipped .glb files directly (they carry fixes the .blend masters lack). Added
-geometry goes into `<node>_detail` children; replaced faces, lines and moved lights keep their
-originals in the node extras (`orig_tris`, `orig_points`), so every run starts from the original
-models again and the output does not change between runs. Models remodelled by ground.py are
-left alone, as are hills, terrain cells and natural features.
+Run by build.py on the open .blend master. Added geometry goes into `<node>_detail` children;
+replaced faces, lines and moved lights keep their original meshes as unexported `orig:<object>`
+meshes, so every build starts from the original models again and its output does not change
+between runs. Models remodelled by ground.py are left alone, as are hills, terrain cells and
+natural features.
 
 Theater and photo models keep their silhouettes (collision hulls and LOD changes still fit) and
 get, as their shapes call for:
@@ -24,13 +22,12 @@ Lights stay: lit-window dots (colour 148) move onto the new windows, roof lights
 the parapets. STFLT models are rebuilt by stores.py (the F-117 keeps its original shell).
 """
 
-import json
 import math
 import os
 import random
-import struct
 import sys
 
+import bpy
 from mathutils import Vector
 from mathutils.geometry import intersect_point_tri
 
@@ -38,7 +35,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import ground  # noqa: E402
 import mklib  # noqa: E402
-from merge_glb import merge, read, write  # noqa: E402
 from mklib import Geo, Ramp  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -917,7 +913,140 @@ def levels(stem):
 
 
 # ---------------------------------------------------------------------------------------------
-# Shipped .glb files
+# Blender side
+
+
+class Blend:
+    """The models of the open .blend as a node list (the glTF view of them: names, children,
+    whether a node carries a mesh, root attributes), with helpers to read and change them.
+    Replaced meshes keep their originals as unexported `orig:<object>` meshes."""
+
+    def __init__(self, stem):
+        objs = sorted((o for o in bpy.data.objects if o.name.startswith(stem + "_")), key=lambda o: o.name)
+        self.load(objs)
+
+    def load(self, objs):
+        self.objs = list(objs)
+        index = {o.name: i for i, o in enumerate(self.objs)}
+        self.js = {"nodes": []}
+        for o in self.objs:
+            n = {"name": o.name, "children": [index[c.name] for c in sorted(o.children, key=lambda c: c.name) if c.name in index]}
+            if o.type == "MESH":
+                n["mesh"] = o.data.name
+            if "attr" in o:
+                n["extras"] = {"attr": int(o["attr"])}
+            self.js["nodes"].append(n)
+
+    def roots(self):
+        return [i for i, o in enumerate(self.objs) if o.parent is None]
+
+    def triangles(self, k):
+        """((a, b, c), colour) triangles of a node, in model space (z up)."""
+        o = self.objs[k]
+        if o.type != "MESH":
+            return []
+        me = o.data
+        cols = [mklib.index_of(m.name) if m is not None and "pal_" in m.name else 239 for m in me.materials]
+        out = []
+        for p in me.polygons:
+            vs = [me.vertices[i].co.copy() for i in p.vertices]
+            c = cols[p.material_index] if p.material_index < len(cols) else 239
+            for i in range(1, len(vs) - 1):
+                out.append(((vs[0], vs[i], vs[i + 1]), c))
+        return out
+
+    def points(self, k):
+        """Line end points in pairs (lines nodes) or the vertices (dots nodes)."""
+        me = self.objs[k].data
+        if me.edges:
+            return [me.vertices[i].co.copy() for e in me.edges for i in e.vertices]
+        return [v.co.copy() for v in me.vertices]
+
+    def mesh(self, name, prims):
+        """New mesh from [(colour, mode, points)] (mode 4 triangle list, 1 line list, 0 points)."""
+        verts, edges, faces, mats, slots, fmat = [], [], [], [], {}, []
+        for c, mode, pts in prims:
+            if c not in slots:
+                slots[c] = len(mats)
+                mats.append(c)
+            base = len(verts)
+            verts += [tuple(p) for p in pts]
+            if mode == 4:
+                for i in range(0, len(pts) - 2, 3):
+                    faces.append((base + i, base + i + 1, base + i + 2))
+                    fmat.append(slots[c])
+            elif mode == 1:
+                edges += [(base + i, base + i + 1) for i in range(0, len(pts) - 1, 2)]
+        me = bpy.data.meshes.new(name)
+        me.from_pydata(verts, edges, faces)
+        for c in mats:
+            me.materials.append(mklib.material(c))
+        for poly, m in zip(me.polygons, fmat):
+            poly.material_index = m
+        me.update()
+        return me
+
+    def add_node(self, parent, name, mesh):
+        p = self.objs[parent]
+        ob = bpy.data.objects.new(name, mesh)
+        for col in p.users_collection:
+            col.objects.link(ob)
+        ob.parent = p
+        self.objs.append(ob)
+        n = {"name": ob.name, "children": []}
+        if mesh is not None:
+            n["mesh"] = mesh.name
+        self.js["nodes"].append(n)
+        self.js["nodes"][parent]["children"].append(len(self.objs) - 1)
+        return len(self.objs) - 1
+
+    def keep_original(self, k):
+        o = self.objs[k]
+        if bpy.data.meshes.get("orig:" + o.name) is None:
+            m = o.data.copy()
+            m.name = "orig:" + o.name
+            m.use_fake_user = True
+
+    def set_data(self, k, me):
+        o = self.objs[k]
+        prev = o.data
+        o.data = me
+        if prev.users == 0 and not prev.use_fake_user:
+            bpy.data.meshes.remove(prev)
+        me.name = o.name
+
+    def replace_faces(self, k, faces):
+        """Gives a node new faces [(points, colour)], keeping its original mesh."""
+        self.keep_original(k)
+        prims = {}
+        for pts, c in faces:
+            for i in range(1, len(pts) - 1):
+                prims.setdefault(c, []).extend([pts[0], pts[i], pts[i + 1]])
+        self.set_data(k, self.mesh(self.objs[k].name, [(c, 4, p) for c, p in sorted(prims.items())]))
+
+    def set_points(self, k, pts, mode=0):
+        """New dots (mode 0) or line segments (mode 1) for a dots/lines node."""
+        self.keep_original(k)
+        self.set_data(k, self.mesh(self.objs[k].name, [(mklib.index_of(self.objs[k].name), mode, pts)]))
+
+    def strip(self):
+        """Removes earlier detail objects and puts the original meshes back."""
+        names = [o.name for o in self.objs]
+        for name in names:
+            o = bpy.data.objects.get(name)
+            if o is not None and "_detail" in name:
+                mklib.delete_tree(o)
+        objs = [bpy.data.objects[n] for n in names if n in bpy.data.objects]
+        for o in objs:
+            orig = bpy.data.meshes.get("orig:" + o.name)
+            if orig is not None:
+                prev = o.data
+                o.data = orig
+                orig.use_fake_user = False
+                if prev.users == 0:
+                    bpy.data.meshes.remove(prev)
+                orig.name = o.name
+        self.load(objs)
 
 
 def subtree_ids(js, i):
@@ -925,153 +1054,6 @@ def subtree_ids(js, i):
     for c in js["nodes"][i].get("children", []):
         out += subtree_ids(js, c)
     return out
-
-
-class Glb:
-    """A shipped model file: glTF JSON plus binary chunk, with helpers to read and add data."""
-
-    def __init__(self, path):
-        self.path = path
-        self.js, binary = read(path)
-        self.blob = bytearray(binary)
-
-    def save(self, path=None):
-        js, binary = merge(self.js, bytes(self.blob), self.js, bytes(self.blob), [])
-        write(path or self.path, js, binary)
-
-    def floats(self, ai):
-        a = self.js["accessors"][ai]
-        v = self.js["bufferViews"][a["bufferView"]]
-        o = v.get("byteOffset", 0) + a.get("byteOffset", 0)
-        return [struct.unpack_from("<3f", self.blob, o + 12 * k) for k in range(a["count"])]
-
-    def ints(self, ai):
-        a = self.js["accessors"][ai]
-        v = self.js["bufferViews"][a["bufferView"]]
-        o = v.get("byteOffset", 0) + a.get("byteOffset", 0)
-        fmt, size = {5121: ("<B", 1), 5123: ("<H", 2), 5125: ("<I", 4)}[a["componentType"]]
-        return [struct.unpack_from(fmt, self.blob, o + size * k)[0] for k in range(a["count"])]
-
-    def add_positions(self, pts):
-        """Accessor for model-space points (z up), stored y up like the rest of the file."""
-        data = [(p.x, p.z, -p.y) for p in pts]
-        self.blob.extend(b"\0" * (-len(self.blob) % 4))
-        off = len(self.blob)
-        for p in data:
-            self.blob.extend(struct.pack("<3f", *p))
-        self.js["bufferViews"].append({"buffer": 0, "byteOffset": off, "byteLength": 12 * len(data)})
-        self.js["accessors"].append({
-            "bufferView": len(self.js["bufferViews"]) - 1, "componentType": 5126, "count": len(data), "type": "VEC3",
-            "min": [min(p[i] for p in data) for i in range(3)], "max": [max(p[i] for p in data) for i in range(3)],
-        })
-        return len(self.js["accessors"]) - 1
-
-    def material(self, c):
-        name = "pal_%03d" % c
-        for i, m in enumerate(self.js["materials"]):
-            if m["name"] == name:
-                return i
-        base = next(m for m in self.js["materials"] if m["name"].startswith("pal_"))
-        m = json.loads(json.dumps(base))
-        m["name"] = name
-        srgb = mklib.PALETTE.get(c, (1, 0, 1))
-        lin = [x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in srgb]
-        m.setdefault("pbrMetallicRoughness", {})["baseColorFactor"] = lin + [1.0]
-        self.js["materials"].append(m)
-        return len(self.js["materials"]) - 1
-
-    def mesh(self, name, prims):
-        """New mesh from [(colour, mode, points)] (mode 4 triangles, 1 lines, 0 points)."""
-        out = []
-        for c, mode, pts in prims:
-            p = {"attributes": {"POSITION": self.add_positions(pts)}, "material": self.material(c)}
-            if mode != 4:
-                p["mode"] = mode
-            out.append(p)
-        self.js["meshes"].append({"name": name, "primitives": out})
-        return len(self.js["meshes"]) - 1
-
-    def add_node(self, parent, name, mesh):
-        self.js["nodes"].append({"name": name, "mesh": mesh})
-        i = len(self.js["nodes"]) - 1
-        self.js["nodes"][parent].setdefault("children", []).append(i)
-        return i
-
-    def triangles(self, ni):
-        """((a, b, c), colour) triangles of a node, in model space."""
-        n = self.js["nodes"][ni]
-        out = []
-        if "mesh" not in n:
-            return out
-        for p in self.js["meshes"][n["mesh"]]["primitives"]:
-            if p.get("mode", 4) != 4 or "material" not in p:
-                continue
-            c = mklib.index_of(self.js["materials"][p["material"]]["name"])
-            pts = [Vector((x, -z, y)) for x, y, z in self.floats(p["attributes"]["POSITION"])]
-            idx = self.ints(p["indices"]) if "indices" in p else list(range(len(pts)))
-            for k in range(0, len(idx) - 2, 3):
-                out.append(((pts[idx[k]], pts[idx[k + 1]], pts[idx[k + 2]]), c))
-        return out
-
-    def points(self, ni):
-        n = self.js["nodes"][ni]
-        return [Vector((x, -z, y)) for p in self.js["meshes"][n["mesh"]]["primitives"] for x, y, z in self.floats(p["attributes"]["POSITION"])]
-
-    def set_points(self, ni, pts, mode=0):
-        n = self.js["nodes"][ni]
-        old = self.js["meshes"][n["mesh"]]
-        c = mklib.index_of(n["name"])
-        n["mesh"] = self.mesh(old.get("name", n["name"]), [(c, mode, pts)])
-
-    def replace_faces(self, ni, faces):
-        """Gives a node new faces [(points, colour)], keeping its original triangles in its extras."""
-        n = self.js["nodes"][ni]
-        ex = n.setdefault("extras", {})
-        if "orig_tris" not in ex:
-            ex["orig_tris"] = [[c, [round(x, 4) for p in t for x in p]] for t, c in self.triangles(ni)]
-        prims = {}
-        for pts, c in faces:
-            for i in range(1, len(pts) - 1):
-                prims.setdefault(c, []).extend([pts[0], pts[i], pts[i + 1]])
-        old = self.js["meshes"][n["mesh"]]
-        n["mesh"] = self.mesh(old.get("name", n["name"]), [(c, 4, p) for c, p in sorted(prims.items())])
-
-    def strip(self):
-        """Removes earlier detail nodes and puts moved lights and replaced faces back."""
-        drop = set()
-        for i, n in enumerate(self.js["nodes"]):
-            if "_detail" in n["name"]:
-                drop.update(subtree_ids(self.js, i))
-            tris = (n.get("extras") or {}).get("orig_tris")
-            if tris is not None:
-                del n["extras"]["orig_tris"]
-                self.replace_faces(i, [([Vector(v[k:k + 3]) for k in (0, 3, 6)], c) for c, v in tris])
-                del n["extras"]["orig_tris"]
-            orig = (n.get("extras") or {}).get("orig_points")
-            if orig is not None:
-                self.set_points(i, [Vector(p) for p in orig], 1 if "_lines_pal_" in n["name"] else 0)
-                del n["extras"]["orig_points"]
-            if "extras" in n and not n["extras"]:
-                del n["extras"]
-        if not drop:
-            return
-        keep = [i for i in range(len(self.js["nodes"])) if i not in drop]
-        index = {old: new for new, old in enumerate(keep)}
-        nodes = []
-        for i in keep:
-            n = self.js["nodes"][i]
-            if "children" in n:
-                n["children"] = [index[c] for c in n["children"] if c in index]
-                if not n["children"]:
-                    del n["children"]
-            nodes.append(n)
-        self.js["nodes"] = nodes
-        for sc in self.js["scenes"]:
-            sc["nodes"] = [index[c] for c in sc["nodes"] if c in index]
-
-    def roots(self):
-        child = {c for n in self.js["nodes"] for c in n.get("children", [])}
-        return [i for i in range(len(self.js["nodes"])) if i not in child]
 
 
 def detail_root(glb, ri, level):
@@ -1165,8 +1147,6 @@ def detail_root(glb, ri, level):
             for i in range(1, len(pts) - 1):
                 prims.setdefault(c, []).extend([pts[0], pts[i], pts[i + 1]])
         dn = glb.add_node(k, name + "_detail", glb.mesh(name + "_detail", [(c, 4, p) for c, p in sorted(prims.items())]) if prims else None)
-        if not prims:
-            del js["nodes"][dn]["mesh"]
         for c, segs in sorted(d.geo.lines.items()):
             ln = "%s_detail_lines_pal_%03d" % (name, c)
             glb.add_node(dn, ln, glb.mesh(ln, [(c, 1, [p for s in segs for p in s])]))
@@ -1243,7 +1223,6 @@ def place_lights(glb, nodes, faces, windows, lifts):
                     q = Vector((q.x, q.y, r.zmax + h + 0.3 * U))
             out.append(q)
         if any((a - b).length > 1e-4 for a, b in zip(pts, out)):
-            n.setdefault("extras", {})["orig_points"] = [list(p) for p in pts]
             glb.set_points(k, out)
 
 
@@ -1276,20 +1255,18 @@ def rebuild(glb, ri, parts):
             name = "%s_lines_pal_%03d" % (n["name"], c)
             old = next((j for j in n.get("children", []) if js["nodes"][j]["name"] == name), None)
             if old is not None:
-                on = js["nodes"][old]
-                on.setdefault("extras", {}).setdefault("orig_points", [list(p) for p in glb.points(old)])
                 glb.set_points(old, pts, 1)
             else:
                 ln = "%s_detail_lines_pal_%03d" % (n["name"], c)
                 glb.add_node(k, ln, glb.mesh(ln, [(c, 1, pts)]))
 
 
-def apply(stem, skip=(), only=None, out=None):
-    """Details every model of a shipped file except those in `skip` (or only those in `only`),
-    hills (attr 147..149) and natural features."""
-    glb = Glb(os.path.join(ROOT, "assets", "models", stem + ".glb"))
+def apply(stem, skip=()):
+    """Details every model of the open .blend (theater or photo file) except those in `skip`,
+    hills (attr 147..149), terrain cells and natural features; for STFLT, rebuilds the stores
+    (stores.py). Returns the names of the models changed."""
+    glb = Blend(stem)
     glb.strip()
-    lv = levels(stem)
     done = []
     if stem == "stflt":
         import stores
@@ -1302,36 +1279,16 @@ def apply(stem, skip=(), only=None, out=None):
                 orig = {glb.js["nodes"][k]["name"][len(base):]: glb.triangles(k) for k in subtree_ids(glb.js, lod0)}
                 rebuild(glb, ri, stores.BUILDS[name](orig))
                 done.append(name)
-        glb.save(out)
         return done
+    lv = levels(stem)
     for ri in glb.roots():
         name = glb.js["nodes"][ri]["name"]
         attr = (glb.js["nodes"][ri].get("extras") or {}).get("attr", 0)
-        if name in skip or name in NATURAL or 147 <= attr <= 149 or (only is not None and name not in only):
+        if name in skip or name in NATURAL or 147 <= attr <= 149:
             continue
         level = lv.get(int(name.split("_")[-1]), 1.0)
         if level >= 16:
             continue  # terrain cells
         if detail_root(glb, ri, level):
             done.append(name)
-    glb.save(out)
     return done
-
-
-def main():
-    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    for stem in argv or FILES:
-        theater = stem if stem in ground.THEATERS else "ce"
-        mklib.load_palette(os.path.join(ROOT, "assets", "palettes", "tod_%s.ron" % theater))
-        skip = set(ground.MODELS.get("ce" if stem == "ua" else stem, {}))
-        if stem == "ua":
-            skip = {n.replace("ce_", "ua_") for n in skip} | {"ua_%03d" % i for i in range(94, 256)}
-        out = os.environ.get("DETAIL_OUT")
-        done = apply(stem, skip, out=out and os.path.join(out, stem + ".glb"))
-        print("%s: %d models detailed" % (stem, len(done)))
-
-
-FILES = ["ce", "cu", "ko", "ku", "lb", "me", "nc", "pg", "vn", "ua", "photo", "stflt"]
-
-if __name__ == "__main__":
-    main()

@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/../.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-blender -b --factory-startup --python tools/theater_ua/models.py -- "$tmp/new.glb" >"$tmp/models.log" 2>&1 || {
+blender -b --factory-startup --python-exit-code 1 --python tools/theater_ua/models.py -- "$tmp/new.glb" >"$tmp/models.log" 2>&1 || {
     cat "$tmp/models.log"
     exit 1
 }

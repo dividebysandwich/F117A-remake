@@ -26,7 +26,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "tools", "models"))
 
 import geo  # noqa: E402
-from merge_glb import read, write  # noqa: E402
+from glbio import read, write  # noqa: E402
 
 UNIT_WU = {1: 1, 2: 4, 3: 16, 4: 64}
 DIM = {1: 256, 2: 64, 3: 16}

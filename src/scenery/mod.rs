@@ -28,9 +28,10 @@ use std::collections::HashMap;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::math::{DVec2, DVec3};
-use bevy::mesh::{Indices, MeshTag, PrimitiveTopology};
+use bevy::mesh::{MeshTag, PrimitiveTopology};
 use bevy::prelude::*;
 
+use crate::dots::dot_batch;
 use crate::models::{ModelAssets, ModelLibrary};
 use crate::palette::{DetailLevel, Palette, REMAP_DETAIL_HIGH};
 use crate::palette_material::{TAG_DOT, TAG_WARM, dot_scale, mesh_tag};
@@ -346,14 +347,6 @@ fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Pal
     }
     commands.entity(root).add_children(&children);
     root
-}
-
-/// Four vertices per dot at its centre; the shader spreads them by the quad corner.
-fn dot_batch(points: &[Vec3]) -> Mesh {
-    let pos: Vec<Vec3> = points.iter().flat_map(|&p| [p; 4]).collect();
-    let corners: Vec<[f32; 2]> = points.iter().flat_map(|_| [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]).collect();
-    let idx: Vec<u32> = (0..points.len() as u32).flat_map(|i| [0, 1, 3, 0, 3, 2].map(|k| 4 * i + k)).collect();
-    mesh(PrimitiveTopology::TriangleList, pos).with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, corners).with_inserted_indices(Indices::U32(idx))
 }
 
 /// Lamps come on with the original's lights (sky dark enough); the approach flashers run

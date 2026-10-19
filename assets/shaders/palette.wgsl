@@ -142,17 +142,13 @@ fn vertex(v: Vertex) -> VertexOutput {
         out.puff_scale = sqrt(s2);
     }
 
-    // Dot lights: the unit quad expanded around the origin to a constant size in this view's
-    // pixels (so the tracking camera's zoom doesn't magnify them); in XR at most the original
-    // pixel's angular size.
-    if (((tag >> 7u) & 1u) == 1u) {
+    // Dot lights (dots.rs `dot_batch`: four vertices at each dot's centre) spread by their quad
+    // corner to a constant size in this view's pixels (so the tracking camera's zoom doesn't
+    // magnify them); in XR at most the original pixel's angular size.
 #ifdef DOT_BATCH
+    if (((tag >> 7u) & 1u) == 1u) {
         let center = world.xyz;
         let corner = v.corner;
-#else
-        let center = world_from_local[3].xyz;
-        let corner = v.position.xy;
-#endif
         let clip = position_world_to_clip(center);
         let vp = view.viewport.zw;
         var px = max(vp.y / 200.0 * DOT_SIZE, DOT_MIN_PIXELS);
@@ -164,6 +160,7 @@ fn vertex(v: Vertex) -> VertexOutput {
         out.world_position = center;
         out.clip_position = clip + vec4<f32>(corner * px * 2.0 / vp * clip.w, 0.0, 0.0);
     }
+#endif
 
     // Per-object haze: fog = clamp((depth/512 in object units) - sizeClass, 0, 31) >> 1
     let size_class = (tag >> 3u) & 7u;

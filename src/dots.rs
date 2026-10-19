@@ -5,7 +5,8 @@
 //! line material (solid colour, distance haze as in the original), so the lights read the same
 //! at any resolution, distance or zoom.
 
-use bevy::mesh::MeshTag;
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::{Indices, MeshTag, PrimitiveTopology};
 use bevy::prelude::*;
 
 use crate::palette_material::TAG_DOT;
@@ -44,5 +45,18 @@ impl DotLight {
 }
 
 fn setup_dot_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
-    commands.insert_resource(DotAssets { quad: meshes.add(Rectangle::new(1.0, 1.0)) });
+    commands.insert_resource(DotAssets { quad: meshes.add(dot_batch(&[Vec3::ZERO])) });
+}
+
+/// Four vertices per dot at its centre; the shader spreads them by the quad corner (UV).
+/// Every dot mesh must be built this way: the shader takes each vertex's position as the dot
+/// centre, so a real quad would keep its world size and grow up close.
+pub fn dot_batch(points: &[Vec3]) -> Mesh {
+    let pos: Vec<Vec3> = points.iter().flat_map(|&p| [p; 4]).collect();
+    let corners: Vec<[f32; 2]> = points.iter().flat_map(|_| [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]).collect();
+    let idx: Vec<u32> = (0..points.len() as u32).flat_map(|i| [0, 1, 3, 0, 3, 2].map(|k| 4 * i + k)).collect();
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, corners)
+        .with_inserted_indices(Indices::U32(idx))
 }

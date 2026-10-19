@@ -78,7 +78,7 @@ geography in `tools/theater_ua/geo.py`.
 | External views | Shift F1 .. Shift F6 |
 | HUD mode / declutter | F2 / V |
 | Night vision goggles (not in the original) | F4 |
-| Maps / ordnance / FLIR | F3 / F5 / F6 |
+| Maps / ordnance / FLIR (tracking camera in black and white thermal: aircraft, vehicles and buildings bright) | F3 / F5 / F6 |
 | Waypoints | F7 / F8 / PgUp / PgDn |
 | Mission orders | F10 |
 | Tracking camera ahead, rear, right, left | `/` / `.` / `,` / M |

@@ -19,7 +19,7 @@ use crate::combat::{Combat, CombatSystems};
 use crate::lighting::LightEmitter;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
-use crate::palette_material::{FLAG_CLOUD, FLAG_LINE, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_SMOKE, TAG_SMOKE_FIRE, mesh_tag};
+use crate::palette_material::{FLAG_CLOUD, FLAG_LINE, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_SMOKE, TAG_SMOKE_FIRE, TAG_WARM, mesh_tag};
 use crate::settings::{AppState, SetupSet};
 use crate::world::{Theater, WU, WorldAnchor, WorldPos, map_to_wu, wu_to_bevy};
 
@@ -420,7 +420,7 @@ fn stream(
                         .spawn((
                             Mesh3d(fires.flame.clone()),
                             MeshMaterial3d(flame_material(colour)),
-                            MeshTag(mesh_tag(1, 0, true)),
+                            MeshTag(mesh_tag(1, 0, true) | TAG_WARM),
                             Transform::from_scale(Vec3::ZERO),
                             bevy::light::NotShadowCaster,
                         ))

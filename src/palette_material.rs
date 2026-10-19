@@ -24,6 +24,9 @@ pub const FLAG_CLOUD_SOFT: u32 = 16;
 pub const FLAG_CLOUD_COVERAGE: u32 = 32;
 /// Faceted cumulus and cumulonimbus meshes: solid (no stratus coverage cutout).
 pub const FLAG_CLOUD_SOLID: u32 = 64;
+/// Mesh tag bit of warm objects (aircraft, vehicles, buildings, fires): bright in the FLIR
+/// picture, everything else cold.
+pub const TAG_WARM: u32 = 1 << 11;
 /// Mesh tag bit of smoke plume volumes: the shader ray-marches the plume inside its proxy
 /// mesh; bits 16.. carry the plume's noise offset.
 pub const TAG_SMOKE: u32 = 1 << 13;
@@ -111,7 +114,7 @@ pub struct Globals {
     pub palette: [Vec4; 256],
     pub sky_ring: [Vec4; 4],
     pub ground_g: [Vec4; 4],
-    /// x: haze enabled, y: metres per world unit, z: FLIR, w: modern mode
+    /// x: haze enabled, y: metres per world unit, z: FLIR (tracking camera), w: modern mode
     pub params: Vec4,
     /// Direction to the sun (xyz) and its strength (w) for the lighting options.
     pub sun: Vec4,
@@ -120,7 +123,8 @@ pub struct Globals {
     /// x: number of local lights, y: daylight 0 (night) .. 1 (day), z: night vision goggles.
     pub light_info: Vec4,
     /// x: XR dot angular size in radians (0 = flat screen; see dots.rs), y: animation clock
-    /// in seconds (wraps every hour).
+    /// in seconds (wraps every hour), zw: the tracking camera's picture size in pixels (the
+    /// view drawn in FLIR when `params.z` is set).
     pub dots: Vec4,
     /// Local lights, two entries each: (position, range), (linear colour * intensity, unused).
     pub local_lights: [Vec4; 2 * MAX_LOCAL_LIGHTS],

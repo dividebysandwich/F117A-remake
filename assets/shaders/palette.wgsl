@@ -18,6 +18,8 @@ const FLAG_CLOUD_SOLID: u32 = 64u;
 // Smoke plume volume (fires.rs), optionally lit by a fire at its base.
 const TAG_SMOKE: u32 = 8192u;
 const TAG_SMOKE_FIRE: u32 = 16384u;
+// Warm object (palette_material.rs `TAG_WARM`).
+const TAG_WARM: u32 = 2048u;
 // Cloud colours: the grey ramp (its base entry is the horizon haze colour).
 const CLOUD_RAMP: u32 = 0xE0u;
 
@@ -28,7 +30,7 @@ struct Globals {
     sky_ring: array<vec4<f32>, 4>,
     // Ground band boundaries below the horizon (16), same units; depend on altitude.
     ground_g: array<vec4<f32>, 4>,
-    // x: haze enabled, y: metres per world unit, z: FLIR, w: modern mode
+    // x: haze enabled, y: metres per world unit, z: FLIR (tracking camera), w: modern mode
     params: vec4<f32>,
     // Direction to the sun (xyz), strength (w).
     sun: vec4<f32>,
@@ -37,7 +39,7 @@ struct Globals {
     // x: local light count, y: daylight 0 (night) .. 1 (day), z: night vision goggles.
     light_info: vec4<f32>,
     // x: XR dot angular size in radians (0 = flat screen), y: animation clock (seconds,
-    // wraps every hour).
+    // wraps every hour), zw: tracking camera picture size (pixels).
     dots: vec4<f32>,
     // Two entries per light: (position, range), (colour * intensity, unused).
     local_lights: array<vec4<f32>, 64>,
@@ -91,6 +93,8 @@ struct VertexOutput {
     @location(4) @interpolate(flat) puff_eye: vec4<f32>,
     @location(5) @interpolate(flat) puff_sun: vec3<f32>,
     @location(6) @interpolate(flat) puff_scale: vec3<f32>,
+    // Warm object or dot light (FLIR).
+    @location(7) @interpolate(flat) warm: u32,
 };
 
 // Dot lights: size relative to one original pixel (320x200 screen) and lower bound in pixels.
@@ -118,6 +122,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.world_position = world.xyz;
     out.clip_position = position_world_to_clip(world.xyz);
     let tag = mesh_functions::get_tag(v.instance_index);
+    out.warm = select(0u, 1u, (tag & (TAG_WARM | 128u)) != 0u);
     // Smoke volumes: the view ray and the sun in the plume's local space (inverse of the
     // scaled rotation m = diag(1/s^2) m^T).
     out.puff_pos = vec4<f32>(0.0);
@@ -619,8 +624,34 @@ fn nvg(rgb: vec3<f32>, clip: vec4<f32>) -> vec3<f32> {
     return pow(min(c, vec3<f32>(1.0)), vec3<f32>(2.2));
 }
 
+// FLIR (tracking camera only, picked by its picture size): a black and white thermal picture
+// with warm objects (mesh tag `TAG_WARM`, dot lights) bright and the scenery dark; haze
+// fades warm objects into the background.
+fn flir_view() -> bool {
+    return globals.params.z != 0.0 && all(abs(view.viewport.zw - globals.dots.zw) < vec2<f32>(0.5));
+}
+
+fn flir(rgb: vec3<f32>, warm: u32, fog_f: f32) -> vec3<f32> {
+    let s = sqrt(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
+    let cold = 0.3 + 0.25 * s;
+    var v = cold;
+    if (warm != 0u) {
+        v = mix(0.85 + 0.15 * s, cold, clamp(fog_f / 24.0, 0.0, 0.6));
+    }
+    return vec3<f32>(pow(v, 2.2));
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    if (flir_view()) {
+        // Background: cold sky, cool ground.
+        if ((material.flags & 4u) != 0u) {
+            let dir = in.world_position - view.world_position;
+            return vec4<f32>(vec3<f32>(pow(select(0.2, 0.35, dir.y < 0.0), 2.2)), 1.0);
+        }
+        let c = shade_fragment(in);
+        return vec4<f32>(flir(c.rgb, in.warm, in.fog_f), c.a);
+    }
     let c = shade_fragment(in);
     return vec4<f32>(nvg(c.rgb, in.clip_position), c.a);
 }

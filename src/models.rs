@@ -11,8 +11,13 @@ use bevy::gltf::{Gltf, GltfMaterial, GltfMesh, GltfNode};
 use bevy::prelude::*;
 
 use crate::palette::{Palette, index_from_name};
-use crate::palette_material::{LEVEL_AIRCRAFT, PaletteMaterial, mesh_tag};
+use crate::palette_material::{LEVEL_AIRCRAFT, PaletteMaterial, TAG_WARM, mesh_tag};
 use bevy::mesh::MeshTag;
+
+/// Largest tile object counted as warm in the FLIR picture (metres across / high): buildings
+/// and structures, not terrain.
+const WARM_MAX_SIZE: f32 = 500.0;
+const WARM_MAX_HEIGHT: f32 = 250.0;
 
 pub struct ModelsPlugin;
 
@@ -414,7 +419,9 @@ impl ModelAssets<'_> {
                     } else {
                         self.palette.material(color)
                     };
-                    let child = commands.spawn((Mesh3d(prim.mesh.clone()), MeshMaterial3d(material), tag.clone())).id();
+                    let (flat, warm) = self.shape_class(&prim.mesh, tag.0 & 7);
+                    let child_tag = if warm { MeshTag(tag.0 | TAG_WARM) } else { tag.clone() };
+                    let child = commands.spawn((Mesh3d(prim.mesh.clone()), MeshMaterial3d(material), child_tag)).id();
                     // `_s14v1` is the missile motor flame (STFLT 1/10/15). The F-117 keeps its
                     // original shape, so its nozzle faces stay in the body mesh.
                     if name.ends_with("_exhaust")
@@ -426,7 +433,7 @@ impl ModelAssets<'_> {
                     }
                     // Flat ground overlays are stacked a few centimetres apart (world.rs painter's
                     // order); as sun shadow casters they would only shadow the overlays below.
-                    if tag.0 & 7 != LEVEL_AIRCRAFT && self.is_flat(&prim.mesh) {
+                    if flat {
                         commands.entity(child).insert(bevy::light::NotShadowCaster);
                     }
                     if let Some(l) = lod {
@@ -453,9 +460,23 @@ impl ModelAssets<'_> {
 
     /// Whether all of a mesh's vertices lie in the model's ground plane (original coordinates
     /// are integers; the converter lifts coplanar polygons by fractions of a unit).
-    fn is_flat(&self, mesh: &Handle<Mesh>) -> bool {
+    /// (flat ground overlay, warm in the FLIR picture) for a mesh of a model at a haze level:
+    /// aircraft, vehicles and missiles are warm; of the tile objects the raised ones of
+    /// building size (not hills and mountains).
+    fn shape_class(&self, mesh: &Handle<Mesh>, level: u32) -> (bool, bool) {
+        if level == LEVEL_AIRCRAFT {
+            return (false, true);
+        }
         let p = self.positions(mesh);
-        !p.is_empty() && p.iter().all(|v| v.y.abs() < 1.0)
+        if p.is_empty() {
+            return (false, false);
+        }
+        if p.iter().all(|v| v.y.abs() < 1.0) {
+            return (true, false);
+        }
+        let (lo, hi) = p.iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+        let metres = (hi - lo) * (f117_formats::terrain::LEVEL_UNIT[(level as usize).min(4)] * crate::world::WU) as f32;
+        (false, metres.x.max(metres.z) < WARM_MAX_SIZE && metres.y < WARM_MAX_HEIGHT)
     }
 }
 

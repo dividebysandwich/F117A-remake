@@ -1028,8 +1028,8 @@ impl MfdParams<'_, '_> {
         let flir = self.state.flir;
         let mut y = 0;
         for (rows, colour) in SKY {
-            // FLIR: the green ramp 152..159.
-            let colour = if flir { 152 + (colour as u32 * 7 / 255) as u8 } else { colour };
+            // FLIR: black and white, dark sky over grey ground (the grey ramp 0xE0..0xEF).
+            let colour = if !flir { colour } else if colour == 238 { 0xEB } else { 0xEF };
             c.fill_rect(0, y, c.w as i32, rows * k, colour);
             y += rows * k;
         }

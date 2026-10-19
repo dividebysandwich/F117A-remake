@@ -33,7 +33,7 @@ use bevy::prelude::*;
 
 use crate::models::{ModelAssets, ModelLibrary};
 use crate::palette::{DetailLevel, Palette, REMAP_DETAIL_HIGH};
-use crate::palette_material::{TAG_DOT, dot_scale, mesh_tag};
+use crate::palette_material::{TAG_DOT, TAG_WARM, dot_scale, mesh_tag};
 use crate::settings::AppState;
 use crate::world::{ShapeHandles, Theater, WorldAnchor, WorldPos, bevy_to_wu, WU};
 use content::Tier;
@@ -310,8 +310,10 @@ fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Pal
     });
     let root = commands.spawn((SceneryBlock, WorldPos(origin), Transform::default(), Visibility::default())).id();
     let mut children = Vec::new();
+    // Buildings and structures (main tier) are warm in the FLIR picture, trees are not.
+    let solid_tag = if tier == Tier::Main { MeshTag(tag.0 | TAG_WARM) } else { tag.clone() };
     for (c, tris) in geom.solid {
-        let e = commands.spawn((Mesh3d(meshes.add(mesh(PrimitiveTopology::TriangleList, tris))), MeshMaterial3d(palette.material(c)), tag.clone())).id();
+        let e = commands.spawn((Mesh3d(meshes.add(mesh(PrimitiveTopology::TriangleList, tris))), MeshMaterial3d(palette.material(c)), solid_tag.clone())).id();
         // Distant trees stay out of the shadow maps.
         if tier == Tier::Far {
             commands.entity(e).insert(bevy::light::NotShadowCaster);

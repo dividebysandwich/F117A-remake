@@ -293,6 +293,9 @@ fn update_globals(
     weather: Res<crate::weather::WeatherState>,
     origin: Res<crate::world::FloatingOrigin>,
     hud: Option<Res<crate::hud::HudState>>,
+    mfd: Option<Res<crate::mfd::MfdState>>,
+    trackcam: Option<Res<crate::trackcam::TrackCamImage>>,
+    images: Res<Assets<Image>>,
     time: Res<Time>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
@@ -310,7 +313,8 @@ fn update_globals(
         *v = (alt / ((16 - k as i32) * 32) - alt / 512) as f32;
     }
     g.ground_g = pack16(ground);
-    g.params = Vec4::new(1.0, crate::world::WU as f32, 0.0, settings.modern_shading as u32 as f32);
+    let flir = mfd.is_some_and(|m| m.flir);
+    g.params = Vec4::new(1.0, crate::world::WU as f32, flir as u32 as f32, settings.modern_shading as u32 as f32);
     g.sun = lighting.sun;
     g.ambient = lighting.ambient;
     g.light_info.x = lighting.lights.len() as f32;
@@ -318,6 +322,9 @@ fn update_globals(
     g.light_info.z = hud.is_some_and(|h| h.nvg) as u32 as f32;
     g.dots.x = if settings.vr { crate::dots::XR_ANGLE } else { 0.0 };
     g.dots.y = time.elapsed_secs_wrapped() % 3600.0;
+    if let Some(img) = trackcam.and_then(|t| images.get(&t.0)) {
+        (g.dots.z, g.dots.w) = (img.width() as f32, img.height() as f32);
+    }
     for (i, (p, c)) in lighting.lights.iter().enumerate() {
         g.local_lights[2 * i] = *p;
         g.local_lights[2 * i + 1] = *c;

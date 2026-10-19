@@ -18,6 +18,7 @@ struct Globals {
     ambient: vec4<f32>,
     // y: daylight 0 (night) .. 1 (day), z: night vision goggles.
     light_info: vec4<f32>,
+    // zw: tracking camera picture size (FLIR view).
     dots: vec4<f32>,
 };
 
@@ -90,6 +91,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let a = clamp(in.side.y, 0.0, 1.0) * edge * material.params.y;
     if (a <= 0.003) {
         discard;
+    }
+    // FLIR (tracking camera): cool grey smoke.
+    if (globals.params.z != 0.0 && all(abs(view.viewport.zw - globals.dots.zw) < vec2<f32>(0.5))) {
+        return vec4<f32>(vec3<f32>(0.12), a);
     }
     let light = mix(NIGHT, 1.0, clamp(globals.light_info.y, 0.0, 1.0));
     return vec4<f32>(nvg(globals.palette[u32(material.params.x) & 0xFFu].rgb * light, in.clip_position), a);

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Result, ensure};
 use f117_formats::{GameDir, THEATERS, terrain};
 use serde::{Deserialize, Serialize};
@@ -104,6 +106,8 @@ pub struct SimData {
     pub gun_ammo_init: i16,
     /// Runway direction per theater (DS:3D7C): +1 start south heading north, -1 the reverse.
     pub start_dir: [i16; 9],
+    /// One per original theater, stored in `theaters/<code>.json` beside `sim.json`.
+    #[serde(skip)]
     pub theaters: Vec<TheaterTiles>,
 }
 
@@ -203,14 +207,28 @@ impl SimData {
         })
     }
 
-    /// Decode `assets/sim/sim_data.bin` (postcard).
-    pub fn from_postcard(bytes: &[u8]) -> Result<Self> {
-        Ok(postcard::from_bytes(bytes)?)
+    /// Read `sim.json` and `theaters/<code>.json` from `dir` (`assets/sim`).
+    pub fn load_json(dir: &Path) -> Result<Self> {
+        let read = |name: &str| std::fs::read(dir.join(name)).with_context(|| format!("{}", dir.join(name).display()));
+        let mut d: Self = serde_json::from_slice(&read("sim.json")?).context("sim.json")?;
+        d.theaters = THEATERS
+            .iter()
+            .map(|code| {
+                let name = format!("theaters/{}.json", code.to_ascii_lowercase());
+                serde_json::from_slice(&read(&name)?).context(name)
+            })
+            .collect::<Result<_>>()?;
+        Ok(d)
     }
 
-    /// Encode as postcard (the `assets/sim/sim_data.bin` format).
-    pub fn to_postcard(&self) -> Result<Vec<u8>> {
-        Ok(postcard::to_stdvec(self)?)
+    /// Write `sim.json` and `theaters/<code>.json` under `dir`.
+    pub fn write_json(&self, dir: &Path) -> Result<()> {
+        std::fs::create_dir_all(dir.join("theaters"))?;
+        std::fs::write(dir.join("sim.json"), serde_json::to_string_pretty(self)?)?;
+        for (t, code) in self.theaters.iter().zip(THEATERS) {
+            std::fs::write(dir.join(format!("theaters/{}.json", code.to_ascii_lowercase())), serde_json::to_string(t)?)?;
+        }
+        Ok(())
     }
 
     pub fn threat(&self, i: i32) -> Option<&ThreatType> {

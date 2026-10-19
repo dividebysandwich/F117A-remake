@@ -1,4 +1,4 @@
-//! Scenario tests on real game data (skipped when the original game is not installed).
+//! Scenario tests on the shipped game data (`assets/sim`, `assets/mission`).
 
 use std::sync::OnceLock;
 
@@ -10,19 +10,13 @@ struct Data {
     gdata: GameData,
 }
 
-fn data() -> Option<&'static Data> {
-    static D: OnceLock<Option<Data>> = OnceLock::new();
+fn data() -> &'static Data {
+    static D: OnceLock<Data> = OnceLock::new();
     D.get_or_init(|| {
-        let game = f117_formats::GameDir::default_location()?;
-        let sim = SimData::load(&game).ok()?;
-        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/mission");
-        let gdata = GameData::load_json(&p).or_else(|_| GameData::load(&game)).ok()?;
-        Some(Data { sim, gdata })
-    })
-    .as_ref()
-    .or_else(|| {
-        eprintln!("original game not found, skipping");
-        None
+        let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let sim = SimData::load_json(&assets.join("sim")).expect("assets/sim");
+        let gdata = GameData::load_json(&assets.join("mission")).expect("assets/mission");
+        Data { sim, gdata }
     })
 }
 
@@ -74,7 +68,7 @@ fn place_site(sim: &mut Sim, i: usize, ty: i32, x: i32, y: i32) {
 
 #[test]
 fn sim_data_tables() {
-    let Some(d) = data() else { return };
+    let d = data();
     let s = &d.sim;
     assert_eq!(s.threats[1].name, "SA-2");
     assert_eq!((s.threats[4].lethality, s.threats[4].tier, s.threats[4].flags), (320, 7, 1));
@@ -91,13 +85,11 @@ fn sim_data_tables() {
     assert_eq!(&s.maneuver[..8], &[3, 3, 2, 1, 0, -1, -2, -1]);
     assert_eq!(s.stores_init, [0, 12, 18, 3]);
     assert_eq!(s.theaters.len(), 9);
-    let rt = SimData::from_postcard(&s.to_postcard().unwrap()).unwrap();
-    assert_eq!(rt.compat, s.compat);
 }
 
 #[test]
 fn site_detects_and_launches() {
-    let Some(d) = data() else { return };
+    let d = data();
     let m = mission(d, 3, 0x1234, 1);
     let mut sim = Sim::new(&d.sim, &m);
     let (mx, my) = sandbox(&mut sim, &m);
@@ -147,7 +139,7 @@ fn site_detects_and_launches() {
 /// Low, fast-ish, bays closed over flat ground: the same SA-2 never detects.
 #[test]
 fn stealthy_player_not_detected() {
-    let Some(d) = data() else { return };
+    let d = data();
     let m = mission(d, 3, 0x1234, 1);
     let mut sim = Sim::new(&d.sim, &m);
     let (mx, my) = sandbox(&mut sim, &m);
@@ -182,7 +174,7 @@ fn engaged(d: &Data, ty: i32) -> (Sim, PlayerState) {
 
 #[test]
 fn decoy_soaks_the_missile() {
-    let Some(d) = data() else { return };
+    let d = data();
     let (mut sim, mut p) = engaged(d, 1);
     sim.set_training(false);
     p.cmd.decoy = true;
@@ -203,7 +195,7 @@ fn decoy_soaks_the_missile() {
 
 #[test]
 fn ecm_jams_beam_rider() {
-    let Some(d) = data() else { return };
+    let d = data();
     // SA-2 is class 1 (beam rider): ECM jams it at any range.
     let (mut sim, mut p) = engaged(d, 1);
     p.cmd.toggle_ecm = true;
@@ -214,7 +206,7 @@ fn ecm_jams_beam_rider() {
 
 #[test]
 fn chaff_breaks_semi_active_lock() {
-    let Some(d) = data() else { return };
+    let d = data();
     // SA-8B: class 2 semi-active, fooled by chaff in its seeker cone.
     let (mut sim, mut p) = engaged(d, 3);
     p.cmd.chaff = true;
@@ -226,7 +218,7 @@ fn chaff_breaks_semi_active_lock() {
 
 #[test]
 fn ir_jammer_vs_first_generation_ir() {
-    let Some(d) = data() else { return };
+    let d = data();
     // SA-N-5 is class -1 (IR 1st generation): the IR jammer defeats it at any range.
     let (mut sim, mut p) = engaged(d, 9);
     p.cmd.toggle_irj = true;
@@ -243,7 +235,7 @@ fn ir_jammer_vs_first_generation_ir() {
 
 #[test]
 fn aim9_kills_fighter() {
-    let Some(d) = data() else { return };
+    let d = data();
     assert!(aim9_shot(d, Weather::default()));
 }
 
@@ -254,7 +246,7 @@ fn deck(base_ft: i32, top_ft: i32) -> Weather {
 
 #[test]
 fn clouds_blind_the_sidewinder() {
-    let Some(d) = data() else { return };
+    let d = data();
     // Shooter and target inside the deck: no IR lock. A deck below both does not matter.
     assert!(!aim9_shot(d, deck(4000, 6000)));
     assert!(aim9_shot(d, deck(1000, 3000)));
@@ -281,7 +273,7 @@ fn site_missile_locks(d: &Data, ty: i32, weather: Weather) -> bool {
 
 #[test]
 fn clouds_block_ir_but_not_radar_seekers() {
-    let Some(d) = data() else { return };
+    let d = data();
     // SA-N-5 (IR) from the ground at a player above a 2000-4000 ft deck; SA-8B (radar) does lock.
     assert!(site_missile_locks(d, 9, Weather::default()));
     assert!(!site_missile_locks(d, 9, deck(2000, 4000)));
@@ -333,7 +325,7 @@ fn aim9_shot(d: &Data, weather: Weather) -> bool {
 /// Retarded bomb dropped straight onto the primary: kill iff compat << 6 / (diff + 2) > distance.
 #[test]
 fn bomb_vs_target_uses_effectiveness_table() {
-    let Some(d) = data() else { return };
+    let d = data();
     let (m, seed) = (1..400u16).map(|s| (mission(d, 3, s, 0), s)).find(|(m, _)| m.primary.mission_type == 2).unwrap();
     let t = m.primary.object_index as usize;
     let cat = (m.world.buf7[m.world.objects[t].shape()] & 0xF) as i32;
@@ -379,7 +371,7 @@ fn bomb_vs_target_uses_effectiveness_table() {
 
 #[test]
 fn bay_closed_and_altitude_gates() {
-    let Some(d) = data() else { return };
+    let d = data();
     let m = mission(d, 3, 0x1234, 1);
     let mut sim = Sim::new(&d.sim, &m);
     sim.set_bay(0, 9, 3);
@@ -393,7 +385,7 @@ fn bay_closed_and_altitude_gates() {
 
 #[test]
 fn countermeasure_stores_run_out() {
-    let Some(d) = data() else { return };
+    let d = data();
     let m = mission(d, 3, 0x1234, 1);
     let mut sim = Sim::new(&d.sim, &m);
     let mut p = player_at(0x4000, 0x4000, 3000, 0, 300);
@@ -413,7 +405,7 @@ fn countermeasure_stores_run_out() {
 /// Ten simulated minutes of every theater with a scripted flight and random commands.
 #[test]
 fn ten_minute_missions_all_theaters() {
-    let Some(d) = data() else { return };
+    let d = data();
     let trig = &d.sim.trig;
     for th in 0..9 {
         for (k, opp) in [(0u16, 0u8), (1, 3)] {
@@ -481,7 +473,7 @@ fn ten_minute_missions_all_theaters() {
 /// Supply drop: unreachable in the original (spec vs class test), fixed behind `fix_original_bugs`.
 #[test]
 fn supply_drop_fixed_and_original() {
-    let Some(d) = data() else { return };
+    let d = data();
     let m = mission(d, 3, 0x1234, 1);
     for fix in [true, false] {
         let mut sim = Sim::with_options(&d.sim, &m, SimOptions { fix_original_bugs: fix, ..Default::default() });
@@ -514,7 +506,7 @@ fn supply_drop_fixed_and_original() {
 
 #[test]
 fn nearest_target_skips_friendlies_and_waits_for_hud_mode() {
-    let Some(d) = data() else { return };
+    let d = data();
     let m = mission(d, 3, 0x1234, 0);
     let mut sim = Sim::new(&d.sim, &m);
     let (cx, cy) = sandbox(&mut sim, &m);

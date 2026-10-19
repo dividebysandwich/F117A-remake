@@ -2,7 +2,7 @@
 //! missiles, weapons, damage, objectives) driving the flight.
 //!
 //! * On entering the flight a [`Sim`] is built from the active mission (`mission.rs` makes sure
-//!   there is one) and the static tables in `assets/sim/sim_data.bin`. The player starts at the
+//!   there is one) and the static tables in `assets/sim/sim.json`. The player starts at the
 //!   simulation's start state (VGAME 3A92).
 //! * The simulation runs on original frames at a fixed `fs` = 15 frames per (virtual) second:
 //!   every tick gets a [`PlayerState`] built from the flight model and the one-shot commands
@@ -67,14 +67,12 @@ pub const FS: u8 = 15;
 /// At most this many sim frames per rendered frame (slow frames are dropped beyond it).
 const MAX_STEPS: u32 = 30;
 
-/// Static simulation tables (assets/sim/sim_data.bin), loaded once.
+/// Static simulation tables (assets/sim/sim.json), loaded once.
 #[derive(Resource, Clone)]
 pub struct SimDataRes(pub Arc<SimData>);
 
 fn load_sim_data() -> anyhow::Result<SimData> {
-    let path = crate::asset_path::asset("sim/sim_data.bin");
-    let bytes = std::fs::read(&path).map_err(|e| anyhow::anyhow!("{}: {e} (run tools/build-assets.sh)", path.display()))?;
-    SimData::from_postcard(&bytes)
+    SimData::load_json(&crate::asset_path::asset("sim"))
 }
 
 /// The running simulation and its bookkeeping.

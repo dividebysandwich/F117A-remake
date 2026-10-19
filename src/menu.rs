@@ -47,6 +47,8 @@ pub struct MenuState {
     pub lockheed: bool,
     /// None: rolled from the seed.
     pub weather: Option<Sky>,
+    /// Coverage of the main cloud layer; None: rolled.
+    pub cloud_cover: Option<u8>,
     pub seed: u16,
     pub mission: Option<Result<Mission, String>>,
     dirty: bool,
@@ -61,6 +63,7 @@ impl Default for MenuState {
             opponents: 1,
             lockheed: false,
             weather: None,
+            cloud_cover: None,
             seed: rand::random(),
             mission: None,
             dirty: true,
@@ -101,6 +104,9 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         .args(["--roe", &state.roe.to_string(), "--kind", &(state.kind as u8).to_string()])
         .args(["--opponents", &state.opponents.to_string()])
         .args(["--weather", state.weather.map_or("random", Sky::name)]);
+    if let Some(c) = state.cloud_cover {
+        cmd.args(["--cloud-cover", &c.to_string()]);
+    }
     for (on, flag) in [
         (state.lockheed, "--lockheed"),
         (settings.modern_shading, "--modern"),
@@ -148,12 +154,12 @@ fn menu_ui(
     };
     if state.dirty {
         state.dirty = false;
-        let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather);
+        let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover);
         state.mission = Some(crate::mission::generate(&data, &settings, state.seed).map_err(|e| format!("{e:#}")));
     }
 
     let ctx = contexts.ctx_mut()?;
-    let before = (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather);
+    let before = (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover);
     egui::Window::new("F-117A Nighthawk")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .collapsible(false)
@@ -182,6 +188,14 @@ fn menu_ui(
                 cols[1].radio_value(&mut state.weather, None, "Random");
                 for sky in Sky::ALL {
                     cols[1].radio_value(&mut state.weather, Some(sky), sky.name());
+                }
+                // Coverage of the main layer (cumulus, or stratus for overcast and storms).
+                let mut auto = state.cloud_cover.is_none();
+                if cols[1].checkbox(&mut auto, "Random cloud cover").changed() {
+                    state.cloud_cover = if auto { None } else { Some(50) };
+                }
+                if let Some(c) = state.cloud_cover.as_mut() {
+                    cols[1].add(egui::Slider::new(c, 0..=100).suffix("% cover"));
                 }
                 cols[2].label("Opponents");
                 for (i, n) in ["Green", "Regular", "Veteran", "Elite"].iter().enumerate() {
@@ -265,7 +279,7 @@ fn menu_ui(
                 }
             });
         });
-    if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather) {
+    if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover) {
         state.dirty = true;
     }
     Ok(())

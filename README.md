@@ -16,6 +16,7 @@ Command-line options:
 | `--mission <seed> [--theater-index N]` | fly a generated mission directly |
 | `--theater ce` / `--fly` | fly from the menu's defaults, skipping it |
 | `--weather random\|clear\|scattered\|broken\|overcast\|storm` | the mission's weather (default: rolled from the seed, odds by theater) |
+| `--cloud-cover <percent>` | coverage of the weather's main cloud layer (default: rolled) |
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
 | `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons) |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |
@@ -27,14 +28,23 @@ Command-line options:
 
 Not part of the original game. The original generator runs unchanged, and the weather is
 rolled from its own random stream. A clear sky behaves exactly like the original.
-- Scattered and broken cumulus, or an overcast deck. Storms add towering cells, rain,
-  lightning, turbulence and shorter visibility.
-- Clouds block optical lines of sight:
+- **Sky:** a mix of up to three cloud layers, each with its own coverage:
+  - cumulus, drawn as ray-marched volumes;
+  - a stratus or stratocumulus layer, with gaps of clear sky placed by a noise field
+    thresholded to its coverage;
+  - cumulonimbus storm towers.
+- **Presets:** the menu's Weather choice (`--weather`) picks a realistic mix and rolls the
+  coverages. "Random cloud cover" off (`--cloud-cover <percent>`) sets the main layer's
+  coverage instead: stratus for overcast and storms, cumulus otherwise. The briefing lists
+  every layer.
+- **Storms:** towers bring rain, lightning, turbulence and shorter visibility near them,
+  whatever the stratus coverage.
+- **Clouds block optical lines of sight:**
   - IR and AIM-9 seekers, the Maverick and laser-guided bombs lose their target behind cloud.
-  - Ground targets under the deck can't be designated ("Target obscured").
+  - Ground targets under cloud can't be designated ("Target obscured").
   - Enemy pilots can't visually ID you or use their guns through cloud.
   - IR SAMs and IR air-to-air missiles aren't launched at what their launcher can't see.
-- Radar sees through cloud.
+- **Radar** sees through cloud.
 
 ## Controls (original keyboard layout)
 

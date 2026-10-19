@@ -23,7 +23,7 @@ impl MissionData {
 pub struct ActiveMission(pub Mission);
 
 /// Menu choices -> generator settings.
-pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockheed: bool, weather: Option<Sky>) -> MissionSettings {
+pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockheed: bool, weather: Option<Sky>, cloud_cover: Option<u8>) -> MissionSettings {
     MissionSettings {
         theater,
         roe,
@@ -31,6 +31,7 @@ pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockh
         opponents,
         plane: if lockheed { Plane::Lockheed } else { Plane::MicroProse },
         weather,
+        cloud_cover,
         ..default()
     }
 }
@@ -78,6 +79,7 @@ pub fn setup_from_mission(m: &Mission, start_dir: &[i16]) -> MissionSetup {
         start: Some(start_pose(m, start_dir)),
         freecam: false,
         weather: Some(m.weather.sky),
+        cloud_cover: m.settings.cloud_cover,
     }
 }
 
@@ -96,8 +98,9 @@ pub fn from_args(app: &mut App) {
     let opponents = get("--opponents").and_then(|s| s.parse().ok()).unwrap_or(1);
     let lockheed = args.iter().any(|a| a == "--lockheed");
     let weather = crate::settings::weather_arg(&args);
+    let cloud_cover = crate::settings::cover_arg(&args);
     let data = MissionData::load().expect("mission data");
-    let m = generate(&data, &settings(theater, roe, kind, opponents, lockheed, weather), seed).expect("mission");
+    let m = generate(&data, &settings(theater, roe, kind, opponents, lockheed, weather, cloud_cover), seed).expect("mission");
     let tables = crate::flight::SimTables::load();
     if args.iter().any(|a| a == "--print-mission") {
         println!(
@@ -152,7 +155,7 @@ pub fn ensure_mission(
     let theater = theater_index(&setup.theater).unwrap_or(3);
     for _ in 0..16 {
         let seed: u16 = rand::random();
-        match generate(&data, &settings(theater, 1, MissionKind::Strike, 1, false, setup.weather), seed) {
+        match generate(&data, &settings(theater, 1, MissionKind::Strike, 1, false, setup.weather, setup.cloud_cover), seed) {
             Ok(m) => {
                 info!("generated mission {seed} for {}: {}", m.theater_code, m.orders.primary);
                 let freecam = setup.freecam;

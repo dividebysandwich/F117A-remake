@@ -1,8 +1,6 @@
 //! Weather (not in the original game): clouds block optical lines of sight. Radar sees
 //! through them. With a clear sky (the original) every check passes.
 
-use f117_mission::Sky;
-
 use crate::Sim;
 
 /// viewZ (compressed altitude, `math::view_z`) back to feet.
@@ -24,7 +22,7 @@ pub fn optical_seeker(spec: i32, cls: i32) -> bool {
 impl Sim {
     /// Clear line of sight between two points (map units, viewZ).
     pub(crate) fn sees(&self, a: (i32, i32, i32), b: (i32, i32, i32)) -> bool {
-        self.weather.sky == Sky::Clear
+        !self.weather.any()
             || self.weather.los_clear((a.0, a.1, view_z_feet(a.2)), (b.0, b.1, view_z_feet(b.2)))
     }
 
@@ -41,7 +39,7 @@ impl Sim {
 
     /// Storms halve visual ranges.
     pub(crate) fn visual_shift(&self) -> i32 {
-        (self.weather.sky == Sky::Storm) as i32
+        self.weather.has_storms() as i32
     }
 }
 

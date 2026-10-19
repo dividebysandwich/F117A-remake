@@ -45,8 +45,11 @@ struct Globals {
     clouds: vec4<f32>,
     // x: haze distance scale, y: lightning flash 0..1, z: visibility under clouds (metres).
     weather: vec4<f32>,
-    // Cloud texture: floating origin (x, z) modulo NOISE_PERIOD, seed (z).
+    // Cloud texture: floating origin (x, z) modulo NOISE_PERIOD, seed (z); stratus layer
+    // coverage 0..1 (w).
     noise: vec4<f32>,
+    // Stratus layer coverage: threshold 0..1 (x), noise seed (y), floating origin x/z (z, w).
+    stratus: vec4<f32>,
 };
 
 struct PaletteMaterial {
@@ -332,6 +335,52 @@ fn perlin(p: vec3<f32>, period: i32) -> f32 {
 }
 
 // About -1..1; octaves finer than a few pixels fade out with distance.
+// --- Stratus coverage (same field as f117_mission::Weather::stratus_field) ------------------
+
+fn value_hash(ix: i32, iy: i32, seed: u32) -> f32 {
+    var h = (u32(ix) * 0x8DA6B343u) ^ (u32(iy) * 0xD8163841u) ^ (seed * 0xCB1AB31Fu);
+    h ^= h >> 16u;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15u;
+    h *= 0x846CA68Bu;
+    h ^= h >> 16u;
+    return f32(h >> 8u) / 16777216.0;
+}
+
+fn value_noise(p: vec2<f32>, seed: u32) -> f32 {
+    let f = floor(p);
+    let i = vec2<i32>(f);
+    let t = p - f;
+    let u = t * t * (3.0 - 2.0 * t);
+    let a = value_hash(i.x, i.y, seed);
+    let b = value_hash(i.x + 1, i.y, seed);
+    let c = value_hash(i.x, i.y + 1, seed);
+    let d = value_hash(i.x + 1, i.y + 1, seed);
+    let top = a + (b - a) * u.x;
+    let bottom = c + (d - c) * u.x;
+    return top + (bottom - top) * u.y;
+}
+
+// The field at a render-space position, in map units (64 per km, y southward).
+fn stratus_field(world: vec3<f32>) -> f32 {
+    let map_unit = 32.0 * globals.params.y;
+    let east = world.x + globals.stratus.z;
+    let north = -(world.z + globals.stratus.w);
+    let m = vec2<f32>(east / map_unit, 32768.0 - north / map_unit);
+    let seed = u32(globals.stratus.y);
+    return 0.6 * value_noise(m / 512.0, seed) + 0.3 * value_noise(m / 160.0, seed + 1u) + 0.1 * value_noise(m / 48.0, seed + 2u);
+}
+
+// Stratus coverage 0..1 at a position (soft edge just above the threshold). Far away the
+// gaps would alias into speckle: there it fades to the layer's average coverage.
+fn stratus_cover(world: vec3<f32>) -> f32 {
+    if (globals.clouds.z == 0.0) { return 0.0; }
+    let thr = globals.stratus.x;
+    let local = smoothstep(thr, thr + 0.035, stratus_field(world));
+    let d = length(world - view.world_position);
+    return mix(local, globals.noise.w, smoothstep(25000.0, 70000.0, d));
+}
+
 fn cloud_noise(world: vec3<f32>, dist: f32) -> f32 {
     let p = world + vec3<f32>(globals.noise.x, 0.0, globals.noise.y);
     var sum = 0.0;
@@ -467,10 +516,15 @@ fn cloud_volume(in: VertexOutput, front: bool, dir: vec3<f32>, modern: bool) -> 
     var t1 = tb.y;
     let eye_y = view.world_position.y;
     if (globals.clouds.z != 0.0 && abs(dir.y) > 1e-6) {
+        var tl = -1.0;
         if (eye_y >= globals.clouds.y && dir.y < 0.0) {
-            t1 = min(t1, (globals.clouds.y - eye_y) / dir.y);
+            tl = (globals.clouds.y - eye_y) / dir.y;
         } else if (eye_y <= globals.clouds.x && dir.y > 0.0) {
-            t1 = min(t1, (globals.clouds.x - eye_y) / dir.y);
+            tl = (globals.clouds.x - eye_y) / dir.y;
+        }
+        // Only where the layer has cloud at the crossing.
+        if (tl > 0.0 && stratus_cover(view.world_position + dir * tl) > 0.5) {
+            t1 = min(t1, tl);
         }
     }
     if (t1 <= t0) { discard; }
@@ -521,36 +575,23 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         if (in.puff_eye.w > 0.0) {
             return cloud_volume(in, front, dir, modern);
         }
+        // Stratus sheet: only where the layer's coverage field says so.
+        var cover = stratus_cover(in.world_position);
+        if (modern) {
+            if (cover <= 0.0) { discard; }
+        } else {
+            if (cover < bayer4(vec2<u32>(in.clip_position.xy))) { discard; }
+            cover = 1.0;
+        }
         var n = normalize(cross(dpdx(in.world_position), dpdy(in.world_position)));
         if (dot(n, dir) > 0.0) { n = -n; }
         let noise = cloud_noise(in.world_position, d);
-        return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d)), 1.0);
+        return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d)), cover);
     }
     if ((material.flags & 1u) != 0u) {
         // Background: sky bands above the horizon, ground gradient below.
         if ((material.flags & 4u) != 0u) {
             return vec4<f32>(pal(select(0x7Cu, 0x88u, dir.y >= 0.0)), 1.0);
-        }
-        // Overcast: the deck's underside instead of the sky below it, its top instead of the
-        // ground above it, grey inside it.
-        let eye_y = view.world_position.y;
-        let nd = normalize(dir);
-        if (globals.clouds.z != 0.0) {
-            if (eye_y > globals.clouds.x && eye_y < globals.clouds.y) {
-                return vec4<f32>(flash(pal(CLOUD_RAMP + 2u)), 1.0);
-            }
-            if (eye_y <= globals.clouds.x && nd.y >= 0.0) {
-                let d = (globals.clouds.x - eye_y) / max(nd.y, 1e-4);
-                let hit = view.world_position + nd * d;
-                let c = cloud_color(cloud_noise(hit, d), vec3<f32>(0.0, -1.0, 0.0), d, modern);
-                return vec4<f32>(flash(whiteout(c, d)), 1.0);
-            }
-            if (eye_y >= globals.clouds.y && nd.y < 0.0) {
-                let d = (eye_y - globals.clouds.y) / max(-nd.y, 1e-4);
-                let hit = view.world_position + nd * d;
-                let c = cloud_color(cloud_noise(hit, d), vec3<f32>(0.0, 1.0, 0.0), d, modern);
-                return vec4<f32>(whiteout(c, d), 1.0);
-            }
         }
         var bg: vec3<f32>;
         if (modern) {
@@ -568,6 +609,27 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         if (flags != 0u && dir.y < 0.0 && eye.y > 0.0) {
             let ground = eye + dir * (-eye.y / dir.y);
             bg = lit_surface(bg, ground, vec3<f32>(0.0, 1.0, 0.0), in.clip_position, flags);
+        }
+        // Stratus layer beyond its planes: its underside over the sky below it, its top over
+        // the ground above it, where the layer's coverage field has cloud.
+        if (globals.clouds.z != 0.0) {
+            let eye_y = eye.y;
+            let nd = normalize(dir);
+            var d = -1.0;
+            var n = vec3<f32>(0.0, -1.0, 0.0);
+            if (eye_y <= globals.clouds.x && nd.y > 0.0) {
+                d = (globals.clouds.x - eye_y) / nd.y;
+            } else if (eye_y >= globals.clouds.y && nd.y < 0.0) {
+                d = (eye_y - globals.clouds.y) / -nd.y;
+                n = vec3<f32>(0.0, 1.0, 0.0);
+            } else if (eye_y > globals.clouds.x && eye_y < globals.clouds.y) {
+                bg = mix(bg, pal(CLOUD_RAMP + 2u), stratus_cover(eye));
+            }
+            if (d > 0.0) {
+                let hit = eye + nd * d;
+                let c = cloud_color(cloud_noise(hit, d), n, d, modern);
+                bg = mix(bg, c, stratus_cover(hit));
+            }
         }
         return vec4<f32>(flash(whiteout(bg, 1e4)), 1.0);
     }

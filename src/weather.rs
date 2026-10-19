@@ -13,14 +13,14 @@ use std::collections::HashMap;
 use bevy::math::DVec3;
 use bevy::mesh::{MeshTag, VertexAttributeValues};
 use bevy::prelude::*;
-use f117_mission::weather::Cloud;
+use f117_mission::weather::{CELL, Cloud, CloudKind, STORM_CELL};
 use f117_mission::{Sky, Weather};
 
 use crate::camera::EyeCamera;
 use crate::trackcam::TrackCamera;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
-use crate::palette_material::{FLAG_CLOUD, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_CLOUD_CUMULUS, TAG_CLOUD_VOLUME, mesh_tag};
+use crate::palette_material::{FLAG_CLOUD, FLAG_CLOUD_COVERAGE, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_CLOUD_CUMULUS, TAG_CLOUD_VOLUME, mesh_tag};
 use crate::settings::{AppState, SetupSet};
 use crate::world::{FloatingOrigin, WU, WorldPos, wu_to_bevy};
 
@@ -59,8 +59,10 @@ pub struct WeatherState {
     /// Viewpoint: map units and feet.
     pub eye_map: (i32, i32),
     pub eye_ft: f32,
-    /// Under an overcast or storm deck.
-    pub below_deck: bool,
+    /// In the shade of a cloud (under covered stratus or a storm cell).
+    pub shaded: bool,
+    /// Under (or in) a storm cell: rain, turbulence, close lightning.
+    pub under_storm: bool,
     /// 0 clear air .. 1 inside a cloud (eased).
     pub whiteout: f32,
     /// Lightning flash brightness.
@@ -76,41 +78,39 @@ pub struct WeatherState {
     rng: u32,
     /// Cloud volumes (blended).
     puff_material: Handle<PaletteMaterial>,
-    /// Proxy mesh of this sky's cloud volumes.
-    proxy: Handle<Mesh>,
-    puffs: HashMap<(i32, i32), Entity>,
+    /// Proxy meshes of cumulus and cumulonimbus volumes.
+    cumulus_proxy: Handle<Mesh>,
+    tower_proxy: Handle<Mesh>,
+    puffs: HashMap<CloudKey, Streamed>,
     streamed_at: Option<(i32, i32)>,
 }
 
 impl WeatherState {
     /// Haze distance scale for the world under the clouds (reduced visibility in storms).
     pub fn haze_scale(&self) -> f32 {
-        if self.weather.sky == Sky::Storm && self.eye_ft < self.weather.top_ft as f32 {
+        if self.weather.has_storms() && (self.under_storm || self.shaded) {
             (20.0 / self.weather.vis_km.max(1) as f32).max(1.0)
         } else {
             1.0
         }
     }
 
-    /// Shader globals: (deck base m, deck top m, deck present, whiteout),
-    /// (haze scale, flash, cloud visibility m, 0) and the cloud texture's origin and seed.
-    pub fn globals(&self, origin: DVec3) -> (Vec4, Vec4, Vec4) {
+    /// Shader globals: (stratus base m, stratus top m, stratus present, whiteout),
+    /// (haze scale, flash, cloud visibility m, 0), the cloud texture's origin and seed, and
+    /// the stratus coverage field (threshold, seed, floating origin x / z).
+    pub fn globals(&self, origin: DVec3) -> (Vec4, Vec4, Vec4, Vec4) {
         let w = &self.weather;
-        let deck = w.sky.has_deck();
-        let clouds = Vec4::new(
-            w.base_ft as f32 * WU as f32,
-            w.top_ft as f32 * WU as f32,
-            deck as u32 as f32,
-            self.whiteout,
-        );
+        let l = w.stratus;
+        let clouds = Vec4::new(l.base_ft as f32 * WU as f32, l.top_ft as f32 * WU as f32, l.present() as u32 as f32, self.whiteout);
+        let stratus = Vec4::new(w.stratus_threshold as f32 / 65535.0, (w.seed & 0xFFFF) as f32, origin.x as f32, origin.z as f32);
         let vis_m = (w.vis_km as f32 * 1000.0).max(4000.0);
         let noise = Vec4::new(
             origin.x.rem_euclid(NOISE_PERIOD) as f32,
             origin.z.rem_euclid(NOISE_PERIOD) as f32,
             (w.seed & 0xFFFF) as f32,
-            0.0,
+            l.cover as f32 / 100.0,
         );
-        (clouds, Vec4::new(self.haze_scale(), self.flash, vis_m, 0.0), noise)
+        (clouds, Vec4::new(self.haze_scale(), self.flash, vis_m, 0.0), noise, stratus)
     }
 
     fn random(&mut self) -> f32 {
@@ -124,7 +124,12 @@ impl WeatherState {
 #[derive(Component)]
 struct CloudEntity;
 
-/// Deck plane: offset from the viewpoint is kept at zero horizontally.
+/// A cloud of the field: its kind and grid square.
+type CloudKey = (CloudKind, i32, i32);
+/// A streamed cloud: its entity and centre (map units).
+type Streamed = (Entity, (i32, i32));
+
+/// Stratus plane: offset from the viewpoint is kept at zero horizontally.
 #[derive(Component)]
 struct DeckPlane {
     alt_ft: i32,
@@ -183,11 +188,15 @@ fn setup_weather(
     palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<PaletteMaterial>>,
+    settings: Res<crate::settings::Settings>,
     mut state: ResMut<WeatherState>,
 ) {
     let weather = mission.map(|m| m.0.weather).unwrap_or_default();
+    // Stratus sheets are cut out by their coverage field: alpha to coverage with modern
+    // mode's MSAA, a dithered screen door otherwise.
+    let coverage = if settings.modern_shading { FLAG_CLOUD_COVERAGE } else { 0 };
     let material = materials.add(PaletteMaterial {
-        params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD, ..default() },
+        params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | coverage, ..default() },
         globals: palette.globals.clone(),
     });
     *state = WeatherState {
@@ -198,15 +207,17 @@ fn setup_weather(
             params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | FLAG_CLOUD_SOFT, ..default() },
             globals: palette.globals.clone(),
         }),
-        proxy: meshes.add(if weather.sky == Sky::Storm { tower_proxy() } else { cumulus_proxy() }),
+        cumulus_proxy: meshes.add(cumulus_proxy()),
+        tower_proxy: meshes.add(tower_proxy()),
         ..default()
     };
     info!("weather: {}", weather.describe());
-    if !weather.sky.has_deck() {
+    let l = weather.stratus;
+    if !l.present() {
         return;
     }
     // The base seen from below, the top seen from above.
-    for (normal, alt_ft) in [(Vec3::NEG_Y, weather.base_ft), (Vec3::Y, weather.top_ft)] {
+    for (normal, alt_ft) in [(Vec3::NEG_Y, l.base_ft), (Vec3::Y, l.top_ft)] {
         commands.spawn((
             CloudEntity,
             DeckPlane { alt_ft },
@@ -248,7 +259,8 @@ fn track_eye(time: Res<Time>, origin: Res<FloatingOrigin>, eyes: Eyes, mut state
     state.whiteout += ((inside as u32 as f32) - state.whiteout) * k;
     state.eye_map = map;
     state.eye_ft = ft;
-    state.below_deck = w.sky.has_deck() && ft < w.base_ft as f32;
+    state.shaded = w.under_cloud(map.0, map.1, ft as i32);
+    state.under_storm = w.under_storm(map.0, map.1, ft as i32);
 }
 
 fn follow_deck(origin: Res<FloatingOrigin>, eyes: Eyes, mut decks: Query<(&DeckPlane, &mut WorldPos)>) {
@@ -261,38 +273,40 @@ fn follow_deck(origin: Res<FloatingOrigin>, eyes: Eyes, mut decks: Query<(&DeckP
     }
 }
 
-/// Spawns the cumulus near the viewpoint and drops the ones left behind.
+/// Spawns the cumulus and cumulonimbus near the viewpoint and drops the ones left behind.
 fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state: ResMut<WeatherState>) {
     let (x, y) = state.eye_map;
     let w = state.weather;
-    let cell = w.cell();
     if let Some((sx, sy)) = state.streamed_at
-        && (sx - x).abs() < cell / 2
-        && (sy - y).abs() < cell / 2
+        && (sx - x).abs() < CELL / 2
+        && (sy - y).abs() < CELL / 2
     {
         return;
     }
     state.streamed_at = Some((x, y));
-    let keep = (DRAW_RADIUS + cell) as i64;
-    state.puffs.retain(|&(gx, gy), e| {
-        let (cx, cy) = ((gx * cell + cell / 2 - x) as i64, (gy * cell + cell / 2 - y) as i64);
-        let near = cx * cx + cy * cy <= keep * keep;
+    let keep = (DRAW_RADIUS + STORM_CELL) as i64;
+    state.puffs.retain(|_, (e, (cx, cy))| {
+        let (dx, dy) = ((*cx - x) as i64, (*cy - y) as i64);
+        let near = dx * dx + dy * dy <= keep * keep;
         if !near {
             commands.entity(*e).try_despawn();
         }
         near
     });
-    let new: Vec<Cloud> = w.clouds_near(x, y, DRAW_RADIUS).filter(|c| !state.puffs.contains_key(&(c.gx, c.gy))).collect();
+    let new: Vec<Cloud> = w.clouds_near(x, y, DRAW_RADIUS).filter(|c| !state.puffs.contains_key(&(c.kind, c.gx, c.gy))).collect();
     for c in new {
         let h = hash(((w.seed as u64) << 32) ^ ((c.gx as u16 as u64) << 16) ^ c.gy as u16 as u64 ^ 0xC10D);
-        let cumulus = if w.sky == Sky::Storm { 0 } else { TAG_CLOUD_CUMULUS };
+        let (proxy, cumulus) = match c.kind {
+            CloudKind::Cumulonimbus => (state.tower_proxy.clone(), 0),
+            _ => (state.cumulus_proxy.clone(), TAG_CLOUD_CUMULUS),
+        };
         let r_m = c.r as f32 * 32.0 * WU as f32;
         let pos = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, c.base_ft as f64);
         let h_m = (c.top_ft - c.base_ft) as f32 * WU as f32;
         let e = commands
             .spawn((
                 CloudEntity,
-                Mesh3d(state.proxy.clone()),
+                Mesh3d(proxy),
                 MeshMaterial3d(state.puff_material.clone()),
                 MeshTag(mesh_tag(1, 0, true) | TAG_CLOUD_VOLUME | cumulus),
                 WorldPos(pos),
@@ -301,21 +315,21 @@ fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state:
                     .with_scale(Vec3::new(r_m, h_m, r_m)),
             ))
             .id();
-        state.puffs.insert((c.gx, c.gy), e);
+        state.puffs.insert((c.kind, c.gx, c.gy), (e, (c.x, c.y)));
     }
 }
 
 /// Storms: random lightning flashes (a double flicker), more often under the deck, and
 /// the thunder a moment later.
 fn lightning(time: Res<Time>, mut state: ResMut<WeatherState>, mut sounds: MessageWriter<crate::sound::PlaySound>) {
-    if state.weather.sky != Sky::Storm {
+    if !state.weather.has_storms() {
         state.flash = 0.0;
         return;
     }
     let dt = time.delta_secs();
     state.next_flash -= dt;
     if state.next_flash <= 0.0 {
-        let near = state.below_deck || state.whiteout > 0.5;
+        let near = state.under_storm;
         state.next_flash = if near { 3.0 + 9.0 * state.random() } else { 8.0 + 20.0 * state.random() };
         state.flash_left = 0.35;
         state.thunder_in = Some(0.5 + 3.0 * state.random());
@@ -332,13 +346,13 @@ fn lightning(time: Res<Time>, mut state: ResMut<WeatherState>, mut sounds: Messa
         state.flash_left -= dt;
         let t = 0.35 - state.flash_left;
         // Two strokes: 0..0.08 s and 0.16..0.3 s.
-        state.flash = if t < 0.08 || (0.16..0.3).contains(&t) { if state.below_deck { 0.6 } else { 0.35 } } else { 0.0 };
+        state.flash = if t < 0.08 || (0.16..0.3).contains(&t) { if state.under_storm { 0.6 } else { 0.3 } } else { 0.0 };
     } else {
         state.flash = 0.0;
     }
 }
 
-/// Rain streaks around the eye (storms, under the deck top).
+/// Rain streaks around the eye (under storm cells, and under the storm preset's stratus).
 const DROPS: usize = 500;
 /// Half size of the rain box around the eye (metres).
 const RAIN_BOX: f32 = 30.0;
@@ -366,7 +380,8 @@ fn rain(
         _ => Vec3::ZERO,
     };
     state.prev_eye = eye;
-    let raining = state.weather.sky == Sky::Storm && state.eye_ft < state.weather.top_ft as f32;
+    let w = state.weather;
+    let raining = state.under_storm || (w.sky == Sky::Storm && state.shaded);
     let Ok((cam, cam_tf)) = eye_cams.single() else { return };
     if !raining {
         if let Some(e) = state.rain.take() {
@@ -438,19 +453,14 @@ fn rain(
     }
 }
 
-/// Storm turbulence: smooth buffeting of the player's attitude inside storm clouds (and,
-/// weaker, under the deck).
+/// Storm turbulence: smooth buffeting of the player's attitude inside storm cells (and,
+/// weaker, under them).
 fn turbulence(time: Res<Time>, state: Res<WeatherState>, mut q: Query<&mut crate::flight::Aircraft, With<crate::flight::Player>>) {
-    if state.weather.sky != Sky::Storm {
+    if !state.under_storm {
         return;
     }
-    let strength = if state.whiteout > 0.5 {
-        1.0
-    } else if state.below_deck {
-        0.35
-    } else {
-        return;
-    };
+    // Inside the cell's cloud, or (weaker) under it.
+    let strength = if state.whiteout > 0.5 { 1.0 } else { 0.35 };
     let t = time.elapsed_secs();
     let dt = time.delta_secs();
     let s = (state.weather.seed % 97) as f32;

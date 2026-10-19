@@ -130,7 +130,7 @@ fn update_sun(
     state.daylight = daylight;
     // World shader: ambient + sun keeps sunlit faces near the original brightness and
     // darkens shadowed ones. Under an overcast the sun is hidden.
-    let overcast = weather.below_deck || weather.whiteout > 0.5;
+    let overcast = weather.shaded || weather.whiteout > 0.5;
     let strength = 0.45 * daylight * if overcast { 0.15 } else { 1.0 };
     state.sun = sun_direction().extend(strength);
     let flags = (settings.shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);

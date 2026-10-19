@@ -60,6 +60,8 @@ pub struct MissionSetup {
     pub freecam: bool,
     /// Sky of the flight's mission (None: rolled from the mission seed).
     pub weather: Option<f117_mission::Sky>,
+    /// Coverage of the weather's main cloud layer (None: rolled).
+    pub cloud_cover: Option<u8>,
 }
 
 /// Aircraft start position and heading (original world units, radians clockwise from north).
@@ -74,6 +76,11 @@ pub struct StartPose {
 /// `--weather random|clear|scattered|broken|overcast|storm` (default random).
 pub fn weather_arg(args: &[String]) -> Option<f117_mission::Sky> {
     get(args, "--weather").and_then(|s| f117_mission::Sky::parse(&s))
+}
+
+/// `--cloud-cover <percent>`: coverage of the main cloud layer.
+pub fn cover_arg(args: &[String]) -> Option<u8> {
+    get(args, "--cloud-cover").and_then(|s| s.parse::<u8>().ok()).map(|c| c.min(100))
 }
 
 fn args() -> Vec<String> {
@@ -118,6 +125,7 @@ impl MissionSetup {
             start: None,
             freecam: a.iter().any(|x| x == "--freecam"),
             weather: weather_arg(&a),
+            cloud_cover: cover_arg(&a),
         }
     }
 }

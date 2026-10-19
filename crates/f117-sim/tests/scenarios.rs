@@ -2,7 +2,7 @@
 
 use std::sync::OnceLock;
 
-use f117_mission::{GameData, Mission, MissionKind, MissionSettings, Seed, Sky, Weather};
+use f117_mission::{GameData, Mission, MissionKind, MissionSettings, Seed, Weather};
 use f117_sim::*;
 
 struct Data {
@@ -249,7 +249,7 @@ fn aim9_kills_fighter() {
 
 /// An overcast deck: weather is not part of the original game.
 fn deck(base_ft: i32, top_ft: i32) -> Weather {
-    Weather { sky: Sky::Overcast, base_ft, top_ft, vis_km: 20, seed: 1 }
+    Weather::stratus_layer(base_ft, top_ft, 100, 1)
 }
 
 #[test]

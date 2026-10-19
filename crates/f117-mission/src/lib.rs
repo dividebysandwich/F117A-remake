@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub use rng::MscRand;
 pub use tables::{MissionRow, PlaneInfo, StartTables};
 pub use text::{Briefing, Orders, OrdersLine};
-pub use weather::{Sky, Weather};
+pub use weather::{CloudKind, Layer, Sky, Weather};
 pub use world::{FlightUnit, MissionWorld, NAMES_BYTES, TheaterData, WorldObject};
 
 pub const THEATER_NAMES: [&str; 9] =
@@ -77,6 +77,9 @@ pub struct MissionSettings {
     /// default is clear (the original behaviour).
     #[serde(default = "clear_sky")]
     pub weather: Option<Sky>,
+    /// Coverage (percent) of the weather's main cloud layer; `None` rolls it.
+    #[serde(default)]
+    pub cloud_cover: Option<u8>,
 }
 
 fn clear_sky() -> Option<Sky> {
@@ -85,7 +88,7 @@ fn clear_sky() -> Option<Sky> {
 
 impl Default for MissionSettings {
     fn default() -> Self {
-        Self { theater: 3, roe: 2, kind: MissionKind::Strike, opponents: 1, plane: Plane::MicroProse, sorties: 0, pilot: "Pilot".into(), weather: clear_sky() }
+        Self { theater: 3, roe: 2, kind: MissionKind::Strike, opponents: 1, plane: Plane::MicroProse, sorties: 0, pilot: "Pilot".into(), weather: clear_sky(), cloud_cover: None }
     }
 }
 
@@ -422,7 +425,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
     let primary = target(0);
     let secondary = target(1);
     let usable_bays = if lockheed { 2 } else { 4 };
-    let weather = Weather::roll(input.holdrand, s.theater, s.weather);
+    let weather = Weather::roll(input.holdrand, s.theater, s.weather, s.cloud_cover);
     let mut briefing = ctx.briefing(s.sorties, &s.pilot);
     briefing.weather_line = weather.describe();
     Ok(Mission {

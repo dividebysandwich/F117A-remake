@@ -391,19 +391,6 @@ pub fn draw(c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, f: &HudFrame) {
     c.reset_clip();
 }
 
-/// The original's drawn HUD frame (part of `2AC0:000C`), replaced by the modelled combiner
-/// (kept for the snapshot comparison).
-#[cfg_attr(not(test), allow(dead_code))]
-pub fn border(c: &mut Canvas) {
-    c.line(46, 90, 46, 14, 15);
-    c.line(274, 90, 274, 14, 15);
-    c.line(45, 90, 45, 14, 8);
-    c.line(275, 90, 275, 14, 8);
-    c.line(275, 14, 232, 2, 8);
-    c.line(232, 2, 90, 2, 8);
-    c.line(45, 14, 89, 2, 8);
-}
-
 /// `1A18:7898`: texts, flight path marker, bars, sights, digital readouts, waypoint cue,
 /// messages.
 fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8, col2: u8) {
@@ -799,93 +786,4 @@ fn pitch_ladder(c: &mut Canvas, fonts: &Fonts, pitch: i16, roll: i16, col: u8) {
         dl += 1;
     }
     c.set_clip(0, 0, 319, 90);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Reads a file relative to the asset root's directory (`assets/...`, `re-work/...`).
-    fn load(name: &str) -> Option<Vec<u8>> {
-        std::fs::read(crate::asset_path::root().join(name)).ok()
-    }
-
-    fn art() -> Option<(CockpitArt, Fonts)> {
-        let idx = |name: &str| load(name).map(|px| Canvas::from_pixels(320, px.len() / 320, px));
-        let (sprites, ordnance) = (idx("assets/images/sprites.idx")?, idx("assets/images/ordnance.idx")?);
-        load("assets/fonts/fonts.ron")?;
-        let fonts = Fonts::load();
-        Some((CockpitArt { atlas_night: crate::cockpit::night_atlas(&sprites), sprites, ordnance }, fonts))
-    }
-
-    /// Compares the HUD drawn for the state of an emulator snapshot with its VRAM dump
-    /// (re-work/hud/snaps, optional): pixels in HUD colours must match.
-    fn compare(snap: &str, f: &HudFrame, colours: &[u8]) -> Option<(usize, usize)> {
-        let vram = load(&format!("re-work/hud/snaps/{snap}.vram"))?;
-        let (art, fonts) = art()?;
-        let mut c = Canvas::new(320, 200);
-        draw(&mut c, &art, &fonts, f);
-        border(&mut c);
-        let out = std::env::var("HUD_DUMP_DIR").ok();
-        if let Some(dir) = out {
-            std::fs::write(format!("{dir}/{snap}_mine.raw"), &c.px).unwrap();
-        }
-        let (mut bad, mut total) = (0, 0);
-        for y in 0..91 {
-            for x in 40..280 {
-                let (a, b) = (c.px[y * 320 + x], vram[y * 320 + x]);
-                let ha = colours.contains(&a);
-                let hb = colours.contains(&b);
-                if ha || hb {
-                    total += 1;
-                    if a != b {
-                        bad += 1;
-                    }
-                }
-            }
-        }
-        Some((bad, total))
-    }
-
-    fn base_frame() -> HudFrame {
-        HudFrame {
-            gees: 16,
-            fpm: 7680,
-            stall_knots: 0,
-            gear_down: true,
-            night_mission: true,
-            weapon: Some((2, "IN Cluster".into())),
-            gun_rounds: Some(650),
-            ..default()
-        }
-    }
-
-    /// Pitch ladder against snapshots, with the attitude fitted to them (exhaustive search over
-    /// pitch/roll; every ladder pixel matches).
-    #[test]
-    fn pitch_ladder_matches_snapshots() {
-        for (snap, p, r) in [("climb", 0x2c0, 0x180), ("r1", 0x480, 0x10), ("r2", 0x480, -0x110), ("r3", 0x440, 0x120)] {
-            let (Some(vram), Some((_, fonts))) = (load(&format!("re-work/hud/snaps/{snap}.vram")), art()) else { return };
-            let mut c = Canvas::new(320, 200);
-            pitch_ladder(&mut c, &fonts, p, r, 7);
-            let bad = (0..91 * 320).filter(|&i| (c.px[i] == 7) != (vram[i] == 7)).count();
-            assert_eq!(bad, 0, "{snap}");
-        }
-    }
-
-    #[test]
-    fn base_snapshot() {
-        let f = base_frame();
-        if let Some((bad, total)) = compare("base", &f, &[15, 7, 8]) {
-            assert_eq!(bad, 0, "{bad} of {total} HUD pixels differ");
-        }
-    }
-
-    #[test]
-    fn climb_snapshot() {
-        let f = HudFrame { knots: 356, alt: 330, pitch: 0x2c0, roll: 0x180, fpm: 128, ..base_frame() };
-        if let Some((bad, total)) = compare("climb", &f, &[15, 7, 8]) {
-            assert!(bad <= 4, "{bad} of {total} HUD pixels differ");
-        }
-    }
 }

@@ -1,5 +1,4 @@
-use anyhow::{Context, Result, ensure};
-use f117_formats::{GameDir, THEATERS, terrain::TileSets};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 pub const NAMES_BYTES: usize = 750;
@@ -91,70 +90,6 @@ pub struct MissionWorld {
 }
 
 impl MissionWorld {
-    pub fn parse(d: &[u8]) -> Result<Self> {
-        let u = |o: usize| -> Result<u16> {
-            d.get(o..o + 2).map(|s| u16::from_le_bytes([s[0], s[1]])).context("WLD truncated")
-        };
-        let s = |o: usize| -> Result<i16> { u(o).map(|v| v as i16) };
-        let i = |o: usize| -> Result<i32> {
-            d.get(o..o + 4).map(|s| i32::from_le_bytes([s[0], s[1], s[2], s[3]])).context("WLD truncated")
-        };
-        let header = u(0)?;
-        let n = u(2)? as usize;
-        let ground_unit_count = u(4)?;
-        let world_object_count = u(6)?;
-        ensure!(n <= TABLE && (world_object_count as usize) <= n, "WLD: bad object counts");
-        let mut o = 8;
-        let mut objects = Vec::with_capacity(n);
-        for _ in 0..n {
-            objects.push(WorldObject {
-                name: s(o)?,
-                x: s(o + 2)?,
-                y: s(o + 4)?,
-                unit_type: s(o + 6)?,
-                flags: s(o + 8)?,
-                occupant_type: s(o + 10)?,
-                patrol_count: s(o + 12)?,
-                object_idx: s(o + 14)?,
-            });
-            o += 16;
-        }
-        let nf = u(o)? as usize;
-        o += 2;
-        let mut flights = Vec::with_capacity(nf);
-        for _ in 0..nf {
-            flights.push(FlightUnit {
-                waypoint: s(o)?,
-                x: s(o + 2)?,
-                y: s(o + 4)?,
-                alt: s(o + 6)?,
-                xp: i(o + 8)?,
-                yp: i(o + 12)?,
-                heading: s(o + 16)?,
-                pitch: s(o + 18)?,
-                roll: s(o + 20)?,
-                plane_type: s(o + 22)?,
-                flags: s(o + 24)?,
-                speed: s(o + 26)?,
-                fuel: s(o + 28)?,
-                reserved: [s(o + 30)?, s(o + 32)?, s(o + 34)?],
-            });
-            o += 36;
-        }
-        ensure!(nf >= 4, "WLD: fewer than 4 flight units");
-        let mut take = |len: usize| -> Result<Vec<u8>> {
-            let v = d.get(o..o + len).context("WLD truncated")?.to_vec();
-            o += len;
-            Ok(v)
-        };
-        let buf7 = take(TABLE)?;
-        let buf8 = take(TABLE)?;
-        let object_types = take(TABLE)?.into_iter().map(|b| b as i8).collect();
-        let grid = take(256)?;
-        let names_raw = d[o..d.len().min(o + NAMES_BYTES)].to_vec();
-        let names = name_table(&names_raw);
-        Ok(Self { header, ground_unit_count, world_object_count, objects, flights, buf7, buf8, object_types, grid, names_raw, names })
-    }
 
     /// Name table entry, "" when out of range.
     pub fn name(&self, i: i32) -> &str {
@@ -165,22 +100,6 @@ impl MissionWorld {
     pub fn ott(&self, shape: usize) -> i32 {
         self.object_types.get(shape).map_or(0, |&v| v as i32)
     }
-}
-
-/// Name pointer table: entry 0 is the start of the block, entry i the string after the i-th
-/// NUL (START parseWorld; VGAME V:4AE1 builds it the same way).
-fn name_table(raw: &[u8]) -> Vec<String> {
-    let s = |from: usize| -> String {
-        raw[from.min(raw.len())..].iter().take_while(|&&c| c != 0).map(|&c| c as char).collect()
-    };
-    let mut names = vec![s(0)];
-    for (i, &c) in raw.iter().enumerate() {
-        if c == 0 && names.len() < TABLE {
-            names.push(s(i + 1));
-        }
-    }
-    names.resize(TABLE, String::new());
-    names
 }
 
 /// One entry of the `findRandomObjectOfShape` candidate list (spec §4).
@@ -220,23 +139,6 @@ pub struct TheaterData {
 }
 
 impl TheaterData {
-    /// Load `<theater>.WLD/.3DG/.3DT`; `grid_size` is START's table DS:107E.
-    pub fn load(game: &GameDir, theater: usize, grid_size: [i16; 5]) -> Result<Self> {
-        let code = THEATERS.get(theater).context("theater index out of range")?;
-        let world = MissionWorld::parse(&game.read(&format!("{code}.WLD"))?).with_context(|| format!("{code}.WLD"))?;
-        let g = game.read(&format!("{code}.3DG"))?;
-        ensure!(g.len() >= 1810 && &g[0..2] == b"22", "{code}.3DG: bad file");
-        let g = [g[1298..1810].to_vec(), g[786..1298].to_vec(), g[274..786].to_vec(), g[18..274].to_vec(), g[2..18].to_vec()];
-        let ts = TileSets::parse(&game.read(&format!("{code}.3DT"))?).with_context(|| format!("{code}.3DT"))?;
-        let tiles = ts
-            .tiles
-            .iter()
-            .map(|lv| lv.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect())
-            .collect();
-        let mut td = Self { index: theater, date: None, world, g, tiles, cand_lod12: vec![Vec::new(); 256], cand_lod3: vec![Vec::new(); 256], grid_size };
-        td.build_candidates();
-        Ok(td)
-    }
 
     /// Decode a theater exported with [`serde_json`] and rebuild the candidate lists.
     pub fn from_json(json: &[u8]) -> Result<Self> {

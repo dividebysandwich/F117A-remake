@@ -2739,7 +2739,6 @@ dependencies = [
 name = "f117-formats"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "serde",
 ]
 

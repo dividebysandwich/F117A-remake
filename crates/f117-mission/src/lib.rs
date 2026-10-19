@@ -8,7 +8,7 @@ pub mod world;
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use f117_formats::{ALL_THEATERS, GameDir, THEATERS};
+use f117_formats::ALL_THEATERS;
 use serde::{Deserialize, Serialize};
 
 pub use rng::MscRand;
@@ -124,11 +124,6 @@ pub struct GameData {
 }
 
 impl GameData {
-    pub fn load(game: &GameDir) -> Result<Self> {
-        let tables = StartTables::load(game)?;
-        let theaters = (0..THEATERS.len()).map(|t| TheaterData::load(game, t, tables.grid_size)).collect::<Result<_>>()?;
-        Ok(Self { tables, theaters })
-    }
 
     /// Read the JSON export written by [`GameData::write_json`].
     pub fn load_json(dir: &Path) -> Result<Self> {
@@ -341,11 +336,6 @@ pub fn generate(data: &GameData, settings: &MissionSettings, seed: Seed) -> Resu
         }
     };
     generate_exact(data, settings, &input)
-}
-
-/// Load the game data and generate one mission.
-pub fn generate_from_dir(game: &GameDir, settings: &MissionSettings, seed: Seed) -> Result<Mission> {
-    generate(&GameData::load(game)?, settings, seed)
 }
 
 /// Generate from exact emulator inputs.

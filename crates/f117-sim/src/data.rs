@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, ensure};
-use f117_formats::{GameDir, THEATERS, terrain};
+use anyhow::{Context, Result};
+use f117_formats::{THEATERS, terrain};
 use serde::{Deserialize, Serialize};
 
 use crate::math::Trig;
@@ -111,101 +111,7 @@ pub struct SimData {
     pub theaters: Vec<TheaterTiles>,
 }
 
-fn cstr(b: &[u8]) -> String {
-    b.iter().take_while(|&&c| c != 0).map(|&c| c as char).collect::<String>().trim().to_string()
-}
-
 impl SimData {
-    /// Read everything from an original game directory.
-    pub fn load(game: &GameDir) -> Result<Self> {
-        let vgame = game.vgame()?;
-        let mut d = Self::from_vgame_image(&vgame.image)?;
-        for (i, th) in THEATERS.iter().enumerate() {
-            let lod4 = vgame.image.get(terrain::LOD4_GRIDS_OFFSET + i * 64..).context("VGAME: no LOD4 grids")?;
-            let grid = terrain::Grid::parse(&game.read(&format!("{th}.3DG"))?, lod4)?;
-            let ts = terrain::TileSets::parse(&game.read(&format!("{th}.3DT"))?)?;
-            let lv = |l: usize| -> Vec<Vec<(i16, i16, u8)>> {
-                ts.tiles.get(l).map(|v| v.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect()).unwrap_or_default()
-            };
-            let x3d = f117_formats::x3d::parse(&game.read(&format!("{th}.3DX"))?).with_context(|| format!("{th}.3DX"))?;
-            d.theaters.push(TheaterTiles { grid, objects: [lv(1), lv(2)], model_attr: x3d.models.iter().map(|m| m.attr).collect() });
-        }
-        Ok(d)
-    }
-
-    /// The VGAME tables only (no theater tiles).
-    pub fn from_vgame_image(img: &[u8]) -> Result<Self> {
-        ensure!(img.len() > DS + 0x3D90, "VGAME image too small");
-        let b = |o: usize| &img[DS + o..];
-        let w = |o: usize| i16::from_le_bytes([img[DS + o], img[DS + o + 1]]);
-        let threats = (0..N_THREATS)
-            .map(|i| {
-                let o = THREAT_TABLE + 14 * i;
-                ThreatType { name: cstr(&b(o)[..8]), lethality: w(o + 8), tier: w(o + 10), flags: w(o + 12) }
-            })
-            .collect();
-        let aircraft = (0..N_AIRCRAFT)
-            .map(|i| {
-                let o = AIRCRAFT_TABLE + 32 * i;
-                AircraftType {
-                    name: cstr(&b(o)[..7]),
-                    nato: cstr(&b(o + 7)[..11]),
-                    max_speed: w(o + 0x12),
-                    range: w(o + 0x14),
-                    agility: w(o + 0x16),
-                    radar: w(o + 0x18),
-                    model: w(o + 0x1A),
-                    unknown: w(o + 0x1C),
-                    kills: w(o + 0x1E),
-                }
-            })
-            .collect();
-        let missiles = (0..N_MISSILES)
-            .map(|i| {
-                let o = MISSILE_TABLE + 18 * i;
-                MissileType {
-                    name: cstr(&b(o)[..8]),
-                    lock_range: w(o + 8),
-                    max_speed: w(o + 10),
-                    class: w(o + 12),
-                    turn: w(o + 14),
-                    model: w(o + 16),
-                }
-            })
-            .collect();
-        let weapons = (0..N_WEAPONS)
-            .map(|i| {
-                let o = WEAPON_TABLE + 26 * i;
-                WeaponType { short_name: cstr(&b(o)[..10]), long_name: cstr(&b(o + 10)[..12]), spec: w(o + 22), picture: w(o + 24) }
-            })
-            .collect();
-        let compat = (0..N_WEAPONS)
-            .map(|r| {
-                let mut row = [0i8; 16];
-                for (c, v) in row.iter_mut().enumerate() {
-                    *v = img[DS + COMPAT_TABLE + r * 16 + c] as i8;
-                }
-                row
-            })
-            .collect();
-        let maneuver = (0..192).map(|i| w(MANEUVER_TABLE + 2 * i)).collect();
-        let trig = Trig { lut: (0..257).map(|i| w(SINE_TABLE + 2 * i)).collect() };
-        let stores_init = [w(STORES_INIT), w(STORES_INIT + 2), w(STORES_INIT + 4), w(STORES_INIT + 6)];
-        let start_dir = std::array::from_fn(|i| w(START_DIR + 2 * i));
-        Ok(Self {
-            threats,
-            aircraft,
-            missiles,
-            weapons,
-            compat,
-            maneuver,
-            trig,
-            stores_init,
-            gun_ammo_init: w(GUN_AMMO_INIT),
-            start_dir,
-            theaters: Vec::new(),
-        })
-    }
 
     /// Read `sim.json` and `theaters/<code>.json` from `dir` (`assets/sim`).
     pub fn load_json(dir: &Path) -> Result<Self> {

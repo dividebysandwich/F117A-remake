@@ -2,15 +2,12 @@
 //! level L (1..=4) tiles the 2^20-unit world with tiles of `TILE_WORLD[L]` world units; an
 //! object in a level-L tile is positioned and modelled in level-L units (4^(L-1) world units).
 
-use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 
 /// World units per level unit for LOD 0..=4.
 pub const LEVEL_UNIT: [f64; 5] = [0.5, 1.0, 4.0, 16.0, 64.0];
 /// Tiles per side for LOD 0..=4 (LOD4 includes a 2-cell border on each side).
 pub const GRID_DIM: [i32; 5] = [0x400, 0x100, 0x40, 0x10, 8];
-/// Image offset of the 9 LOD4 theater grids (8x8 each) in the unpacked VGAME.EXE (DS:0A68).
-pub const LOD4_GRIDS_OFFSET: usize = (0x383B - 0x1A18) * 16 + 0x0A68;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grid {
@@ -25,18 +22,6 @@ pub struct Grid {
 }
 
 impl Grid {
-    pub fn parse(data_3dg: &[u8], lod4: &[u8]) -> Result<Self> {
-        ensure!(data_3dg.len() == 1810, "3DG must be 1810 bytes, got {}", data_3dg.len());
-        ensure!(&data_3dg[0..2] == b"22", "bad 3DG signature");
-        ensure!(lod4.len() >= 64, "LOD4 grid needs 64 bytes");
-        Ok(Self {
-            lod4: lod4[..64].to_vec(),
-            lod3: data_3dg[0x12..0x112].to_vec(),
-            lod2: data_3dg[0x112..0x312].to_vec(),
-            lod1: data_3dg[0x312..0x512].to_vec(),
-        })
-    }
-
     /// Tile type at (col, row) on a LOD level (`process3dg`); 0 outside the grid.
     pub fn tile(&self, lod: usize, col: i32, row: i32) -> u8 {
         let (mut col, mut row) = (col, row);
@@ -74,41 +59,4 @@ pub struct TileObject {
 pub struct TileSets {
     /// `tiles[lod][tile_type]` = objects of that tile type.
     pub tiles: Vec<Vec<Vec<TileObject>>>,
-}
-
-impl TileSets {
-    pub fn parse(b: &[u8]) -> Result<Self> {
-        ensure!(b.len() >= 12 && &b[0..2] == b"11", "bad 3DT signature");
-        let rd = |p: usize| -> Result<u16> {
-            b.get(p..p + 2).map(|s| u16::from_le_bytes([s[0], s[1]])).ok_or_else(|| anyhow::anyhow!("3DT truncated"))
-        };
-        let n: Vec<usize> = (0..5).map(|i| rd(2 + 2 * i).map(|v| v as usize)).collect::<Result<_>>()?;
-        let mut p = 12;
-        let mut counts = Vec::new();
-        for &nl in &n {
-            ensure!(nl <= 32, "3DT: too many tile types");
-            counts.push((0..nl).map(|i| rd(p + 2 * i).map(|v| v as usize)).collect::<Result<Vec<_>>>()?);
-            p += 2 * nl;
-        }
-        let mut tiles = Vec::new();
-        for c in &counts {
-            let mut level = Vec::new();
-            for &k in c {
-                let mut objs = Vec::with_capacity(k);
-                for _ in 0..k {
-                    objs.push(TileObject {
-                        x: rd(p)? as i16,
-                        y: rd(p + 2)? as i16,
-                        z: rd(p + 4)? as i16,
-                        shape: rd(p + 6)? as u8,
-                    });
-                    p += 8;
-                }
-                level.push(objs);
-            }
-            tiles.push(level);
-        }
-        ensure!(p == b.len(), "3DT: {} trailing bytes", b.len() - p);
-        Ok(Self { tiles })
-    }
 }

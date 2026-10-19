@@ -106,6 +106,7 @@ fn update_camera(
     mfd: Res<MfdState>,
     view: Res<ViewState>,
     mut info: ResMut<TrackCam>,
+    papi: Res<crate::scenery::PapiSites>,
     player: Query<(&Aircraft, &WorldPos), (With<Player>, Without<TrackCamera>)>,
     mut cam: Query<(&mut Camera, &mut Projection, &mut WorldPos, &mut Transform), With<TrackCamera>>,
 ) {
@@ -120,9 +121,34 @@ fn update_camera(
     if !want {
         return;
     }
+    let eye = apos.0;
+    if mfd.ils {
+        // ILS: the runway ahead with its PAPI, zoomed just enough to read the lights.
+        let (h, _, _) = a.euler();
+        match ils_view(&papi.0, eye, h) {
+            Some(v) => {
+                tf.rotation = Transform::IDENTITY.looking_to(v.dir, Vec3::Y).rotation;
+                if pos.0 != eye {
+                    pos.0 = eye;
+                }
+                if let Projection::Perspective(p) = proj.as_mut() {
+                    *p = view_projection(v.tan_half_w);
+                }
+                let magnification = BASE_TAN_HALF_W / v.tan_half_w;
+                *info = TrackCam {
+                    live: true,
+                    name: ["ILS".into(), format!("RWY {:02}", v.runway)],
+                    range_km: Some(v.range_m / 1000.0),
+                    bearing: None,
+                    zoom: magnification.log2().round().clamp(0.0, 6.0) as u8 + 1,
+                };
+                return;
+            }
+            None => info.name = ["ILS".into(), "NO APPROACH".into()],
+        }
+    }
     let sim = &combat.sim;
     let t = sim.targeting();
-    let eye = apos.0;
     let target = if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
         let (e, n) = map_wu(o.x, o.y);
         Some(wu_to_bevy(e + 16.0, n - 16.0, 0.0))
@@ -161,6 +187,59 @@ fn update_camera(
     }
 }
 
+
+/// Half width (tangent) of the unzoomed camera: 38.5 pixels at f = 256.
+const BASE_TAN_HALF_W: f32 = 38.5 / 256.0;
+/// Widest ILS view (about 30 degrees each side).
+const MAX_TAN_HALF_W: f32 = 0.58;
+
+/// Projection with a given half-width tangent, keeping the MFD's 77x60 picture shape.
+fn view_projection(tan_half_w: f32) -> PerspectiveProjection {
+    let tan_half_h = tan_half_w * (30.0 / 0.75) / 38.5;
+    PerspectiveProjection { fov: 2.0 * tan_half_h.atan(), aspect_ratio: tan_half_w / tan_half_h, near: 20.0, far: 600_000.0, ..default() }
+}
+
+struct IlsView {
+    dir: Vec3,
+    tan_half_w: f32,
+    range_m: f32,
+    /// Runway number (landing heading / 10).
+    runway: u32,
+}
+
+/// The nearest runway end the aircraft is approaching (ahead, within 25 km and the approach
+/// cone): the camera looks at the runway centreline abeam its PAPI, as wide as the PAPI needs.
+fn ils_view(sites: &[crate::scenery::PapiSite], eye: bevy::math::DVec3, heading: f32) -> Option<IlsView> {
+    let ac = bevy::math::DVec2::new(eye.x, -eye.z);
+    let forward = bevy::math::DVec2::new(heading.sin() as f64, heading.cos() as f64);
+    let site = sites
+        .iter()
+        .filter_map(|s| {
+            let rel = ac - s.aim;
+            let along = rel.dot(s.toward);
+            let lateral = rel.dot(s.toward.perp()).abs();
+            let ok = (100.0..25_000.0).contains(&along) && lateral < along * 0.4 + 400.0 && forward.dot(-s.toward) > 0.5;
+            ok.then_some((along, s))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))?
+        .1;
+    let aim = bevy::math::DVec3::new(site.aim.x, 1.0, -site.aim.y);
+    let d = aim - eye;
+    let range = d.length();
+    let landing = -site.toward;
+    let deg = (landing.x.atan2(landing.y).to_degrees() + 360.0) % 360.0;
+    let runway = match (deg / 10.0).round() as u32 {
+        0 => 36,
+        n => n,
+    };
+    Some(IlsView {
+        dir: d.as_vec3().normalize(),
+        // Zoomed in far out, widening on short final so the PAPI stays in the picture.
+        tan_half_w: ((site.half_width / range) as f32).clamp(BASE_TAN_HALF_W * 0.05, MAX_TAN_HALF_W),
+        range_m: range as f32,
+        runway,
+    })
+}
 
 #[derive(Component)]
 struct TrackCamBackground;

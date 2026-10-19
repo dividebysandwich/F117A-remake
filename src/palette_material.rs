@@ -135,7 +135,8 @@ pub fn pack16(v: [f32; 16]) -> [Vec4; 4] {
 }
 
 /// Mesh tag layout for per-object haze: bits 0..2 level code (0..4 = LOD0..4, 5 = aircraft),
-/// bits 3..5 size class (.3DX attr & 7), bit 6 = no haze, bit 7 = dot billboard (`TAG_DOT`).
+/// bits 3..5 size class (.3DX attr & 7), bit 6 = no haze, bit 7 = dot billboard (`TAG_DOT`),
+/// bits 8..10 dot size multiplier (`dot_scale`).
 pub fn mesh_tag(level: u32, size_class: u32, no_fog: bool) -> u32 {
     (level & 7) | ((size_class & 7) << 3) | ((no_fog as u32) << 6)
 }
@@ -144,3 +145,7 @@ pub const LEVEL_AIRCRAFT: u32 = 5;
 /// Mesh tag bit of dot lights: the shader expands the unit quad around the object origin to a
 /// constant pixel size in each view.
 pub const TAG_DOT: u32 = 1 << 7;
+/// Dot size multiplier minus one (0..7) in mesh tag bits 8..10.
+pub fn dot_scale(scale: u32) -> u32 {
+    (scale.clamp(1, 8) - 1) << 8
+}

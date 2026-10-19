@@ -106,6 +106,10 @@ pub struct MfdState {
     pub map_heading_up: bool,
     /// Modern (high-resolution) displays; classic cockpit = the original 77x60 ones.
     pub hires: bool,
+    /// F9: ILS on. The camera page then shows the runway with its PAPI on an approach.
+    pub ils: bool,
+    /// Right page before ILS was switched on (restored when it goes off).
+    pub page_before_ils: Option<RightMfd>,
 }
 
 impl Default for MfdState {
@@ -119,6 +123,8 @@ impl Default for MfdState {
             flir: false,
             map_heading_up: false,
             hires: true,
+            ils: false,
+            page_before_ils: None,
         }
     }
 }
@@ -139,6 +145,7 @@ pub enum MfdCmd {
     ToggleOrient,
     Flir,
     Cam(CamDir),
+    Ils,
 }
 
 /// Sent by the cockpit's bezel buttons.
@@ -197,6 +204,7 @@ pub fn cmd_action(cmd: MfdCmd) -> Action {
         MfdCmd::ZoomOut => Action::MapZoomOut,
         MfdCmd::ToggleOrient => Action::MapOrientation,
         MfdCmd::Flir => Action::Flir,
+        MfdCmd::Ils => Action::Ils,
     }
 }
 
@@ -235,6 +243,15 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
         MfdCmd::Cam(d) => {
             state.right = RightMfd::Camera;
             state.cam_dir = d;
+        }
+        MfdCmd::Ils => {
+            state.ils = !state.ils;
+            if state.ils {
+                state.page_before_ils = Some(state.right);
+                state.right = RightMfd::Camera;
+            } else if let Some(p) = state.page_before_ils.take() {
+                state.right = p;
+            }
         }
     }
 }
@@ -354,6 +371,7 @@ fn mfd_keys(
             Action::CamRear => MfdCmd::Cam(CamDir::Rear),
             Action::CamRight => MfdCmd::Cam(CamDir::Right),
             Action::CamLeft => MfdCmd::Cam(CamDir::Left),
+            Action::Ils => MfdCmd::Ils,
             _ => continue,
         };
         apply(&mut state, &mut raster, cmd);

@@ -18,6 +18,17 @@ pub struct Geom {
     pub lamps: BTreeMap<u8, Vec<Vec3>>,
     /// White flashers by sequence phase (approach lighting), lit one phase at a time at night.
     pub strobes: BTreeMap<usize, Vec<Vec3>>,
+    /// PAPI light units (red below their angle, white above).
+    pub papi: Vec<PapiLight>,
+}
+
+/// One PAPI light unit: block-local position, horizontal unit vector towards the approaching
+/// aircraft, and the elevation angle (radians) above which it shows white.
+#[derive(Clone, Copy, Debug)]
+pub struct PapiLight {
+    pub pos: Vec3,
+    pub toward: Vec3,
+    pub angle: f32,
 }
 
 /// A colour byte darkened up to three steps along its 16-colour ramp for faces turned away

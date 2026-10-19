@@ -107,6 +107,8 @@ fn vertex(v: Vertex) -> VertexOutput {
         if (globals.dots.x > 0.0) {
             px = min(px, max(globals.dots.x * 0.5 * vp.y * view.clip_from_view[1][1], DOT_MIN_PIXELS));
         }
+        // Larger lights (PAPI): size multiplier in tag bits 8..10.
+        px = px * f32(((tag >> 8u) & 7u) + 1u);
         out.world_position = center;
         out.clip_position = clip + vec4<f32>(corner * px * 2.0 / vp * clip.w, 0.0, 0.0);
     }

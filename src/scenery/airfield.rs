@@ -10,7 +10,7 @@ use bevy::math::DVec2;
 use bevy::prelude::*;
 
 use super::content::{Frame, building, dir3, strip};
-use super::geom::{Geom, rect};
+use super::geom::{Geom, PapiLight, rect};
 use super::ground::{Ground, Runway};
 use super::network::{Building, Kind, Rng, Roof, dist_to_segment};
 
@@ -34,6 +34,9 @@ const BARRETTE: f64 = 30.0;
 /// Sequenced flasher groups (one lit at a time, running towards the runway) and their colour.
 pub const STROBE_PHASES: usize = 8;
 pub const STROBE: u8 = WHITE;
+/// PAPI colours below and above a unit's angle.
+pub const PAPI_LOW: u8 = RED;
+pub const PAPI_HIGH: u8 = WHITE;
 
 pub struct Taxiway {
     pub pts: Vec<DVec2>,
@@ -52,6 +55,44 @@ pub struct Airfield {
     pub helipad: Option<(DVec2, DVec2)>,
     /// Apron floodlight masts.
     pub floods: Vec<DVec2>,
+    /// PAPI per runway end.
+    pub papi: Vec<Papi>,
+}
+
+/// A PAPI for landing towards `-end` (the runway end it serves is at `u = end * half_len`):
+/// four units from the runway outwards.
+pub struct Papi {
+    pub end: f64,
+    pub units: [DVec2; 4],
+}
+
+/// PAPI angles from the runway outwards (minutes of arc): 3°30', 3°10', 2°50', 2°30', so a 3°
+/// approach shows two white (outer) and two red (inner).
+const PAPI_MINUTES: [f32; 4] = [210.0, 190.0, 170.0, 150.0];
+/// Distance of the PAPI from the runway end (metres).
+const PAPI_IN: f64 = 300.0;
+
+/// What the ILS camera looks at on an approach: the runway centreline abeam the PAPI, and how
+/// wide the view must be there to include the whole PAPI (ground metres, x east, y north).
+#[derive(Clone, Copy, Debug)]
+pub struct PapiSite {
+    pub aim: DVec2,
+    /// Unit direction from the PAPI towards approaching aircraft.
+    pub toward: DVec2,
+    /// Half width of the view at the aim point (metres).
+    pub half_width: f64,
+}
+
+pub fn papi_sites(a: &Airfield) -> Vec<PapiSite> {
+    let ax = Axes::new(&a.runway);
+    a.papi
+        .iter()
+        .map(|p| {
+            let aim = ax.at(p.end * (a.runway.half_len - PAPI_IN), 0.0);
+            let outer = p.units.iter().map(|u| (*u - a.runway.c).dot(ax.v).abs()).fold(0.0, f64::max);
+            PapiSite { aim, toward: ax.u * p.end, half_width: outer * 1.1 + 10.0 }
+        })
+        .collect()
 }
 
 /// Runway coordinates -> ground metres.
@@ -77,7 +118,7 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
     let ax = Axes::new(rw);
     let (l, w) = (rw.half_len, rw.half_width);
     let half = if w > 50.0 { 12.0 } else { 9.0 };
-    let mut a = Airfield { runway: *rw, taxiways: vec![], pads: vec![], buildings: vec![], holds: vec![], helipad: None, floods: vec![] };
+    let mut a = Airfield { runway: *rw, taxiways: vec![], pads: vec![], buildings: vec![], holds: vec![], helipad: None, floods: vec![], papi: vec![] };
     let free_line = |p: DVec2, q: DVec2, r: f64| {
         let n = (p.distance(q) / 20.0).ceil().max(1.0) as usize;
         (0..=n).all(|i| ground.is_dry_clear(p.lerp(q, i as f64 / n as f64), r))
@@ -89,6 +130,11 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
             && free_line(ax.at(-end, s * w), ax.at(-end, s * vt), half)
             && free_line(ax.at(end, s * w), ax.at(end, s * vt), half)
     }) else {
+        // No taxiway: the PAPI on the left of the landing direction, 25 m out.
+        for end in [-1.0, 1.0] {
+            let units = std::array::from_fn(|i| ax.at(end * (l - PAPI_IN), -end * (w + 25.0 + i as f64 * 15.0)));
+            a.papi.push(Papi { end, units });
+        }
         return a;
     };
     let mut main = vec![ax.at(-end, s * (w - 5.0)), ax.at(-end, s * vt)];
@@ -225,6 +271,26 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
             a.buildings.push(Building { p, dir: ax.v.rotate(DVec2::from_angle(rng.range(-0.8, 0.8))), kind: Kind::Windsock, l: 1.0, w: 1.0, h: 7.0, roof: Roof::Flat, wall: 0xCB, roof_colour: 0xCB, seed: rng.u64() });
         }
     }
+    // PAPI between the runway and the parallel taxiway, clear of the connectors: the units
+    // spread over the strip (at most 15 m apart), moved along the runway if a connector or an
+    // object is in the way.
+    let (inner, outer) = (w + 8.0, vt - half - 8.0);
+    let spacing = ((outer - inner) / 3.0).min(15.0);
+    for end in [-1.0, 1.0] {
+        let units_at = |u: f64| -> [DVec2; 4] { std::array::from_fn(|i| ax.at(u, s * (inner + i as f64 * spacing))) };
+        let clear = |units: &[DVec2; 4]| {
+            units.iter().all(|&p| {
+                ground.is_dry_clear(p, 4.0) && !a.taxiways.iter().any(|t| t.pts.windows(2).any(|w| dist_to_segment(p, w[0], w[1]) < t.half + 10.0))
+            })
+        };
+        let units = [0.0, 40.0, -40.0, 80.0, -80.0, 120.0, -120.0]
+            .iter()
+            .map(|d| units_at(end * (l - PAPI_IN + d)))
+            .find(|u| clear(u))
+            .unwrap_or_else(|| units_at(end * (l - PAPI_IN)));
+        a.papi.push(Papi { end, units });
+    }
+
     // Guidance signs beside the holding points.
     for &(p, d) in &a.holds.clone() {
         a.buildings.push(Building { p: p + d.perp() * (half + 7.0), dir: d.perp(), kind: Kind::Sign, l: 3.2, w: 0.5, h: 1.6, roof: Roof::Flat, wall: 0xC8, roof_colour: 0xEF, seed: 0 });
@@ -328,12 +394,13 @@ pub fn build(a: &Airfield) -> Geom {
             v += 6.0;
         }
         approach(&mut g, &f, &ax, end, l, w);
-        // PAPI on the left of the landing direction (landing towards -end), 300 m in.
-        let left = -end;
-        for i in 0..4 {
-            let p = ax.at(end * (l - 300.0), left * (w + 18.0 + i as f64 * 9.0));
-            g.block(0xE6, 0xE8, &rect(f.at(p, 0.0), Vec2::new(ax.u.x as f32, -ax.u.y as f32), 1.2, 0.9), 0.0, 0.8);
-            g.lamp(if i < 2 { RED } else { WHITE }, f.at(p, 0.9) + dir3(ax.u) * end as f32 * -0.7);
+    }
+    // PAPI units: housings and the lights facing the approach.
+    for papi in &a.papi {
+        let toward = dir3(ax.u) * papi.end as f32;
+        for (p, minutes) in papi.units.iter().zip(PAPI_MINUTES) {
+            g.block(0xE6, 0xE8, &rect(f.at(*p, 0.0), Vec2::new(ax.u.x as f32, -ax.u.y as f32), 2.0, 3.0), 0.0, 1.4);
+            g.papi.push(PapiLight { pos: f.at(*p, 1.5) + toward * 1.1, toward, angle: (minutes / 60.0).to_radians() });
         }
     }
 

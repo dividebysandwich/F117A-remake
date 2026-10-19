@@ -11,6 +11,8 @@
 //! original's lights come on.
 
 mod airfield;
+
+pub use airfield::PapiSite;
 mod content;
 mod geom;
 mod ground;
@@ -26,7 +28,7 @@ use bevy::prelude::*;
 
 use crate::models::{ModelAssets, ModelLibrary};
 use crate::palette::{DetailLevel, Palette, REMAP_DETAIL_HIGH};
-use crate::palette_material::{TAG_DOT, mesh_tag};
+use crate::palette_material::{TAG_DOT, dot_scale, mesh_tag};
 use crate::settings::AppState;
 use crate::world::{ShapeHandles, Theater, WorldAnchor, WorldPos, bevy_to_wu, WU};
 use content::{BLOCK, Tier};
@@ -36,11 +38,11 @@ pub struct SceneryPlugin;
 
 impl Plugin for SceneryPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Blocks>().init_resource::<Airfields>().add_systems(OnExit(AppState::Flight), cleanup).add_systems(
+        app.init_resource::<Blocks>().init_resource::<Airfields>().init_resource::<PapiSites>().add_systems(OnExit(AppState::Flight), cleanup).add_systems(
             Update,
             (
                 build_scenery.run_if(resource_exists::<Theater>).run_if(not(resource_exists::<Scenery>)),
-                (stream_blocks, airfields, lamps_at_night).run_if(resource_exists::<Scenery>),
+                (stream_blocks, airfields, lamps_at_night, papi_lights).run_if(resource_exists::<Scenery>),
             )
                 .chain()
                 .run_if(in_state(AppState::Flight)),
@@ -71,6 +73,10 @@ pub struct Scenery {
 #[derive(Resource, Default)]
 struct Blocks(HashMap<(Tier, i32, i32), Entity>);
 
+/// Where the ILS camera looks on an approach to each runway end (see `trackcam.rs`).
+#[derive(Resource, Default)]
+pub struct PapiSites(pub Vec<airfield::PapiSite>);
+
 /// Root entities of the airfields (built whole, shown with the scenery setting).
 #[derive(Resource, Default)]
 struct Airfields {
@@ -81,6 +87,21 @@ struct Airfields {
 /// A batch of approach flashers lit in its turn of the sequence.
 #[derive(Component)]
 struct Strobe(usize);
+
+/// A PAPI light unit (a one-dot batch at its transform; data from `geom::PapiLight`).
+#[derive(Component)]
+struct Papi {
+    toward: Vec3,
+    angle: f32,
+}
+
+/// PAPI lights are seen within this distance (metres) and this cosine of the angle off the
+/// approach axis (about ±30°).
+const PAPI_RANGE: f32 = 10_000.0;
+const PAPI_COS_SPREAD: f32 = 0.87;
+/// PAPI lights are drawn this many times the size of other lights, so the colours read on a
+/// long final.
+const PAPI_DOT_SCALE: u32 = 3;
 
 /// Root of a streamed block.
 #[derive(Component)]
@@ -131,6 +152,7 @@ fn build_scenery(
         net.lines.len(),
         start.elapsed()
     );
+    commands.insert_resource(PapiSites(fields.iter().flat_map(airfield::papi_sites).collect()));
     commands.insert_resource(Scenery { style, ground, net, airfields: fields });
 }
 
@@ -140,6 +162,7 @@ fn cleanup(mut commands: Commands, mut blocks: ResMut<Blocks>, mut airfields: Re
         commands.entity(e).try_despawn();
     }
     commands.remove_resource::<Scenery>();
+    commands.insert_resource(PapiSites::default());
 }
 
 fn stream_blocks(
@@ -261,6 +284,7 @@ fn lamps_at_night(
 
 /// Builds the airfields once, then makes them follow the scenery setting (and Alt-D detail 0
 /// hides them).
+#[allow(clippy::too_many_arguments)]
 fn airfields(
     mut commands: Commands,
     scenery: Res<Scenery>,
@@ -274,7 +298,22 @@ fn airfields(
         airfields.spawned = true;
         for a in &scenery.airfields {
             let c = a.runway.c;
-            let e = spawn_block(&mut commands, &mut meshes, &palette, airfield::build(a), DVec3::new(c.x, 0.0, -c.y), Tier::Main);
+            let mut geom = airfield::build(a);
+            let papi = std::mem::take(&mut geom.papi);
+            let e = spawn_block(&mut commands, &mut meshes, &palette, geom, DVec3::new(c.x, 0.0, -c.y), Tier::Main);
+            for l in papi {
+                let light = commands
+                    .spawn((
+                        Mesh3d(meshes.add(dot_batch(&[Vec3::ZERO]))),
+                        MeshMaterial3d(palette.line_material(airfield::PAPI_LOW)),
+                        MeshTag(mesh_tag(1, 6, false) | TAG_DOT | dot_scale(PAPI_DOT_SCALE)),
+                        Transform::from_translation(l.pos),
+                        bevy::light::NotShadowCaster,
+                        Papi { toward: l.toward, angle: l.angle },
+                    ))
+                    .id();
+                commands.entity(e).add_child(light);
+            }
             airfields.roots.push(e);
         }
     }
@@ -282,6 +321,33 @@ fn airfields(
     for &e in &airfields.roots {
         if let Ok(mut vis) = vis.get_mut(e) {
             vis.set_if_neq(v);
+        }
+    }
+}
+
+/// PAPI: each unit shows white when the main view is above its angle, red below; seen only
+/// from the approach side. Day and night, like the real lights.
+#[allow(clippy::type_complexity)]
+fn papi_lights(
+    palette: Res<Palette>,
+    cameras: Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<crate::trackcam::TrackCamera>)>,
+    mut lights: Query<(&Papi, &GlobalTransform, &mut MeshMaterial3d<crate::palette_material::PaletteMaterial>, &mut Visibility)>,
+) {
+    // The main view (cockpit, external or free camera).
+    let Some((_, eye)) = cameras.iter().find(|(c, _)| c.is_active) else { return };
+    let eye = eye.translation();
+    let (low, high) = (palette.line_material(airfield::PAPI_LOW), palette.line_material(airfield::PAPI_HIGH));
+    for (papi, tf, mut material, mut vis) in &mut lights {
+        let d = eye - tf.translation();
+        let flat = Vec3::new(d.x, 0.0, d.z);
+        let dist = flat.length();
+        let seen = dist > 1.0 && dist < PAPI_RANGE && flat.dot(papi.toward) > dist * PAPI_COS_SPREAD;
+        vis.set_if_neq(if seen { Visibility::Inherited } else { Visibility::Hidden });
+        if seen {
+            let want = if d.y.atan2(dist) > papi.angle { &high } else { &low };
+            if material.0 != *want {
+                material.0 = want.clone();
+            }
         }
     }
 }

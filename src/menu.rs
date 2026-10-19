@@ -21,6 +21,8 @@ impl Plugin for MenuPlugin {
             .insert_resource(VrAvailable(vr_available()))
             .add_systems(OnEnter(AppState::Menu), spawn_menu_camera)
             .add_systems(OnExit(AppState::Menu), despawn_menu_camera)
+            .add_systems(OnEnter(AppState::Debrief), spawn_menu_camera)
+            .add_systems(OnExit(AppState::Debrief), despawn_menu_camera)
             .add_systems(EguiPrimaryContextPass, menu_ui.run_if(in_state(AppState::Menu)));
     }
 }
@@ -137,7 +139,7 @@ fn despawn_menu_camera(mut commands: Commands, q: Query<Entity, With<MenuCamera>
 }
 
 // 80s military terminal: green phosphor on black.
-const BG: egui::Color32 = egui::Color32::from_rgb(4, 12, 6);
+pub(crate) const BG: egui::Color32 = egui::Color32::from_rgb(4, 12, 6);
 const FIELD: egui::Color32 = egui::Color32::from_rgb(8, 28, 13);
 const HOVER: egui::Color32 = egui::Color32::from_rgb(18, 70, 32);
 pub(crate) const GREEN: egui::Color32 = egui::Color32::from_rgb(64, 255, 110);
@@ -187,7 +189,7 @@ fn sky_facts(sky: Sky) -> &'static [&'static str] {
     }
 }
 
-fn apply_terminal_style(style: &mut egui::Style) {
+pub(crate) fn apply_terminal_style(style: &mut egui::Style) {
     use egui::{CornerRadius, FontFamily::Monospace, FontId, Shadow, Stroke, TextStyle};
     style.text_styles = [
         (TextStyle::Heading, FontId::new(26.0, Monospace)),
@@ -232,7 +234,7 @@ fn apply_terminal_style(style: &mut egui::Style) {
 }
 
 /// Hover text: a short list of facts.
-fn facts(resp: egui::Response, facts: &[&str]) -> egui::Response {
+pub(crate) fn facts(resp: egui::Response, facts: &[&str]) -> egui::Response {
     resp.on_hover_ui(|ui| {
         ui.set_max_width(380.0);
         for f in facts {
@@ -241,7 +243,7 @@ fn facts(resp: egui::Response, facts: &[&str]) -> egui::Response {
     })
 }
 
-fn section(ui: &mut egui::Ui, title: &str) {
+pub(crate) fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(4.0);
     ui.label(egui::RichText::new(format!("[ {} ]", title.to_ascii_uppercase())).color(AMBER).size(14.0));
 }
@@ -275,7 +277,7 @@ fn slide_switch(ui: &mut egui::Ui, label: &str, modern: &mut bool) -> egui::Resp
     resp
 }
 
-fn big_button(text: &str) -> egui::Button<'static> {
+pub(crate) fn big_button(text: &str) -> egui::Button<'static> {
     egui::Button::new(egui::RichText::new(text).size(22.0)).min_size(egui::vec2(170.0, 50.0))
 }
 

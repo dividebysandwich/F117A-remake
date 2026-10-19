@@ -10,6 +10,8 @@ pub enum AppState {
     /// `--viewer`: model browser.
     Viewer,
     Flight,
+    /// Mission results after a flight.
+    Debrief,
 }
 
 /// Ordering of the setup done when entering the flight (or viewer).

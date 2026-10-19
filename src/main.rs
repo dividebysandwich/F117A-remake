@@ -6,6 +6,7 @@ mod cockpit;
 mod cockpit3d;
 mod combat;
 mod crash_log;
+mod debrief;
 mod dots;
 mod fires;
 mod flight;
@@ -89,7 +90,7 @@ fn main() {
     .insert_resource(flight::SimTables::load())
     .add_plugins(settings::configure)
     .add_plugins((palette::PalettePlugin, models::ModelsPlugin, dots::DotsPlugin, canvas::CanvasPlugin))
-    .add_plugins((menu::MenuPlugin, viewer::ViewerPlugin))
+    .add_plugins((menu::MenuPlugin, debrief::DebriefPlugin, viewer::ViewerPlugin))
     .add_plugins((
         world::WorldPlugin,
         freecam::FreeCamPlugin,

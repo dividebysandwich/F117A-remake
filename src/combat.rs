@@ -862,7 +862,10 @@ fn end_overlay(
         Ok(mut o) => {
             o.timer += real.delta_secs();
             if o.timer > END_SECONDS || (o.timer > 1.0 && keys.get_just_pressed().next().is_some()) {
-                next.set(AppState::Menu);
+                if let Some(c) = &combat {
+                    commands.insert_resource(crate::debrief::Debrief { title: end.title.clone(), report: c.sim.mission_report() });
+                }
+                next.set(AppState::Debrief);
             }
         }
         Err(_) => {

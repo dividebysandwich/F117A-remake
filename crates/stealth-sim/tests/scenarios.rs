@@ -318,6 +318,10 @@ fn aim9_shot(d: &Data, weather: Weather) -> bool {
     if killed {
         assert!(sim.flights()[1].flags & 0x20 != 0);
         assert!(sim.event_log().iter().any(|e| e.kind == 3 && e.arg == 9));
+        // The An-72 has no radar and never saw the player.
+        let r = sim.mission_report();
+        assert_eq!((r.air_kills, r.unseen_kills, r.weapons_fired), (1, 1, 1));
+        assert!(r.timeline.iter().any(|t| t.text == "Shot down An-72"), "{:?}", r.timeline);
     }
     killed
 }
@@ -363,6 +367,9 @@ fn bomb_vs_target_uses_effectiveness_table() {
             assert!(sim.objectives().primary_done);
             assert_eq!(sim.objectives().waypoint, 2);
             assert!(sim.event_log().iter().any(|e| e.kind & 0x80 != 0 && matches!(e.kind & 0x3F, 1 | 12)));
+            let r = sim.mission_report();
+            assert!(r.primary_done && r.training && r.ground_kills >= 1);
+            assert!(r.timeline.iter().any(|t| t.text.ends_with("(primary)")), "{:?}", r.timeline);
         } else {
             assert!(msgs.iter().any(|s| s.ends_with(" misses ")), "{msgs:?}");
         }

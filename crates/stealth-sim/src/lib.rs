@@ -7,6 +7,7 @@ mod ai;
 mod missiles;
 mod objectives;
 mod radar;
+pub mod score;
 mod targeting;
 mod tiles;
 mod weapons;

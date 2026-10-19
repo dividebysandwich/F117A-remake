@@ -1,18 +1,24 @@
 //! Diagnostics for crashes that leave no trace (seen on the Steam Frame): a status line every
 //! few seconds (memory, temperature, frame times, entity and asset counts, the player's flight
-//! state), a line for every long frame, and a last line when the process dies from a signal or
-//! a panic. A log that ends without a "fatal" line means the process was killed with SIGKILL
+//! state), a line for every long frame followed by the last frames' history (head direction
+//! relative to the nose, entity and mesh churn), and a last line when the process dies from a
+//! signal or a panic. A log that ends without a "fatal" line means the process was killed with SIGKILL
 //! (usually the out-of-memory killer; `journalctl -k` shows it).
+
+use std::collections::VecDeque;
 
 use bevy::prelude::*;
 
 use crate::flight::{Aircraft, Player};
+use crate::trackcam::TrackCamera;
 use crate::settings::AppState;
 
 /// Seconds between status lines.
 const INTERVAL: f64 = 5.0;
 /// Frames longer than this are logged at once (GPU stalls before a device loss).
 const HITCH: f64 = 0.25;
+/// Frames of history printed after a long frame.
+const HISTORY: usize = 40;
 
 pub struct CrashLogPlugin;
 
@@ -43,6 +49,45 @@ struct Stats {
     frames: u32,
     worst: f64,
     state: Option<AppState>,
+    history: VecDeque<Frame>,
+    frame: u64,
+}
+
+/// One frame of the history.
+struct Frame {
+    n: u64,
+    ms: f64,
+    /// Head direction relative to the nose (degrees: right, up).
+    look: Option<(f32, f32)>,
+    entities: usize,
+    meshes: usize,
+    alt: f32,
+    knots: f32,
+}
+
+impl Frame {
+    fn line(&self, prev: Option<&Frame>) -> String {
+        let delta = |a: usize, b: Option<usize>| b.map_or(String::new(), |b| format!("{:+}", a as i64 - b as i64));
+        format!(
+            "#{} {:.0} ms look {} | entities {}{} meshes {}{} | alt {:.0} ft {:.0} kt",
+            self.n,
+            self.ms,
+            self.look.map_or("?".into(), |(r, u)| format!("right {r:.0} up {u:.0}")),
+            self.entities,
+            delta(self.entities, prev.map(|p| p.entities)),
+            self.meshes,
+            delta(self.meshes, prev.map(|p| p.meshes)),
+            self.alt,
+            self.knots,
+        )
+    }
+}
+
+/// Direction of the first active view camera relative to the aircraft's nose.
+fn look(a: &Aircraft, cameras: &Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<TrackCamera>)>) -> Option<(f32, f32)> {
+    let (_, tf) = cameras.iter().filter(|(c, _)| c.is_active).max_by_key(|(c, _)| c.order)?;
+    let d = a.orientation.inverse() * tf.forward().as_vec3();
+    Some((d.x.atan2(-d.z).to_degrees(), d.y.clamp(-1.0, 1.0).asin().to_degrees()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -55,13 +100,34 @@ fn status(
     images: Res<Assets<Image>>,
     materials: Res<Assets<StandardMaterial>>,
     player: Query<&Aircraft, With<Player>>,
+    cameras: Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<TrackCamera>)>,
 ) {
     let now = time.elapsed_secs_f64();
     let dt = time.delta_secs_f64();
     stats.frames += 1;
+    stats.frame += 1;
     stats.worst = stats.worst.max(dt);
+    let a = player.single().ok();
+    let frame = Frame {
+        n: stats.frame,
+        ms: dt * 1000.0,
+        look: a.and_then(|a| look(a, &cameras)),
+        entities: entities.iter().count(),
+        meshes: meshes.len(),
+        alt: a.map_or(0.0, |a| a.altitude),
+        knots: a.map_or(0.0, |a| a.velocity / 27.0),
+    };
+    if stats.history.len() == HISTORY {
+        stats.history.pop_front();
+    }
+    stats.history.push_back(frame);
     if dt > HITCH && stats.frames > 1 {
-        warn!("diag: long frame {:.0} ms", dt * 1000.0);
+        warn!("diag: long frame {:.0} ms; the frames before it:", dt * 1000.0);
+        let mut prev = None;
+        for f in &stats.history {
+            warn!("diag:   {}", f.line(prev));
+            prev = Some(f);
+        }
     }
     let state = state.map(|s| *s.get());
     if state != stats.state {
@@ -72,8 +138,9 @@ fn status(
         return;
     }
     let fps = stats.frames as f64 / (now - stats.last);
-    let flight = player.single().map_or(String::new(), |a| {
-        format!(" | alt {:.0} ft speed {:.0} kt ground {}", a.altitude, a.velocity / 27.0, a.on_ground)
+    let flight = a.map_or(String::new(), |a| {
+        let look = look(a, &cameras).map_or("?".into(), |(r, u)| format!("right {r:.0} up {u:.0}"));
+        format!(" | alt {:.0} ft speed {:.0} kt ground {} look {look}", a.altitude, a.velocity / 27.0, a.on_ground)
     });
     info!(
         "diag: {:.0} fps worst {:.0} ms | rss {} MB avail {} MB swap free {} MB | temp {} | entities {} meshes {} images {} materials {}{}",
@@ -83,7 +150,7 @@ fn status(
         meminfo_kb("MemAvailable").map_or(-1, |k| k / 1024),
         meminfo_kb("SwapFree").map_or(-1, |k| k / 1024),
         max_temp().map_or("?".into(), |t| format!("{t:.0} C")),
-        entities.iter().count(),
+        stats.history.back().map_or(0, |f| f.entities),
         meshes.len(),
         images.len(),
         materials.len(),

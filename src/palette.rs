@@ -291,6 +291,7 @@ fn update_globals(
     lighting: Res<crate::lighting::LightingState>,
     weather: Res<crate::weather::WeatherState>,
     origin: Res<crate::world::FloatingOrigin>,
+    time: Res<Time>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     let Some(mut buf) = buffers.get_mut(&palette.globals) else { return };
@@ -313,6 +314,7 @@ fn update_globals(
     g.light_info.x = lighting.lights.len() as f32;
     g.light_info.y = lighting.daylight;
     g.dots.x = if settings.vr { crate::dots::XR_ANGLE } else { 0.0 };
+    g.dots.y = time.elapsed_secs_wrapped() % 3600.0;
     for (i, (p, c)) in lighting.lights.iter().enumerate() {
         g.local_lights[2 * i] = *p;
         g.local_lights[2 * i + 1] = *c;

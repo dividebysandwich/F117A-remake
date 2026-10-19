@@ -6,6 +6,7 @@ mod cockpit;
 mod cockpit3d;
 mod combat;
 mod dots;
+mod fires;
 mod flight;
 mod font;
 mod freecam;
@@ -90,7 +91,8 @@ fn main() {
     ))
     .add_plugins((hud::HudPlugin, mfd::MfdPlugin, panel::PanelPlugin))
     .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin, trails::TrailsPlugin))
-    .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin, weather::WeatherPlugin));
+    .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin, weather::WeatherPlugin))
+    .add_plugins(fires::FiresPlugin);
     mission::from_args(&mut app);
     if let Some(scale) = std::env::args()
         .collect::<Vec<_>>()

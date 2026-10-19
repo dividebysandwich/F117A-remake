@@ -13,6 +13,7 @@
 mod airfield;
 
 pub use airfield::PapiSite;
+pub use network::Rng;
 mod content;
 mod geom;
 mod ground;
@@ -22,7 +23,7 @@ mod style;
 use std::collections::HashMap;
 
 use bevy::asset::RenderAssetUsages;
-use bevy::math::DVec3;
+use bevy::math::{DVec2, DVec3};
 use bevy::mesh::{Indices, MeshTag, PrimitiveTopology};
 use bevy::prelude::*;
 
@@ -68,6 +69,59 @@ pub struct Scenery {
     ground: ground::Ground,
     net: network::Network,
     airfields: Vec<airfield::Airfield>,
+}
+
+impl Scenery {
+    /// The theater has generated towns (the green theaters).
+    pub fn has_towns(&self) -> bool {
+        !self.net.towns.is_empty()
+    }
+
+    /// Open land (not water or concrete) clear of raised objects by `r` metres.
+    pub fn is_open(&self, p: DVec2, r: f64) -> bool {
+        self.ground.is_free(p, r)
+    }
+
+    /// Where a conventional war burns (fires.rs): in and around the towns and along the roads
+    /// and the original road lines, on open ground. Positions in metres (east, north) and
+    /// whether the fire is a big one.
+    pub fn war_sites(&self, seed: u64) -> Vec<(DVec2, bool)> {
+        let mut rng = network::Rng::new(seed);
+        let mut out = Vec::new();
+        let mut place = |p: DVec2, big: bool| {
+            if self.ground.is_free(p, 8.0) {
+                out.push((p, big));
+            }
+        };
+        for t in &self.net.towns {
+            let n = match t.kind {
+                network::TownKind::City => 1 + (rng.u64() % 2) as usize,
+                network::TownKind::Town => rng.chance(0.2) as usize,
+                network::TownKind::Village => rng.chance(0.03) as usize,
+            };
+            for _ in 0..n {
+                let a = rng.range(0.0, std::f64::consts::TAU);
+                let p = t.c + DVec2::from_angle(a) * rng.range(0.0, t.r * 1.1);
+                let big = t.kind == network::TownKind::City && rng.chance(0.5);
+                place(p, big);
+            }
+        }
+        // Burning vehicles along the roads, about one per 150 km.
+        let roads = self.net.roads.iter().filter(|r| r.kind != network::RoadKind::Street).map(|r| r.pts.as_slice());
+        for pts in roads.chain(self.ground.highways.iter().map(|h| h.as_slice())) {
+            for w in pts.windows(2) {
+                let len = w[0].distance(w[1]);
+                if !rng.chance((len / 150_000.0).min(1.0)) {
+                    continue;
+                }
+                let along = (w[1] - w[0]) / len.max(1e-6);
+                let p = w[0] + along * rng.range(0.0, len) + along.perp() * rng.range(-40.0, 40.0);
+                let big = rng.chance(0.15);
+                place(p, big);
+            }
+        }
+        out
+    }
 }
 
 #[derive(Resource, Default)]

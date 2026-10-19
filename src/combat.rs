@@ -94,6 +94,10 @@ pub struct Combat {
     pub alpha: f32,
     /// Explosions of the steps of this frame: (map x, map y, viewZ altitude, kind).
     pub explosions: Vec<(i32, i32, i32, i32)>,
+    /// Things destroyed on the ground in the steps of this frame (they burn, fires.rs).
+    pub kills: Vec<Kill>,
+    /// Map position of the falling wreck (it burns where it lands).
+    wreck: Option<(i32, i32)>,
     /// Number of sim frames run this frame.
     pub steps: u32,
     sim_waypoint: i32,
@@ -103,6 +107,23 @@ pub struct Combat {
     /// WLD names of the mission world (object type names).
     names: Vec<String>,
     log: bool,
+}
+
+/// Something destroyed on the ground: map position and whether it was a vehicle (else a
+/// building, installation or ship).
+#[derive(Debug, Clone, Copy)]
+pub struct Kill {
+    pub x: i32,
+    pub y: i32,
+    pub vehicle: bool,
+}
+
+/// Object type names of vehicles (small fires); everything else burns like a building.
+fn is_vehicle(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    ["mobile", "tanks", "boat", "airplane", "ss missile", "scud", "trawler", "trail"].iter().any(|k| n.contains(k))
+        || n == "tank"
+        || n == "missile"
 }
 
 /// What the end overlay shows.
@@ -207,6 +228,8 @@ fn start_combat(
         quit: false,
         alpha: 0.0,
         explosions: Vec::new(),
+        kills: Vec::new(),
+        wreck: None,
         steps: 0,
         sim_waypoint: 0,
         end: None,
@@ -370,6 +393,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     let StepParams { time, mut player, controls, hud, mfd, view, mut msgs, mut accel, mut tiles, collision, mut flash, mut sounds } = p;
     let combat = &mut *combat;
     combat.explosions.clear();
+    combat.kills.clear();
     combat.steps = 0;
     let Ok((mut a, pos)) = player.single_mut() else { return };
     if combat.quit && combat.sim.mission_end().is_none() {
@@ -411,8 +435,26 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                     a.altitude += 500.0;
                     a.autopilot_alt = 0.0;
                 }
-                SimEvent::Explosion { x, y, alt, kind } => combat.explosions.push((x, y, alt, kind)),
+                SimEvent::Explosion { x, y, alt, kind } => {
+                    combat.explosions.push((x, y, alt, kind));
+                    // Crashed aircraft leave a burning wreck.
+                    if kind == -16 {
+                        combat.kills.push(Kill { x, y, vehicle: true });
+                    }
+                }
                 SimEvent::TileDestroyed(t) => tiles.set(t.level as usize, t.col, t.row, t.index, t.shape),
+                SimEvent::GroundDestroyed { object, .. } => {
+                    if let Some(o) = combat.sim.objects().get(object) {
+                        let name = combat.names.get((o.shape & 0x7F) as usize).map_or("", |n| n.as_str());
+                        combat.kills.push(Kill { x: o.x, y: o.y, vehicle: object != 0 && is_vehicle(name) });
+                    }
+                }
+                // Aircraft on the ground burn at once, airborne ones where the wreck lands.
+                SimEvent::AircraftDestroyed { unit, .. } => {
+                    if let Some(u) = combat.sim.flights().get(unit).filter(|u| u.alt <= 8 && u.x != 0) {
+                        combat.kills.push(Kill { x: u.x, y: u.y, vehicle: true });
+                    }
+                }
                 SimEvent::MissionEnd(e) => {
                     combat.end = Some(end_info(&combat.sim, Some(e)));
                     if a.ended.is_none() {
@@ -425,6 +467,12 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                 }
                 _ => {}
             }
+        }
+        let w = combat.sim.wreck();
+        if w.alt > 0 && w.x != 0 {
+            combat.wreck = Some((w.x, w.y));
+        } else if let Some((x, y)) = combat.wreck.take() {
+            combat.kills.push(Kill { x, y, vehicle: true });
         }
     }
     combat.alpha = (combat.accum / dt).clamp(0.0, 1.0);

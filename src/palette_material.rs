@@ -26,6 +26,11 @@ pub const FLAG_CLOUD_COVERAGE: u32 = 32;
 pub const TAG_CLOUD_VOLUME: u32 = 1 << 11;
 /// Mesh tag bit of cumulus volumes (else a cumulonimbus tower).
 pub const TAG_CLOUD_CUMULUS: u32 = 1 << 12;
+/// Mesh tag bit of smoke plume volumes (with `TAG_CLOUD_VOLUME`); bits 16.. carry the plume's
+/// noise offset.
+pub const TAG_SMOKE: u32 = 1 << 13;
+/// Smoke plume over a fire: its base glows.
+pub const TAG_SMOKE_FIRE: u32 = 1 << 14;
 
 #[derive(Clone, Copy, Debug, Default, ShaderType)]
 pub struct PaletteParams {
@@ -116,7 +121,8 @@ pub struct Globals {
     pub ambient: Vec4,
     /// x: number of local lights, y: daylight 0 (night) .. 1 (day).
     pub light_info: Vec4,
-    /// x: XR dot angular size in radians (0 = flat screen; see dots.rs).
+    /// x: XR dot angular size in radians (0 = flat screen; see dots.rs), y: animation clock
+    /// in seconds (wraps every hour).
     pub dots: Vec4,
     /// Local lights, two entries each: (position, range), (linear colour * intensity, unused).
     pub local_lights: [Vec4; 2 * MAX_LOCAL_LIGHTS],

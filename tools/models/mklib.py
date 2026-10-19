@@ -1,4 +1,4 @@
-"""Low-poly modelling helpers for the vehicle remodels (run inside Blender).
+"""Low-poly modelling helpers for generated models (run inside Blender; used by tools/theater_ua).
 
 Model space is the original's: x right, y forward (nose), z up, in model units. Every face
 carries a palette colour byte; a `Ramp` picks a shade along one of the palette's 16-colour ramps
@@ -398,48 +398,3 @@ def index_of(name):
     i = name.rfind("pal_")
     return int(name[i + 4:i + 7])
 
-
-# ---------------------------------------------------------------------------------------------
-# The original conversion (assets-src/raw), which remodels are fitted to: the .blend masters
-# hold the remodels themselves, so fitting to their current geometry would drift every build.
-
-_RAW = {}
-
-
-def raw_points(stem, node, skip=()):
-    """Model-space (z up) vertices of `node` and its descendants in assets-src/raw/<stem>.glb,
-    leaving out nodes whose names contain any of `skip`."""
-    import os
-    import struct
-
-    from mathutils import Matrix, Quaternion
-
-    from glbio import read
-
-    if stem not in _RAW:
-        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-        _RAW[stem] = read(os.path.join(root, "assets-src", "raw", stem + ".glb"))
-    js, b = _RAW[stem]
-    nodes = js["nodes"]
-    start = next(i for i, n in enumerate(nodes) if n["name"] == node)
-    to_z_up = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
-    out = []
-
-    def walk(i, m):
-        n = nodes[i]
-        t = Matrix.Translation(n.get("translation", (0, 0, 0)))
-        x, y, z, w = n.get("rotation", (0, 0, 0, 1))
-        sx, sy, sz = n.get("scale", (1, 1, 1))
-        m = m @ t @ Quaternion((w, x, y, z)).to_matrix().to_4x4() @ Matrix.Diagonal((sx, sy, sz, 1))
-        if "mesh" in n and not any(s in n["name"] for s in skip):
-            for p in js["meshes"][n["mesh"]]["primitives"]:
-                a = js["accessors"][p["attributes"]["POSITION"]]
-                v = js["bufferViews"][a["bufferView"]]
-                o = v.get("byteOffset", 0) + a.get("byteOffset", 0)
-                for k in range(a["count"]):
-                    out.append(to_z_up @ m @ Vector(struct.unpack_from("<3f", b, o + 12 * k)))
-        for c in n.get("children", []):
-            walk(c, m)
-
-    walk(start, Matrix.Identity(4))
-    return out

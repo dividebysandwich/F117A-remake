@@ -177,7 +177,7 @@ impl Sim {
             roll_cmd = 0x400;
         }
         if ((i as i32 ^ self.frame) & 3) == 0 {
-            // posHitsTerrain: the F-117 world is a flat plane, objects are not tested (README).
+            // Terrain contact: the world is a flat plane, objects are not tested.
             u.flags &= !fflags::TERRAIN;
         }
         if u.flags & fflags::TERRAIN != 0 {
@@ -285,7 +285,7 @@ impl Sim {
         }
     }
 
-    /// Enemy gun round (combat.md §4.5).
+    /// Enemy gun round.
     fn fire_gun(&mut self, u: &FlightUnit) {
         let slot = self.n_bullets + ((self.frame & 0xC) >> 2) as usize;
         let v = cdiv(224, self.fs);
@@ -298,7 +298,7 @@ impl Sim {
         }
     }
 
-    /// `scramble(i)` for an inactive unit (V:6194).
+    /// Scramble check for an inactive unit: may launch it from a random alert base.
     fn scramble(&mut self, i: usize) {
         let nf = self.flights.len();
         if (((self.mission_tick >> (self.roe + 4)) ^ i as i32) & 7) != 0 || i + 4 >= nf || i == 0 {
@@ -320,7 +320,7 @@ impl Sim {
         }
     }
 
-    /// `spawn(i, b)` (V:65D4).
+    /// Put flight unit `i` on the runway (or carrier deck) of base object `b`.
     fn spawn(&mut self, i: usize, b: usize) {
         let o = self.objects[b];
         let t = self.ac_type(self.flights[i].spec).clone();
@@ -359,7 +359,7 @@ impl Sim {
         self.emit(SimEvent::AircraftTakeoff { unit: i, base: b });
     }
 
-    /// Base traffic (V:3CF7): the last 4 flight units live at the nearest friendly base.
+    /// Base traffic: the last 4 flight units live at the nearest friendly base.
     pub(crate) fn update_base_traffic(&mut self) {
         let nf = self.flights.len();
         if nf < 8 {
@@ -452,7 +452,7 @@ impl Sim {
         }
     }
 
-    /// Smoke of the last ground kill (V:479C) and the falling wreck (V:483C).
+    /// Smoke of the last ground kill and the falling wreck.
     pub(crate) fn update_effects(&mut self) {
         if self.smoke_src > 0 {
             for s in self.smoke.iter_mut() {

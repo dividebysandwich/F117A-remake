@@ -188,7 +188,7 @@ fn orbit(
 }
 
 fn label(state: Res<ViewerState>, palette: Res<Palette>, mut text: Single<&mut Text, With<ViewerLabel>>) {
-    let file = state.files.get(state.file).map_or("(no models: run tools/build-assets.sh)", String::as_str);
+    let file = state.files.get(state.file).map_or("(no models)", String::as_str);
     let model = state.names.get(state.model).map_or("", String::as_str);
     text.0 = format!(
         "{file}  [{}/{}] {model}   palette: {}  remap: {}  lights: {}  destroyed: {}\n\

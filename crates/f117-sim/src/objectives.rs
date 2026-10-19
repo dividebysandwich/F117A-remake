@@ -3,7 +3,7 @@ use crate::math::{abs16, cdiv, clamp_q, s16};
 use crate::types::*;
 
 impl Sim {
-    /// `markTargetReached(k)` (V:7470).
+    /// Mark objective `k` (0 primary, 1 secondary) as done; false if it already was.
     pub(crate) fn mark_target_reached(&mut self, k: usize) -> bool {
         let bit = pflags::PRIMARY_DONE >> k;
         if self.pflags & bit != 0 {
@@ -28,7 +28,7 @@ impl Sim {
         true
     }
 
-    /// `finalizeMission(outcome)` (V:4926).
+    /// End the mission with `outcome` (ignored once ended, or after ejection unless 0).
     pub(crate) fn finalize(&mut self, outcome: u8) {
         if self.ended.is_some() || (self.eject != 0 && outcome != 0) {
             return;
@@ -50,7 +50,7 @@ impl Sim {
         }
     }
 
-    /// Shift-F10 (V:CFD2).
+    /// Eject (Shift-F10): fails at high speed or attitude, otherwise the chute comes down.
     pub(crate) fn do_eject(&mut self) {
         if self.eject != 0 {
             return;
@@ -72,7 +72,7 @@ impl Sim {
 
     pub(crate) fn update_objectives(&mut self, ps: &PlayerState) {
         let fs = self.fs;
-        // Delayed "target destroyed" cues (3CC3..3CED).
+        // Delayed "target destroyed" cues.
         for k in 0..2 {
             if self.cue_timers[k] > 0 {
                 self.cue_timers[k] -= 1;
@@ -81,7 +81,7 @@ impl Sim {
                 }
             }
         }
-        // Deadline (426B..42E5).
+        // Deadline.
         if self.mission_tick >= self.deadline && self.deadline > 0 {
             for k in 0..2 {
                 let t = self.targets[k];
@@ -107,7 +107,7 @@ impl Sim {
                 }
             }
         }
-        // Ejection: chute descent (239E..24A2).
+        // Ejection: chute descent.
         if self.eject != 0 {
             self.eject += 1;
             let dz = clamp_q(0x20 - self.eject, cdiv(-0x60, fs), cdiv(0x80, fs));
@@ -184,7 +184,7 @@ impl Sim {
         } else {
             self.armed_landing = 1;
         }
-        // Object collision (41C2).
+        // Object collision.
         if ps.collided && !self.external_view {
             if lm != 0 && self.p.alt != 0 {
                 self.sound(4, 2);

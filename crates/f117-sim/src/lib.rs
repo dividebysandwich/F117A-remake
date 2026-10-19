@@ -23,22 +23,22 @@ use serde::{Deserialize, Serialize};
 /// Number of projectile slots (0..7 enemy, 8..11 player).
 pub const N_PROJ: usize = 12;
 
-/// Player-derived values of the current frame (in the original's variables).
+/// Player-derived values of the current frame (in the original game's units).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct PlayerView {
-    /// World units (BA10 / C02A), y north.
+    /// World units, y north.
     pub wx: i32,
     pub wy: i32,
-    /// Map units (C0A4 / C0B2), y south.
+    /// Map units, y south.
     pub mx: i32,
     pub my: i32,
-    /// True altitude ft (2DF6) and compressed viewZ (2DF4).
+    /// True altitude ft and compressed viewZ.
     pub alt: i32,
     pub view_z: i32,
     pub heading: i32,
     pub pitch: i32,
     pub roll: i32,
-    /// knots * 27 (B052) and knots (B168).
+    /// knots * 27 and knots.
     pub velocity: i32,
     pub knots: i32,
 }
@@ -48,7 +48,7 @@ pub struct PlayerView {
 pub struct Sim {
     // ---- static data ----
     pub(crate) threats: Vec<ThreatType>,
-    /// Aircraft types, including the running kill counters (+0x1E).
+    /// Aircraft types, including the running kill counters.
     pub aircraft_types: Vec<AircraftType>,
     pub(crate) missile_types: Vec<MissileType>,
     pub(crate) weapon_types: Vec<WeaponType>,
@@ -64,20 +64,20 @@ pub struct Sim {
     pub(crate) night: bool,
     pub(crate) lockheed: bool,
     pub theater: usize,
-    /// Runway direction of the theater (DS:B16E).
+    /// Runway direction of the theater (+1 / -1).
     pub(crate) ns: i32,
 
     pub(crate) rng: Rng,
-    /// frameTick DS:3D60 (16-bit).
+    /// Frame counter (16-bit).
     pub(crate) frame: i32,
-    /// missionTick DS:98E2 (+1 every fs frames).
+    /// Mission clock (+1 every fs frames).
     pub(crate) mission_tick: i32,
     pub(crate) tick_frames: i32,
     pub(crate) fs: i32,
 
     // ---- player ----
     pub(crate) p: PlayerView,
-    /// Player flags DS:9B04.
+    /// Player flags (`pflags`).
     pub(crate) pflags: i32,
     pub(crate) emv: i32,
     pub(crate) damage: u8,
@@ -85,11 +85,11 @@ pub struct Sim {
     pub(crate) irj_heat: i32,
     pub(crate) door_anim: i32,
     pub(crate) bay_req: bool,
-    /// Bays (type, count) DS:363E / 3640.
+    /// Bays (type, count).
     pub(crate) bays: [(i32, i32); 4],
     pub(crate) n_bays: usize,
     pub(crate) cur_bay: usize,
-    /// Countermeasure stores DS:3636 ([1] flare, [2] chaff, [3] decoy).
+    /// Countermeasure stores ([1] flare, [2] chaff, [3] decoy).
     pub(crate) stores: [i32; 4],
     pub(crate) gun_ammo: i32,
     pub(crate) gun_firing: bool,
@@ -115,48 +115,48 @@ pub struct Sim {
     /// Shape to draw for each world object (changes when destroyed).
     pub(crate) display_shape: Vec<i32>,
     pub(crate) flights: Vec<FlightUnit>,
-    /// DS:3D6E.
+    /// Flight unit the escorts follow, -1 none.
     pub(crate) escort_leader: i32,
     pub(crate) proj: [Projectile; N_PROJ],
     pub(crate) bullets: Vec<Bullet>,
-    /// nBullets DS:B16C.
+    /// Number of player gun-round slots (enemy rounds follow them).
     pub(crate) n_bullets: usize,
     pub(crate) cms: [Countermeasure; 4],
     pub(crate) smoke: [Smoke; 16],
-    /// DS:3D68: smoke source object (-1 aircraft / none).
+    /// Smoke source object (-1 aircraft / none).
     pub(crate) smoke_src: i32,
     pub(crate) wreck: Wreck,
     pub(crate) flash: Flash,
     pub(crate) tile_damage: Vec<TileDamage>,
-    /// Result of the last tile search (DS:9F10).
+    /// Result of the last tile search.
     pub(crate) last_tile: Option<tiles::TileHit>,
 
     // ---- threat state ----
-    /// DS:3D62.
+    /// Theater alarm timer, frames left.
     pub(crate) alarm_timer: i32,
-    /// DS:C0B6 / C600.
+    /// Alarm seen in the current 128-frame window / the previous one.
     pub(crate) alarm_window: i32,
     pub(crate) alarm_last: i32,
-    /// DS:B2A0 / B75A / B76E / 98F0.
+    /// Where the defences think the player is: map position, viewZ, heading.
     pub(crate) ref_x: i32,
     pub(crate) ref_y: i32,
     pub(crate) ref_alt: i32,
     pub(crate) ref_heading: i32,
-    /// DS:3D6A.
+    /// Frames left on the radar sweep animation, -1 idle.
     pub(crate) sweep_anim: i32,
-    /// DS:B054 / 94F2.
+    /// Aircraft engaging the player: last frame / this frame.
     pub(crate) threat_count_last: i32,
     pub(crate) threat_count: i32,
-    /// DS:DED6 / DED2 / DECE.
+    /// TRAK count, radar IDs and visual IDs held against the player.
     pub(crate) tracking: i32,
     pub(crate) radar_ids: i32,
     pub(crate) visual_ids: i32,
-    /// DS:DFE0 / 98F2.
+    /// Nearest base object and its distance; base used for traffic.
     pub(crate) nearest_base: i32,
     pub(crate) nearest_base_dist: i32,
     pub(crate) traffic_base: i32,
     pub(crate) traffic_toggle: bool,
-    /// Lamp timers DS:3D8E chaff / 3D90 flare / 3D92 EMV.
+    /// Lamp timers: chaff / flare / EMV.
     pub(crate) chaff_lamp: i32,
     pub(crate) flare_lamp: i32,
     pub(crate) emv_lamp: i32,
@@ -164,21 +164,21 @@ pub struct Sim {
     pub(crate) ear: Option<SignalBar>,
     pub(crate) arc: Option<RadarArc>,
     pub(crate) lights: Lights,
-    /// Per-frame acquire results (DS:94F4 range / 94F6 aim).
+    /// Per-frame seeker acquisition results (range / aim bearing).
     pub(crate) acq_range: i32,
     pub(crate) acq_aim: i32,
-    /// COMM+0x2C launch counter.
+    /// Missile launches against the player.
     pub launches: i32,
 
     // ---- targeting ----
-    /// DS:3D64 / 3D66 (bit 0x80 = reselect, -1 none).
+    /// Air / ground target locks (bit 0x80 = reselect, -1 none).
     pub(crate) air_lock: i32,
     pub(crate) gnd_lock: i32,
     pub(crate) targeting: TargetingState,
     pub(crate) gnd_cooldown: i32,
     /// Frames left for a nearest-target request to wait for the HUD mode (`Commands::nearest_target`).
     pub(crate) nearest_req: u8,
-    /// DS:E556.
+    /// Camera view direction relative to the nose.
     pub(crate) cam_dir: i32,
     pub(crate) last_missile_slot: i32,
     pub(crate) maverick_view: bool,
@@ -194,9 +194,9 @@ pub struct Sim {
     pub(crate) time_expired_shown: bool,
     pub(crate) target_escaped: bool,
     pub(crate) corridor: bool,
-    /// DS:3D9A.
+    /// Landing state: 0 until airborne, 1 once airborne, then counts frames on a friendly runway.
     pub(crate) armed_landing: i32,
-    /// DS:C06E.
+    /// Frames since ejection (counting from 1), 0 = not ejected.
     pub(crate) eject: i32,
     pub(crate) chute: (i32, i32, i32),
     pub(crate) landing_type: u8,
@@ -211,7 +211,7 @@ pub struct Sim {
 }
 
 impl Sim {
-    /// Build the runtime world from a generated mission (the START hand-off, mission-generation.md §7).
+    /// Build the runtime world from a generated mission (the mission-generator hand-off).
     pub fn new(data: &SimData, m: &Mission) -> Self {
         Self::with_options(data, m, SimOptions::default())
     }
@@ -399,7 +399,7 @@ impl Sim {
         sim
     }
 
-    /// The player's start state as VGAME sets it (V:3A92): at the takeoff base, on the ground.
+    /// The player's start state: at the takeoff base, on the ground.
     pub fn start_state(&self) -> PlayerState {
         let b = self.targets[0].base.clamp(0, self.objects.len() as i32 - 1).max(0) as usize;
         let o = self.objects.get(b).copied().unwrap_or_default();
@@ -426,7 +426,7 @@ impl Sim {
         }
     }
 
-    /// Update the fs-derived constants (recalcTimeScale V:D707).
+    /// Update the fs-derived constants.
     fn set_fs(&mut self, fs: i32) {
         let fs = fs.clamp(1, 60);
         self.fs = fs;
@@ -473,7 +473,7 @@ impl Sim {
         self.events.push(SimEvent::Sound { id, priority });
     }
 
-    /// `event(type, arg)` (V:499E): append to the debrief log.
+    /// Append an event to the debrief log.
     pub(crate) fn log_event(&mut self, kind: i32, arg: i32) {
         let e = LogEvent {
             tick: self.mission_tick,
@@ -486,7 +486,7 @@ impl Sim {
         self.events.push(SimEvent::Log(e));
     }
 
-    /// `placeName(i)`: WLD name of object i.
+    /// WLD name of object i.
     pub fn place_name(&self, i: usize) -> String {
         let o = match self.objects.get(i) {
             Some(o) => *o,
@@ -506,7 +506,7 @@ impl Sim {
         self.buf7.get((o.shape & 0x7F) as usize).map_or(0, |&b| (b & 0xF) as i32)
     }
 
-    /// `compat(w, obj)` (V:8BAB).
+    /// Effectiveness of weapon `w` against object `obj`.
     pub(crate) fn compat(&self, w: i32, obj: i32) -> i32 {
         let cat = self.category(obj);
         self.compat.get(w.max(0) as usize).map_or(0, |r| r[cat as usize] as i32)
@@ -532,7 +532,7 @@ impl Sim {
         if t <= 0 { None } else { self.threats.get(t as usize) }
     }
 
-    /// Copy the flight model's state into the original variables.
+    /// Copy the flight model's state into the per-frame player view and flags.
     fn ingest(&mut self, ps: &PlayerState) {
         let alt = ps.altitude as i32;
         self.p = PlayerView {
@@ -568,7 +568,7 @@ impl Sim {
         self.external_view = ps.external_view;
     }
 
-    /// Advance one frame. `fs` = nominal frames per sim second (DS:3660, normally 15).
+    /// Advance one frame. `fs` = nominal frames per sim second (normally 15).
     pub fn step(&mut self, ps: &PlayerState, fs: u8) -> Vec<SimEvent> {
         self.events.clear();
         if self.ended.is_some() {
@@ -578,11 +578,11 @@ impl Sim {
             self.set_fs(fs as i32);
         }
         self.ingest(ps);
-        // keyDispatch + per-frame systems (V:CBA0, V:D470..D6AC).
+        // Key commands and per-frame systems.
         self.handle_keys(ps);
         self.update_systems();
         self.handle_fire(ps);
-        // EMV every frame (V:43EE).
+        // EMV every frame.
         self.compute_emv();
         if self.frame & 7 == 0 {
             self.find_nearest_base();
@@ -598,7 +598,7 @@ impl Sim {
         if self.frame & 0x7F == 0x40 && self.traffic_base >= 0 {
             self.spawn_traffic();
         }
-        // V:3C66..3CC3.
+        // Sites, aircraft, projectiles, countermeasures, gun rounds, lamps.
         self.update_sites();
         self.update_aircraft();
         self.update_missiles();
@@ -624,7 +624,7 @@ impl Sim {
 
     // ---------------------------------------------------------------- accessors
 
-    /// Player EMV (DS:3D5C).
+    /// Player EMV.
     pub fn emv(&self) -> i32 {
         self.emv
     }
@@ -820,12 +820,12 @@ impl Sim {
         (self.alarm_timer, self.alarm_timer > self.alarm_recent())
     }
 
-    /// Where the defences think the player is (B2A0 / B75A / B76E).
+    /// Where the defences think the player is (map x, map y, viewZ).
     pub fn threat_reference(&self) -> (i32, i32, i32) {
         (self.ref_x, self.ref_y, self.ref_alt)
     }
 
-    /// Radar IDs / visual IDs held against the player (DED2 / DECE) and the TRAK count (DED6).
+    /// Radar IDs / visual IDs held against the player and the TRAK count.
     pub fn identification(&self) -> (i32, i32, i32) {
         (self.radar_ids, self.visual_ids, self.tracking)
     }

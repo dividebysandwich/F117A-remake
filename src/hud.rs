@@ -1,9 +1,9 @@
 //! Head-up display, drawn into the cockpit picture (320x200 original screen coordinates).
-//! Layout and behaviour: docs/re/cockpit.md section 2, VGAME `1A18:7898` (overlay part) and
-//! `2AC0:000C` (instruments: tapes, heading scale, frame, G, pitch ladder).
+//! Two layers: the overlay (texts, flight path marker, bars, sights, readouts) and the
+//! instruments (tapes, heading scale, frame, G, pitch ladder).
 //!
-//! The drawing is a pure function of [`HudFrame`] so it can be compared with VRAM dumps of
-//! the original; [`HudParams`] gathers the frame from the ECS.
+//! The drawing is a pure function of [`HudFrame`] so it can be tested frame by frame;
+//! [`HudParams`] gathers the frame from the ECS.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -39,7 +39,7 @@ impl Plugin for HudPlugin {
 pub const CX: i32 = 159;
 pub const CY: i32 = 52;
 
-/// F2: NAV / AIR / GND (`DS:E2FE`).
+/// F2: NAV / AIR / GND.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HudMode {
     #[default]
@@ -51,14 +51,14 @@ pub enum HudMode {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct HudState {
     pub mode: HudMode,
-    /// V: 0 = tapes, 1 = boxed digits, 2 = boxed digits + heading box (`DS:294A`).
+    /// V: 0 = tapes, 1 = boxed digits, 2 = boxed digits + heading box.
     pub declutter: u8,
-    /// F4: night HUD colours (`DS:43B0`).
+    /// F4: night HUD colours.
     pub night: bool,
 }
 
 impl HudState {
-    /// Main HUD colour (`DS:2CA0`) and second colour (`DS:2CA1`, pitch ladder).
+    /// Main HUD colour and second colour (pitch ladder).
     pub fn colours(&self) -> (u8, u8) {
         if self.night { (10, 47) } else { (15, 7) }
     }
@@ -77,8 +77,8 @@ pub struct HudMessages {
     pub training: bool,
 }
 
-/// Damage flash request (DS:98EE): VGAME 78CC fills rows 0..89 with colour 0x0D for one frame
-/// in the cockpit views when the aircraft is hit.
+/// Damage flash request: rows 0..89 are filled with colour 0x0D for one frame in the cockpit
+/// views when the aircraft is hit.
 #[derive(Resource, Default)]
 pub struct DamageFlash(pub u8);
 
@@ -92,10 +92,10 @@ impl HudMessages {
 /// One weapon bay.
 #[derive(Debug, Clone)]
 pub struct Bay {
-    /// Original weapon name (`DS:366C` table), e.g. "IN Cluster".
+    /// Original weapon name, e.g. "IN Cluster".
     pub name: String,
     pub count: u32,
-    /// ORDNANCE.PIC side view index (`DS:00A2` table).
+    /// Index of the weapon's side view picture (WPN page).
     pub picture: usize,
     /// Air-to-air missile (weapon class 7): AIR mode shows the missile envelope.
     pub air_to_air: bool,
@@ -138,7 +138,7 @@ pub struct Waypoint {
 pub struct Waypoints {
     pub points: Vec<Waypoint>,
     pub current: usize,
-    /// Waypoint the mission logic selected last (DS:2E7C); Shift-F8 returns to it.
+    /// Waypoint the mission logic selected last; Shift-F8 returns to it.
     pub mission_current: usize,
 }
 
@@ -148,7 +148,7 @@ impl Waypoints {
     }
 }
 
-/// Weapon cues over the 3D view (weapons.md section 5.4), in 320x200 screen pixels; filled by
+/// Weapon cues over the 3D view, in 320x200 screen pixels; filled by
 /// the combat simulation.
 #[derive(Resource, Debug, Clone, Default)]
 pub struct HudCues {
@@ -175,7 +175,7 @@ pub struct TargetBox {
     pub red: bool,
 }
 
-/// AIR-mode gun sight lead (`DS:E546`/`DS:E550`, pixels << 4). STUB: 0 = boresight.
+/// AIR-mode gun sight lead (pixels << 4). STUB: 0 = boresight.
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct GunLead {
     pub x: i32,
@@ -235,7 +235,7 @@ fn waypoint_bearing(pos: &WorldPos, wp: Waypoint) -> u16 {
     to_bam((dx as f32).atan2(dy_north as f32)) as i32 as u16
 }
 
-/// "Waypoint n reached" when within 0x200 map units (VGAME 7E56..7E97); the autopilot steers to
+/// "Waypoint n reached" when within 0x200 map units; the autopilot steers to
 /// the current waypoint.
 fn advance_waypoints(
     mut q: Query<(&WorldPos, &mut Aircraft), With<Player>>,
@@ -259,26 +259,26 @@ fn advance_waypoints(
 #[derive(Debug, Clone, Default)]
 pub struct HudFrame {
     pub state: HudState,
-    /// `DS:B168`
+    /// Airspeed, knots.
     pub knots: i32,
-    /// Altitude in feet (`DS:2DF6`).
+    /// Altitude in feet.
     pub alt: i32,
-    /// Heading, pitch, roll in 16-bit binary angles (`DS:2DEE/2DF0/2DF2`); roll > 0 = right.
+    /// Heading, pitch, roll in 16-bit binary angles; roll > 0 = right.
     pub heading: u16,
     pub pitch: i16,
     pub roll: i16,
-    /// 1/16 g (`DS:98DC`)
+    /// 1/16 g
     pub gees: i32,
-    /// Stall speed, knots (`DS:E448`).
+    /// Stall speed, knots.
     pub stall_knots: i32,
-    /// Climb rate, wu/s (`DS:E55A`).
+    /// Climb rate, wu/s.
     pub climb: i32,
-    /// Flight path marker offset << 6 (`DS:98C6` = cos(roll) * (lift - 0x200)).
+    /// Flight path marker offset << 6 (= cos(roll) * (lift - 0x200)).
     pub fpm: i32,
     pub gear_down: bool,
-    /// Night mission (`DS:3658`): stall/VVI bar colour.
+    /// Night mission: stall/VVI bar colour.
     pub night_mission: bool,
-    /// Frame parity used for blinking (`DS:3D60 & 1`).
+    /// Frame parity used for blinking.
     pub blink: bool,
     /// Bearing to the current waypoint (binary angle).
     pub waypoint_bearing: Option<u16>,
@@ -308,7 +308,7 @@ pub struct HudParams<'w, 's> {
     pub time: Res<'w, Time>,
 }
 
-/// Original frame parity (`DS:3D60`), ticking at about the original frame rate.
+/// Blink frame parity, ticking at about the original frame rate.
 pub fn blink(time: &Time) -> bool {
     (time.elapsed_secs() * 8.0) as u32 & 1 == 1
 }
@@ -355,18 +355,18 @@ fn ink3d(c: u8) -> u8 {
     if c == 0 { 5 } else { c }
 }
 
-/// Draws a number left-aligned (`1A18:8B3B`).
+/// Draws a number left-aligned.
 fn number(c: &mut Canvas, fonts: &Fonts, v: i64, x: i32, y: i32, col: u8) {
     fonts.text(c, x, y, v.to_string().as_bytes(), col);
 }
 
-/// Draws a number right-aligned at x (`1A18:8B5C`: x - 4*len).
+/// Draws a number right-aligned at x (starting at x - 4*len).
 fn number_right(c: &mut Canvas, fonts: &Fonts, v: i64, x: i32, y: i32, col: u8) {
     let s = v.to_string();
     fonts.text(c, x - 4 * s.len() as i32, y, s.as_bytes(), col);
 }
 
-/// Box outline (x1,y1)-(x2,y2) inclusive (`1A18:88A8`).
+/// Box outline (x1,y1)-(x2,y2) inclusive.
 fn frame_box(c: &mut Canvas, x1: i32, y1: i32, x2: i32, y2: i32, col: u8) {
     c.rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1, col);
 }
@@ -391,7 +391,7 @@ pub fn draw(c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, f: &HudFrame) {
     c.reset_clip();
 }
 
-/// `1A18:7898`: texts, flight path marker, bars, sights, digital readouts, waypoint cue,
+/// HUD overlay: texts, flight path marker, bars, sights, digital readouts, waypoint cue,
 /// messages.
 fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8, col2: u8) {
     let st = &f.state;
@@ -502,7 +502,7 @@ fn ellipse(c: &mut Canvas, x: i32, y: i32, rx: i32, ry: i32, col: u8) {
     }
 }
 
-/// Tracking box (`1A18:B3E6`): half width `size`, half height `size - size/4`, with the LOCK
+/// Tracking box: half width `size`, half height `size - size/4`, with the LOCK
 /// oval around it (contracted when in range).
 fn target_box(c: &mut Canvas, x: i32, y: i32, size: i32, oval: bool, red: bool, col: u8) {
     let (hw, hh) = (size, size - size / 4);
@@ -513,7 +513,7 @@ fn target_box(c: &mut Canvas, x: i32, y: i32, size: i32, oval: bool, red: bool, 
     }
 }
 
-/// 4-pixel diamond (`1A18:B339`).
+/// 4-pixel diamond.
 fn diamond(c: &mut Canvas, x: i32, y: i32, col: u8) {
     c.line(x, y - 4, x + 4, y, col);
     c.line(x + 4, y, x, y + 4, col);
@@ -521,7 +521,7 @@ fn diamond(c: &mut Canvas, x: i32, y: i32, col: u8) {
     c.line(x - 4, y, x, y - 4, col);
 }
 
-/// Targeting cues (weapons.md 5.4.3 / 5.4.5): tracking box and lock oval, CCIP bullseye with
+/// Targeting cues: tracking box and lock oval, CCIP bullseye with
 /// its fall line, ranging bar and flight-path guide diamond.
 fn weapon_cues(c: &mut Canvas, f: &HudFrame, col: u8) {
     let cues = &f.cues;
@@ -546,7 +546,7 @@ fn weapon_cues(c: &mut Canvas, f: &HudFrame, col: u8) {
     }
 }
 
-/// Difficulty divisor of the landing sink limit (`[DS:98F4]+0x40`; STUB: rookie).
+/// Difficulty divisor of the landing sink limit (STUB: rookie).
 const LANDING_DIFFICULTY: i32 = 1;
 
 /// Tick strip of a tape (MG slot `0151`): a dot every 2 rows, a 2-px tick every 10 rows and a
@@ -573,7 +573,7 @@ fn tape_ticks(c: &mut Canvas, x: i32, tick0: i32, floor: Option<i32>, col: u8, r
     }
 }
 
-/// `2AC0:000C`: tapes, heading scale, nose cross, G, pitch ladder.
+/// HUD instruments: tapes, heading scale, nose cross, G, pitch ladder.
 fn instruments(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8, col2: u8) {
     let decl = f.state.declutter;
     if decl == 0 {
@@ -661,7 +661,7 @@ fn alt_tape(c: &mut Canvas, fonts: &Fonts, alt: i32, col: u8) {
         tick0 = labels.first().map_or(CY, |l| l.0 + 2);
     } else {
         let mut y = r * 2 / 100 + 90;
-        // The slot for the lowest label shows "900" when it is the 0 ft mark (VGAME quirk).
+        // The slot for the lowest label shows "900" when it is the 0 ft mark (original quirk).
         for k in 0..5 {
             y -= 20;
             let v = q - 1 + k;
@@ -700,10 +700,10 @@ fn heading_scale(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, heading: u16, co
     c.blit(atlas, 0, 27 - 3 * phase, 141, 3, 90, 12, Some(0), None);
 }
 
-/// Pitch ladder (`2AC0:04AC..09CD`): a rung every 10 degrees = 52 units, rotated by roll and
+/// Pitch ladder: a rung every 10 degrees = 52 units, rotated by roll and
 /// squashed vertically by 0.75; labels at both ends.
 fn pitch_ladder(c: &mut Canvas, fonts: &Fonts, pitch: i16, roll: i16, col: u8) {
-    // Label x/y offsets by roll (DS:264C/26CC/274C), 64 entries.
+    // Label x/y offsets by roll, 64 entries.
     const LX: [i8; 64] = [
         2, 2, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, -1, -1, -2, -2, -3, -4, -4, -5, -5, -6, -6, -7, -7, -8, -8, -8, -9, -9, -9,
         -9, -9, -9, -9, -9, -9, -8, -8, -8, -7, -7, -6, -6, -5, -5, -4, -4, -3, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 1, 2,
@@ -762,7 +762,7 @@ fn pitch_ladder(c: &mut Canvas, fonts: &Fonts, pitch: i16, roll: i16, col: u8) {
                 (0, 1, 1, 1),
             ),
         };
-        // Lines are clipped to y 16..86 (VGAME 2A19:0326, measured), labels to (78,20)-(241,89).
+        // Lines are clipped to y 16..86, labels to (78,20)-(241,89).
         c.set_clip(0, 16, 319, 86);
         for seg in &segs {
             for w in seg.windows(2) {

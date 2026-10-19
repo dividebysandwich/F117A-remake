@@ -113,11 +113,11 @@ On Linux you need the `openxr` loader and a runtime (Monado, WiVRn, SteamVR); bu
 ## Testing
 ```sh
 cargo test --workspace
-tools/headless-run.sh cargo run -q -- --mission 1234 --script "0:ThrottleMax,7:pitch=0.35,13:pitch=0,14:Gear" \
+cargo run -q -- --mission 1234 --script "0:ThrottleMax,7:pitch=0.35,13:pitch=0,14:Gear" \
     --log-flight --shot-frames 600 --screenshot screenshots/test.png
 ```
-`tools/headless-run.sh` runs the game in a private headless compositor (sway), so test windows
-don't appear on the desktop. `--script` replays timed actions, `--log-flight` / `--log-sim`
+Test runs can use a private headless compositor (such as sway) so test windows don't appear on
+the desktop. `--script` replays timed actions, `--log-flight` / `--log-sim`
 print the state, `--time-scale` speeds runs up, and `--diag --novsync` shows the frame rate.
 Script steps `yaw=`, `throttle=` and `press=Gear` drive the rudder, an absolute throttle and the
 3D cockpit's controls; `--head-look yaw,pitch` turns the 3D cockpit view (degrees).

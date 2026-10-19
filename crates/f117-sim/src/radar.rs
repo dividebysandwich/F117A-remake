@@ -2,8 +2,8 @@ use crate::Sim;
 use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, u16v};
 use crate::types::*;
 
-/// Pure EMV function (V:43EE), exactly `radar_ref.py emv`.
-/// `flags` = DS:9B04, `view_z` = compressed altitude, `velocity` = knots*27.
+/// Pure EMV function, bit-exact with the original game.
+/// `flags` = player flags, `view_z` = compressed altitude, `velocity` = knots*27.
 pub fn emv(view_z: i32, velocity: i32, roll: i32, flags: i32, diff: i32, lockheed: bool) -> i32 {
     let mut r = hi8s(roll).abs();
     if r >= 0x40 {
@@ -34,11 +34,11 @@ pub struct DetectCtx<'a> {
     pub velocity: i32,
     pub diff: i32,
     pub lockheed: bool,
-    /// Theater grid (DS:B174, 256 bytes).
+    /// Theater terrain grid (16 x 16 cells, 256 bytes).
     pub grid: &'a [u8],
 }
 
-/// Pure radar signal (V:5460), exactly `radar_ref.py detect`.
+/// Pure radar signal, bit-exact with the original game.
 /// `threat` = (lethality, tier, flags) of the radar type. Returns (score, bearing, range).
 pub fn detect(sx: i32, sy: i32, salt: i32, typ: i32, threat: Option<(i32, i32, i32)>, c: &DetectCtx) -> (i32, i32, i32) {
     if typ == 0 || s16(typ) == -1 {
@@ -94,7 +94,7 @@ impl Sim {
         detect(sx, sy, salt, typ, th, &self.detect_ctx())
     }
 
-    /// `detect` with its side effect (time acceleration off when detected, V:D7BB).
+    /// `detect` with its side effect (time acceleration off when detected).
     pub(crate) fn detect(&mut self, sx: i32, sy: i32, salt: i32, typ: i32) -> (i32, i32, i32) {
         let r = self.detect_pure(sx, sy, salt, typ);
         // The cancel test runs before the Lockheed halving.
@@ -109,7 +109,7 @@ impl Sim {
         self.emv = emv(self.p.view_z, self.p.velocity, self.p.roll, self.pflags, self.diff, self.lockheed);
     }
 
-    /// `alarm()` (V:559A).
+    /// Raise the theater alarm: note where the player (or decoy) is and put the sites on alert.
     pub(crate) fn alarm(&mut self) {
         self.alarm_timer = self.alarm_init();
         if self.decoy_active() {
@@ -130,14 +130,14 @@ impl Sim {
         }
     }
 
-    /// TRAK count rebuild every 4*fs frames (V:438D).
+    /// TRAK count rebuild every 4*fs frames.
     pub(crate) fn rebuild_tracking(&mut self) {
         let sites = self.objects.iter().take(self.ground_units).filter(|o| o.unit_type != 0 && o.flags & oflags::DESTROYED == 0 && o.alert > 0xC0).count();
         let air = self.flights.iter().filter(|u| u.flags & fflags::AIRBORNE != 0 && u.flags & fflags::EXISTS != 0 && u.heat > 0xC0).count();
         self.tracking = (sites + air) as i32;
     }
 
-    /// Ground site loop (V:4F2A), every frame.
+    /// Ground site loop, every frame.
     pub(crate) fn update_sites(&mut self) {
         let fs = self.fs;
         for i in 0..self.ground_units {
@@ -175,7 +175,7 @@ impl Sim {
         }
     }
 
-    /// `sweep(i)` (V:516D).
+    /// Radar sweep of ground site `i`.
     fn site_sweep(&mut self, i: usize) {
         let o = self.objects[i];
         let (score, brg, range) = self.detect(o.x, o.y, 0, o.unit_type);
@@ -248,7 +248,7 @@ impl Sim {
         }
     }
 
-    /// Site launch (V:53AC).
+    /// Site launch.
     fn launch_sam(&mut self, k: usize, i: usize, brg: i32) {
         let o = self.objects[i];
         let lock = self.missile(o.unit_type).lock_range as i32;
@@ -276,7 +276,7 @@ impl Sim {
         self.emit(SimEvent::MissileLaunched { slot: k, spec: o.unit_type, launcher: Launcher::Site(i) });
     }
 
-    /// Aircraft radar (V:62D0).
+    /// Aircraft radar.
     pub(crate) fn radar_sweep(&mut self, i: usize) {
         let u = self.flights[i];
         let rt = self.ac_type(u.spec).radar as i32;
@@ -360,7 +360,7 @@ impl Sim {
         self.flights[i].heat = clamp_q(self.flights[i].heat, 0, 255);
     }
 
-    /// Aircraft launch (V:64E4).
+    /// Aircraft launch.
     fn launch_aam(&mut self, k: usize, i: usize) {
         let u = self.flights[i];
         let t = self.missile(u.missile).clone();
@@ -388,7 +388,7 @@ impl Sim {
         self.emit(SimEvent::MissileLaunched { slot: k, spec: u.missile, launcher: Launcher::Aircraft(i) });
     }
 
-    /// Nearest friendly / neutral base (every 8 frames, V:3CF7).
+    /// Nearest friendly / neutral base (every 8 frames).
     pub(crate) fn find_nearest_base(&mut self) {
         let (mut best, mut bd) = (-1, 0x7FFF);
         for (i, o) in self.objects.iter().enumerate().skip(3) {
@@ -404,7 +404,7 @@ impl Sim {
         self.nearest_base_dist = bd;
     }
 
-    /// Lamp timers (V:4EBC) and the light states.
+    /// Lamp timers and the light states.
     pub(crate) fn update_light_timers(&mut self) {
         for t in [&mut self.chaff_lamp, &mut self.flare_lamp, &mut self.emv_lamp] {
             if *t > 0 {
@@ -428,7 +428,7 @@ impl Sim {
 mod tests {
     use super::*;
 
-    /// radar-threats.md §1: ds_air.bin check (alt 2842, B052 14935, roll 489, diff 1 -> 44).
+    /// Case captured from the original game (alt 2842, velocity 14935, roll 489, diff 1 -> 44).
     #[test]
     fn emv_confirmed_case() {
         assert_eq!(emv(2842, 14935, 489, 0x01, 1, false), 44);
@@ -445,7 +445,7 @@ mod tests {
         assert_eq!(emv(0, 0, 0, 1 | 4 | 0x10, 0, false), 40);
         assert_eq!(emv(0, 0, 0, 0, 3, true), 9 + 20);
         assert_eq!(emv(0, 0, 0, 1, 3, true), 9);
-        // Altitude term from the doc table: 1000 ft Regular -> 12.
+        // Altitude term: 1000 ft Regular -> 12.
         assert_eq!(emv(1000, 0, 0, 1, 1, false), 12);
     }
 
@@ -453,7 +453,7 @@ mod tests {
         DetectCtx { px: 0x4000, py: 0x4000, view_z: 0, heading, velocity: vel, diff: 1, lockheed: false, grid }
     }
 
-    /// radar-threats.md §3.1 example: Regular, flat (t=8), SA-2 at 0 km beam: score ~72.
+    /// Regular, flat (t=8), SA-2 at 0 km beam: score ~72.
     #[test]
     fn detect_sa2_beam() {
         let grid = vec![8u8; 256];
@@ -463,7 +463,7 @@ mod tests {
         assert_eq!(r, 0);
         assert_eq!(brg, 0x8000);
         assert_eq!(s, 72);
-        // Nose-on at 100 km (doc: ~6; the reference gives 12 at 400 kt).
+        // Nose-on at 100 km: 12 at 400 kt.
         let c = ctx(&grid, 0, 400 * 27);
         let (s, _, r) = detect(0x4000, 0x4000 + 100 * 64, 0, 1, Some((200, 3, 0)), &c);
         assert_eq!(r, 100);
@@ -489,7 +489,7 @@ mod tests {
         assert_eq!(detect(0x4000, 0x3000, 0, -1, Some((200, 3, 0)), &c).0, 0);
     }
 
-    /// Doppler vs pulse aspect (values from `tools/re/py/radar_ref.py`).
+    /// Doppler vs pulse aspect (reference values matching the original game).
     #[test]
     fn detect_doppler_aspect() {
         let grid = vec![12u8; 256];
@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(d(0, 1, (320, 7, 0)).0, -177);
     }
 
-    /// Random reference vectors from `radar_ref.py detect` (grid value at the player's cell).
+    /// Random reference vectors matching the original game (grid value at the player's cell).
     #[test]
     #[allow(clippy::type_complexity)]
     fn detect_reference_vectors() {

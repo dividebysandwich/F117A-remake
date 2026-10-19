@@ -4,7 +4,7 @@ use crate::Sim;
 use crate::math::{approx, s16};
 use crate::types::*;
 
-/// Result of `findNearestTile` (DS:BA14).
+/// Result of the nearest-tile-object search.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TileHit {
     /// Current shape (the damage-list shape for destroyed tiles).
@@ -38,7 +38,7 @@ const DIR_DX: [i32; 9] = [-1, 1, 1, -1, 0, 1, 0, -1, 0];
 const DIR_DY: [i32; 9] = [1, 1, -1, -1, 1, 0, -1, 0, 0];
 
 impl Sim {
-    /// `findNearestTile(X, Y)` (V:0D08): LOD levels 1..2, 9 neighbour cells, candidates with
+    /// Nearest tile object to world point (X, Y): LOD levels 1..2, 9 neighbour cells, candidates with
     /// `buf7[shape] != 0`, Manhattan distance.
     pub(crate) fn find_nearest_tile(&self, x: i32, y: i32) -> Option<TileHit> {
         let tiles = self.tiles.as_ref()?;
@@ -93,7 +93,7 @@ impl Sim {
         best
     }
 
-    /// `findObjectAt(x, y)` (V:BAD1) for a map point. Returns the WLD object at the nearest tile
+    /// World object at a map point. Returns the WLD object at the nearest tile
     /// object, 0 for a plain tile (written into scratch object 0), -1 if there is no tile.
     ///
     /// Without theater tile data (tests) the nearest world object within 0x100 map units is
@@ -148,7 +148,7 @@ impl Sim {
         0
     }
 
-    /// `tileIsIntact` (V:780A): the tile is not already rubble.
+    /// The tile is not already rubble.
     pub(crate) fn tile_is_intact(&self, t: &Option<TileHit>) -> bool {
         match t {
             Some(t) => {
@@ -167,13 +167,13 @@ impl Sim {
         self.tiles.as_ref().and_then(|t| t.model_attr.get((shape & 0x7F) as usize)).is_some_and(|a| a & 0x20 != 0)
     }
 
-    /// `wreckShape(i)` (V:BC12).
+    /// Shape of object `i` once destroyed: the model's own wreck state, else land / water rubble.
     pub(crate) fn wreck_shape(&self, i: i32) -> i32 {
         let o = self.obj(i);
         if self.model_has_wreck(o.shape) { (o.shape & 0xFF) | 0x100 } else { self.rubble_for(self.is_water(i)) | 0x100 }
     }
 
-    /// `setTileShape(res, shape)` (V:0F31).
+    /// Record a new shape for a tile object in the damage list.
     fn set_tile_shape(&mut self, t: TileHit, shape: i32) {
         if t.level == 0 {
             return;
@@ -187,7 +187,7 @@ impl Sim {
         self.emit(SimEvent::TileDestroyed(rec));
     }
 
-    /// `destroyGround(i)` (V:72A4), the only kill path for ground objects.
+    /// Destroy ground object `i`, the only kill path for ground objects.
     pub(crate) fn destroy_ground(&mut self, i: i32) {
         if i < 0 || i as usize >= self.objects.len() {
             return;
@@ -250,7 +250,7 @@ impl Sim {
         }
     }
 
-    /// `destroyAircraft(j)` (V:71B4).
+    /// Destroy flight unit `j`.
     pub(crate) fn destroy_aircraft(&mut self, j: usize) {
         if j >= self.flights.len() {
             return;
@@ -285,7 +285,7 @@ impl Sim {
         }
     }
 
-    /// `bombTarget` (V:74F6): the player is hit.
+    /// The player is hit.
     pub(crate) fn player_hit(&mut self) {
         if self.training() {
             return;

@@ -1,4 +1,4 @@
-// Palette-indexed rendering that reproduces VGAME's MCGA driver (docs/re/visuals.md):
+// Palette-indexed rendering that reproduces the original's MCGA drawing:
 // colour words (high byte = fill mode), per-object distance haze down 16-colour ramps,
 // and the sky/ground band gradient (background sphere and AND/OR terrain overlays).
 
@@ -160,7 +160,7 @@ fn vertex(v: Vertex) -> VertexOutput {
         out.clip_position = clip + vec4<f32>(corner * px * 2.0 / vp * clip.w, 0.0, 0.0);
     }
 
-    // Per-object haze (2AA0:0120): fog = clamp((depth/512 in object units) - sizeClass, 0, 31) >> 1
+    // Per-object haze: fog = clamp((depth/512 in object units) - sizeClass, 0, 31) >> 1
     let size_class = (tag >> 3u) & 7u;
     let no_fog = (tag >> 6u) & 1u;
     let origin = world_from_local[3].xyz;

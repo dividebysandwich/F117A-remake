@@ -1,6 +1,6 @@
 //! The theater world: coordinate systems, floating origin and tile-object streaming.
 //!
-//! Original coordinates (docs/re/formats-3d.md, f15se2-gamelogic.md):
+//! Original coordinates:
 //! - world units (wu): x east, y north, 0..2^20; altitude in the same unit. 1 wu = 0.488 m
 //!   (the 2^20 wu theater is 512 "km" on the HUD).
 //! - map units = wu >> 5, map y grows southward: wy = (0x8000 - map_y) << 5.
@@ -38,9 +38,9 @@ fn load_theater(
     commands.insert_resource(theater);
 }
 
-/// Model file and index for each tile shape (VGAME's shape handle table at DS:0510): theater
-/// models, then the mission's special target models from PHOTO.3DX appended after them
-/// (VGAME 0x0A94), plus Desert Storm's two fixed PHOTO substitutions.
+/// Model file and index for each tile shape (the shape handle table): theater models, then the
+/// mission's special target models from PHOTO.3DX appended after them, plus Desert Storm's two
+/// fixed PHOTO substitutions.
 #[derive(Resource, Clone, Default)]
 pub struct ShapeHandles {
     pub models: Vec<(String, u16)>,
@@ -51,7 +51,7 @@ impl ShapeHandles {
         let count = theater.model_count();
         let mut models: Vec<(String, u16)> = (0..count as u16).map(|i| (theater.id.clone(), i)).collect();
         if theater.index == 6 {
-            // VGAME 0x0AD3: Desert Storm draws shapes 0x59 and 5 with PHOTO models 13 and 10.
+            // Desert Storm draws shapes 0x59 and 5 with PHOTO models 13 and 10.
             for (shape, photo) in [(0x59usize, 13u16), (5, 10)] {
                 if shape < models.len() {
                     models[shape] = ("photo".into(), photo);
@@ -63,7 +63,7 @@ impl ShapeHandles {
                 let Some(special) = t.special_model.filter(|&s| s > 0) else { continue };
                 let shape = models.len();
                 models.push(("photo".into(), special as u16));
-                // The target's tile object is replaced by the special model (DS:B772 entry).
+                // The target's tile object is replaced by the special model.
                 if let Some((lod, col, row, idx)) = theater.find_tile_object(t.position.x, t.position.y) {
                     overrides.set(lod, col, row, idx, shape as i32);
                 }
@@ -170,7 +170,7 @@ pub struct Theater {
     pub world: World,
     pub model_count: usize,
     /// Model attribute bytes (.3DX attr) by shape, for the simulation's wreck test. Only the
-    /// remake's theaters carry them (the originals' are in the VGAME export).
+    /// remake's theaters carry them (the originals' are in the exported sim data).
     #[serde(default)]
     pub model_attr: Vec<u8>,
     /// Remake theaters: the front line, where the fighting goes on: points (metres east,
@@ -202,7 +202,7 @@ impl Theater {
         ron::from_str(&text).unwrap_or_else(|e| panic!("{p}: {e}"))
     }
 
-    /// Tile data for the simulation (`findNearestTile`), for theaters not in the VGAME export.
+    /// Tile data for the simulation (`findNearestTile`), for theaters not in the exported sim data.
     pub fn sim_tiles(&self) -> f117_sim::TheaterTiles {
         let level = |l: usize| -> Vec<Vec<(i16, i16, u8)>> {
             self.tiles.tiles.get(l).map(|v| v.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect()).unwrap_or_default()

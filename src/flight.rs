@@ -1,6 +1,6 @@
-//! Player flight model: VGAME's F-117A flight step (docs/re/flight-model.md section 2.1),
-//! integrated per second instead of per frame. State is kept in the original units so the
-//! constants can be compared directly: velocity = knots * 27, angles in BAM
+//! Player flight model: the original's F-117A flight step, integrated per second instead of
+//! per frame. State is kept in the original units so the constants can be compared directly:
+//! velocity = knots * 27, angles in BAM
 //! (0x10000 = 360 degrees), altitude and positions in world units ("feet"), thrust 0..100,
 //! g in 1/16 g. Per-frame terms that the original does not divide by fs (stall nose drop) are
 //! scaled with the original's nominal 15 frames per sim second.
@@ -40,11 +40,11 @@ pub fn to_bam(r: f32) -> f32 {
     r / TAU * 65536.0
 }
 
-/// Tables exported from VGAME.EXE by f117-convert (assets/sim/tables.ron).
+/// Flight tables from the original game (assets/sim/tables.ron).
 #[derive(Resource, Deserialize)]
 pub struct SimTables {
     pub roll_gee: Vec<u8>,
-    /// Runway direction per theater (DS:3D7C).
+    /// Runway direction per theater.
     #[serde(default)]
     pub start_dir: Vec<i16>,
 }
@@ -52,12 +52,12 @@ pub struct SimTables {
 impl SimTables {
     pub fn load() -> Self {
         let path = crate::asset_path::asset("sim/tables.ron");
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e} (run tools/build-assets.sh)", path.display()));
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         ron::from_str(&text).expect("tables.ron")
     }
 }
 
-/// F-117A constants (flight-model.md 2.1; F-15 SE II values in comments).
+/// F-117A constants (F-15 SE II values in comments).
 #[derive(Resource, Debug, Clone)]
 pub struct FlightConstants {
     /// Gravity term in the target speed: sinMul(pitch, 120) (F-15: 80).
@@ -106,7 +106,7 @@ pub enum FlightEnd {
     Landed,
 }
 
-/// Effects of combat damage on the flight model (set by the combat simulation, combat.md §6.1.2).
+/// Effects of combat damage on the flight model (set by the combat simulation).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct FlightDamage {
     /// ENG: thrust capped at this percentage.
@@ -487,7 +487,7 @@ fn step_one(
         east += (horiz * head2.sin() * dt) as f64;
         north += (horiz * head2.cos() * dt) as f64;
 
-        // --- landing corridor at the nearest friendly base (flight-model.md 6.1)
+        // --- landing corridor at the nearest friendly base
         let (corridor, ground) = theater.map(|t| landing_corridor(t, east, north, k.landing)).unwrap_or((false, 0.0));
         a.in_landing_corridor = corridor;
         a.ground_altitude = ground;
@@ -526,7 +526,7 @@ fn step_one(
     }
 }
 
-/// Touchdown in a landing corridor (flight-model.md 6.1).
+/// Touchdown in a landing corridor.
 fn touchdown(a: &mut Aircraft, roll: f32, l: f32) {
     if !a.in_landing_corridor {
         return;

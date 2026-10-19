@@ -1,8 +1,6 @@
 //! Instrument panel state and faces: indicator lamps, LED digit readouts, EMV/EGR/EAR gauge,
 //! attitude ball and the approach indexer. The faces are drawn into canvas slots that the
 //! modelled panel (`cockpit3d`) shows on its lamp caps and instrument windows.
-//! docs/re/cockpit.md section 3 ("Lights", "LED digit readouts", "EMV / EGR / EAR gauge",
-//! "ADI") and VGAME `1A18:D83E`, `1A18:D92D`, `1A18:8316`, `1A18:17A3`, `1A18:D9A3`.
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -30,7 +28,7 @@ impl Plugin for PanelPlugin {
 /// (driven by the combat simulation).
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct Emv {
-    /// Own emission level (`DS:3D5C`/100).
+    /// Own emission level (/100).
     pub emv: f32,
     /// Ground radar signal (EGR).
     pub egr: f32,
@@ -78,7 +76,7 @@ pub struct Warnings {
     pub emv_warning: bool,
 }
 
-/// Approach indexer state (`DS:46C2`): 0 off, 1 top chevron, 2 circle, 3 bottom chevron.
+/// Approach indexer state: 0 off, 1 top chevron, 2 circle, 3 bottom chevron.
 /// STUB: set by the ILS / landing guidance.
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct Approach(pub u8);
@@ -90,7 +88,7 @@ fn reset_panel(mut cm: ResMut<Countermeasures>, mut emv: ResMut<Emv>, mut w: Res
     *ap = Approach::default();
 }
 
-/// Panel lamps (the original's lights, table `DS:46D8`). The index is the original light number.
+/// Panel lamps (the original's lights). The index is the original light number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LampId {
     Nav,
@@ -134,8 +132,7 @@ pub enum LampId {
 
 pub const LAMP_COUNT: usize = 37;
 
-/// Lamp colours, (text and border, fill) unlit and lit: the original's colour sets (`DS:4672`)
-/// as they recolour the panel art.
+/// Lamp colours, (text and border, fill) unlit and lit, as they recolour the panel art.
 #[derive(Debug, Clone, Copy)]
 pub struct LampStyle {
     pub off: (u8, u8),
@@ -250,7 +247,7 @@ fn text_in(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, fg: u8, k: i
     }
 }
 
-/// LED readout (`1A18:D92D`: atlas digits (67+5d, 31) 4x7, 5 px advance; non-digits show "0"),
+/// LED readout (atlas digits (67+5d, 31) 4x7, 5 px advance; non-digits show "0"),
 /// centred in the rectangle at up to `k` canvas pixels per panel pixel (smaller if it does not
 /// fit), over unlit "8" segments.
 pub fn draw_led(c: &mut Canvas, sprites: &Canvas, r: [i32; 4], s: &str, k: i32) {
@@ -267,7 +264,7 @@ pub fn draw_led(c: &mut Canvas, sprites: &Canvas, r: [i32; 4], s: &str, k: i32) 
     }
 }
 
-/// EMV / EGR / EAR gauge (`1A18:8316`, originally 51x11 at (86, 187)) scaled into the
+/// EMV / EGR / EAR gauge (originally 51x11 at (86, 187)) scaled into the
 /// rectangle: EMV blue from the left and red from the right, EGR (upper) and EAR (lower) bars.
 pub fn draw_gauge(c: &mut Canvas, r: [i32; 4], emv: i32, egr: i32, ear: i32) {
     let (sx, sy) = (r[2] as f32 / 51.0, r[3] as f32 / 11.0);
@@ -337,7 +334,7 @@ pub fn draw_led_bars(c: &mut Canvas, glow: &mut Canvas, r: [i32; 4], emv: i32, e
     }
 }
 
-/// Attitude ball (`1A18:17A3`: sky 9, ground 1) as a disc filling the canvas, index 0 outside;
+/// Attitude ball (sky 9, ground 1) as a disc filling the canvas, index 0 outside;
 /// a fixed aircraft symbol (15) in the middle.
 pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
     let (s, co) = roll.sin_cos();
@@ -482,7 +479,7 @@ impl PanelParams<'_, '_> {
     }
 }
 
-/// The approach indexer (`1A18:D9A3`, atlas (251,67) 10x21) with its top-left at (x, y), the
+/// The approach indexer (atlas (251,67) 10x21) with its top-left at (x, y), the
 /// lit part recoloured 30 -> 41 (top chevron), 47 (circle) or 14 (bottom chevron).
 pub fn approach_indexer(c: &mut Canvas, atlas: &Canvas, approach: u8, x: i32, y: i32) {
     c.copy_rect(atlas, 251, 67, 10, 21, x, y);

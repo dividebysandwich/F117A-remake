@@ -7,16 +7,16 @@ impl Sim {
         abs16(s16(self.cam_dir - b + self.p.heading))
     }
 
-    /// Range (map units) and bearing (BAM) from the player to a map point (BB86 / BBB4).
+    /// Range (map units) and bearing (BAM) from the player to a map point.
     fn range_bearing(&self, x: i32, y: i32) -> (i32, i32) {
         let dx = s16(x - self.p.mx);
         let dy = s16(y - self.p.my);
         (approx(dx, dy), bearing(dx, s16(-dy)))
     }
 
-    /// Projection to the 320x200 cockpit HUD (F-15 `projectWorldToHud`, focal length 256,
-    /// boresight (160, 52); ASSUMED to match VGAME's B85D closely). Returns
-    /// (screen x, screen y, DE92 = -forward/8); screen None when off screen or behind.
+    /// Projection to the 320x200 cockpit HUD (focal length 256, boresight (160, 52); assumed to
+    /// match the original's HUD projection closely). Returns
+    /// (screen x, screen y, depth = -forward/8); screen None when off screen or behind.
     pub(crate) fn project(&self, x: i32, y: i32, alt: i32) -> (Option<(i32, i32)>, i32) {
         let t = &self.trig;
         let de = s16(x - self.p.mx) as i64;
@@ -75,7 +75,7 @@ impl Sim {
         }
     }
 
-    /// Ground target selection (V:9B31).
+    /// Ground target selection.
     fn select_ground(&mut self) {
         if self.gnd_cooldown > 0 {
             self.gnd_cooldown -= 1;
@@ -125,7 +125,7 @@ impl Sim {
         }
     }
 
-    /// Air target selection (V:9D06..9FB2).
+    /// Air target selection.
     fn select_air(&mut self) {
         let mut best_r = 0x4B << (6 - self.night as i32);
         let mut best = -1;
@@ -228,7 +228,7 @@ impl Sim {
         }
     }
 
-    /// 'N' designation (V:A7A9).
+    /// 'N' designation.
     fn designate(&mut self) {
         if self.pflags & pflags::DESIGNATE == 0 || !self.camera_mfd || self.hud_mode == HudMode::Air {
             return;
@@ -252,7 +252,7 @@ impl Sim {
         }
     }
 
-    /// HUD tracking box / oval / LOCK (V:A576).
+    /// HUD tracking box / oval / LOCK.
     fn lock_oval(&mut self, ps: &PlayerState) {
         if !ps.hud_visible {
             return;
@@ -336,7 +336,7 @@ impl Sim {
         self.lights.lock = oval && (red || self.frame & 1 != 0);
     }
 
-    /// Bombsights (V:AFC9): CCIP and ranging bar for free-fall / retarded bombs.
+    /// Bombsights: CCIP and ranging bar for free-fall / retarded bombs.
     fn bombsight(&mut self) {
         self.targeting.ccip = None;
         self.targeting.ranging_bar = None;
@@ -365,7 +365,7 @@ impl Sim {
         }
     }
 
-    /// Camera photo (V:A893..AA8D).
+    /// Camera photo.
     fn photo(&mut self, ps: &PlayerState) {
         if self.photo_timer > 0 {
             self.photo_timer -= 1;
@@ -410,7 +410,7 @@ impl Sim {
         }
     }
 
-    /// Radio beacon / "Drop supplies now" (V:B1F3).
+    /// Radio beacon / "Drop supplies now".
     fn radio_beacon(&mut self) {
         let per = 8 * self.fs;
         if per == 0 || self.frame % per != 0 {

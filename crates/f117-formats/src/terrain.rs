@@ -22,7 +22,7 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// Tile type at (col, row) on a LOD level (`process3dg`); 0 outside the grid.
+    /// Tile type at (col, row) on a LOD level ; 0 outside the grid.
     pub fn tile(&self, lod: usize, col: i32, row: i32) -> u8 {
         let (mut col, mut row) = (col, row);
         if lod == 4 {

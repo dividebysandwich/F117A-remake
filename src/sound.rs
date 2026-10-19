@@ -1,7 +1,6 @@
-//! Original sounds (docs/re/sound.md), recorded from the AdLib driver by
-//! tools/re/extract-sounds.sh into assets/sounds/.
+//! Original sounds, recorded from the AdLib driver into assets/sounds/.
 //!
-//! - Effects are requested by id with a priority (`makeSound(id, prio)`, V:D6BF); they play when
+//! - Effects are requested by id with a priority (`makeSound(id, prio)`); they play when
 //!   `prio >= 3 - level` (level 3 = all sounds, 2 = no engine, 1 = firing and explosions only,
 //!   0 = none; Alt-V cycles). Gear, bay doors, the error buzz and speech bypass the level.
 //! - The engine drone follows airspeed only (pitch `(0x83 + (knots & ~1)) * 49716 / 2^18` Hz),
@@ -96,7 +95,7 @@ struct EngineDrone {
 fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     let mut bank = SoundBank::default();
     let Ok(dir) = std::fs::read_dir(crate::asset_path::asset("sounds")) else {
-        warn!("assets/sounds missing: run tools/re/extract-sounds.sh for the original sounds");
+        warn!("assets/sounds missing: no original sounds");
         commands.insert_resource(bank);
         return;
     };
@@ -151,7 +150,7 @@ fn play_sounds(
     }
 }
 
-/// Sounds the original triggers from the flight step and frame update (sound.md).
+/// Sounds the original triggers from the flight step and frame update.
 #[allow(clippy::too_many_arguments)]
 fn flight_sounds(
     mut out: MessageWriter<PlaySound>,
@@ -207,7 +206,7 @@ fn flight_sounds(
         let (be, bn) = crate::world::map_to_wu(base.x as u16, base.y as u16);
         let (e, n, _) = crate::world::bevy_to_wu(pos.0);
         // On approach: back within range 5000 of the landing base, descending with the gear
-        // down (sound.md; the original also waits for the AOA indexer to show on-speed).
+        // down (the original also waits for the AOA indexer to show on-speed).
         let d = (e - be).hypot(n - bn);
         if d > 10_000.0 {
             *been_away = true;

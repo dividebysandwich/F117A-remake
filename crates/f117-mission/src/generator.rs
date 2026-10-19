@@ -23,14 +23,14 @@ fn cdiv(a: i32, b: i32) -> i32 {
     if b == 0 { 0 } else { a.wrapping_div(b) }
 }
 
-/// `approx(dx, dy)` (1A18:5413): max + min/2, clamped to 0x7FFF.
+/// Approximate distance: max + min/2, clamped to 0x7FFF.
 pub(crate) fn approx(dx: i32, dy: i32) -> i32 {
     let (dx, dy) = (s16(dx).abs(), s16(dy).abs());
     let r = if dy < dx { (dy >> 1) + dx } else { (dx >> 1) + dy };
     r.min(0x7FFF)
 }
 
-/// `bearing(dx, dy)` (1A18:5743), identical to the F-15 `calcBearing`.
+/// Bearing of (dx, dy) as a 16-bit angle (0x4000 = 90 degrees), polynomial atan approximation.
 pub(crate) fn bearing(dx: i32, dy: i32) -> i32 {
     let (dx, dy) = (s16(dx), s16(dy));
     if dx == 0 {
@@ -57,7 +57,7 @@ pub(crate) fn bearing(dx: i32, dy: i32) -> i32 {
     s16(r as i32)
 }
 
-/// `scale(level, c)` (1A18:7C05) on a 32-bit value, no rounding.
+/// World coordinate to LOD level units on a 32-bit value, no rounding.
 fn scale(lv: usize, c: u32) -> u32 {
     match lv {
         0 => c << 1,
@@ -68,7 +68,7 @@ fn scale(lv: usize, c: u32) -> u32 {
     }
 }
 
-/// Target record `targets[k]` (DS:E05E, 18 bytes, spec §5).
+/// Target record `targets[k]`.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct RawTarget {
     pub ty: i32,
@@ -125,11 +125,11 @@ pub(crate) struct Gen<'a> {
     diff: i32,
     realism: i32,
     avail: [u8; 20],
-    /// DS:CBDC: the special aircraft's start object; a stale global between missions.
+    /// The special aircraft's start object; a stale global between missions.
     special_start: i32,
 }
 
-/// `rollWeaponAvailability` (1A18:0E23), spec §2. Quirk kept: it tests `avail[map[r]]` but sets
+/// Roll which weapons are out of stock. Quirk kept: it tests `avail[map[r]]` but sets
 /// `avail[r]`.
 pub(crate) fn weapon_availability(rng: &mut MscRand, x: &StartTables, realism: bool) -> [u8; 20] {
     let mut avail = [0u8; 20];
@@ -168,7 +168,7 @@ impl<'a> Gen<'a> {
         special_start: i16,
     ) -> Self {
         let mut avail = avail;
-        // also forced at 1A18:07F6 / 0E84: no AIM-9 / AIM-120 on the Lockheed
+        // also forced: no AIM-9 / AIM-120 on the Lockheed
         avail[0] = realism as u8;
         avail[1] = realism as u8;
         Self {
@@ -207,15 +207,15 @@ impl<'a> Gen<'a> {
         self.w.ott(shape)
     }
 
-    /// `dist(a, b)` (1A18:532A).
+    /// Approximate map distance between objects a and b.
     fn dist(&self, a: i32, b: i32) -> i32 {
         let (a, b) = (self.o(a), self.o(b));
         approx(a.x as i32 - b.x as i32, a.y as i32 - b.y as i32)
     }
 
-    // --- tile-object search (spec §4) -------------------------------------------------------
+    // --- tile-object search -----------------------------------------------------------------
 
-    /// `findNearestTileObject(X, Y)` (1A18:7744).
+    /// Nearest target-category tile object to world point (X, Y), searching LOD1 and LOD2 tiles.
     fn find_nearest(&self, x: i32, y: i32) -> Option<(u8, i32, i32)> {
         let mut best = None;
         let mut bd = 0x7FFF;
@@ -256,13 +256,13 @@ impl<'a> Gen<'a> {
         best
     }
 
-    /// Candidate list of `findRandomObjectOfShape` (1A18:7904).
+    /// Candidate list for a random object of a shape (LOD3 list for category 0x10).
     fn shape_candidates(&self, shape: usize) -> &'a [Candidate] {
         let th: &'a TheaterData = self.th;
         if self.ott(shape) == 0x10 { &th.cand_lod3[shape] } else { &th.cand_lod12[shape] }
     }
 
-    /// `findRandomObjectOfShape(shape)` (1A18:7904). Returns the result and the list length.
+    /// Random tile object of a shape in enemy territory. Returns the result and the list length.
     fn find_random_of_shape(&mut self, shape: usize) -> (Option<(u8, i32, i32)>, usize) {
         let lst = self.shape_candidates(shape);
         if lst.is_empty() {
@@ -289,7 +289,7 @@ impl<'a> Gen<'a> {
         (Some((shape as u8, s32(x), s32(y))), lst.len())
     }
 
-    /// `place(result, slot)` (1A18:512E / 51E8 tail).
+    /// Reuse an object at the found position, or put the tile object into scratch `slot`.
     fn place(&mut self, res: Option<(u8, i32, i32)>, slot: i32) -> i32 {
         let Some((sh, xx, yy)) = res else { return -1 };
         let x = s16(xx >> 5);
@@ -307,7 +307,7 @@ impl<'a> Gen<'a> {
         slot
     }
 
-    /// `findOrPlace(x, y)` (1A18:512E): nearest tile object to a map point.
+    /// Nearest tile object to a map point.
     fn find_or_place(&mut self, x: i32, y: i32, slot: i32) -> i32 {
         let xx = s32((x as i64) << 5);
         let yy = s32(((0x8000 - y) as i64) << 5);
@@ -315,7 +315,7 @@ impl<'a> Gen<'a> {
         self.place(res, slot)
     }
 
-    /// ONC grid reference (1A18:58DF).
+    /// ONC grid reference of a map point.
     fn grid_ref(&self, x: i32, y: i32) -> [u8; 4] {
         let pre = [b"TD", b"JZ", b"WX", b"CC", b"XV", b"ES", b"KU", b"CU", b"KO"][self.theater as usize];
         let (offx, offy) = match self.theater {
@@ -344,7 +344,7 @@ impl<'a> Gen<'a> {
         self.grid_ref(o.x as i32, o.y as i32)
     }
 
-    /// `positionUnit(u, o)` (1A18:5356).
+    /// Put flight unit `u` at object `loc`, fuelled for its plane's range.
     fn position_unit(&mut self, u: usize, loc: i32) {
         let o = *self.o(loc);
         let f = &mut self.w.flights[u];
@@ -364,8 +364,8 @@ impl<'a> Gen<'a> {
         f.fuel = fuel as i16;
     }
 
-    /// `chooseWeapon(class)` (1A18:5282). `None` when no weapon qualifies (a divide fault in
-    /// the original, unreachable with the shipped tables).
+    /// Random pick among the best-suited available weapons for a class. `None` when no weapon
+    /// qualifies (a divide fault in the original, unreachable with the shipped tables).
     fn choose_weapon(&mut self, cat: usize) -> Option<i32> {
         let mut best = 0;
         let mut lst = Vec::new();
@@ -388,7 +388,7 @@ impl<'a> Gen<'a> {
         }
     }
 
-    /// Time formatter (1A18:59FE): ticks after 06:00 (day) / 18:00 (night), rounded down to
+    /// Time formatter: ticks after 06:00 (day) / 18:00 (night), rounded down to
     /// 5 minutes, no 24 h wrap.
     fn fmt_time(night: bool, t: i32) -> String {
         let night = night as i32;
@@ -405,10 +405,10 @@ impl<'a> Gen<'a> {
         c.iter().map(|&v| (v as u8) as char).collect()
     }
 
-    // --- runGenerator (1A18:4239) -----------------------------------------------------------
+    // --- generator main loop ---------------------------------------------------------------
     pub fn run(mut self) -> GenResult {
         let mut t = [RawTarget::default(); 2];
-        let mut mtime: i32 = 0; // DS:D876
+        let mut mtime: i32 = 0; // deadline in ticks
         let (mut min_dist, mut attempt, limit) = (450i32, 900i32, 900i32);
         let mut shape: usize = 0;
         let mut bd = [0x7FFFi32; 2];
@@ -421,7 +421,7 @@ impl<'a> Gen<'a> {
         let training = self.kind & 2 != 0;
         let libya_training = training && self.theater == 0;
         loop {
-            // RESTART (4256): new strike category on the first pass / after 50 failures.
+            // RESTART: new strike category on the first pass / after 50 failures.
             if stage == Stage::Restart {
                 attempt += 1;
                 if attempt > 50 {
@@ -436,7 +436,7 @@ impl<'a> Gen<'a> {
                 }
             }
             stage = Stage::Primary;
-            // §5.1 primary target (42A8)
+            // primary target
             let t0;
             if !strike {
                 loop {
@@ -477,7 +477,7 @@ impl<'a> Gen<'a> {
                 }
                 t0 = found;
             }
-            // §5.2 secondary target (4331 / 4343)
+            // secondary target
             let mut tries = 0;
             let mut t1;
             loop {
@@ -506,7 +506,7 @@ impl<'a> Gen<'a> {
             if (p1.x == p0.x && p1.y == p0.y) || s16(self.dist(t0, t1) & 0xFFC0) > 0x6400 {
                 continue; // back to PRIMARY
             }
-            // §5.3 bases (4455)
+            // bases
             for slot in 0..2 {
                 bd[slot] = 0x7FFF;
                 for i in self.woc()..self.n() {
@@ -529,7 +529,7 @@ impl<'a> Gen<'a> {
                     if f & 0x100 != 0 {
                         d = s16(d + ((self.r.r(100) + 50) << 6));
                     }
-                    // F-15 clampValue quirk: d <= -0x4000 -> 0x7FFF
+                    // clamp quirk kept: d <= -0x4000 -> 0x7FFF
                     d = if d > 0x7FFF {
                         0x7FFF
                     } else if d >= 0 {
@@ -562,7 +562,7 @@ impl<'a> Gen<'a> {
                 stage = Stage::Restart;
                 continue;
             }
-            // §5.4 mission table (465C)
+            // mission table
             for slot in 0..2 {
                 t[slot].ty = 0;
                 let mut choice = 0;
@@ -623,8 +623,8 @@ impl<'a> Gen<'a> {
             if t[1].code & 2 != 0 {
                 mtime = (self.dist(t[0].base, t[1].idx) >> 4) + 450;
             }
-            // §5.5 special aircraft (flight unit 0)
-            escort = -1; // DS:CABC
+            // special aircraft (flight unit 0)
+            escort = -1;
             let c5 = self.x.missions[t[0].num as usize].special as i32;
             if c5 < 0 {
                 self.w.flights[0].plane_type = (-c5) as i16;
@@ -704,7 +704,7 @@ impl<'a> Gen<'a> {
             break;
         }
 
-        // ---- §5.6 post-selection (4AC9) -----------------------------------------------------
+        // ---- post-selection -----------------------------------------------------------------
         for tk in &mut t {
             let ti = tk.idx;
             tk.coord = self.obj_ref(ti);
@@ -738,7 +738,7 @@ impl<'a> Gen<'a> {
         let p1 = *self.o(t[1].idx);
         let waypoints = [mid, (tx, ty), (p1.x as i32, p1.y as i32), (b1.x as i32, b1.y as i32)];
 
-        // ---- §5.7 enemy flights (4C3D) ------------------------------------------------------
+        // ---- enemy flights -----------------------------------------------------------------
         let nf = self.w.flights.len();
         for i in 0..nf.saturating_sub(4) {
             if self.w.flights[i].flags & 0x80 != 0 {
@@ -801,7 +801,7 @@ impl<'a> Gen<'a> {
             }
         }
 
-        // ---- §5.8 threat upgrades (4E0D) and the grid (4EC6) --------------------------------
+        // ---- threat upgrades and the grid --------------------------------------------------
         for i in 0..(self.w.ground_unit_count as i32).min(self.n()) {
             let u = self.o(i).unit_type as i32;
             if u == 0 || u == 21 {
@@ -828,7 +828,7 @@ impl<'a> Gen<'a> {
             }
         }
 
-        // ---- §5.9 weapons, fuel, night, times (4F0F) ----------------------------------------
+        // ---- weapons, fuel, night, times -----------------------------------------------------
         let mut wt = [1, 2, 0, 0];
         wt[2] = if self.r.r(2) == 0 { 5 } else { 9 };
         let fuel = s16(12 * total);
@@ -867,12 +867,12 @@ impl<'a> Gen<'a> {
         } else {
             self.r.r(10) > 2
         };
-        let depart = Self::fmt_time(night, tod); // DS:0D88
-        let deadline = Self::fmt_time(night, mtime + tod); // DS:0D7C
-        let deadline2 = Self::fmt_time(night, mtime + tod + 450); // DS:0D82
+        let depart = Self::fmt_time(night, tod);
+        let deadline = Self::fmt_time(night, mtime + tod);
+        let deadline2 = Self::fmt_time(night, mtime + tod + 450); // deadline + 15 min
         mtime -= (mtime + tod) % 150;
 
-        // ---- §5.10 missionGenerate tail (4121) ----------------------------------------------
+        // ---- generator tail: hand-off values --------------------------------------------
         let hostile_conc = self.w.grid.iter().any(|g| g & 0x10 != 0);
         for o in &mut self.w.objects {
             o.flags &= !0xC0;

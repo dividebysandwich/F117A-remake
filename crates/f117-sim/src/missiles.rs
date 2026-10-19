@@ -4,7 +4,7 @@ use crate::weather::optical_seeker;
 use crate::{N_PROJ, Sim};
 
 impl Sim {
-    /// `acquire(slot, tx, ty, talt, cls)` (V:711F). Sets `acq_aim` always and `acq_range` on
+    /// Seeker acquisition of a target at (tx, ty, talt) for class `cls`. Sets `acq_aim` always and `acq_range` on
     /// success. Optical seekers also need a line of sight through the clouds (`talt` viewZ).
     fn acquire(&mut self, s: usize, tx: i32, ty: i32, talt: i32, cls: i32) -> bool {
         let m = self.proj[s];
@@ -205,7 +205,7 @@ impl Sim {
             m.y = (m.y - self.trig.cos_mul(m.heading, step)) & 0xFFFF;
             m.alt += self.trig.sin_mul(m.pitch, cdiv(m.speed << 7, fs));
             m.ttl -= 1;
-            // posHitsTerrain(m) every 4th frame per slot: flat world, objects not tested (README).
+            // Terrain contact: flat world, objects are not tested.
             if self.proj[s].alt < 0 {
                 self.ground_impact(s);
             }
@@ -269,7 +269,7 @@ impl Sim {
         }
     }
 
-    /// Ground contact of a projectile (V:6BBD).
+    /// Ground contact of a projectile.
     fn ground_impact(&mut self, s: usize) {
         let m = self.proj[s];
         let (ex, ey) = (m.x, m.y);
@@ -279,7 +279,7 @@ impl Sim {
         let long = if s >= 8 { self.weapon_types[(m.weapon.max(0) as usize).min(19)].long_name.clone() } else { String::new() };
         let mut kind = -6;
         if self.opts.fix_original_bugs && s >= 8 && m.spec == 38 {
-            // Intended airdrop rule (weapons.md §5.5.4), unreachable in the original.
+            // Intended airdrop rule, unreachable in the original.
             let mut delivered = false;
             for k in 0..2 {
                 let t = self.targets[k];
@@ -311,7 +311,7 @@ impl Sim {
             self.msg(text);
             let d = approx(self.p.mx - ex, self.p.my - ey) + (self.p.view_z >> 5);
             if self.diff * 32 > d {
-                // "Blast damage" is copied into strBuf after the message: never shown.
+                // The original builds a "Blast damage" message after the miss text but never shows it.
                 self.player_hit();
             }
         } else if s >= 8 {
@@ -320,7 +320,7 @@ impl Sim {
         self.emit(SimEvent::Explosion { x: ex, y: ey, alt: ealt, kind });
     }
 
-    /// Countermeasure timers (V:461C): only the first active slot counts down.
+    /// Countermeasure timers: only the first active slot counts down.
     pub(crate) fn update_cm_timers(&mut self) {
         if let Some(c) = self.cms.iter_mut().find(|c| c.ttl > 0) {
             c.ttl -= 1;

@@ -6,7 +6,7 @@ use crate::types::*;
 const NEAREST_WAIT: u8 = 8;
 
 impl Sim {
-    /// keyDispatch (V:CBA0) for this frame's commands.
+    /// Key handling for this frame's commands.
     pub(crate) fn handle_keys(&mut self, ps: &PlayerState) {
         let c = &ps.cmd;
         // HUD mode changes (F2): entering AIR clears both locks, entering GND the ground lock.
@@ -71,7 +71,7 @@ impl Sim {
         }
     }
 
-    /// Camera keys (V:CEF3).
+    /// Camera keys.
     fn camera_key(&mut self, dir: i32) {
         if self.pflags & pflags::CAMERA_VIEW != 0 {
             return;
@@ -83,7 +83,7 @@ impl Sim {
         self.gnd_lock = -1;
     }
 
-    /// Alt-R (V:48DD).
+    /// Alt-R: resupply (repair, reload bays and gun).
     fn resupply(&mut self) {
         self.damage = 0;
         self.hits = 0;
@@ -94,7 +94,7 @@ impl Sim {
         self.emit(SimEvent::Resupplied);
     }
 
-    /// Per-frame systems (V:D470..D6AC): JAM damage, IR jammer heat, bay doors.
+    /// Per-frame systems: JAM damage, IR jammer heat, bay doors.
     pub(crate) fn update_systems(&mut self) {
         if self.damage & dmg::JAM != 0 {
             self.pflags &= !(pflags::ECM | pflags::IRJ);
@@ -124,7 +124,7 @@ impl Sim {
         }
     }
 
-    /// Fire handling at the end of keyDispatch (V:D445).
+    /// Fire handling at the end of the key handling.
     pub(crate) fn handle_fire(&mut self, ps: &PlayerState) {
         if self.fire_cooldown > 0 {
             self.fire_cooldown -= 1;
@@ -135,14 +135,14 @@ impl Sim {
         }
     }
 
-    /// `computeLoftAngle` (V:BBED).
+    /// Bomb loft angle (BAM) from the player's pitch and altitude.
     pub(crate) fn loft_angle(&self) -> i32 {
         let num = (0x4000 - abs16(self.p.pitch)) << 12;
         let den = (self.p.view_z + 0x1000) & 0xFFFF;
         s16(cdiv(num, den) - 0x4000)
     }
 
-    /// `fireMissile` (V:753F).
+    /// Release the selected store.
     fn fire_missile(&mut self) {
         if abs16(self.p.roll) > 0x3000 {
             return;
@@ -232,7 +232,7 @@ impl Sim {
         self.sound(if mt.lock_range == 0 { 0x10 } else { 0x0D }, 2);
     }
 
-    /// `releaseCM(kind)` (V:4512): 1 flare, 2 chaff, 3 decoy.
+    /// Release a countermeasure `kind`: 1 flare, 2 chaff, 3 decoy.
     pub(crate) fn release_cm(&mut self, kind: usize) {
         let count = self.stores[kind];
         self.stores[kind] -= 1;
@@ -268,7 +268,7 @@ impl Sim {
         self.sound(15, 2);
     }
 
-    /// Cannon (V:465B) and all gun rounds: move, then the HUD-overlay hit tests (V:A1E2..A45B).
+    /// Cannon and all gun rounds: move, then the HUD-overlay hit tests.
     pub(crate) fn update_bullets(&mut self, ps: &PlayerState) {
         let fs = self.fs;
         let nb = self.n_bullets;

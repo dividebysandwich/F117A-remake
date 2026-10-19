@@ -2,8 +2,8 @@
 //! single pixels (zero-length lines) drawn in a solid palette colour. Here each is a quad
 //! that the palette shader expands around the dot's position to a constant size in the
 //! pixels of whichever view draws it (main view, XR eyes, tracking camera), drawn with the
-//! line material (solid colour, distance haze as in VGAME), so the lights read the same at any
-//! resolution, distance or zoom.
+//! line material (solid colour, distance haze as in the original), so the lights read the same
+//! at any resolution, distance or zoom.
 
 use bevy::mesh::MeshTag;
 use bevy::prelude::*;

@@ -1,10 +1,10 @@
-//! Draws the combat simulation's moving objects (combat.md 1.1: the per-frame draw list):
+//! Draws the combat simulation's moving objects (the per-frame draw list):
 //! aircraft (STFLT models by `aircraftTypes[spec].model`), projectiles (`sams[spec].model`),
 //! countermeasure cartridges, gun rounds, smoke, the falling wreck, the parachute and impact
 //! flashes. Positions are interpolated between the 15 Hz simulation frames.
 //!
-//! Also drives the model state slots of the world (visuals.md section 5): lights (10/11) from
-//! the palette, the turning antennas (15/16) and the per-object aircraft slots (8, 12, 13, 14).
+//! Also drives the model state slots of the world: lights (10/11) from the palette, the turning
+//! antennas (15/16) and the per-object aircraft slots (8, 12, 13, 14).
 
 use std::collections::{HashMap, HashSet};
 
@@ -48,7 +48,7 @@ const TRACER: u8 = 17;
 const ENEMY_TRACER: u8 = 41;
 const SMOKE: u8 = 8;
 const CHUTE: u8 = 15;
-/// STFLT model of the falling wreck (combat.md 1.1).
+/// STFLT model of the falling wreck.
 const WRECK_MODEL: i32 = 11;
 /// Seconds without new smoke after which the old puffs are no longer drawn.
 const SMOKE_TIMEOUT: f32 = 4.0;
@@ -467,7 +467,7 @@ fn world_model_state(
     mut own: Query<&mut ModelState, (With<OwnModel>, Without<TileObject>)>,
     player: Query<&Aircraft, With<Player>>,
 ) {
-    // Slot 15 += 1152 and slot 16 += 1024 per original frame time unit (DS:4EA0), ~15 per second.
+    // Slot 15 += 1152 and slot 16 += 1024 per original frame time unit, ~15 per second.
     let dt = time.delta_secs() * crate::combat::FS as f32;
     angles[0] = (angles[0] + 1152.0 * dt).rem_euclid(65536.0);
     angles[1] = (angles[1] + 1024.0 * dt).rem_euclid(65536.0);
@@ -496,7 +496,7 @@ fn world_model_state(
     }
     let door = combat.as_ref().map_or(0, |c| c.sim.bay_door_anim()) as i16;
     let Ok(a) = player.single() else { return };
-    // Gear position DS:C072 counts 0 (up) .. 3 (down), one step per ~0.2 s (key 6).
+    // Gear position counts 0 (up) .. 3 (down), one step per ~0.2 s (key 6).
     let target = if a.gear_down { 3.0 } else { 0.0 };
     let step = time.delta_secs() * 5.0;
     *gear = if *gear < target { (*gear + step).min(target) } else { (*gear - step).max(target) };
@@ -512,7 +512,7 @@ fn world_model_state(
     }
 }
 
-/// The own aircraft's shadow (STFLT 17, combat.md 1.1): flat on the ground under the aircraft,
+/// The own aircraft's shadow (STFLT 17): flat on the ground under the aircraft,
 /// by day below 1000 ft.
 #[derive(Component)]
 struct OwnShadow;

@@ -23,21 +23,21 @@ pub fn abs16(v: i32) -> i32 {
     s16(s16(v).abs())
 }
 
-/// `sign` (V:CB39): -1 / 0 / 1.
+/// Sign of a 16-bit word: -1 / 0 / 1.
 #[inline]
 pub fn sign(v: i32) -> i32 {
     s16(v).signum()
 }
 
-/// `approx(dx, dy)` / `rangeApprox` (V:C987): `max + min/2`, capped at 0x7FFF.
+/// Approximate distance `max + min/2`, capped at 0x7FFF.
 pub fn approx(dx: i32, dy: i32) -> i32 {
     let a = s16(dx).abs();
     let b = s16(dy).abs();
     (a.max(b) + (a.min(b) >> 1)).min(0x7FFF)
 }
 
-/// `bearing(x, y)` (V:C9D6): x = east, y = north, returns a u16 BAM. Exact port of
-/// `tools/re/py/radar_ref.py` (CONFIRMED against the game).
+/// Bearing of (x, y): x = east, y = north, returns a u16 BAM. Integer arctangent
+/// approximation, bit-exact with the original game.
 pub fn bearing(x: i32, y: i32) -> i32 {
     let x = s16(x);
     let y = s16(y);
@@ -70,7 +70,7 @@ pub fn bearing(x: i32, y: i32) -> i32 {
     res & 0xFFFF
 }
 
-/// `clampRange(v, lo, hi)` (V:C94E) with the F-15 quirk: `v > hi → hi; v >= lo → v;
+/// Clamp with the original's quirk: `v > hi → hi; v >= lo → v;
 /// v <= -0x4000 → hi; else lo`. All compares are signed 16-bit.
 pub fn clamp_q(v: i32, lo: i32, hi: i32) -> i32 {
     let (v, lo, hi) = (s16(v), s16(lo), s16(hi));
@@ -85,12 +85,12 @@ pub fn clamp_q(v: i32, lo: i32, hi: i32) -> i32 {
     }
 }
 
-/// `clampValue` (V:C96D): plain clamp.
+/// Plain clamp.
 pub fn clamp_v(v: i32, lo: i32, hi: i32) -> i32 {
     v.max(lo).min(hi)
 }
 
-/// `isqrt` (V:2F40): Newton iteration seeded with v>>2, 1 for v < 4.
+/// Integer square root: Newton iteration seeded with v>>2, 1 for v < 4.
 pub fn isqrt(v: i32) -> i32 {
     if v < 4 {
         return 1;
@@ -105,7 +105,7 @@ pub fn isqrt(v: i32) -> i32 {
     }
 }
 
-/// `fixedMulQ14(a, b)` (2AB5:0006): `(a*b) >> 15` plus bit 14 (rounding).
+/// Q15 fixed-point multiply: `(a*b) >> 15` plus bit 14 (rounding).
 #[inline]
 pub fn fixed_mul(a: i32, b: i32) -> i32 {
     let p = s16(a) * s16(b);
@@ -119,7 +119,7 @@ pub fn cdiv(a: i32, b: i32) -> i32 {
     if b == 0 { 0 } else { a.wrapping_div(b) }
 }
 
-/// Compressed altitude used by all threat code (V:2AA3): `alt < 0x2000 ? alt :
+/// Compressed altitude used by all threat code: `alt < 0x2000 ? alt :
 /// alt < 0x4000 ? 0x2000 + (alt-0x2000)/2 : 0x3000 + (alt-0x4000)/4`.
 pub fn view_z(alt: u16) -> i32 {
     let a = alt as i32;
@@ -132,8 +132,8 @@ pub fn view_z(alt: u16) -> i32 {
     }
 }
 
-/// Sine table (DS:2084, Q15, 256 steps per turn + 1 guard entry) with the original
-/// interpolating lookup (2AB5:007C) and `sinMul` / `cosMul` (V:CAEE / V:CB07).
+/// Sine table (Q15, 256 steps per turn + 1 guard entry) with the original's
+/// interpolating lookup and fixed-point `x·sin` / `x·cos` products.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Trig {
     pub lut: Vec<i16>,
@@ -190,7 +190,7 @@ mod tests {
         assert_eq!(bearing(0, -10), 0x8000);
         assert_eq!(bearing(10, 0), 0x4000);
         assert_eq!(bearing(-10, 0), 0xC000);
-        // Reference values from tools/re/py/radar_ref.py bearing().
+        // Reference values matching the original game's bearing().
         assert_eq!(bearing(100, 100), 0x204D);
         assert_eq!(bearing(100, -100), 0x5FB3);
         assert_eq!(bearing(-100, -100), 0xA04D);
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn bearing_atan_table() {
-        // radar-threats.md §1 table: hi8s(bearing(viewZ/3 * (diff+1), 0x800)).
+        // Radar look-down table: hi8s(bearing(viewZ/3 * (diff+1), 0x800)).
         let t = |alt: i32, d: i32| hi8s(bearing(u16v((alt / 3) * (d + 1)), 0x800));
         assert_eq!([t(0, 0), t(0, 3)], [0, 0]);
         assert_eq!([t(100, 0), t(100, 1), t(100, 2), t(100, 3)], [0, 1, 1, 2]);

@@ -1,9 +1,9 @@
-//! Right-MFD tracking camera (VGAME `1A18:BF71`, projection 0xC470): a second 3D camera at the
-//! aircraft looking at the locked target, or along the camera direction keys (`/ , . m`) with
-//! the photo lens depression, rendered into a small texture with the original focal length
-//! `256 << zoom` over the 77x60 MFD rectangle. The cockpit shows the texture behind the right
-//! MFD screen (the page's text is drawn over it); it is rendered at the screen's resolution
-//! (2x the original for the classic panel, 6x for the modern one's 231x180 display).
+//! Right-MFD tracking camera: a second 3D camera at the aircraft looking at the locked target,
+//! or along the camera direction keys (`/ , . m`) with the photo lens depression, rendered into
+//! a small texture with the original focal length `256 << zoom` over the 77x60 MFD rectangle.
+//! The cockpit shows the texture behind the right MFD screen (the page's text is drawn over it);
+//! it is rendered at the screen's resolution (2x the original for the classic panel, 6x for the
+//! modern one's 231x180 display).
 
 use bevy::camera::RenderTarget;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -33,7 +33,7 @@ impl Plugin for TrackCamPlugin {
 fn scale(settings: &crate::settings::Settings) -> u32 {
     if settings.classic_cockpit { 2 } else { 6 }
 }
-/// Photo lens depression below the nose (weapons.md 5.4.6: 0x6EF BAM).
+/// Photo lens depression below the nose (0x6EF BAM).
 const LENS_DEPRESSION: f32 = 0x6EF as f32;
 
 #[derive(Component)]
@@ -244,7 +244,7 @@ fn ils_view(sites: &[crate::scenery::PapiSite], eye: bevy::math::DVec3, heading:
 #[derive(Component)]
 struct TrackCamBackground;
 
-/// FLIR: the camera's sky and ground become flat (sky 0x88, ground 0x7C; visuals.md 3).
+/// FLIR: the camera's sky and ground become flat (sky 0x88, ground 0x7C).
 fn flir_background(
     mfd: Res<MfdState>,
     palette: Option<Res<crate::palette::Palette>>,

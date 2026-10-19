@@ -29,7 +29,7 @@ impl Plugin for ModelsPlugin {
 }
 
 /// Per-instance state table read by conditional geometry and articulated parts
-/// (the word array VGAME passes to its model renderer). Known slots: 1 = destroyed variant,
+/// (the word array passed to the model renderer). Known slots: 1 = destroyed variant,
 /// 10 = night lights on, 12 = aircraft navigation lights on, 16 = radar antenna angle,
 /// 17 = rotor angle. Angles use the original 16-bit binary angle (0x10000 = 360 degrees).
 #[derive(Component, Debug, Clone)]
@@ -42,7 +42,7 @@ impl Default for ModelState {
 }
 
 /// Global state slot values added to every model's own slots: the continuously turning angles
-/// of slots 15/16 (radar antennas) and 17 (rotors), driven in flight (visuals.md section 5).
+/// of slots 15/16 (radar antennas) and 17 (rotors), driven in flight.
 #[derive(Resource, Debug, Clone, Copy, Default)]
 pub struct ModelGlobals {
     pub angles: [i16; 3],

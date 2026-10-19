@@ -1,5 +1,5 @@
 //! Missions: the original START generator (crate f117-mission, byte-exact with the original)
-//! running on data exported by f117-convert (assets/mission/*.json).
+//! running on data exported from the original game (assets/mission/*.json).
 
 use std::sync::Arc;
 
@@ -45,11 +45,11 @@ pub fn clean_text(s: &str) -> String {
     s.chars().filter(|&c| (c as u32) < 0x80 && c != '\r').collect()
 }
 
-/// Per-theater runway direction (VGAME DS:3D7C), exported in assets/sim/tables.ron.
+/// Per-theater runway direction, exported in assets/sim/tables.ron.
 pub fn start_pose(m: &Mission, start_dir: &[i16]) -> StartPose {
     let t = start_dir.get(m.settings.theater).copied().unwrap_or(1) as f64;
     let (bx, by) = (m.takeoff.position.x as f64, m.takeoff.position.y as f64);
-    // VGAME 3A92: ViewX = x<<5 + 2, ViewY = (0x8000 - y) << 5; land base: ViewY -= t*0x708;
+    // ViewX = x<<5 + 2, ViewY = (0x8000 - y) << 5; land base: ViewY -= t*0x708;
     // carrier: ViewX -= t<<7, heading + 0x400. Heading 0 (t = +1) or 0x8000.
     let mut east = bx * 32.0 + 2.0;
     let mut north = (32768.0 - by) * 32.0;
@@ -73,7 +73,7 @@ pub fn setup_from_mission(m: &Mission, start_dir: &[i16]) -> MissionSetup {
     MissionSetup {
         theater: m.theater_code.to_ascii_lowercase(),
         night: m.night,
-        // Palette fade seed k = (row0 + row1) & 15 (mission-generation.md).
+        // Palette fade seed k = (row0 + row1) & 15.
         tod_seed: ((m.primary.row + m.secondary.row) & 15) as u8,
         start_base: Some(m.takeoff.name.clone()),
         start: Some(start_pose(m, start_dir)),

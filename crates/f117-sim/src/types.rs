@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// World-object flags (combat.md §1.2).
+/// World-object flags.
 pub mod oflags {
     pub const AIRFIELD: i32 = 0x0001;
     pub const SWEPT: i32 = 0x0002;
@@ -15,7 +15,7 @@ pub mod oflags {
     pub const RADAR_ID: i32 = 0x1000;
 }
 
-/// Flight-unit flags (combat.md §1.3).
+/// Flight-unit flags.
 pub mod fflags {
     pub const EXISTS: i32 = 0x0001;
     pub const AIRBORNE: i32 = 0x0002;
@@ -34,7 +34,7 @@ pub mod fflags {
     pub const SAW_PLAYER: i32 = 0x4000;
 }
 
-/// Player flags DS:9B04 (radar-threats.md §1, combat.md header).
+/// Player flags.
 pub mod pflags {
     pub const GEAR_UP: i32 = 0x0001;
     pub const FLAPS: i32 = 0x0002;
@@ -49,7 +49,7 @@ pub mod pflags {
     pub const PRIMARY_DONE: i32 = 0x4000;
 }
 
-/// Damage bits DS:3632 (combat.md §6.1.1).
+/// Damage bits.
 pub mod dmg {
     /// Missile warning: RAD/IR lights and klaxon off.
     pub const MW: u8 = 0x01;
@@ -69,7 +69,7 @@ pub mod dmg {
     pub const UNUSED: u8 = 0x80;
 }
 
-/// World object in flight (DS:B2A2, 16 bytes).
+/// World object in flight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct GroundObject {
     pub name: i32,
@@ -79,15 +79,15 @@ pub struct GroundObject {
     /// Radar / SAM type (0 = none; set to 0 when destroyed).
     pub unit_type: i32,
     pub flags: i32,
-    /// Alert 0..255 for sites; for airfields the stationed aircraft type (same word, +A).
+    /// Alert 0..255 for sites; for airfields the stationed aircraft type (same field).
     pub alert: i32,
-    /// Sweep timer for sites; squadron count for airfields (+C).
+    /// Sweep timer for sites; squadron count for airfields.
     pub timer: i32,
-    /// Shape: low 7 bits model (+E); bit 8 = placed / wreck state.
+    /// Shape: low 7 bits model; bit 8 = placed / wreck state.
     pub shape: i32,
 }
 
-/// Flight unit (DS:C13E, 36 bytes).
+/// Flight unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct FlightUnit {
     /// Waypoint / base object.
@@ -107,17 +107,17 @@ pub struct FlightUnit {
     pub speed: i32,
     /// Endurance timer (frames).
     pub timer: i32,
-    /// Missile type (+0x1E).
+    /// Missile type.
     pub missile: i32,
-    /// +0x20, untouched.
+    /// Unused, kept for completeness.
     pub reserved: i32,
-    /// Radar track strength 0..255 (+0x22).
+    /// Radar track strength 0..255.
     pub heat: i32,
     /// AI mode of the last frame (1 intercept, 2 RTB, 3 patrol; 0 inactive). Not in the original record.
     pub mode: i32,
 }
 
-/// Projectile (DS:3C0C, 28 bytes). Slots 0..7 enemy, 8..11 player.
+/// Projectile. Slots 0..7 enemy, 8..11 player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Projectile {
     pub x: i32,
@@ -144,7 +144,7 @@ pub struct Projectile {
     pub locked: bool,
 }
 
-/// Gun round (DS:E44E, 12 bytes); x == 0 is a free slot.
+/// Gun round; x == 0 is a free slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Bullet {
     pub x: i32,
@@ -155,7 +155,7 @@ pub struct Bullet {
     pub vz: i32,
 }
 
-/// Countermeasure cartridge (DS:39AA, 12 bytes). Slot 0 = decoy, 1..3 flares / chaff.
+/// Countermeasure cartridge. Slot 0 = decoy, 1..3 flares / chaff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Countermeasure {
     pub x: i32,
@@ -165,7 +165,7 @@ pub struct Countermeasure {
     pub ttl: i32,
 }
 
-/// Smoke puff (DS:39DA).
+/// Smoke puff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Smoke {
     pub x: i32,
@@ -174,7 +174,7 @@ pub struct Smoke {
     pub age: i32,
 }
 
-/// Falling wreck (C0A6 / C0B8 / C602, fall speed B756).
+/// Falling wreck: position and fall speed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Wreck {
     pub x: i32,
@@ -183,7 +183,7 @@ pub struct Wreck {
     pub vel: i32,
 }
 
-/// Impact flash (C0A0 / C0AA / C0B0, timer 9D0C).
+/// Impact flash: position and timer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Flash {
     pub x: i32,
@@ -192,7 +192,7 @@ pub struct Flash {
     pub timer: i32,
 }
 
-/// Destroyed / replaced tile object (tile damage list DS:B772, 5 bytes each).
+/// Destroyed / replaced tile object (an entry of the tile damage list).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TileDamage {
     pub level: u8,
@@ -203,7 +203,7 @@ pub struct TileDamage {
     pub shape: i32,
 }
 
-/// Target slot `targets[k]` (DS:E2D8 + 18k).
+/// Objective slot `targets[k]` (0 primary, 1 secondary).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct TargetSlot {
     pub mission_type: i32,
@@ -212,7 +212,7 @@ pub struct TargetSlot {
     pub code: i32,
 }
 
-/// HUD mode (DS:E2FE).
+/// HUD mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum HudMode {
     #[default]
@@ -221,10 +221,10 @@ pub enum HudMode {
     Gnd = 2,
 }
 
-/// One-shot commands of this frame (keys, keyDispatch V:CBA0).
+/// One-shot commands of this frame (keys).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Commands {
-    /// Enter / joystick button 1 (fireMissile, camera shutter). Holding repeats every 4 frames.
+    /// Enter / joystick button 1 (fire the selected weapon, camera shutter). Holding repeats every 4 frames.
     pub fire: bool,
     /// Backspace / button 0 held: cannon.
     pub gun: bool,
@@ -264,40 +264,40 @@ pub struct Commands {
 /// What the flight model / game reports about the player this frame.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayerState {
-    /// World units, x east (BA10).
+    /// World units, x east.
     pub x: i32,
-    /// World units, y north (C02A).
+    /// World units, y north.
     pub y: i32,
-    /// True altitude in feet (DS:2DF6). viewZ is computed inside.
+    /// True altitude in feet. viewZ is computed inside.
     pub altitude: u16,
-    /// BAM (DS:2DEE / 2DF0 / 2DF2).
+    /// BAM.
     pub heading: u16,
     pub pitch: i16,
     pub roll: i16,
-    /// knots * 27 (DS:B052).
+    /// knots * 27.
     pub velocity: u16,
     pub gear_up: bool,
     pub flaps: bool,
     pub brakes: bool,
     pub on_ground: bool,
     pub autopilot: bool,
-    /// Climb rate in altitude units per second (E55A), for the touchdown test.
+    /// Climb rate in altitude units per second, for the touchdown test.
     pub climb_rate: i32,
-    /// Fuel (DS:3634 units).
+    /// Fuel (original game units).
     pub fuel: i32,
-    /// The renderer found the eye inside an object (C686 bit 0x80).
+    /// The renderer found the eye inside an object.
     pub collided: bool,
     pub hud_mode: HudMode,
-    /// Right MFD shows the tracking camera (DFDC == 0x13).
+    /// Right MFD shows the tracking camera.
     pub camera_mfd: bool,
-    /// External view (C07A & 0x80).
+    /// External view.
     pub external_view: bool,
-    /// Cockpit / HUD drawn (DS:365E).
+    /// Cockpit / HUD drawn.
     pub hud_visible: bool,
     pub cmd: Commands,
 }
 
-/// Landing option (game+0x40).
+/// Landing option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum LandingMode {
     NoCrashes = 0,
@@ -310,10 +310,10 @@ pub enum LandingMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SimOptions {
     pub landing: LandingMode,
-    /// Implement the intended rule where the original is evidently broken (README):
-    /// the unreachable supply-drop test (weapons.md §5.5.4).
+    /// Implement the intended rule where the original is evidently broken: the unreachable
+    /// supply-drop test, and an air-to-air missile that keeps hitting the wreck it just downed.
     pub fix_original_bugs: bool,
-    /// RNG seed override; default is the mission's final `holdrand`.
+    /// RNG seed override; default is the mission generator's final RNG state.
     pub seed: Option<u32>,
 }
 
@@ -323,27 +323,27 @@ impl Default for SimOptions {
     }
 }
 
-/// Mission end (COMM+0x28 outcome, combat.md §6.5.7).
+/// Mission end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionEnd {
     /// 0 safe stop / chute landed, 1 crash, 2 collision, 5 bad landing, 6 ejection failed, 7 quit.
     pub outcome: u8,
-    /// COMM+0x26: 1 default, 2 ejected, 3 landed.
+    /// Landing type: 1 default, 2 ejected, 3 landed.
     pub landing_type: u8,
-    /// Final map position (COMM+0x74 / +0x76).
+    /// Final map position.
     pub map_x: i32,
     pub map_y: i32,
     pub damage: u8,
     pub hits: i32,
 }
 
-/// Debrief event log record (6 bytes `{tick, x>>7, y>>7, type|0x80 primary|0x40 secondary, arg}`).
+/// Debrief event log record (`{tick, x>>7, y>>7, type|0x80 primary|0x40 secondary, arg}`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogEvent {
     pub tick: i32,
     pub x: u8,
     pub y: u8,
-    /// Type (mission-generation.md §8) with 0x80 primary / 0x40 secondary.
+    /// Event type with 0x80 primary / 0x40 secondary.
     pub kind: u8,
     pub arg: u8,
 }
@@ -374,20 +374,20 @@ pub enum RwrTone {
 /// Output events of one frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SimEvent {
-    /// HUD message line (hudMessage V:8B93), as printed by the original.
+    /// HUD message line, as printed by the original.
     Message(String),
-    /// `sound(id, priority)` (V:D6BF).
+    /// Sound effect `id` at `priority`.
     Sound { id: u8, priority: u8 },
     /// Radar warning receiver tone (replaces the original's sounds 8 and 9).
     Rwr(RwrTone),
-    /// Time acceleration must be cancelled (V:D7BB).
+    /// Time acceleration must be cancelled.
     CancelTimeAccel,
     MissileLaunched { slot: usize, spec: i32, launcher: Launcher },
     /// Player damaged: the bits that were rolled this time.
     PlayerHit { bits: u8 },
-    /// Red damage flash (DS:98EE).
+    /// Red damage flash.
     DamageFlash,
-    /// Impact flash (timer value of 9D0C: 0x10 kill, -6 bomb, -16 crash, -1 gun).
+    /// Impact flash (flash timer value: 0x10 kill, -6 bomb, -16 crash, -1 gun).
     Explosion { x: i32, y: i32, alt: i32, kind: i32 },
     AircraftDestroyed { unit: usize, spec: i32 },
     AircraftCrashed { unit: usize },
@@ -398,7 +398,7 @@ pub enum SimEvent {
     TileDestroyed(TileDamage),
     ObjectiveDone { primary: bool },
     PhotoTaken { frame: i32 },
-    /// Extra fuel tank transferred (DS:3634 += lbs).
+    /// Extra fuel tank transferred (fuel += lbs).
     FuelTransfer { lbs: i32 },
     /// Resupply (training): fuel = 5000.
     Resupplied,
@@ -446,7 +446,7 @@ pub struct SignalBar {
     pub colour: u8,
 }
 
-/// MAP radar arc of the sweep being displayed (C070 / C07E / E54C / C13A..C).
+/// MAP radar arc of the sweep being displayed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct RadarArc {
     /// Ground site index, or -1-unit for aircraft.
@@ -460,7 +460,7 @@ pub struct RadarArc {
     /// Arc limits in BAM high bytes; None = full circle.
     pub arc: Option<(i32, i32)>,
     pub colour: u8,
-    /// Frames left of the display (sweepAnim).
+    /// Frames left of the display.
     pub frames_left: i32,
 }
 
@@ -471,7 +471,7 @@ pub struct TargetingState {
     pub ground: Option<usize>,
     /// Air lock (flight unit index).
     pub air: Option<usize>,
-    /// LOCK oval shown (E55C).
+    /// LOCK oval shown.
     pub lock_valid: bool,
     /// Oval red / contracted (in range).
     pub in_range: bool,
@@ -481,7 +481,7 @@ pub struct TargetingState {
     pub box_size: i32,
     /// Approximate HUD screen position of the locked target (320x200 cockpit), None off screen.
     pub screen: Option<(i32, i32)>,
-    /// The locked target was killed (9D0E).
+    /// The locked target was killed.
     pub target_killed: bool,
     /// CCIP point (map units) for free-fall bombs.
     pub ccip: Option<(i32, i32)>,
@@ -497,9 +497,9 @@ pub struct TargetingState {
 pub struct Objectives {
     pub primary_done: bool,
     pub secondary_done: bool,
-    /// Current waypoint (DS:2E7C): 1 after the secondary, 2 after the primary, 3 both.
+    /// Current waypoint: 1 after the secondary, 2 after the primary, 3 both.
     pub waypoint: i32,
-    /// Mission clock (missionTick).
+    /// Mission clock (ticks).
     pub tick: i32,
     pub deadline: i32,
     /// The special aircraft landed and escaped (air mission failed).

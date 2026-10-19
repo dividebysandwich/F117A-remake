@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-/// The directory containing `assets/` (and, in a checkout, `re-work/`).
+/// The directory containing `assets/`.
 pub fn root() -> &'static PathBuf {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
     ROOT.get_or_init(bevy::asset::io::file::FileAssetReader::get_base_path)

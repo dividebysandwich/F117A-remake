@@ -1,14 +1,14 @@
-//! Multi-function displays (docs/re/cockpit.md section 3). Each MFD draws into its own canvas:
+//! Multi-function displays. Each MFD draws into its own canvas:
 //! 77x60 like the original with the classic cockpit panel, 231x180 (`HIRES`) with the modern one.
 //!
 //! Left MFD, F3 toggles:
-//! - MAP: top-down render of the theater tile models through the 16-colour map remap table
-//!   (VGAME `1A18:8387` / `119C`), CPU-rasterised straight into palette indices from the theater
-//!   model meshes. Classic: north up, centred ahead of the aircraft, re-rendered on zoom or mode
-//!   changes and when the aircraft leaves the display (like the original). Modern: a larger
-//!   north-up buffer resampled every frame into a north-up or heading-up view, with the route,
-//!   airbases and a heading-true aircraft symbol.
-//! - TAC: heading-up tactical display with a 1024-map-unit grid (`1A18:8C10`).
+//! - MAP: top-down render of the theater tile models through the 16-colour map remap table,
+//!   CPU-rasterised straight into palette indices from the theater model meshes. Classic: north
+//!   up, centred ahead of the aircraft, re-rendered on zoom or mode changes and when the aircraft
+//!   leaves the display (like the original). Modern: a larger north-up buffer resampled every
+//!   frame into a north-up or heading-up view, with the route, airbases and a heading-true
+//!   aircraft symbol.
+//! - TAC: heading-up tactical display with a 1024-map-unit grid.
 //!
 //! Right MFD: tracking camera (TC), WAY, WPN, ORD pages.
 //! Z/X zoom the map (2..9, 2..10 modern) or the TAC display (0..7); the modern cockpit's bezel
@@ -74,7 +74,7 @@ pub enum LeftMfd {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RightMfd {
-    /// Tracking camera (TC, `DS:DFDC` = 0x13).
+    /// Tracking camera (TC).
     Camera,
     Way,
     Wpn,
@@ -95,9 +95,9 @@ pub enum CamDir {
 pub struct MfdState {
     pub left: LeftMfd,
     pub right: RightMfd,
-    /// Map zoom 2 (whole theater) ..= 9 (`DS:4080`).
+    /// Map zoom 2 (whole theater) ..= 9.
     pub map_zoom: i32,
-    /// TAC zoom 0..=7 (`DS:4082`).
+    /// TAC zoom 0..=7.
     pub tac_zoom: i32,
     pub cam_dir: CamDir,
     /// F6: FLIR on the camera page.
@@ -399,7 +399,7 @@ struct MapModel {
 #[derive(Resource)]
 pub struct MapRaster {
     pub canvas: Canvas,
-    /// Map centre in map units (`DS:4084/4086`).
+    /// Map centre in map units.
     pub centre: (i32, i32),
     pub zoom: i32,
     pub valid: bool,
@@ -628,7 +628,7 @@ fn build_map_geometry(
     raster.valid = false;
 }
 
-/// Classic map projection: map units -> MFD pixels (VGAME `1A18:8514` / `852B`; the original
+/// Classic map projection: map units -> MFD pixels (the original
 /// centre (112, 139) on the 320x200 screen is (38, 29) in the display).
 pub fn map_to_screen(centre: (i32, i32), zoom: i32, x: f64, y: f64) -> Vec2 {
     let s = (1i32 << (10 - zoom)) as f64;
@@ -692,7 +692,7 @@ fn render_map(
     }
 
     if raster.valid {
-        // Re-render when the aircraft leaves the display (VGAME 3BE4).
+        // Re-render when the aircraft leaves the display.
         let p = map_to_screen(raster.centre, raster.zoom, x as f64, y as f64);
         if p.x >= 0.0 && p.x <= (CLASSIC.0 - 1) as f32 && p.y >= 0.0 && p.y <= (CLASSIC.1 - 1) as f32 {
             return;
@@ -715,7 +715,7 @@ fn bevy_to_map(pos: &WorldPos) -> (f64, f64) {
     (e / 32.0, 0x8000 as f64 - n / 32.0)
 }
 
-/// Renders the theater top-down (VGAME `1A18:11F2`): LOD4, LOD3, LOD2 tiles (a level only if
+/// Renders the theater top-down: LOD4, LOD3, LOD2 tiles (a level only if
 /// its tiles are larger than 16 units on screen at the original scale), then LOD4 and LOD3
 /// again for the models flagged 0x80 (drawn on top). Only ground-level objects (z = 0) are
 /// drawn. `to_px` maps world units (east, north) to canvas pixels; `visible` is the world
@@ -811,7 +811,7 @@ pub struct MfdParams<'w, 's> {
     pub time: Res<'w, Time>,
 }
 
-/// MFD text helper (`1A18:89FE`): x = 4*col, y = 6*row in the display.
+/// MFD text helper: x = 4*col, y = 6*row in the display.
 fn mfd_text(c: &mut Canvas, fonts: &Fonts, col: i32, row: i32, s: &str, colour: u8) {
     fonts.text(c, 4 * col, 6 * row, &upper(s), colour);
 }
@@ -911,7 +911,7 @@ impl MfdParams<'_, '_> {
         }
     }
 
-    /// TAC display (`1A18:8C10`).
+    /// TAC display.
     fn draw_tac(&self, c: &mut Canvas, art: &CockpitArt, ac: Option<(&Aircraft, &WorldPos)>) {
         self.tac(c, art, ac, 1);
     }
@@ -926,7 +926,7 @@ impl MfdParams<'_, '_> {
         let zoom = self.state.tac_zoom;
         let shift = 7 - zoom;
         let kf = k as f32;
-        // Heading-up projection (`1A18:90B9`; own aircraft at (38, 42) of the original display);
+        // Heading-up projection (own aircraft at (38, 42) of the original display);
         // also returns whether an icon is inside the display.
         let proj = |x: i32, y: i32| -> (i32, i32, bool) {
             let (dx, dy) = if k == 1 {
@@ -998,7 +998,7 @@ impl MfdParams<'_, '_> {
         plane(c, 0.0, 38 * k, 42 * k, 9);
     }
 
-    /// Tracking camera page (`1A18:BF71`). With the camera picture live the background stays
+    /// Tracking camera page. With the camera picture live the background stays
     /// see-through (index 0) and the 3D picture shows behind the MFD; otherwise a placeholder
     /// (the level "ahead" view's sky bands and ground).
     fn draw_camera_page(&self, c: &mut Canvas, fonts: &Fonts) {
@@ -1067,7 +1067,7 @@ impl MfdParams<'_, '_> {
         if i == self.waypoints.current { 15 } else if i % 2 == 1 { 3 } else { 11 }
     }
 
-    /// WAY page (`1A18:9208`).
+    /// WAY page.
     fn draw_way(&self, c: &mut Canvas, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>) {
         c.clear(1);
         let t = self.way_time(ac);
@@ -1087,7 +1087,7 @@ impl MfdParams<'_, '_> {
         }
     }
 
-    /// WPN page (`1A18:9678`): backdrop (frame and ORDNANCE.PIC side views) with counts and names.
+    /// WPN page: backdrop (frame and weapon side views) with counts and names.
     fn draw_wpn(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
         c.clear(0);
         for (i, bay) in self.stores.bays.iter().enumerate().take(4) {
@@ -1106,7 +1106,7 @@ impl MfdParams<'_, '_> {
         }
     }
 
-    /// ORD page (`1A18:97A4`).
+    /// ORD page.
     fn draw_ord(&self, c: &mut Canvas, fonts: &Fonts) {
         c.clear(0);
         for (row, (colour, line)) in self.orders.lines.iter().enumerate().take(10) {

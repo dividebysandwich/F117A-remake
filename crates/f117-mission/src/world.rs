@@ -5,7 +5,7 @@ pub const NAMES_BYTES: usize = 750;
 /// Size of the shape-indexed tables (buf7, buf8, objectTypeTable) and of the name table.
 pub const TABLE: usize = 128;
 
-/// Object flags (spec §3).
+/// World object flags.
 pub mod flags {
     pub const AIRFIELD: i16 = 0x001;
     pub const SHIP: i16 = 0x008;
@@ -17,7 +17,7 @@ pub mod flags {
     pub const DISABLED: i16 = 0x800;
 }
 
-/// 16-byte world object (spec §3 "WorldObject"). Values are kept as the raw signed words.
+/// World object (base, landmark or ground unit). Values are kept as the raw signed words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct WorldObject {
     /// Place name index.
@@ -43,7 +43,7 @@ impl WorldObject {
     }
 }
 
-/// 36-byte flight unit (spec §3 "FlightUnit").
+/// Flight unit: an aircraft group with its position, waypoint and state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct FlightUnit {
     /// Waypoint object index.
@@ -62,11 +62,11 @@ pub struct FlightUnit {
     pub flags: i16,
     pub speed: i16,
     pub fuel: i16,
-    /// Not touched by START.
+    /// Not touched by the generator.
     pub reserved: [i16; 3],
 }
 
-/// The theater world that is handed to VGAME (spec §7), after the generator's edits.
+/// The theater world that is handed to the flight, after the generator's edits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionWorld {
     /// lo = land rubble shape, hi = water rubble shape.
@@ -79,13 +79,13 @@ pub struct MissionWorld {
     /// Per shape; low nibble = weapon suitability class.
     pub buf7: Vec<u8>,
     pub buf8: Vec<u8>,
-    /// objectTypeTable: target category per shape (0 = not a target). Not exported to VGAME.
+    /// objectTypeTable: target category per shape (0 = not a target). Not part of the hand-off block.
     pub object_types: Vec<i8>,
     /// 16x16 territory grid, `grid[row*16+col]`; `&3 == 0` enemy, 0x10 hostile concentration.
     pub grid: Vec<u8>,
     /// Name bytes as read from the file (at most 750; the hand-off pads with zeros).
     pub names_raw: Vec<u8>,
-    /// Name table as START/VGAME index it: entry i is the string after the i-th NUL.
+    /// Name table index: entry i is the string after the i-th NUL.
     pub names: Vec<String>,
 }
 
@@ -102,7 +102,7 @@ impl MissionWorld {
     }
 }
 
-/// One entry of the `findRandomObjectOfShape` candidate list (spec §4).
+/// One entry of the random-object-of-shape candidate list.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Candidate {
     pub ox: i16,
@@ -113,28 +113,28 @@ pub(crate) struct Candidate {
     pub level: u8,
 }
 
-/// Everything START loads for one theater.
+/// Everything the generator loads for one theater.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TheaterData {
-    /// Original theater whose START rules apply (mission table rows, dates, grid references):
+    /// Original theater whose generator rules apply (mission table rows, dates, grid references):
     /// its own index for the original theaters.
     pub index: usize,
     /// Briefing start date (month, day, year) of a remake theater.
     #[serde(default)]
     pub date: Option<(u8, u8, u16)>,
     pub world: MissionWorld,
-    /// `.3DG` grids: g4 (4x4), g3 (16x16), g2/g1/g0 (32 blocks of 4x4).
+    /// Terrain tile grids: g4 (4x4), g3 (16x16), g2/g1/g0 (32 blocks of 4x4).
     pub(crate) g: [Vec<u8>; 5],
     /// `tiles[level][tile type]` = (x, y, shape).
     pub(crate) tiles: Vec<Vec<Vec<(i16, i16, u8)>>>,
     /// Pre-built candidate lists per shape for the LOD1/LOD2 search and the LOD3 search
-    /// (same order as the original scan; spec §4 findRandomObjectOfShape). Derived, so not
+    /// (in the random object search's scan order). Derived, so not
     /// serialised: rebuilt by [`TheaterData::from_json`].
     #[serde(skip)]
     pub(crate) cand_lod12: Vec<Vec<Candidate>>,
     #[serde(skip)]
     pub(crate) cand_lod3: Vec<Vec<Candidate>>,
-    /// Grid size per LOD level (START DS:107E).
+    /// Grid size per LOD level.
     pub(crate) grid_size: [i16; 5],
 }
 
@@ -147,7 +147,7 @@ impl TheaterData {
         Ok(td)
     }
 
-    /// `lookupGrid(level, col, row)` (1A18:7C56); -1 outside the grid.
+    /// Tile type at (col, row) on a LOD level; -1 outside the grid.
     pub(crate) fn lookup(&self, lv: usize, col: i32, row: i32) -> i32 {
         let gs = self.grid_size[lv] as i32;
         if col < 0 || row < 0 || gs <= col || gs <= row {
@@ -169,7 +169,7 @@ impl TheaterData {
     }
 
     /// Scan the enemy tiles once and bucket the objects by shape, keeping the scan order of
-    /// `findRandomObjectOfShape` (1A18:7904). The territory bits of the grid are never changed
+    /// the random object search. The territory bits of the grid are never changed
     /// by the generator, so the lists are valid for every mission of the theater.
     fn build_candidates(&mut self) {
         let grid = &self.world.grid;

@@ -1,4 +1,4 @@
-//! Main menu: theater selector and mission generation (replaces the original START.EXE menus).
+//! Main menu: theater selector and mission generation (replaces the original game's start menus).
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext, egui};

@@ -184,7 +184,7 @@ impl PanelLayout {
         use Effect as E;
         use LampId::*;
         let mut items = Vec::new();
-        // Lamps at the original light rectangles (`DS:46D8`); rect = (x,y)-(x+w,y+h).
+        // Lamps at the original light rectangles ; rect = (x,y)-(x+w,y+h).
         const LIGHTS: [(f32, f32, f32, f32); 37] = [
             (119.0, 94.0, 18.0, 8.0),
             (139.0, 94.0, 18.0, 8.0),

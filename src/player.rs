@@ -43,7 +43,7 @@ fn spawn_player(
         })
         .or_else(|| theater.world.objects.iter().find(|o| o.target_flags & 0x100 != 0));
     let (pos, heading) = match setup.start {
-        // Carrier take-offs start on the deck (VGAME 3A92: altitude 0x80).
+        // Carrier take-offs start on the deck (altitude 0x80).
         Some(s) => (wu_to_bevy(s.east_wu, s.north_wu, if s.carrier { 128.0 } else { 0.0 }), s.heading),
         None => {
             let (east, north) = base.map(|o| map_to_wu(o.x, o.y)).unwrap_or((524_288.0, 524_288.0));
@@ -146,9 +146,9 @@ fn readout(
 }
 
 /// Aircraft models (STFLT.3DX) use 1/8 world unit per model unit (F-117 model: 288 units long
-/// = 17.6 m). ASSUMED from model sizes; to be confirmed from VGAME's object drawing code.
+/// = 17.6 m). ASSUMED from model sizes; not confirmed.
 pub const AIRCRAFT_MODEL_SCALE: f64 = crate::world::WU / 8.0;
-/// STFLT model of the player's F-117A in external views (combat.md: own aircraft = 24).
+/// STFLT model of the player's F-117A in external views (own aircraft = 24).
 const F117_MODEL: &str = "stflt_024";
 /// The aircraft position is the ground contact point, the model's origin is at the belly
 /// (gear down: 10 model units below it). Raised by the gear and clear of the coplanar ground

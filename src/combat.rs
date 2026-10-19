@@ -1,9 +1,9 @@
-//! The combat simulation (crate f117-sim, the VGAME game logic: radar and EMV, threats, AI,
+//! The combat simulation (crate f117-sim, the original game logic: radar and EMV, threats, AI,
 //! missiles, weapons, damage, objectives) driving the flight.
 //!
 //! * On entering the flight a [`Sim`] is built from the active mission (`mission.rs` makes sure
 //!   there is one) and the static tables in `assets/sim/sim.json`. The player starts at the
-//!   simulation's start state (VGAME 3A92).
+//!   simulation's start state.
 //! * The simulation runs on original frames at a fixed `fs` = 15 frames per (virtual) second:
 //!   every tick gets a [`PlayerState`] built from the flight model and the one-shot commands
 //!   (keys) collected since the previous tick. Time acceleration (Shift-Z) doubles the virtual
@@ -62,7 +62,7 @@ impl Plugin for CombatPlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CombatSystems;
 
-/// Original frames per sim second (DS:3660 on a fast machine).
+/// Original frames per sim second (as on a fast machine).
 pub const FS: u8 = 15;
 /// At most this many sim frames per rendered frame (slow frames are dropped beyond it).
 const MAX_STEPS: u32 = 30;
@@ -131,7 +131,7 @@ pub struct EndInfo {
     pub lines: Vec<String>,
 }
 
-/// Time acceleration (Shift-Z / Shift-X, VGAME DS:3D7A: x2) on top of `--time-scale`.
+/// Time acceleration (Shift-Z / Shift-X: x2) on top of `--time-scale`.
 #[derive(Resource)]
 pub struct TimeAccel {
     pub base: f32,
@@ -189,7 +189,7 @@ fn start_combat(
             }
         },
     };
-    // Remake theaters have no tiles in the VGAME export: take them from the theater file.
+    // Remake theaters have no tiles in the exported original data: take them from the theater file.
     let data = if data.theaters.get(m.settings.theater).is_none() {
         let mut d = (*data).clone();
         let theater = crate::world::Theater::load(&m.theater_code.to_ascii_lowercase());
@@ -206,7 +206,7 @@ fn start_combat(
         _ => LandingMode::Easy,
     };
     let sim = Sim::with_options(&data, m, SimOptions { landing, ..default() });
-    // The player starts where VGAME puts it (the same formula as `mission::start_pose`).
+    // The player starts at the sim's start state (the same formula as `mission::start_pose`).
     let st = sim.start_state();
     setup.start = Some(StartPose {
         east_wu: st.x as f64,
@@ -215,7 +215,7 @@ fn start_combat(
         carrier: m.takeoff.carrier,
     });
     orders.lines = m.orders.lines.iter().map(|l| (l.color, clean_text(&l.text))).collect();
-    // 1 clock tick = 2 s after 06:00 / 18:00 (mission-generation.md 5.9).
+    // 1 clock tick = 2 s after 06:00 / 18:00.
     *clock = MissionClock { start_seconds: m.time.base_hour as f32 * 3600.0 + m.time.tod_ticks as f32 * 2.0, elapsed: Some(0.0) };
     *wps = Waypoints {
         points: m
@@ -268,7 +268,7 @@ fn stop_combat(
     accel.on = false;
 }
 
-/// Keys -> one-shot simulation commands (keyDispatch V:CBA0), collected until the next frame.
+/// Keys -> one-shot simulation commands, collected until the next frame.
 fn collect_commands(mut actions: MessageReader<ActionEvent>, mut combat: ResMut<Combat>, mut accel: ResMut<TimeAccel>) {
     let combat = &mut *combat;
     let c = &mut combat.pending;
@@ -366,12 +366,12 @@ struct StepParams<'w, 's> {
     sounds: MessageWriter<'w, crate::sound::PlaySound>,
 }
 
-/// The player is inside a world object (VGAME's "camera inside an object" test, feeding the
+/// The player is inside a world object (the "camera inside an object" test, feeding the
 /// sim's collision rule).
 #[derive(Resource, Default)]
 pub struct PlayerCollision(pub bool);
 
-/// Tests the pilot's eye (VGAME tests the camera point) against the original plane hulls of
+/// Tests the pilot's eye (the original tests the camera point) against the original plane hulls of
 /// visible tile objects.
 fn detect_collision(
     mut collision: ResMut<PlayerCollision>,
@@ -546,7 +546,7 @@ impl EndSource for Option<FlightEnd> {
 fn end_info(sim: &Sim, how: impl EndSource) -> EndInfo {
     let o = sim.objectives();
     let done = |b: bool| if b { "accomplished" } else { "not accomplished" };
-    // Debrief log kinds (mission-generation.md 8): 1/12 world object, 2 tile object, 3 aircraft.
+    // Debrief log kinds: 1/12 world object, 2 tile object, 3 aircraft.
     let (mut air, mut ground) = (0, 0);
     for e in sim.event_log() {
         match e.kind & 0x3F {

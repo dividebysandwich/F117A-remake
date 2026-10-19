@@ -6,26 +6,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::Trig;
 
-/// DGROUP offset inside the unpacked VGAME load module.
-pub const DS: usize = (0x383B - 0x1A18) * 16;
-
-pub const THREAT_TABLE: usize = 0x2E80;
-pub const AIRCRAFT_TABLE: usize = 0x2FC2;
-pub const MISSILE_TABLE: usize = 0x3362;
-pub const WEAPON_TABLE: usize = 0x3662;
-pub const COMPAT_TABLE: usize = 0x386A;
-pub const MANEUVER_TABLE: usize = 0x3A8C;
-pub const SINE_TABLE: usize = 0x2084;
-pub const STORES_INIT: usize = 0x3636;
-pub const GUN_AMMO_INIT: usize = 0x3650;
-pub const START_DIR: usize = 0x3D7C;
-
 pub const N_THREATS: usize = 23;
 pub const N_AIRCRAFT: usize = 29;
 pub const N_MISSILES: usize = 41;
 pub const N_WEAPONS: usize = 20;
 
-/// Radar type (DS:2E80, 14-byte records).
+/// Radar type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThreatType {
     pub name: String,
@@ -36,7 +22,7 @@ pub struct ThreatType {
     pub flags: i16,
 }
 
-/// Aircraft type (DS:2FC2, 32-byte records).
+/// Aircraft type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AircraftType {
     pub name: String,
@@ -49,11 +35,11 @@ pub struct AircraftType {
     /// STFLT.3DX model index.
     pub model: i16,
     pub unknown: i16,
-    /// Initial kill counter (+0x1E).
+    /// Initial kill counter.
     pub kills: i16,
 }
 
-/// Missile / SAM / player weapon projectile type (DS:3362, 18-byte records).
+/// Missile / SAM / player weapon projectile type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissileType {
     pub name: String,
@@ -61,14 +47,14 @@ pub struct MissileType {
     pub lock_range: i16,
     /// speed = max_speed >> 6.
     pub max_speed: i16,
-    /// Seeker class (combat.md §4.1).
+    /// Seeker class: <= 0 infrared, > 0 radar; 4..=6 guided air-to-ground, 7 air-to-air.
     pub class: i16,
     pub turn: i16,
     /// STFLT.3DX model index.
     pub model: i16,
 }
 
-/// Player store (DS:3662, 26-byte records).
+/// Player store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WeaponType {
     pub short_name: String,
@@ -78,7 +64,7 @@ pub struct WeaponType {
     pub picture: i16,
 }
 
-/// Per-theater tile-object data used by `findNearestTile` (V:0D08) and the wreck shape test.
+/// Per-theater tile-object data used by the nearest-tile-object search and the wreck shape test.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TheaterTiles {
     pub grid: terrain::Grid,
@@ -95,16 +81,16 @@ pub struct SimData {
     pub aircraft: Vec<AircraftType>,
     pub missiles: Vec<MissileType>,
     pub weapons: Vec<WeaponType>,
-    /// Weapon-vs-category effectiveness `compat[w][cat]` (DS:386A), 20 rows.
+    /// Weapon-vs-category effectiveness `compat[w][cat]`, 20 rows.
     pub compat: Vec<[i8; 16]>,
-    /// Dogfight manoeuvre table (DS:3A8C), 3 x 8 x 8 int16.
+    /// Dogfight manoeuvre table, 3 x 8 x 8 int16.
     pub maneuver: Vec<i16>,
     pub trig: Trig,
-    /// Countermeasure stores at start (DS:3636: [_, flare, chaff, decoy]).
+    /// Countermeasure stores at start ([_, flare, chaff, decoy]).
     pub stores_init: [i16; 4],
-    /// Gun rounds at start (DS:3650).
+    /// Gun rounds at start.
     pub gun_ammo_init: i16,
-    /// Runway direction per theater (DS:3D7C): +1 start south heading north, -1 the reverse.
+    /// Runway direction per theater: +1 start south heading north, -1 the reverse.
     pub start_dir: [i16; 9],
     /// One per original theater, stored in `theaters/<code>.json` beside `sim.json`.
     #[serde(skip)]
@@ -153,7 +139,7 @@ impl SimData {
         &self.weapons[(i.max(0) as usize).min(self.weapons.len() - 1)]
     }
 
-    /// `compat(w, cat)` (V:8BAB) given the category directly.
+    /// Weapon-vs-category effectiveness given the category directly.
     pub fn compat_cat(&self, w: i32, cat: i32) -> i32 {
         self.compat.get(w.max(0) as usize).map_or(0, |r| r[(cat & 0xF) as usize] as i32)
     }

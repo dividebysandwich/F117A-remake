@@ -1,4 +1,4 @@
-//! Input: original key bindings (docs/re/keys.md) mapped to semantic actions, plus the
+//! Input: original key bindings (docs/keys.md) mapped to semantic actions, plus the
 //! original keyboard "virtual stick" (also gamepad stick). Game logic only reads
 //! `FlightControls` and `ActionEvent`s, so other sources (HOTAS, VR controllers) can be added.
 

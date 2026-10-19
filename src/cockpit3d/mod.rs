@@ -373,7 +373,7 @@ fn update_hand_proxies(
     }
 }
 
-/// Red flash over the view when hit (VGAME 78CC).
+/// Red flash over the view when hit.
 fn damage_flash(mut flash: ResMut<crate::hud::DamageFlash>, mut q: Query<&mut Visibility, With<FlashQuad>>) {
     let on = flash.0 > 0;
     if on {

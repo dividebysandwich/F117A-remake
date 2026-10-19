@@ -1,8 +1,8 @@
-//! Palettes and colours (docs/re/visuals.md sections 1-3).
+//! Palettes and colours.
 //!
-//! - Three flight palettes per theater (day, dusk, night) from VGAME.EXE; the live palette
-//!   steps between them over the mission exactly like VGAME (one 6-bit unit per channel per
-//!   step, one colour range every 16 ticks).
+//! - Three flight palettes per theater (day, dusk, night) from the original game; the live
+//!   palette steps between them over the mission (one 6-bit unit per channel per step, one
+//!   colour range every 16 ticks).
 //! - Model colour bytes map through a remap table (by detail level) to colour words; one
 //!   `PaletteMaterial` per colour byte (polygons) plus one per colour byte for lines/dots.
 //! - Shared shader globals: live palette, sky ring and altitude-dependent ground band offsets.
@@ -33,7 +33,7 @@ impl Plugin for PalettePlugin {
     }
 }
 
-/// 6-bit VGA DAC values, as written by f117-convert.
+/// 6-bit VGA DAC values.
 #[derive(Debug, Clone, Deserialize)]
 pub struct VgaPalette {
     pub colors: Vec<[u8; 3]>,
@@ -43,7 +43,7 @@ impl VgaPalette {
     pub fn load(name: &str) -> VgaPalette {
         let path = crate::asset_path::asset(&format!("palettes/{name}.ron"));
         let p = path.display();
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e} (run tools/build-assets.sh first)"));
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e}"));
         ron::from_str(&text).unwrap_or_else(|e| panic!("{p}: {e}"))
     }
 
@@ -76,7 +76,7 @@ pub struct TheaterPalettes {
     pub night: VgaPalette,
 }
 
-/// VGAME's model colour remap table: model colour byte -> colour word.
+/// Model colour remap table: model colour byte -> colour word.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RemapTable {
     pub name: String,
@@ -121,7 +121,7 @@ impl Palette {
         self.remaps.get(self.remap).map_or(0xFF00 | c as u16, |t| t.entries[c as usize])
     }
 
-    /// Lights come on when the sky gets dark (VGAME 0x043D: red of colour 136 < 20).
+    /// Lights come on when the sky gets dark (red of colour 136 < 20).
     pub fn lights_on(&self) -> bool {
         self.active.colors[136][0] < 20
     }
@@ -133,7 +133,7 @@ pub fn index_from_name(name: &str) -> Option<u8> {
     name.get(i + 4..i + 7)?.parse().ok()
 }
 
-/// Mission time of day (visuals.md 1.3/1.4).
+/// Mission time of day.
 #[derive(Resource)]
 pub struct TimeOfDay {
     pub night_mission: bool,
@@ -177,7 +177,7 @@ pub struct Viewpoint {
 pub fn load_theater_palettes(theater: &str) -> TheaterPalettes {
     let path = crate::asset_path::asset(&format!("palettes/tod_{theater}.ron"));
     let p = path.display();
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e} (run tools/build-assets.sh)"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e}"));
     ron::from_str(&text).unwrap_or_else(|e| panic!("{p}: {e}"))
 }
 
@@ -281,7 +281,7 @@ fn apply_msaa(
     }
 }
 
-/// Sky band boundaries (DS:0D22), original screen units at f = 256.
+/// Sky band boundaries, original screen units at f = 256.
 const SKY_RING: [f32; 16] = [0., 2., 3., 4., 6., 8., 11., 15., 20., 27., 36., 48., 64., 87., 119., 164.];
 
 fn update_globals(
@@ -301,7 +301,7 @@ fn update_globals(
         g.palette[i] = Vec4::new(c.red, c.green, c.blue, 1.0);
     }
     g.sky_ring = pack16(SKY_RING);
-    // Ground bands: g[k] = alt/((16-k)*32) - alt/512 (integer maths as in VGAME 0x1442).
+    // Ground bands: g[k] = alt/((16-k)*32) - alt/512 (integer maths as in the original).
     let alt = viewpoint.altitude_wu.max(0.0) as i32;
     let mut ground = [0f32; 16];
     for (k, v) in ground.iter_mut().enumerate().skip(1) {

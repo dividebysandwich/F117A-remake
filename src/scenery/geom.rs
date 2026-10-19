@@ -16,6 +16,8 @@ pub struct Geom {
     pub lines: BTreeMap<u8, Vec<Vec3>>,
     /// Lights shown at night (street lamps, windows, beacons).
     pub lamps: BTreeMap<u8, Vec<Vec3>>,
+    /// White flashers by sequence phase (approach lighting), lit one phase at a time at night.
+    pub strobes: BTreeMap<usize, Vec<Vec3>>,
 }
 
 /// A colour byte darkened up to three steps along its 16-colour ramp for faces turned away
@@ -58,6 +60,10 @@ impl Geom {
 
     pub fn lamp(&mut self, c: u8, p: Vec3) {
         self.lamps.entry(c).or_default().push(p);
+    }
+
+    pub fn strobe(&mut self, phase: usize, p: Vec3) {
+        self.strobes.entry(phase).or_default().push(p);
     }
 
     /// Vertical walls of a convex footprint from `y0` to `y1`.

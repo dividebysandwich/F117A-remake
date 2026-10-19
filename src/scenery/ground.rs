@@ -107,16 +107,29 @@ struct ShapeGeom {
     raised: Option<Rect>,
     /// Flat lines in the road greys.
     lines: Vec<(Vec2, Vec2)>,
+    /// Runway strips: long, narrow concrete rectangles.
+    runways: Vec<Rect>,
+}
+
+/// A runway of the theater (metres, axis-aligned like all the original runways).
+#[derive(Clone, Copy, Debug)]
+pub struct Runway {
+    pub c: DVec2,
+    /// Unit direction along the runway.
+    pub axis: DVec2,
+    pub half_len: f64,
+    pub half_width: f64,
 }
 
 pub struct Ground {
     tris: Vec<FlatTri>,
     tri_index: Index,
-    /// Areas kept clear (metres).
-    boxes: Vec<Rect>,
+    /// Areas kept clear (metres); `true` for raised objects, `false` for concrete margins.
+    boxes: Vec<(Rect, bool)>,
     box_index: Index,
     /// Road lines of the original terrain (polylines, metres).
     pub highways: Vec<Vec<DVec2>>,
+    pub runways: Vec<Runway>,
 }
 
 impl Ground {
@@ -136,18 +149,38 @@ impl Ground {
         if matches!(self.top(p), Some(Surface::Water | Surface::Solid)) {
             return false;
         }
+        self.boxes_clear(p, r, false)
+    }
+
+    /// Not water or concrete at the point, and at least `r` metres from raised geometry
+    /// (concrete nearby is fine).
+    pub fn is_clear(&self, p: DVec2, r: f64) -> bool {
+        !matches!(self.top(p), Some(Surface::Water | Surface::Solid)) && self.boxes_clear(p, r, true)
+    }
+
+    /// Not water at the point and at least `r` metres from raised geometry.
+    pub fn is_dry_clear(&self, p: DVec2, r: f64) -> bool {
+        self.top(p) != Some(Surface::Water) && self.boxes_clear(p, r, true)
+    }
+
+    fn boxes_clear(&self, p: DVec2, r: f64, raised_only: bool) -> bool {
         let q = p.as_vec2();
         let r = r as f32;
         let d = DVec2::splat(r as f64);
         !self.box_index.around(p - d, p + d).any(|i| {
-            let b = self.boxes[i as usize];
-            q.x > b.min.x - r && q.x < b.max.x + r && q.y > b.min.y - r && q.y < b.max.y + r
+            let (b, raised) = self.boxes[i as usize];
+            (raised || !raised_only) && q.x > b.min.x - r && q.x < b.max.x + r && q.y > b.min.y - r && q.y < b.max.y + r
         })
+    }
+
+    /// Keeps an area clear of later scenery (counts as a raised object).
+    pub fn claim(&mut self, r: Rect) {
+        self.add_box(r, true);
     }
 
     pub fn build(theater: &Theater, handles: &ShapeHandles, assets: &ModelAssets, files: &HashMap<String, Handle<Gltf>>, remap: &[u16], day: &VgaPalette) -> Ground {
         let mut shapes: HashMap<u8, ShapeGeom> = HashMap::new();
-        let mut g = Ground { tris: vec![], tri_index: Index::default(), boxes: vec![], box_index: Index::default(), highways: vec![] };
+        let mut g = Ground { tris: vec![], tri_index: Index::default(), boxes: vec![], box_index: Index::default(), highways: vec![], runways: vec![] };
         let mut road_segments = Vec::new();
         for lod in 1..=4usize {
             let unit = LEVEL_UNIT[lod];
@@ -178,11 +211,21 @@ impl Ground {
                             let order = ((4 - lod as u32) << 28) | ((k as u32 & 0xFFF) << 16) | (j as u32 & 0xFFFF);
                             g.tris.push(FlatTri { p, order, surface: *s });
                             if *s == Surface::Solid {
-                                g.add_box(Rect::from_corners(min, max).inflate(SOLID_MARGIN));
+                                g.add_box(Rect::from_corners(min, max).inflate(SOLID_MARGIN), false);
+                            }
+                        }
+                        for r in &geom.runways {
+                            let r = Rect::from_corners(place(r.min), place(r.max));
+                            let (c, size) = (r.center().as_dvec2(), r.size().as_dvec2());
+                            let along_north = size.y > size.x;
+                            let (len, width) = if along_north { (size.y, size.x) } else { (size.x, size.y) };
+                            if len >= 1200.0 && len >= 6.0 * width && width <= 250.0 && !g.runways.iter().any(|w| w.c.distance(c) < 50.0) {
+                                let axis = if along_north { DVec2::Y } else { DVec2::X };
+                                g.runways.push(Runway { c, axis, half_len: len * 0.5, half_width: width * 0.5 });
                             }
                         }
                         if let Some(r) = geom.raised {
-                            g.add_box(Rect::from_corners(place(r.min), place(r.max)).inflate(RAISED_MARGIN));
+                            g.add_box(Rect::from_corners(place(r.min), place(r.max)).inflate(RAISED_MARGIN), true);
                         } else if lod >= 2 {
                             road_segments.extend(geom.lines.iter().map(|&(a, b)| (place(a).as_dvec2(), place(b).as_dvec2())));
                         }
@@ -191,13 +234,27 @@ impl Ground {
             }
         }
         g.highways = chain(road_segments);
+        // Parallel taxiway strips of some bases look like runways too: keep the longest strip
+        // of each airfield.
+        g.runways.sort_by(|a, b| b.half_len.total_cmp(&a.half_len));
+        let mut kept: Vec<Runway> = Vec::new();
+        for r in std::mem::take(&mut g.runways) {
+            let near = kept.iter().any(|k| {
+                let d = r.c - k.c;
+                d.dot(k.axis).abs() < k.half_len + 200.0 && d.dot(k.axis.perp()).abs() < k.half_width + 400.0
+            });
+            if !near {
+                kept.push(r);
+            }
+        }
+        g.runways = kept;
         g
     }
 
-    fn add_box(&mut self, r: Rect) {
+    fn add_box(&mut self, r: Rect, raised: bool) {
         let id = self.boxes.len() as u32;
         self.box_index.insert(r.min.as_dvec2(), r.max.as_dvec2(), id);
-        self.boxes.push(r);
+        self.boxes.push((r, raised));
     }
 }
 
@@ -292,7 +349,15 @@ fn walk(
                 let p = [pos[t[0]], pos[t[1]], pos[t[2]]];
                 if p.iter().all(|v| v.y.abs() < 1.0) {
                     if let Some(s) = surface(word, day) {
-                        geom.flat.push((p.map(ground), s));
+                        let q = p.map(ground);
+                        if s == Surface::Solid {
+                            let r = Rect::from_corners(q[0].min(q[1]).min(q[2]), q[0].max(q[1]).max(q[2]));
+                            let size = r.size();
+                            if size.max_element() >= 6.0 * size.min_element() && !geom.runways.contains(&r) {
+                                geom.runways.push(r);
+                            }
+                        }
+                        geom.flat.push((q, s));
                     }
                 } else {
                     for v in p {

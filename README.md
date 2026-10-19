@@ -17,7 +17,6 @@ Command-line options:
 | `--theater ce` / `--fly` | fly from the menu's defaults, skipping it |
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
 | `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons) |
-| `--no-scenery` | without the extra scenery of the green theaters (North Cape, Central Europe, Vietnam, Cuba, Korea): towns, roads with street lamps, farms, industry, power lines, forests. Alt D lowers it with the detail level (trees go at detail 2, everything at 1) |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |
 | `--vr` | OpenXR headset (without a runtime it runs on the desktop) |
 | `--viewer [--file stflt --model 24]` | browse the converted models |

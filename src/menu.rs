@@ -103,7 +103,6 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.shadows, "--shadows"),
         (settings.local_lights, "--local-lights"),
         (settings.classic_cockpit, "--classic-cockpit"),
-        (!settings.scenery, "--no-scenery"),
     ] {
         if on {
             cmd.arg(flag);
@@ -193,10 +192,6 @@ fn menu_ui(
                 let mut lights = settings.local_lights;
                 if cols[2].checkbox(&mut lights, "Local lighting").changed() {
                     settings.local_lights = lights;
-                }
-                let mut scenery = settings.scenery;
-                if cols[2].checkbox(&mut scenery, "Extra scenery").changed() {
-                    settings.scenery = scenery;
                 }
                 let mut classic = settings.classic_cockpit;
                 if cols[2].checkbox(&mut classic, "Classic cockpit").changed() {

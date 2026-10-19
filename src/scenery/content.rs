@@ -36,7 +36,7 @@ pub enum Tier {
 }
 
 /// Block-local frame: ground metres -> Bevy (x east, y up, z south) around the block centre.
-struct Frame {
+pub(super) struct Frame {
     o: DVec2,
     min: DVec2,
 }
@@ -47,7 +47,12 @@ impl Frame {
         Self { o: min + DVec2::splat(BLOCK * 0.5), min }
     }
 
-    fn at(&self, p: DVec2, y: f32) -> Vec3 {
+    /// A frame around any origin (whole-airfield meshes).
+    pub(super) fn around(o: DVec2) -> Self {
+        Self { o, min: o - DVec2::splat(BLOCK * 0.5) }
+    }
+
+    pub(super) fn at(&self, p: DVec2, y: f32) -> Vec3 {
         Vec3::new((p.x - self.o.x) as f32, y, -(p.y - self.o.y) as f32)
     }
 
@@ -62,7 +67,7 @@ fn dir2(d: DVec2) -> Vec2 {
 }
 
 /// Bevy horizontal unit vector of a ground direction.
-fn dir3(d: DVec2) -> Vec3 {
+pub(super) fn dir3(d: DVec2) -> Vec3 {
     Vec3::new(d.x as f32, 0.0, -d.y as f32)
 }
 
@@ -101,18 +106,8 @@ fn roads(net: &Network, f: &Frame, g: &mut Geom) {
         if !f.contains((a + b) * 0.5) {
             continue;
         }
-        // Mitred edges so consecutive segments join without gaps.
         let half = road.width * 0.5;
-        let side = |i: usize| -> DVec2 {
-            let prev = if i > 0 { (road.pts[i] - road.pts[i - 1]).normalize_or_zero() } else { DVec2::ZERO };
-            let next = if i + 1 < road.pts.len() { (road.pts[i + 1] - road.pts[i]).normalize_or_zero() } else { DVec2::ZERO };
-            let d = (prev + next).normalize_or_zero();
-            let n = d.perp();
-            let cos = n.dot((if next != DVec2::ZERO { next } else { prev }).perp()).max(0.5);
-            n * half / cos
-        };
-        let (na, nb) = (side(s), side(s + 1));
-        g.ground(ROAD, &[f.at(a - na, ROAD_Y), f.at(b - nb, ROAD_Y), f.at(b + nb, ROAD_Y), f.at(a + na, ROAD_Y)]);
+        strip(g, f, &road.pts, s, half, ROAD_Y, ROAD);
         // Centre line: keeps distant roads visible as in the original's line roads.
         g.line(ROAD, f.at(a, ROAD_Y + 0.05), f.at(b, ROAD_Y + 0.05));
 
@@ -146,7 +141,22 @@ fn roads(net: &Network, f: &Frame, g: &mut Geom) {
     }
 }
 
-fn building(b: &Building, f: &Frame, g: &mut Geom) {
+/// Ground surface of segment `s` of a polyline, `half` wide on each side, with mitred ends so
+/// consecutive segments join without gaps.
+pub(super) fn strip(g: &mut Geom, f: &Frame, pts: &[DVec2], s: usize, half: f64, y: f32, colour: u8) {
+    let side = |i: usize| -> DVec2 {
+        let prev = if i > 0 { (pts[i] - pts[i - 1]).normalize_or_zero() } else { DVec2::ZERO };
+        let next = if i + 1 < pts.len() { (pts[i + 1] - pts[i]).normalize_or_zero() } else { DVec2::ZERO };
+        let n = (prev + next).normalize_or_zero().perp();
+        let cos = n.dot((if next != DVec2::ZERO { next } else { prev }).perp()).max(0.5);
+        n * half / cos
+    };
+    let (a, b) = (pts[s], pts[s + 1]);
+    let (na, nb) = (side(s), side(s + 1));
+    g.ground(colour, &[f.at(a - na, y), f.at(b - nb, y), f.at(b + nb, y), f.at(a + na, y)]);
+}
+
+pub(super) fn building(b: &Building, f: &Frame, g: &mut Geom) {
     let c = f.at(b.p, 0.0);
     let d = dir2(b.dir);
     let along = Vec3::new(d.x, 0.0, d.y);
@@ -203,6 +213,65 @@ fn building(b: &Building, f: &Frame, g: &mut Geom) {
             lattice(g, c, along, &[(0.0, 1.2), (b.h, 0.4)], 3, (b.h / 8.0) as usize);
             g.lamp(BEACON, c + Vec3::Y * (b.h + 0.5));
             g.lamp(BEACON, c + Vec3::Y * (b.h * 0.5));
+        }
+        Kind::Shelter => {
+            // Hardened aircraft shelter: an arched vault along `dir`, door at the front.
+            let across = Vec3::new(-d.y, 0.0, d.x);
+            let profile: Vec<Vec3> = (0..=6)
+                .map(|i| {
+                    let a = i as f32 / 6.0 * std::f32::consts::PI;
+                    across * (a.cos() * b.w * 0.5) + Vec3::Y * (a.sin() * b.h)
+                })
+                .collect();
+            let (front, back) = (c + along * (b.l * 0.5), c - along * (b.l * 0.5));
+            for i in 0..6 {
+                let (p, q) = (profile[i], profile[i + 1]);
+                let out = (p + q) * 0.5 - Vec3::Y * 0.01;
+                g.face(b.wall, &[back + p, back + q, front + q, front + p], out);
+            }
+            g.face(b.roof_colour, &profile.iter().map(|p| front + *p).collect::<Vec<_>>(), along);
+            g.face(b.wall, &profile.iter().map(|p| back + *p).collect::<Vec<_>>(), -along);
+        }
+        Kind::Radar => {
+            // Radome on a square tower.
+            let top = b.h - 9.0;
+            g.block(b.wall, b.wall, &rect(c, d, 6.0, 6.0), 0.0, top);
+            let rings = [(4.6, 0.0), (5.6, 2.5), (5.0, 5.5), (3.2, 7.8)];
+            for w in rings.windows(2) {
+                let (lo, hi) = (ring(c + Vec3::Y * (top + w[0].1), w[0].0, 10, 0.0), ring(c + Vec3::Y * (top + w[1].1), w[1].0, 10, 0.0));
+                for i in 0..10 {
+                    let j = (i + 1) % 10;
+                    let out = (lo[i] + lo[j] + hi[i] + hi[j]) * 0.25 - (c + Vec3::Y * (top + 4.0));
+                    g.face(b.roof_colour, &[lo[i], lo[j], hi[j], hi[i]], out);
+                }
+            }
+            g.spire(b.roof_colour, &ring(c, 3.2, 10, 0.0), top + 7.8, c + Vec3::Y * b.h);
+            g.lamp(BEACON, c + Vec3::Y * (b.h + 0.3));
+        }
+        Kind::Windsock => {
+            let top = c + Vec3::Y * b.h;
+            g.line(STEEL, c, top);
+            // Cone hanging half-inflated along `dir`.
+            let across = Vec3::new(-d.y, 0.0, d.x);
+            let rim: Vec<Vec3> = (0..6)
+                .map(|i| {
+                    let a = i as f32 / 6.0 * TAU;
+                    top + across * (a.cos() * 0.7) + Vec3::Y * (a.sin() * 0.7 - 0.2)
+                })
+                .collect();
+            let tip = top + along * 5.0 - Vec3::Y * 1.6;
+            for i in 0..6 {
+                let (p, q) = (rim[i], rim[(i + 1) % 6]);
+                // Seen from inside and outside.
+                g.face(b.wall, &[p, q, tip], (p + q) * 0.5 - top);
+                g.face(b.wall, &[p, q, tip], top - (p + q) * 0.5);
+            }
+            g.lamp(BEACON, top + Vec3::Y * 0.4);
+        }
+        Kind::Sign => {
+            let foot = rect(c, d, b.l, b.w);
+            g.block(b.wall, b.roof_colour, &foot, 0.4, b.h);
+            g.face(b.roof_colour, &foot.iter().map(|p| *p + Vec3::Y * 0.4).collect::<Vec<_>>(), -Vec3::Y);
         }
     }
 }
@@ -316,16 +385,17 @@ fn power(net: &Network, f: &Frame, g: &mut Geom) {
 }
 
 fn trees(sc: &Scenery, f: &Frame, g: &mut Geom) {
+    let Some(style) = &sc.style else { return };
     let n = (BLOCK / TREE_GRID) as i64;
     let (gx0, gy0) = ((f.min.x / TREE_GRID) as i64, (f.min.y / TREE_GRID) as i64);
-    let seed = sc.style.seed;
+    let seed = style.seed;
     for j in 0..n {
         for i in 0..n {
             let (gx, gy) = (gx0 + i, gy0 + j);
             let mut rng = Rng::new(hash(seed, gx, gy, 9));
             let p = DVec2::new((gx as f64 + rng.range(0.1, 0.9)) * TREE_GRID, (gy as f64 + rng.range(0.1, 0.9)) * TREE_GRID);
             let cover = noise(seed, p, 1600.0);
-            let forest = ((cover - sc.style.forest) / 0.1).clamp(0.0, 1.0);
+            let forest = ((cover - style.forest) / 0.1).clamp(0.0, 1.0);
             let roll = rng.f();
             let in_town = sc.net.town_at(p, 0.95).is_some();
             let (tree, bush) = if in_town {
@@ -347,7 +417,7 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom) {
             }
             let h = rng.range(8.0, 18.0) as f32;
             let phase = rng.range(0.0, 6.3) as f32;
-            match sc.style.tree(&mut rng) {
+            match style.tree(&mut rng) {
                 Tree::Conifer => {
                     let col = rng.pick(&[0xAD, 0xAE]);
                     g.spire(col, &ring(c, h * 0.27, 5, phase), h * 0.08, c + Vec3::Y * h * 0.72);

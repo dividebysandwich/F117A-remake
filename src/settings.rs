@@ -42,8 +42,6 @@ pub struct Settings {
     /// `--classic-cockpit`: the original instrument panel layout and 77x60 displays instead
     /// of the modern panel with high-resolution displays and bezel buttons.
     pub classic_cockpit: bool,
-    /// Extra scenery in the green theaters (towns, roads, power lines, trees); `--no-scenery`.
-    pub scenery: bool,
 }
 
 /// What the next flight looks like (filled by the menu or command-line flags).
@@ -98,7 +96,6 @@ impl Settings {
             shadows: has("--shadows"),
             local_lights: has("--local-lights"),
             classic_cockpit: has("--classic-cockpit"),
-            scenery: !has("--no-scenery"),
         }
     }
 }

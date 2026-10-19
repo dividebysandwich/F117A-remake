@@ -190,7 +190,7 @@ fn collect_local_lights(
         }
         // Street lamps and lit windows of the extra scenery (hidden by day).
         for (batch, tf, vis) in &lamps {
-            if !vis.get() || tf.translation().distance(eye) > 600.0 + crate::scenery::BLOCK_RADIUS {
+            if !vis.get() || tf.translation().distance(eye) > 600.0 + batch.radius {
                 continue;
             }
             let c = palette.color(batch.colour).to_linear();

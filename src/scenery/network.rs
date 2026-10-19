@@ -136,6 +136,12 @@ pub enum Kind {
     Tank,
     WaterTower,
     Mast,
+    /// Hardened aircraft shelter (`h`: arch height, door at the `dir` end).
+    Shelter,
+    Radar,
+    Windsock,
+    /// Airfield guidance sign.
+    Sign,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -173,6 +179,7 @@ pub struct PowerLine {
     pub big: bool,
 }
 
+#[derive(Default)]
 pub struct Network {
     pub towns: Vec<Town>,
     pub town_index: Index,

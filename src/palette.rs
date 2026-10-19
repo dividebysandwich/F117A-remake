@@ -284,6 +284,7 @@ fn apply_msaa(
 /// Sky band boundaries, original screen units at f = 256.
 const SKY_RING: [f32; 16] = [0., 2., 3., 4., 6., 8., 11., 15., 20., 27., 36., 48., 64., 87., 119., 164.];
 
+#[allow(clippy::too_many_arguments)]
 fn update_globals(
     palette: Res<Palette>,
     viewpoint: Res<Viewpoint>,
@@ -291,6 +292,7 @@ fn update_globals(
     lighting: Res<crate::lighting::LightingState>,
     weather: Res<crate::weather::WeatherState>,
     origin: Res<crate::world::FloatingOrigin>,
+    hud: Option<Res<crate::hud::HudState>>,
     time: Res<Time>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
@@ -313,6 +315,7 @@ fn update_globals(
     g.ambient = lighting.ambient;
     g.light_info.x = lighting.lights.len() as f32;
     g.light_info.y = lighting.daylight;
+    g.light_info.z = hud.is_some_and(|h| h.nvg) as u32 as f32;
     g.dots.x = if settings.vr { crate::dots::XR_ANGLE } else { 0.0 };
     g.dots.y = time.elapsed_secs_wrapped() % 3600.0;
     for (i, (p, c)) in lighting.lights.iter().enumerate() {

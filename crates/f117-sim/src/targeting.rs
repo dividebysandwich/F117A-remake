@@ -80,7 +80,7 @@ impl Sim {
         if self.gnd_cooldown > 0 {
             self.gnd_cooldown -= 1;
         }
-        if !(self.gnd_lock & 0x80 != 0 && self.camera_mfd && self.gnd_cooldown == 0 && self.hud_mode != HudMode::Air && !self.external_view) {
+        if self.target_hold || !(self.gnd_lock & 0x80 != 0 && self.camera_mfd && self.gnd_cooldown == 0 && self.hud_mode != HudMode::Air && !self.external_view) {
             return;
         }
         let mut best = -1;
@@ -127,6 +127,9 @@ impl Sim {
 
     /// Air target selection.
     fn select_air(&mut self) {
+        if self.target_hold {
+            return;
+        }
         let mut best_r = 0x4B << (6 - self.night as i32);
         let mut best = -1;
         let reselect = self.air_lock & 0x80 != 0;

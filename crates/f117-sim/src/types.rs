@@ -251,6 +251,10 @@ pub struct Commands {
     /// picks the nearest hostile flight or ground object in sight.
     #[serde(default)]
     pub nearest_target: bool,
+    /// Drop both locks and hold off the automatic acquisition until the next target or camera
+    /// key (not in the original).
+    #[serde(default)]
+    pub clear_target: bool,
     /// Camera keys `/` `,` `.` `m`: 0 / 0x4000 / 0x8000 / 0xC000.
     pub camera_dir: Option<u16>,
     /// Shift-F10.

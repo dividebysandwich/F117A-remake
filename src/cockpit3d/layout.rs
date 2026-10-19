@@ -55,6 +55,8 @@ pub enum Effect {
     LeftPage(LeftMfd),
     /// Next tracking camera direction.
     CamCycle,
+    /// Time acceleration on / off.
+    TimeToggle,
     /// An MFD bezel button (its function depends on the page, `mfd::osb`).
     Osb(MfdSide, u8),
 }
@@ -287,6 +289,14 @@ impl PanelLayout {
                 bx(r, 0.002, 63);
             }
         }
+        // The top two squares outside each screen are buttons (not in the original): map zoom
+        // on the left MFD, waypoint selection on the right one.
+        let square_caps = [
+            (65.0, 110.0, "+", Action::MapZoomIn),
+            (65.0, 123.0, "-", Action::MapZoomOut),
+            (249.0, 112.0, "+", Action::NextWaypoint),
+            (249.0, 123.0, "-", Action::LastWaypoint),
+        ];
         for (x, ys) in [
             (65.0, [110.0, 123.0, 135.0, 146.0, 159.0]),
             (153.0, [110.0, 123.0, 135.0, 146.0, 159.0]),
@@ -294,7 +304,12 @@ impl PanelLayout {
             (249.0, [112.0, 123.0, 134.0, 147.0, 158.0]),
         ] {
             for y in ys {
-                bx(rect(x, y, 6.0, 6.0), 0.003, 22);
+                match square_caps.iter().find(|c| c.0 == x && c.1 == y) {
+                    Some(&(_, _, label, action)) => {
+                        items.push(Placed { elem: Elem::Label(label, 47, 22), rect: rect(x, y, 6.0, 6.0), cap: Some(E::Action(action)) })
+                    }
+                    None => bx(rect(x, y, 6.0, 6.0), 0.003, 22),
+                }
             }
         }
         for (x, y, d) in [

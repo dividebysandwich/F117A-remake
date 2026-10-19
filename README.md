@@ -76,13 +76,15 @@ geography in `tools/theater_ua/geo.py`.
 | Eject | Shift F10 |
 | Cockpit / look ahead, rear, left, right | F1 / Shift `/` `.` `,` M |
 | External views | Shift F1 .. Shift F6 |
-| HUD mode / declutter / day-night HUD | F2 / V / F4 |
+| HUD mode / declutter | F2 / V |
+| Night vision goggles (not in the original) | F4 |
 | Maps / ordnance / FLIR | F3 / F5 / F6 |
 | Waypoints | F7 / F8 / PgUp / PgDn |
 | Mission orders | F10 |
 | Tracking camera ahead, rear, right, left | `/` / `.` / `,` / M |
 | Designate / next target | N / B |
 | Nearest enemy target ahead (AIR or GND mode by the selected weapon; not in the original) | T |
+| Clear target (no automatic acquisition until the next target or camera key; not in the original) | Shift B |
 | Zoom / unzoom / wide angle | Z / X / C |
 | Map zoom in / out, north up / heading up (modern panel) | Alt Z / Alt X / Alt F3 |
 | Time acceleration / normal | Shift Z / Shift X |
@@ -96,7 +98,12 @@ well (right stick: rudder). The menu's Graphics column has the same toggles as t
 (lit panel captions, the MFD bezel buttons, the labelled side buttons, gear lever, ejection
 handle) to press them. On the modern panel the bezel buttons select the MFD pages (MAP / TAC,
 TC / WAY / WPN / ORD / FLIR), zoom the map (ZM- / ZM+), switch it between north up and heading up
-(NUP / HUP) and give page functions (camera direction, waypoints, weapon select). In the
+(NUP / HUP) and give page functions (camera direction, waypoints, weapon select). On the
+classic panel the top two squares left of the map display zoom the map (+ / -), those right of
+the right display step through the waypoints. The left side panel holds the targeting and
+weapon buttons (NEAR nearest target, DESG designate, NEXT next target, NONE clear target, WPN
+select weapon, FIRE), the right one the auxiliary functions (NVG goggles, ILS, TIME
+acceleration on/off, DCLT HUD declutter, VOL sound level, DTL detail level). In the
 external views the right mouse button orbits the camera around the aircraft.
 
 **VR (`--vr`):** the headset is recentred on entering the flight (left menu button or Home

@@ -24,13 +24,14 @@ To be cross-checked against VGAME's keyboard dispatch table (M2).
 | Displays | HUD modes / declutter | F2 / V |
 | | maps (left MFD) | F3 |
 | | map zoom in / out, north up / heading up (remake, modern panel) | Alt Z / Alt X / Alt F3 |
-| | day/night HUD | F4 |
+| | night vision goggles (remake) | F4 |
 | | ordnance (right MFD) | F5 |
 | | FLIR on/off | F6 |
 | | ILS on/off | F9 |
 | | mission orders | F10 |
 | Tracking camera (right MFD) | cam ahead / rear / right / left | `/` / `.` / `,` / M |
 | | designate new target / select target | N / B |
+| | nearest target ahead / clear target (remake) | T / Shift B |
 | INS | select waypoint / change waypoint / reset waypoint | F7 / F8 / Shift F8 |
 | | last / next waypoint | PgUp / PgDn (shift if no joystick) |
 | | move waypoint up/down/left/right | arrows / keypad (shift if no joystick) |

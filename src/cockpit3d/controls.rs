@@ -35,6 +35,7 @@ impl Effect {
             Effect::HudMode(_) => Action::HudMode,
             Effect::LeftPage(_) => Action::Maps,
             Effect::CamCycle => Action::CamAhead,
+            Effect::TimeToggle => Action::TimeAccel,
             Effect::Osb(side, slot) => match osb(side, slot, mfd)?.1 {
                 OsbFn::Cmd(c) => cmd_action(c),
                 OsbFn::Action(a) => a,
@@ -61,19 +62,20 @@ const fn side(s: f32, row: u8, col: u8, label: &'static str, a: Action) -> (Kind
     (Kind::Side(s, row, col, label), Effect::Action(a))
 }
 
+/// Left panel: targeting and weapons; right panel: auxiliary functions.
 const SIDE_BUTTONS: &[(Kind, Effect)] = &[
-    side(-1.0, 0, 0, "DCLT", Action::HudDeclutter),
-    side(-1.0, 0, 1, "NITE", Action::DayNightHud),
-    side(-1.0, 1, 0, "ZM+", Action::Zoom),
-    side(-1.0, 1, 1, "ZM-", Action::Unzoom),
-    side(-1.0, 2, 0, "ILS", Action::Ils),
-    side(-1.0, 2, 1, "TIME", Action::TimeAccel),
-    side(1.0, 0, 0, "WP-", Action::LastWaypoint),
-    side(1.0, 0, 1, "WP+", Action::NextWaypoint),
-    side(1.0, 1, 0, "WPN", Action::SelectWeapon),
-    side(1.0, 1, 1, "TGT", Action::SelectTarget),
-    side(1.0, 2, 0, "RST", Action::ResetWaypoint),
-    side(1.0, 2, 1, "NORM", Action::TimeNormal),
+    side(-1.0, 0, 0, "NEAR", Action::NearestTarget),
+    side(-1.0, 0, 1, "DESG", Action::DesignateTarget),
+    side(-1.0, 1, 0, "NEXT", Action::SelectTarget),
+    side(-1.0, 1, 1, "NONE", Action::ClearTarget),
+    side(-1.0, 2, 0, "WPN", Action::SelectWeapon),
+    side(-1.0, 2, 1, "FIRE", Action::FireWeapon),
+    side(1.0, 0, 0, "NVG", Action::Nvg),
+    side(1.0, 0, 1, "ILS", Action::Ils),
+    (Kind::Side(1.0, 1, 0, "TIME"), Effect::TimeToggle),
+    side(1.0, 1, 1, "DCLT", Action::HudDeclutter),
+    side(1.0, 2, 0, "VOL", Action::Volume),
+    side(1.0, 2, 1, "DTL", Action::Detail),
     (Kind::GearLever, Effect::Action(Action::Gear)),
     (Kind::EjectHandle, Effect::Action(Action::Eject)),
 ];
@@ -355,6 +357,7 @@ pub(super) struct Fire<'w, 's> {
     mfd_commands: MessageWriter<'w, MfdCommand>,
     hud: Res<'w, HudState>,
     mfd: Res<'w, MfdState>,
+    accel: Res<'w, crate::combat::TimeAccel>,
     _p: std::marker::PhantomData<&'s ()>,
 }
 
@@ -396,6 +399,9 @@ impl Fire<'_, '_> {
                     CamDir::Left => Action::CamAhead,
                 };
                 self.actions.write(ActionEvent(next));
+            }
+            Effect::TimeToggle => {
+                self.actions.write(ActionEvent(if self.accel.on { Action::TimeNormal } else { Action::TimeAccel }));
             }
         }
     }

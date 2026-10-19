@@ -43,12 +43,14 @@ impl Sim {
             self.cur_bay = if self.lockheed { self.cur_bay ^ 1 } else { (self.cur_bay + 1) & 3 };
         }
         if c.designate {
+            self.target_hold = false;
             self.pflags ^= pflags::DESIGNATE;
             if self.camera_mfd {
                 self.camera_key(0);
             }
         }
         if c.next_target {
+            self.target_hold = false;
             self.targeting.target_killed = false;
             self.gnd_lock |= 0x80;
             self.air_lock |= 0x80;
@@ -57,8 +59,16 @@ impl Sim {
             self.camera_key(d as i32);
         }
         if c.nearest_target {
+            self.target_hold = false;
             self.camera_key(0);
             self.nearest_req = NEAREST_WAIT;
+        }
+        if c.clear_target {
+            self.air_lock = -1;
+            self.gnd_lock = -1;
+            self.nearest_req = 0;
+            self.pflags &= !pflags::DESIGNATE;
+            self.target_hold = true;
         }
         if c.toggle_training {
             self.pflags ^= pflags::TRAINING;
@@ -77,6 +87,7 @@ impl Sim {
             return;
         }
         self.targeting.target_killed = false;
+        self.target_hold = false;
         self.maverick_view = false;
         self.cam_dir = s16(dir);
         self.air_lock = -1;

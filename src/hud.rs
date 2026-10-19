@@ -53,16 +53,12 @@ pub struct HudState {
     pub mode: HudMode,
     /// V: 0 = tapes, 1 = boxed digits, 2 = boxed digits + heading box.
     pub declutter: u8,
-    /// F4: night HUD colours.
-    pub night: bool,
+    /// F4: night vision goggles (the world drawn green and brightened, palette.wgsl).
+    pub nvg: bool,
 }
 
-impl HudState {
-    /// Main HUD colour and second colour (pitch ladder).
-    pub fn colours(&self) -> (u8, u8) {
-        if self.night { (10, 47) } else { (15, 7) }
-    }
-}
+/// Main HUD colour and second colour (pitch ladder).
+pub const HUD_COLOURS: (u8, u8) = (15, 7);
 
 /// HUD message line (y = 20, centred) and status words. Other systems post messages with
 /// [`HudMessages::show`].
@@ -203,7 +199,7 @@ fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, 
                 hud.mode = if air { HudMode::Air } else { HudMode::Gnd };
             }
             Action::HudDeclutter => hud.declutter = (hud.declutter + 1) % 3,
-            Action::DayNightHud => hud.night = !hud.night,
+            Action::Nvg => hud.nvg = !hud.nvg,
             // INS: PgUp / PgDn step through the waypoints, F8 changes to the next one, Shift-F8
             // returns to the mission's current waypoint (F7 shows the WAY page, see mfd.rs).
             // Weapon selection (Space) is done by the combat simulation.
@@ -382,8 +378,8 @@ fn bcos(a: i32) -> f32 {
 
 /// Draws the whole HUD for the cockpit view.
 pub fn draw(c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, f: &HudFrame) {
-    let (col, col2) = f.state.colours();
-    let atlas = if f.state.night { &art.atlas_night } else { &art.sprites };
+    let (col, col2) = HUD_COLOURS;
+    let atlas = &art.sprites;
     // HUD text and lines are clipped to the HUD area of the back page (y 0..90).
     c.set_clip(0, 0, 319, 90);
     overlay(c, atlas, fonts, f, col, col2);

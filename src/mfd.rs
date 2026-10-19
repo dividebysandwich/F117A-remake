@@ -27,7 +27,7 @@ use crate::canvas::Canvas;
 use crate::cockpit::CockpitArt;
 use crate::flight::{Aircraft, Player, to_bam};
 use crate::font::{Fonts, ink, upper};
-use crate::hud::{HudState, Stores, Waypoints, map_units};
+use crate::hud::{Stores, Waypoints, map_units};
 use crate::input::{Action, ActionEvent};
 use crate::models::ModelLibrary;
 use crate::palette::{Palette, index_from_name};
@@ -806,7 +806,6 @@ pub struct MfdParams<'w, 's> {
     pub clock: Res<'w, MissionClock>,
     pub stores: Res<'w, Stores>,
     pub waypoints: Res<'w, Waypoints>,
-    pub hud: Res<'w, HudState>,
     pub theater: Option<Res<'w, Theater>>,
     pub time: Res<'w, Time>,
 }
@@ -1038,7 +1037,7 @@ impl MfdParams<'_, '_> {
 
     /// Black text with FLIR (colour 5: black in every flight palette, 0 is see-through).
     fn camera_text_colour(&self) -> u8 {
-        if self.state.flir { 5 } else { self.hud.colours().0 }
+        if self.state.flir { 5 } else { crate::hud::HUD_COLOURS.0 }
     }
 
     /// Clock time shown on the WAY page.

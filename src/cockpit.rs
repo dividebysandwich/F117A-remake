@@ -28,13 +28,10 @@ impl Plugin for CockpitPlugin {
 pub const FOCAL: f32 = 256.0;
 pub const VSCALE: f32 = 0.75;
 
-/// Pictures used as sprite sources: the sprite atlas, its night-HUD variant and the weapon side
-/// views.
+/// Pictures used as sprite sources: the sprite atlas and the weapon side views.
 #[derive(Resource)]
 pub struct CockpitArt {
     pub sprites: Canvas,
-    /// The atlas with the HUD sprites recoloured 15 -> 10 (night HUD).
-    pub atlas_night: Canvas,
     pub ordnance: Canvas,
 }
 
@@ -45,18 +42,9 @@ pub(crate) fn load_idx(name: &str) -> Canvas {
     Canvas::from_pixels(320, px.len() / 320, px)
 }
 
-/// The night-HUD atlas: 15 -> 10 in the HUD sprite rectangles.
-pub fn night_atlas(sprites: &Canvas) -> Canvas {
-    let mut c = sprites.clone();
-    for (x0, y0, x1, y1) in [(0, 0, 140, 29), (38, 75, 93, 87)] {
-        c.recolor_rect(x0, y0, x1, y1, 15, 10);
-    }
-    c
-}
-
 fn setup(mut commands: Commands) {
     let sprites = load_idx("sprites");
-    commands.insert_resource(CockpitArt { atlas_night: night_atlas(&sprites), sprites, ordnance: load_idx("ordnance") });
+    commands.insert_resource(CockpitArt { sprites, ordnance: load_idx("ordnance") });
     commands.insert_resource(Fonts::builtin());
 }
 

@@ -43,7 +43,9 @@ pub enum Action {
     HudMode,
     HudDeclutter,
     Maps,
-    DayNightHud,
+    /// Night vision goggles (F4; replaces the original's day/night HUD colours).
+    #[serde(alias = "DayNightHud")]
+    Nvg,
     Ordnance,
     Flir,
     Ils,
@@ -57,6 +59,9 @@ pub enum Action {
     /// Locks the nearest target ahead: AIR mode with an air-to-air missile selected, else GND
     /// (not in the original; it is HUD mode + camera ahead, which re-acquires the nearest).
     NearestTarget,
+    /// Drops both target locks and stops the automatic acquisition until a target key (not
+    /// in the original).
+    ClearTarget,
     SelectWaypoint,
     ChangeWaypoint,
     ResetWaypoint,
@@ -168,7 +173,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::F2, HudMode),
         (None, K::KeyV, HudDeclutter),
         (None, K::F3, Maps),
-        (None, K::F4, DayNightHud),
+        (None, K::F4, Nvg),
         (None, K::F5, Ordnance),
         (None, K::F6, Flir),
         (None, K::F9, Ils),
@@ -180,6 +185,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::KeyN, DesignateTarget),
         (None, K::KeyB, SelectTarget),
         (None, K::KeyT, NearestTarget),
+        (Shift, K::KeyB, ClearTarget),
         (None, K::F7, SelectWaypoint),
         (None, K::F8, ChangeWaypoint),
         (Shift, K::F8, ResetWaypoint),

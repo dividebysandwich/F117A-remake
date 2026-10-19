@@ -243,7 +243,9 @@ fn apply_model_state(
     all_lods: Query<&LodLevel>,
     mut lod_meshes: Query<(&LodMesh, &mut bevy::camera::visibility::RenderLayers)>,
     globals: Res<ModelGlobals>,
+    detail: Option<Res<crate::palette::DetailLevel>>,
 ) {
+    let reduce = detail.map_or(1.0, |d| d.lod_range());
     for (lod, mut shown, mut vis) in &mut lods {
         let Ok((_, dist, range)) = roots.get(lod.root) else { continue };
         // The chosen level is the first whose max_dist covers the distance.
@@ -253,9 +255,9 @@ fn apply_model_state(
             .map(|l| l.max_dist)
             .fold(0.0, f32::max);
         // The last level stays drawn LAST_LOD_RANGE (or the root's LodRange) times further
-        // than its model says.
+        // than its model says, reduced by the Alt-D detail setting.
         let last = !all_lods.iter().any(|l| l.root == lod.root && l.level > lod.level);
-        let max_dist = if last { lod.max_dist * range.map_or(LAST_LOD_RANGE, |r| r.0) } else { lod.max_dist };
+        let max_dist = if last { lod.max_dist * range.map_or(LAST_LOD_RANGE, |r| r.0) * reduce } else { lod.max_dist };
         let picks = |d: f32| d <= max_dist && (lod.level == 0 || d > prev);
         let main = picks(dist.main);
         let track = dist.track.map_or(main, picks);

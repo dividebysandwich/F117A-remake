@@ -334,14 +334,23 @@ fn update_globals(
     buf.set_data(g);
 }
 
-/// Original detail level 0..3 (Alt-D cycles 3 -> 2 -> 1 -> 0 -> 3). Below 3 the original uses the
-/// simpler remap table (solid terrain colours instead of gradient AND/OR overlays).
+/// Original detail level 0..3 and the model LOD range reduction 0..3. Alt-D first halves the
+/// last detail level's range three times, then cycles the original level 3 -> 2 -> 1 -> 0 (at
+/// the shortest range), then back to full detail. Below 3 the original uses the simpler remap
+/// table (solid terrain colours instead of gradient AND/OR overlays).
 #[derive(Resource)]
-pub struct DetailLevel(pub u8);
+pub struct DetailLevel(pub u8, pub u8);
 
 impl Default for DetailLevel {
     fn default() -> Self {
-        Self(3)
+        Self(3, 0)
+    }
+}
+
+impl DetailLevel {
+    /// Factor on the range of the models' last detail level.
+    pub fn lod_range(&self) -> f32 {
+        0.5f32.powi(self.1 as i32)
     }
 }
 
@@ -352,7 +361,11 @@ fn cycle_detail(
 ) {
     for crate::input::ActionEvent(a) in actions.read() {
         if *a == crate::input::Action::Detail {
-            detail.0 = if detail.0 == 0 { 3 } else { detail.0 - 1 };
+            *detail = match *detail {
+                DetailLevel(3, r) if r < 3 => DetailLevel(3, r + 1),
+                DetailLevel(0, _) => DetailLevel(3, 0),
+                DetailLevel(l, r) => DetailLevel(l - 1, r),
+            };
             palette.remap = if detail.0 == 3 { REMAP_DETAIL_HIGH } else { REMAP_DETAIL_LOW };
         }
     }

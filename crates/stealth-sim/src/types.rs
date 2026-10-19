@@ -396,6 +396,8 @@ pub enum SimEvent {
     AircraftDestroyed { unit: usize, spec: i32 },
     AircraftCrashed { unit: usize },
     AircraftTakeoff { unit: usize, base: usize },
+    /// An attack drone reached its target (map position).
+    DroneImpact { unit: usize, x: i32, y: i32 },
     /// A world object was destroyed; `shape` = the shape to draw now (`| 0x100` = wreck state).
     GroundDestroyed { object: usize, shape: i32 },
     /// A plain tile object was destroyed or replaced.

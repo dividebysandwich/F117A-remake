@@ -455,6 +455,15 @@ NPPS = [
     ("Novovoronezh NPP", 39.20, 51.27, "novovoronezh"),
 ]
 
+# Attack drone (Geran) launch sites: (name, lon, lat).
+LAUNCH_SITES = [
+    ("Primorsko-Akhtarsk", 38.17, 46.05),
+    ("Chauda", 35.84, 45.00),
+    ("Donetsk", 37.74, 48.07),
+    ("Kursk", 36.30, 51.75),
+    ("Millerovo", 40.32, 48.95),
+]
+
 # Enemy target sites behind the lines: (template, lon, lat, name).
 SITES = [
     ("hq", 37.82, 47.98, "Donetsk"), ("hq", 39.34, 48.55, "Luhansk"), ("hq", 35.40, 46.83, "Melitopol"),

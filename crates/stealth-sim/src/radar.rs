@@ -230,8 +230,8 @@ impl Sim {
                 } else {
                     let k = i & 7;
                     if self.proj[k].ttl == 0
-                        && self.missile(o.unit_type).lock_range as i32 > range
-                        && self.may_launch(o.unit_type, (o.x, o.y, 0))
+                        && self.missile(self.site_missile(o.unit_type)).lock_range as i32 > range
+                        && self.may_launch(self.site_missile(o.unit_type), (o.x, o.y, 0))
                     {
                         self.launch_sam(k, i, brg);
                     }
@@ -251,7 +251,8 @@ impl Sim {
     /// Site launch.
     fn launch_sam(&mut self, k: usize, i: usize, brg: i32) {
         let o = self.objects[i];
-        let lock = self.missile(o.unit_type).lock_range as i32;
+        let spec = self.site_missile(o.unit_type);
+        let lock = self.missile(spec).lock_range as i32;
         self.proj[k] = Projectile {
             x: o.x + 8,
             y: o.y,
@@ -261,7 +262,7 @@ impl Sim {
             pitch: 0x4000,
             roll: 0,
             ttl: s16(lock * self.fs * 16),
-            spec: o.unit_type,
+            spec,
             weapon: 0,
             target: -1,
             launcher: i as i32,
@@ -270,10 +271,10 @@ impl Sim {
             locked: false,
         };
         let n = self.place_name(i);
-        let sam = self.missile(o.unit_type).name.clone();
+        let sam = self.missile(spec).name.clone();
         self.msg(format!("{n} firing {sam}"));
         self.launches += 1;
-        self.emit(SimEvent::MissileLaunched { slot: k, spec: o.unit_type, launcher: Launcher::Site(i) });
+        self.emit(SimEvent::MissileLaunched { slot: k, spec, launcher: Launcher::Site(i) });
     }
 
     /// Aircraft radar.

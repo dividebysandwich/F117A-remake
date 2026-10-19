@@ -105,7 +105,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
     };
     let mut cmd = std::process::Command::new(exe);
     cmd.args(["--vr", "--mission", &state.seed.to_string(), "--theater-index", &state.theater.to_string()])
-        .args(["--roe", &state.roe.to_string(), "--kind", &(state.kind as u8).to_string()])
+        .args(["--roe", &state.roe.to_string(), "--kind", &state.kind.id().to_string()])
         .args(["--opponents", &state.opponents.to_string()])
         .args(["--weather", state.weather.map_or("random", Sky::name)]);
     if let Some(c) = state.cloud_cover {
@@ -165,12 +165,20 @@ const ROE: [(&str, &[&str]); 3] = [
     ("Limited War", &["Regional shooting conflict", "Enemy air defenses on alert", "More enemy aircraft than in Cold War"]),
     ("Conventional War", &["Full-scale war", "All enemy forces active", "More enemy aircraft than in Cold War"]),
 ];
-const KINDS: [(MissionKind, &str, &[&str]); 4] = [
+const KINDS: [(MissionKind, &str, &[&str]); 5] = [
     (MissionKind::Strike, "Strike", &["Destroy, photograph or reach a ground target", "Primary and secondary objective", "Air-to-ground loadout"]),
     (MissionKind::Air, "Air to air", &["Intercept an enemy aircraft", "Transports, bombers or fighter patrols", "Air-to-air missile loadout"]),
     (MissionKind::StrikeTraining, "Strike training", &["Practice strike mission", "Learn weapons and navigation"]),
     (MissionKind::AirTraining, "Air training", &["Practice air-to-air mission", "Learn intercepts and missiles"]),
+    (
+        MissionKind::DroneDefense,
+        "Drone defense",
+        &["Ukraine only", "Stop a wave of Geran attack drones before it hits a city or a nuclear plant", "Then bomb their launch site"],
+    ),
 ];
+
+/// Theaters with drone launch sites (drone defense missions).
+const DRONE_THEATERS: [&str; 1] = ["ua"];
 const OPPONENTS: [(&str, &[&str]); 4] = [
     ("Green", &["Inexperienced enemy crews", "Easiest setting"]),
     ("Regular", &["Average enemy crews", "Default setting"]),
@@ -360,8 +368,14 @@ fn menu_ui(
                         facts(ui.radio_value(&mut state.roe, i as u8, *name), f);
                     }
                     section(ui, "Mission");
+                    let drones = DRONE_THEATERS.contains(&THEATERS[state.theater].0);
+                    if !drones && state.kind == MissionKind::DroneDefense {
+                        state.kind = MissionKind::Air;
+                    }
                     for (kind, name, f) in KINDS {
-                        facts(ui.radio_value(&mut state.kind, kind, name), f);
+                        if kind != MissionKind::DroneDefense || drones {
+                            facts(ui.radio_value(&mut state.kind, kind, name), f);
+                        }
                     }
                     section(ui, "Aircraft");
                     facts(

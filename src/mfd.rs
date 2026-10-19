@@ -309,6 +309,8 @@ pub struct MapArc {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContactKind {
     Aircraft,
+    /// Attack drone (always shown: early warning datalink).
+    Drone,
     Missile,
     GroundRadar,
     Target,
@@ -877,6 +879,7 @@ impl MfdParams<'_, '_> {
             let (x, y) = (p.x as i32, p.y as i32);
             match k.kind {
                 ContactKind::Aircraft => c.fill_rect(x, y, 2, 2, 41),
+                ContactKind::Drone => c.fill_rect(x, y, 2, 1, 13),
                 ContactKind::Missile => c.set(x, y, 17),
                 ContactKind::GroundRadar => c.fill_rect(x, y, 2, 2, 0),
                 ContactKind::Target if blink => c.fill_rect(x - 1, y - 1, 3, 3, 15),
@@ -961,6 +964,16 @@ impl MfdParams<'_, '_> {
             let (fwd, side) = (Vec2::new(sr, -cr) * s as f32, Vec2::new(cr, sr) * s as f32);
             c.triangle([centre + fwd * 4.0, centre - fwd * 3.0 - side * 2.3, centre - fwd * 3.0 + side * 2.3], colour);
         };
+        // Attack drone: a small open delta.
+        let drone = |c: &mut Canvas, rel: f32, x: i32, y: i32, colour: u8| {
+            let centre = Vec2::new(x as f32, y as f32) + if s == 1 { Vec2::splat(0.5) } else { Vec2::ZERO };
+            let (sr, cr) = rel.sin_cos();
+            let (fwd, side) = (Vec2::new(sr, -cr) * s as f32, Vec2::new(cr, sr) * s as f32);
+            let p = [centre + fwd * 3.0, centre - fwd * 2.0 - side * 2.5, centre - fwd * 2.0 + side * 2.5];
+            for (a, b) in [(p[0], p[1]), (p[1], p[2]), (p[2], p[0])] {
+                c.line(a.x as i32, a.y as i32, b.x as i32, b.y as i32, colour);
+            }
+        };
         // Airbases (runway in a ring).
         if let Some(t) = &self.theater {
             for o in t.world.objects.iter().filter(|o| o.target_flags & 0x100 != 0) {
@@ -993,6 +1006,10 @@ impl MfdParams<'_, '_> {
                         41
                     };
                     plane(c, rel, x, y, colour);
+                }
+                ContactKind::Drone => {
+                    let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16) as f32 / 65536.0 * std::f32::consts::TAU;
+                    drone(c, rel, x, y, 13);
                 }
                 ContactKind::Missile => {
                     let rel = (ct.heading as f32 / 65536.0) * std::f32::consts::TAU - h;
@@ -1190,6 +1207,10 @@ impl MfdParams<'_, '_> {
             let (x, y) = (p.x as i32, p.y as i32);
             match k.kind {
                 ContactKind::Aircraft => c.fill_rect(x - 2, y - 2, 4, 4, 41),
+                ContactKind::Drone => {
+                    c.line(x - 2, y - 2, x + 2, y + 2, 13);
+                    c.line(x - 2, y + 2, x + 2, y - 2, 13);
+                }
                 ContactKind::Missile => c.fill_rect(x - 1, y - 1, 2, 2, 17),
                 ContactKind::GroundRadar => c.fill_rect(x - 2, y - 2, 4, 4, 0),
                 ContactKind::Target if blink => c.rect(x - 4, y - 4, 9, 9, 15),

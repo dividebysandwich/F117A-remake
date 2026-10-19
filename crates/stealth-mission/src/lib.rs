@@ -1,3 +1,4 @@
+pub mod drones;
 mod generator;
 pub mod rng;
 pub mod tables;
@@ -11,6 +12,7 @@ use anyhow::{Context, Result, ensure};
 use stealth_formats::ALL_THEATERS;
 use serde::{Deserialize, Serialize};
 
+pub use drones::DroneWave;
 pub use rng::MscRand;
 pub use tables::{MissionRow, PlaneInfo, StartTables};
 pub use text::{Briefing, Orders, OrdersLine};
@@ -30,15 +32,30 @@ pub enum MissionKind {
     Strike = 1,
     AirTraining = 2,
     StrikeTraining = 3,
+    /// The remake's drone defense (theaters with drone launch sites): generated as an air
+    /// mission, then turned into an intercept of a Geran wave.
+    DroneDefense = 4,
 }
 
 impl MissionKind {
+    /// The original game's kinds.
     pub const ALL: [MissionKind; 4] = [Self::Air, Self::Strike, Self::AirTraining, Self::StrikeTraining];
+    /// Generator kind (bit 0 strike, bit 1 training).
     pub fn index(self) -> u8 {
-        self as u8
+        match self {
+            Self::DroneDefense => 0,
+            k => k as u8,
+        }
     }
     pub fn from_index(i: u8) -> Option<Self> {
         Self::ALL.get(i as usize).copied()
+    }
+    /// Number on the command line (`--kind`).
+    pub fn id(self) -> u8 {
+        self as u8
+    }
+    pub fn from_id(i: u8) -> Option<Self> {
+        Self::ALL.into_iter().chain([Self::DroneDefense]).find(|k| k.id() == i)
     }
     pub fn is_strike(self) -> bool {
         self.index() & 1 != 0
@@ -319,6 +336,9 @@ pub struct Mission {
     pub exit_code: u8,
     pub briefing: Briefing,
     pub orders: Orders,
+    /// Attack drones in the air (not in the original game).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drones: Option<DroneWave>,
 }
 
 /// Roll the weapon availability flags after `srand`.
@@ -420,7 +440,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
     let weather = Weather::roll(input.holdrand, s.theater, s.weather, s.cloud_cover);
     let mut briefing = ctx.briefing(s.sorties, &s.pilot);
     briefing.weather_line = weather.describe();
-    Ok(Mission {
+    let mut m = Mission {
         settings: s.clone(),
         theater_code: ALL_THEATERS[s.theater].into(),
         theater_name: THEATER_NAMES[s.theater].into(),
@@ -459,7 +479,14 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
         briefing,
         orders: ctx.orders(),
         world: g.world.clone(),
-    })
+        drones: None,
+    };
+    if s.kind == MissionKind::DroneDefense {
+        drones::defend(&mut m, data, th)?;
+    } else if s.kind == MissionKind::Strike && !th.launch_sites.is_empty() {
+        drones::crossing(&mut m, th);
+    }
+    Ok(m)
 }
 
 fn type_name(t: i32) -> &'static str {

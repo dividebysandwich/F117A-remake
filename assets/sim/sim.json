@@ -137,6 +137,34 @@
       "lethality": 40,
       "tier": 3,
       "flags": 0
+    },
+    {
+      "name": "SA-21",
+      "lethality": 400,
+      "tier": 7,
+      "flags": 1,
+      "missile": 41
+    },
+    {
+      "name": "SA-17",
+      "lethality": 250,
+      "tier": 6,
+      "flags": 1,
+      "missile": 42
+    },
+    {
+      "name": "SA-22",
+      "lethality": 130,
+      "tier": 8,
+      "flags": 1,
+      "missile": 43
+    },
+    {
+      "name": "SA-15",
+      "lethality": 125,
+      "tier": 7,
+      "flags": 1,
+      "missile": 44
     }
   ],
   "aircraft": [
@@ -836,6 +864,38 @@
       "class": 1,
       "turn": 3,
       "model": 16
+    },
+    {
+      "name": "SA-21",
+      "lock_range": 200,
+      "max_speed": 2400,
+      "class": 3,
+      "turn": 2,
+      "model": 15
+    },
+    {
+      "name": "SA-17",
+      "lock_range": 110,
+      "max_speed": 1800,
+      "class": 2,
+      "turn": 4,
+      "model": 15
+    },
+    {
+      "name": "SA-22",
+      "lock_range": 60,
+      "max_speed": 1700,
+      "class": 2,
+      "turn": 5,
+      "model": 15
+    },
+    {
+      "name": "SA-15",
+      "lock_range": 50,
+      "max_speed": 1400,
+      "class": 2,
+      "turn": 5,
+      "model": 15
     }
   ],
   "weapons": [

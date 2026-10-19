@@ -537,3 +537,70 @@ fn nearest_target_skips_friendlies_and_waits_for_hud_mode() {
     sim.step(&p, 15);
     assert_eq!(sim.targeting().ground, Some(2));
 }
+
+fn drone_mission(d: &Data, seed: u16, opponents: u8) -> Mission {
+    let theater = stealth_formats::ALL_THEATERS.iter().position(|t| *t == "UA").unwrap();
+    let s = MissionSettings { theater, roe: 1, opponents, kind: MissionKind::DroneDefense, ..Default::default() };
+    stealth_mission::generate(&d.gdata, &s, Seed::Srand(seed)).unwrap()
+}
+
+/// Nobody stops the wave: every drone reaches the target and the defense fails.
+#[test]
+fn unopposed_drone_wave_gets_through() {
+    let d = data();
+    let m = drone_mission(d, 42, 1);
+    let w = m.drones.clone().unwrap();
+    let mut sim = Sim::new(&d.sim, &m);
+    sim.set_training(true);
+    // Out of the way, high over the base.
+    let p = player_at(m.takeoff.position.x, m.takeoff.position.y, 30000, 0, 300);
+    let mut impacts = 0;
+    for _ in 0..15 * 60 * 40 {
+        impacts += sim.step(&p, 15).iter().filter(|e| matches!(e, SimEvent::DroneImpact { .. })).count();
+        if sim.drones().unwrap().resolved {
+            break;
+        }
+    }
+    let s = sim.drones().unwrap();
+    assert!(s.resolved, "after {} s: {s:?}", sim.mission_tick());
+    assert_eq!((s.leaked, s.killed, impacts), (w.count as i32, 0, w.count));
+    assert!(!sim.objectives().primary_done);
+    let r = sim.mission_report();
+    assert_eq!(r.drones_leaked, w.count as i32);
+    // They arrive spread out, 9 minutes and more after the start.
+    assert!(sim.mission_tick() > 9 * 60, "{}", sim.mission_tick());
+}
+
+/// A Sidewinder from behind kills a drone; it counts toward the defense.
+#[test]
+fn sidewinder_kills_a_drone() {
+    let d = data();
+    let m = drone_mission(d, 7, 0);
+    let w = m.drones.clone().unwrap();
+    let mut sim = Sim::new(&d.sim, &m);
+    sim.set_training(true);
+    let u = sim.flights()[w.first_unit];
+    // 2 km behind the first drone, at its altitude, on its heading.
+    let (hs, hc) = ((u.heading as u16 as f64 / 65536.0 * std::f64::consts::TAU).sin(), (u.heading as u16 as f64 / 65536.0 * std::f64::consts::TAU).cos());
+    let (px, py) = (u.x - (hs * 128.0) as i32, u.y + (hc * 128.0) as i32);
+    sim.set_bay(0, 0, 4);
+    sim.select_bay(0);
+    let mut p = player_at(px, py, u.alt as u16, u.heading as u16, 200);
+    p.cmd.toggle_bay = true;
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    for _ in 0..5 {
+        sim.step(&p, 15);
+    }
+    p.cmd.fire = true;
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    for _ in 0..15 * 20 {
+        sim.step(&p, 15);
+        if sim.drones().unwrap().killed > 0 {
+            break;
+        }
+    }
+    assert_eq!(sim.drones().unwrap().killed, 1, "{:?}", sim.flights()[w.first_unit]);
+    assert_eq!(sim.mission_report().drones_killed, 1);
+}

@@ -21,7 +21,11 @@ impl Sim {
                 self.scramble(i);
                 continue;
             }
-            self.fly(i);
+            if self.ac_type(self.flights[i].spec).kind == crate::AircraftKind::Drone && self.flights[i].flags & fflags::DESTROYED == 0 {
+                self.fly_drone(i);
+            } else {
+                self.fly(i);
+            }
         }
     }
 
@@ -240,7 +244,7 @@ impl Sim {
                 Some(format!("{base} - {ty} on final"))
             };
             if let Some(m) = msg
-                && i + 4 < nf
+                && !self.is_traffic(i)
             {
                 self.msg(m);
             }
@@ -254,12 +258,12 @@ impl Sim {
                 u.speed -= cdiv(60, fs);
             } else {
                 u.flags &= 0x1C1;
-                if i == 0 && self.targets[0].mission_type >= 5 {
+                if i == 0 && (5..=8).contains(&self.targets[0].mission_type) {
                     u.flags = 0;
                     self.target_escaped = true;
                 }
             }
-            if i + 4 >= nf && u.speed < 100 {
+            if self.is_traffic(i) && u.speed < 100 {
                 u.flags = (u.flags & 0x1C1) | 0x406;
             }
         }
@@ -300,8 +304,7 @@ impl Sim {
 
     /// Scramble check for an inactive unit: may launch it from a random alert base.
     fn scramble(&mut self, i: usize) {
-        let nf = self.flights.len();
-        if (((self.mission_tick >> (self.roe + 4)) ^ i as i32) & 7) != 0 || i + 4 >= nf || i == 0 {
+        if (((self.mission_tick >> (self.roe + 4)) ^ i as i32) & 7) != 0 || self.is_traffic(i) || i >= self.mission_flights || i == 0 {
             return;
         }
         if self.woc == 0 {
@@ -326,7 +329,6 @@ impl Sim {
         let t = self.ac_type(self.flights[i].spec).clone();
         let ns = self.ns;
         let fs = self.fs;
-        let nf = self.flights.len();
         let leader = self.escort_leader;
         let u = &mut self.flights[i];
         u.heading = if ns == 1 { 0 } else { s16(0x8000) };
@@ -352,16 +354,27 @@ impl Sim {
         if leader == -1 {
             u.flags &= !fflags::ESCORT;
         }
-        if i + 4 < nf {
+        if !self.is_traffic(i) {
             let base = self.place_name(b);
             self.msg(format!("{base} - {} taking off", t.name));
         }
         self.emit(SimEvent::AircraftTakeoff { unit: i, base: b });
     }
 
+    /// One of the base traffic flight slots (the mission's last 4 flight units).
+    pub(crate) fn is_traffic(&self, i: usize) -> bool {
+        i < self.mission_flights && i + 4 >= self.mission_flights
+    }
+
+    /// Base traffic slots: two flying, two parked (None with fewer than 8 mission flights).
+    fn traffic_slots(&self) -> Option<[usize; 4]> {
+        let n = self.mission_flights;
+        (n >= 8).then(|| [n - 1, n - 2, n - 3, n - 4])
+    }
+
     /// Base traffic: the last 4 flight units of the mission live at the nearest friendly base.
     pub(crate) fn update_base_traffic(&mut self) {
-        let Some([t0, t1, t2, t3]) = self.traffic_slots else { return };
+        let Some([t0, t1, t2, t3]) = self.traffic_slots() else { return };
         let b = self.nearest_base;
         if b == self.traffic_base {
             return;
@@ -429,7 +442,7 @@ impl Sim {
 
     /// Every 128 frames one of the two traffic aircraft (alternating) appears on approach.
     pub(crate) fn spawn_traffic(&mut self) {
-        let Some([t0, t1, ..]) = self.traffic_slots else { return };
+        let Some([t0, t1, ..]) = self.traffic_slots() else { return };
         if self.traffic_base < 0 {
             return;
         }

@@ -60,12 +60,20 @@ pub struct MissionReport {
     pub training: bool,
     pub primary_done: bool,
     pub secondary_done: bool,
+    /// Aircraft shot down (not counting drones).
     pub air_kills: i32,
     pub ground_kills: i32,
     /// Aircraft shot down before they had seen the player.
     pub unseen_kills: i32,
     pub weapons_fired: i32,
     pub hits_taken: i32,
+    /// Attack drones shot down / that reached their target (drone defense: a failure).
+    #[serde(default)]
+    pub drones_killed: i32,
+    #[serde(default)]
+    pub drones_leaked: i32,
+    #[serde(default)]
+    pub nuclear_hit: bool,
     pub radar_ids: i32,
     pub visual_ids: i32,
     /// Mission clock at the end (seconds).
@@ -103,6 +111,7 @@ impl Sim {
         let outcome = Outcome::from_end(self.mission_end());
         let training = self.invulnerable();
         let (mut air, mut ground, mut unseen, mut fired, mut hits, mut radar_ids, mut visual_ids) = (0, 0, 0, 0, 0, 0, 0);
+        let mut drones_killed = 0;
         let mut timeline = Vec::new();
         for e in self.event_log() {
             let tag = match e.kind & 0xC0 {
@@ -120,11 +129,16 @@ impl Sim {
                     Some(format!("Destroyed ground target{tag}"))
                 }
                 3 => {
-                    air += 1;
-                    if e.arg & 0x80 == 0 {
-                        unseen += 1;
+                    let spec = e.arg as i32 & 0x7F;
+                    if self.ac_type(spec).kind == crate::AircraftKind::Drone {
+                        drones_killed += 1;
+                    } else {
+                        air += 1;
+                        if e.arg & 0x80 == 0 {
+                            unseen += 1;
+                        }
                     }
-                    Some(format!("Shot down {}{tag}", self.aircraft_name(e.arg as i32 & 0x7F)))
+                    Some(format!("Shot down {}{tag}", self.aircraft_name(spec)))
                 }
                 4 => {
                     fired += 1;
@@ -143,6 +157,7 @@ impl Sim {
                     Some(format!("Radar ID by {}", self.place_name(e.arg as usize)))
                 }
                 0x0B => Some(format!("Objective reached{tag}")),
+                0x0D => Some(format!("{} got through", self.aircraft_name(e.arg as i32))),
                 0x0A => Some(format!("Photo taken{tag}")),
                 _ => None,
             };
@@ -150,6 +165,9 @@ impl Sim {
                 timeline.push(TimelineEntry { tick: e.tick, text });
             }
         }
+        let drones = self.drones();
+        let defend = drones.is_some_and(|d| d.defend);
+        let (drones_leaked, nuclear_hit) = drones.map_or((0, false), |d| (d.leaked, d.nuclear_hit));
         let mut points = Vec::new();
         let mut add = |what: &str, p: i32| {
             if p != 0 {
@@ -162,6 +180,11 @@ impl Sim {
             add("Aircraft destroyed", 10 * air);
             add("Shot down unseen", 5 * unseen);
             add("Ground targets destroyed", 10 * ground);
+            add("Drones shot down", 15 * drones_killed);
+            if defend {
+                add("Drones through", -30 * drones_leaked);
+                add("Nuclear plant hit", if nuclear_hit { -200 } else { 0 });
+            }
             add("Detected", -5 * (radar_ids + visual_ids));
             add("Missile hits", -10 * hits);
             add(
@@ -188,6 +211,9 @@ impl Sim {
             unseen_kills: unseen,
             weapons_fired: fired,
             hits_taken: hits,
+            drones_killed,
+            drones_leaked,
+            nuclear_hit,
             radar_ids,
             visual_ids,
             time: self.mission_tick(),

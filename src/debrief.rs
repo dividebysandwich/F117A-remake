@@ -88,6 +88,7 @@ fn debrief_ui(
                         }
                         for (k, v) in [
                             ("AIRCRAFT", r.air_kills.to_string()),
+                            ("DRONES", if r.drones_killed + r.drones_leaked > 0 { format!("{} down, {} through", r.drones_killed, r.drones_leaked) } else { "-".into() }),
                             ("GROUND", r.ground_kills.to_string()),
                             ("WEAPONS", r.weapons_fired.to_string()),
                             ("RADAR IDS", r.radar_ids.to_string()),

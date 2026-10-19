@@ -453,6 +453,8 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                         combat.kills.push(Kill { x, y, vehicle: true });
                     }
                 }
+                // A drone that got through sets its target area on fire.
+                SimEvent::DroneImpact { x, y, .. } => combat.kills.push(Kill { x, y, vehicle: false }),
                 SimEvent::TileDestroyed(t) => tiles.set(t.level as usize, t.col, t.row, t.index, t.shape),
                 SimEvent::GroundDestroyed { object, .. } => {
                     if let Some(o) = combat.sim.objects().get(object) {
@@ -744,7 +746,8 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             continue;
         }
         let (east, north, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
-        contacts.list.push(Contact { kind: ContactKind::Aircraft, east, north, alt: alt as f32, heading: u.heading as u16, friendly: sim.friendly_aircraft(u.spec) });
+        let kind = if sim.drones().is_some_and(|d| d.contains(i)) { ContactKind::Drone } else { ContactKind::Aircraft };
+        contacts.list.push(Contact { kind, east, north, alt: alt as f32, heading: u.heading as u16, friendly: sim.friendly_aircraft(u.spec) });
     }
     for (_, m, _, _) in sim.active_projectiles() {
         let (east, north) = map_wu(m.x, m.y);

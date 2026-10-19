@@ -21,6 +21,10 @@ pub struct ThreatType {
     pub tier: i16,
     /// bit 0 Doppler, bit 1 omni-directional airborne (AWACS).
     pub flags: i16,
+    /// Missile a site of this type fires (the remake's own sites, appended after the original
+    /// table); None: the missile with the same index, as in the original.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missile: Option<i16>,
 }
 
 /// Aircraft type.

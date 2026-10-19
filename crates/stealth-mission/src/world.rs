@@ -122,6 +122,9 @@ pub struct TheaterData {
     /// Briefing start date (month, day, year) of a remake theater.
     #[serde(default)]
     pub date: Option<(u8, u8, u16)>,
+    /// World objects the enemy launches attack drones from (remake theaters).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub launch_sites: Vec<i16>,
     pub world: MissionWorld,
     /// Terrain tile grids: g4 (4x4), g3 (16x16), g2/g1/g0 (32 blocks of 4x4).
     pub(crate) g: [Vec<u8>; 5],

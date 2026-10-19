@@ -4,6 +4,7 @@ pub mod rng;
 pub mod types;
 
 mod ai;
+pub mod drones;
 mod missiles;
 mod objectives;
 mod radar;
@@ -157,10 +158,13 @@ pub struct Sim {
     pub(crate) nearest_base_dist: i32,
     pub(crate) traffic_base: i32,
     pub(crate) traffic_toggle: bool,
-    /// Base traffic flight slots (the mission's last 4; flights added later go after them):
-    /// two flying, two parked. None with fewer than 8 flights.
+    /// Flight units of the mission (its last 4 are the base traffic); units added later
+    /// (drones, rescue helicopters) follow them.
     #[serde(default)]
-    pub(crate) traffic_slots: Option<[usize; 4]>,
+    pub(crate) mission_flights: usize,
+    /// Attack drones of the mission (their flight units follow the mission's own).
+    #[serde(default)]
+    pub(crate) drones: Option<drones::Drones>,
     /// Apron parking spots for the parked base traffic (not in the original): world x, y and
     /// heading; empty = parked on the base object as in the original.
     #[serde(default)]
@@ -360,9 +364,15 @@ impl Sim {
             nearest_base_dist: 0x7FFF,
             traffic_base: -1,
             traffic_toggle: false,
-            traffic_slots: (w.flights.len() >= 8).then(|| {
-                let n = w.flights.len();
-                [n - 1, n - 2, n - 3, n - 4]
+            mission_flights: w.flights.len() - m.drones.as_ref().map_or(0, |d| d.count.min(w.flights.len())),
+            drones: m.drones.as_ref().map(|d| drones::Drones {
+                defend: d.defend,
+                target: d.target as i32,
+                nuclear: d.nuclear,
+                first: d.first_unit,
+                count: d.count,
+                allowance: d.allowance as i32,
+                ..Default::default()
             }),
             parking: Vec::new(),
             chaff_lamp: 0,
@@ -564,6 +574,11 @@ impl Sim {
 
     pub(crate) fn threat_type(&self, t: i32) -> Option<&ThreatType> {
         if t <= 0 { None } else { self.threats.get(t as usize) }
+    }
+
+    /// Missile type fired by a site of unit type `t`.
+    pub fn site_missile(&self, t: i32) -> i32 {
+        self.threat_type(t).and_then(|th| th.missile).map_or(t, i32::from)
     }
 
     /// Copy the flight model's state into the per-frame player view and flags.

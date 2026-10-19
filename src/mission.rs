@@ -96,7 +96,7 @@ pub fn from_args(app: &mut App) {
     let roe = get("--roe").and_then(|s| s.parse().ok()).unwrap_or(1);
     let kind = get("--kind")
         .and_then(|s| s.parse::<u8>().ok())
-        .and_then(|n| MissionKind::ALL.into_iter().find(|k| *k as u8 == n))
+        .and_then(MissionKind::from_id)
         .unwrap_or(MissionKind::Strike);
     let opponents = get("--opponents").and_then(|s| s.parse().ok()).unwrap_or(1);
     let lockheed = args.iter().any(|a| a == "--lockheed");

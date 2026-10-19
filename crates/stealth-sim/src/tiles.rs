@@ -269,7 +269,7 @@ impl Sim {
             self.smoke_src = -1;
             self.wreck = Wreck { x: u.x, y: u.y, alt: u.alt, vel: 0x80 };
             let mut ev = 3;
-            if self.targets[0].mission_type >= 5 && j == 0 {
+            if (5..=8).contains(&self.targets[0].mission_type) && j == 0 {
                 self.mark_target_reached(0);
                 ev = 0x83;
             }
@@ -278,6 +278,7 @@ impl Sim {
                 self.flights[j].flags &= 0x1C1;
             }
             self.emit(SimEvent::AircraftDestroyed { unit: j, spec: u.spec });
+            self.drone_killed(j);
         }
         self.sound(5, 2);
         if self.hud_mode == HudMode::Air && j as i32 == self.air_lock {

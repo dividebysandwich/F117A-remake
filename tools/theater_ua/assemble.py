@@ -55,14 +55,16 @@ TEMPLATES = {
     "armor": [(0, 0, MOBILE_SAM), (-1536, 512, TANK), (-1792, 0, TANK), (-1024, 1024, TANK), (-1024, 0, TANK), (-1536, -512, TANK),
               (-1024, -1024, TANK), (1536, 512, HOUSES)],
     "ss": [(0, 0, SS)],
+    "launch": [(0, 0, DEPOT), (-512, 512, TANK), (512, 512, TANK), (-512, -512, TANK), (0, -1024, HANGAR)],
     "pow": [(0, 0, POW), (-640, 0, HOUSES)],
     "farm_a": [(256, 1280, HOUSES), (-256, 512, HOUSES), (128, -256, HOUSES), (0, 0, WINDMILL)],
     "farm_b": [(-1280, 1536, HOUSES), (1280, 768, HOUSES), (256, -256, HOUSES2)],
     "farm_c": [(0, 0, HOUSES2), (-512, -768, HOUSES)],
 }
 
-# Unit (radar) types of the SAM sites, as Central Europe uses them.
-SAM_TYPES = [4, 5, 6, 7]
+# Unit (radar) types of the SAM sites: SA-10, SA-21 (S-400), SA-17 (Buk-M2), SA-22 (Pantsir)
+# (sim.json threats 23..26 are the remake's own).
+SAM_TYPES = [4, 23, 24, 25]
 DONBAS = {"Donetsk", "Makiivka", "Horlivka", "Alchevsk", "Luhansk", "Toretsk", "Pokrovsk", "Myrnohrad", "Shakhty", "Debaltseve",
           "Avdiivka", "Novocherkassk", "Popasna", "Bakhmut"}
 CITY_SAMS = ["Sevastopol", "Simferopol", "Donetsk", "Luhansk", "Rostov", "Belgorod", "Melitopol", "Novorossiysk"]
@@ -143,11 +145,14 @@ class Layout:
         self.red_bases = []
         self.blue_bases = []
         self.cities = []  # (name, placement or point, red, shape)
+        self.npp_sites = []  # (name, placement, red, shape)
+        self.launch = []  # (name, placement)
         self.airbases()
         self.npps()
         self.towns()
         self.sites()
         self.city_sams()
+        self.launch_sites()
         self.boats()
         self.mountains()
         self.generic()
@@ -176,7 +181,7 @@ class Layout:
         for name, lon, lat, kind in geo.NPPS:
             x, y = geo.ll(lon, lat)
             shape = {"znpp": 94, "rostov": 95, "south": 96, "kursk": 97, "novovoronezh": 98}[kind]
-            self.put(2, x, y, shape)
+            self.npp_sites.append((name, self.put(2, x, y, shape), self.red(x, y), shape))
 
     def towns(self):
         """Tile objects of the towns: central buildings (or ruins), slag heaps in the Donbas.
@@ -241,9 +246,18 @@ class Layout:
             placed = self.template(kind, *cell)
             for shape, t in placed:
                 if shape == SAM_RADAR:
-                    self.ground_units.append((name, t, self.rng.choice([5, 7]), 0))
+                    # Mobile SAMs: SA-17 (Buk-M2) or SA-15 (Tor-M2).
+                    self.ground_units.append((name, t, self.rng.choice([24, 26]), 0))
                 if shape == OTH:
                     self.ground_units.append((name, t, 21, 0))
+
+    def launch_sites(self):
+        for name, lon, lat in geo.LAUNCH_SITES:
+            cell = self.site_cell(*geo.ll(lon, lat))
+            if cell is None:
+                print("no room for launch site", name)
+                continue
+            self.launch.append((name, self.template("launch", *cell)[0][1]))
 
     def city_sams(self):
         for name in CITY_SAMS:
@@ -450,6 +464,13 @@ def build_world(lay, ce):
     guc = len(objects)
     for name, t in lay.red_bases:
         objects.append(obj(name, t, 0, 1, BASE))
+    launch = []
+    for name, t in lay.launch:
+        launch.append(len(objects))
+        objects.append(obj(name, t, 0, 0, DEPOT))
+    blue_npps = [n for n in lay.npp_sites if not n[2]]
+    for n in blue_npps:
+        name_id(n[0])
     # Towns by size while the name table has room (750 bytes); red ones before the world
     # object count, friendly ones after it.
     cities = sorted(lay.cities, key=lambda c: -next(t[4] for t in geo.TOWNS if t[0] == c[0]))
@@ -466,6 +487,8 @@ def build_world(lay, ce):
     for name, t, red, shape in kept:
         if not red:
             objects.append(obj(name, t, 0, 0x400, shape))
+    for name, t, _, shape in blue_npps:
+        objects.append(obj(name, t, 0, 0x400, shape))
     for name, t in lay.blue_bases:
         objects.append(obj(name, t, 0, 0x401, BASE))
     assert len(objects) <= 128, len(objects)
@@ -473,8 +496,13 @@ def build_world(lay, ce):
     raw = raw.rstrip(b"\0") + b"\0"
     assert len(raw) <= 750, len(raw)
     print("world: %d objects (%d ground units, world object count %d), names %d bytes" % (len(objects), guc, woc, len(raw)))
-    return dict(header=(91 << 8) | 102, ground_unit_count=guc, world_object_count=woc, objects=objects, flights=w["flights"],
-                buf7=w["buf7"], buf8=w["buf8"], object_types=w["object_types"], names_raw=list(raw), names=names)
+    # Central Europe's flights with the 2026 types: MiG-23 -> Su-34, MiG-25 -> MiG-31, MiG-29 -> Su-35
+    # (the IL-76 stands in for the A-50).
+    remap = {0: 31, 1: 3, 2: 32}
+    flights = [dict(f, plane_type=remap.get(f["plane_type"], f["plane_type"])) for f in w["flights"]]
+    world = dict(header=(91 << 8) | 102, ground_unit_count=guc, world_object_count=woc, objects=objects, flights=flights,
+                 buf7=w["buf7"], buf8=w["buf8"], object_types=w["object_types"], names_raw=list(raw), names=names)
+    return world, launch
 
 
 def flight_bytes(f):
@@ -667,10 +695,11 @@ def write_ron(lay, grids, world, model_count, model_attr):
     open(os.path.join(ROOT, "assets", "theaters", "ua.ron"), "w").write(text)
 
 
-def write_json(grids, world):
+def write_json(grids, world, launch):
     td = {
         "index": 3,
         "date": [10, 1, 2026],
+        "launch_sites": launch,
         "world": world,
         "g": [[0] * 512, grids["lod1"], grids["lod2"], grids["lod3"], grids["inner4"]],
         "tiles": [[[list(o) for o in t] for t in lv] for lv in grids["tiles"]],
@@ -687,11 +716,11 @@ def main():
     lay.build()
     grids = lay.grids()
     ce = ce_data()
-    world = build_world(lay, ce)
+    world, launch = build_world(lay, ce)
     world["grid"] = lay.territory()
     model_count, model_attr = merge_models(new_glb, meta)
     write_ron(lay, grids, world, model_count, model_attr)
-    write_json(grids, world)
+    write_json(grids, world, launch)
     palette()
     print("ua: %d models" % model_count)
 

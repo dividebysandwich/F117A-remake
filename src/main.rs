@@ -43,40 +43,8 @@ use bevy::prelude::*;
 
 use settings::{MissionSetup, Settings};
 
-/// GPU mesh preprocessing (Bevy's compute-built mesh uniforms and indirect draws). Off on ARM:
-/// on the Steam Frame (Adreno 750, Turnip) it hangs the GPU while scenery streams in; Bevy's own
-/// Adreno blocklist stops at the 730. `--gpu-preprocessing` / `--no-gpu-preprocessing` override.
-fn gpu_preprocessing() -> bool {
-    let has = |f: &str| std::env::args().any(|a| a == f);
-    let on = if has("--gpu-preprocessing") {
-        true
-    } else if has("--no-gpu-preprocessing") {
-        false
-    } else {
-        !cfg!(target_arch = "aarch64")
-    };
-    eprintln!("GPU mesh preprocessing: {}", if on { "on" } else { "off" });
-    on
-}
-
-/// Makes the renderer treat GPU preprocessing as unsupported (as Bevy does for older Adreno and
-/// Mali drivers), so the views batch on the CPU like the meshes; with only the meshes switched
-/// (`PbrPlugin`), the views still expect GPU-built data and draw nothing.
-fn no_gpu_preprocessing(app: &mut App) {
-    use bevy::render::batching::gpu_preprocessing::{GpuPreprocessingMode, GpuPreprocessingSupport};
-    use bevy::render::{RenderApp, RenderStartup, init_gpu_resource};
-    if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-        render_app.add_systems(
-            RenderStartup,
-            (|mut support: ResMut<GpuPreprocessingSupport>| support.max_supported_mode = GpuPreprocessingMode::None)
-                .after(init_gpu_resource::<GpuPreprocessingSupport>),
-        );
-    }
-}
-
 fn main() {
     let settings = Settings::from_args();
-    let gpu_preprocessing = gpu_preprocessing();
     let mut app = App::new();
     let plugins = DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -92,8 +60,7 @@ fn main() {
             ..default()
         }),
         ..default()
-    })
-    .set(bevy::pbr::PbrPlugin { use_gpu_instance_buffer_builder: gpu_preprocessing, ..default() });
+    });
     // --vr: OpenXR replaces the render plugin (the window stays for the menu / mirror).
     #[cfg(feature = "xr")]
     if settings.vr {
@@ -107,9 +74,6 @@ fn main() {
             warn!("built without the `xr` feature: --vr ignored");
         }
         app.add_plugins(plugins);
-    }
-    if !gpu_preprocessing {
-        no_gpu_preprocessing(&mut app);
     }
     app.add_plugins(crash_log::CrashLogPlugin);
     app.insert_state(settings.initial_state)

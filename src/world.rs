@@ -255,8 +255,8 @@ fn stream_tiles(
     let Ok(anchor) = anchor.single() else { return };
     let file = library.load(&server, &theater.id);
     let photo = library.load(&server, "photo");
-    if assets.gltfs.get(&file).is_none() || assets.gltfs.get(&photo).is_none() {
-        return; // models still loading
+    if assets.gltfs.get(&photo).is_none() || !assets.terrain.ready(&theater.id) {
+        return; // models still loading or being refined (terrain.rs)
     }
     let (east, north, _) = bevy_to_wu(anchor.0);
     let mut wanted = Vec::new();

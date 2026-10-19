@@ -1,6 +1,7 @@
 //! Geometry of one scenery block: roads with street lamps, buildings, pylons and wires (main
-//! tier), and trees (detail tier). Everything is generated from the network and per-position
-//! hashes, so a block looks the same whenever it is streamed in.
+//! tier), and trees (detail tier near the viewpoint, far tier beyond). Everything is generated
+//! from the network and per-position hashes, so a block looks the same whenever it is streamed
+//! in, and both tree tiers place the same trees.
 
 use std::f32::consts::TAU;
 
@@ -33,6 +34,9 @@ pub enum Tier {
     Main,
     /// Trees.
     Detail,
+    /// Distant trees: one small 3-sided cone or double cone per tree (3-6 triangles instead
+    /// of 10-30), no bushes or trunks.
+    Far,
 }
 
 /// Block-local frame: ground metres -> Bevy (x east, y up, z south) around the block centre.
@@ -86,7 +90,8 @@ pub fn build(sc: &Scenery, bx: i32, by: i32, tier: Tier) -> Geom {
             }
             power(&sc.net, &f, &mut g);
         }
-        Tier::Detail => trees(sc, &f, &mut g),
+        Tier::Detail => trees(sc, &f, &mut g, false),
+        Tier::Far => trees(sc, &f, &mut g, true),
     }
     g
 }
@@ -384,7 +389,7 @@ fn power(net: &Network, f: &Frame, g: &mut Geom) {
     }
 }
 
-fn trees(sc: &Scenery, f: &Frame, g: &mut Geom) {
+fn trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
     let Some(style) = &sc.style else { return };
     let n = (BLOCK / TREE_GRID) as i64;
     let (gx0, gy0) = ((f.min.x / TREE_GRID) as i64, (f.min.y / TREE_GRID) as i64);
@@ -410,6 +415,9 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom) {
                 continue;
             }
             let c = f.at(p, 0.0);
+            if bush && far {
+                continue;
+            }
             if bush {
                 let s = rng.range(1.5, 3.0) as f32;
                 g.spire(0xAC, &ring(c, s, 5, rng.range(0.0, 6.3) as f32), 0.0, c + Vec3::Y * s * 1.2);
@@ -418,6 +426,21 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom) {
             let h = rng.range(8.0, 18.0) as f32;
             let phase = rng.range(0.0, 6.3) as f32;
             match style.tree(&mut rng) {
+                Tree::Conifer if far => {
+                    let col = rng.pick(&[0xAD, 0xAE]);
+                    g.spire(col, &ring(c, h * 0.26, 3, phase), h * 0.08, c + Vec3::Y * h);
+                }
+                Tree::Broadleaf if far => {
+                    let col = rng.pick(&[0xAB, 0xAC, 0xAD]);
+                    let crown = ring(c, h * 0.33, 3, phase);
+                    g.spire(col, &crown, h * 0.58, c + Vec3::Y * h);
+                    g.spire(col, &crown, h * 0.58, c + Vec3::Y * h * 0.28);
+                }
+                Tree::Palm if far => {
+                    let crown = ring(c, h * 0.3, 3, phase);
+                    g.spire(0xA8, &crown, h * 0.9, c + Vec3::Y * h * 1.02);
+                    g.spire(0xA8, &crown, h * 0.9, c + Vec3::Y * h * 0.7);
+                }
                 Tree::Conifer => {
                     let col = rng.pick(&[0xAD, 0xAE]);
                     g.spire(col, &ring(c, h * 0.27, 5, phase), h * 0.08, c + Vec3::Y * h * 0.72);

@@ -51,11 +51,22 @@ impl Plugin for SceneryPlugin {
     }
 }
 
-/// Streaming radius per tier (metres).
+/// Streaming radius per tier (metres). Far trees fill the blocks out to their radius that the
+/// detailed trees don't.
 fn radius(tier: Tier) -> f64 {
     match tier {
         Tier::Main => 7000.0,
-        Tier::Detail => 3500.0,
+        Tier::Detail => 1000.0,
+        Tier::Far => 3500.0,
+    }
+}
+
+/// The other tree tier of a block (shown until this one is built, so trees don't blink).
+fn counterpart(tier: Tier) -> Option<Tier> {
+    match tier {
+        Tier::Main => None,
+        Tier::Detail => Some(Tier::Far),
+        Tier::Far => Some(Tier::Detail),
     }
 }
 
@@ -179,7 +190,7 @@ fn build_scenery(
 ) {
     let style = style::Style::for_theater(&theater.id, theater.index);
     // Wait until the tile streaming has loaded the theater's models.
-    let loaded = [theater.id.as_str(), "photo"].iter().all(|f| library.files.get(*f).is_some_and(|h| assets.gltfs.get(h).is_some()));
+    let loaded = assets.terrain.ready(&theater.id) && library.files.get("photo").is_some_and(|h| assets.gltfs.get(h).is_some());
     if !loaded {
         return;
     }
@@ -236,7 +247,7 @@ fn stream_blocks(
     let tiers: &[Tier] = match (scenery.style.is_some(), detail.0) {
         (false, _) | (_, 0..=1) => &[],
         (_, 2) => &[Tier::Main],
-        _ => &[Tier::Main, Tier::Detail],
+        _ => &[Tier::Main, Tier::Detail, Tier::Far],
     };
     for &tier in tiers {
         let r = radius(tier);
@@ -245,14 +256,22 @@ fn stream_blocks(
             for bx in lo.x..=hi.x {
                 let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * BLOCK;
                 let d = c.distance(eye);
-                if d < r + BLOCK * 0.5 {
+                let near_trees = tier == Tier::Far && d < radius(Tier::Detail) + BLOCK * 0.5;
+                if d < r + BLOCK * 0.5 && !near_trees {
                     wanted.push((d, (tier, bx, by)));
                 }
             }
         }
     }
-    blocks.0.retain(|key, e| {
-        let keep = wanted.iter().any(|(_, k)| k == key);
+    let built: std::collections::HashSet<(Tier, i32, i32)> = blocks.0.keys().copied().collect();
+    blocks.0.retain(|&(tier, bx, by), e| {
+        let key = (tier, bx, by);
+        // A tree block switching tiers stays until its replacement is built.
+        let waiting = counterpart(tier).is_some_and(|other| {
+            let k = (other, bx, by);
+            !built.contains(&k) && wanted.iter().any(|(_, w)| *w == k)
+        });
+        let keep = waiting || wanted.iter().any(|(_, k)| *k == key);
         if !keep {
             commands.entity(*e).try_despawn();
         }
@@ -275,11 +294,16 @@ fn mesh(topology: PrimitiveTopology, pos: Vec<Vec3>) -> Mesh {
 fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Palette, geom: Geom, origin: DVec3, tier: Tier) -> Entity {
     // Haze like the original's LOD1 objects, starting a little further out (whole blocks share
     // their centre's haze level).
-    let tag = MeshTag(mesh_tag(1, if tier == Tier::Detail { 5 } else { 6 }, false));
+    let tag = MeshTag(mesh_tag(1, if tier == Tier::Main { 6 } else { 5 }, false));
     let root = commands.spawn((SceneryBlock, WorldPos(origin), Transform::default(), Visibility::default())).id();
     let mut children = Vec::new();
     for (c, tris) in geom.solid {
-        children.push(commands.spawn((Mesh3d(meshes.add(mesh(PrimitiveTopology::TriangleList, tris))), MeshMaterial3d(palette.material(c)), tag.clone())).id());
+        let e = commands.spawn((Mesh3d(meshes.add(mesh(PrimitiveTopology::TriangleList, tris))), MeshMaterial3d(palette.material(c)), tag.clone())).id();
+        // Distant trees stay out of the shadow maps.
+        if tier == Tier::Far {
+            commands.entity(e).insert(bevy::light::NotShadowCaster);
+        }
+        children.push(e);
     }
     for (c, tris) in geom.flat {
         children.push(

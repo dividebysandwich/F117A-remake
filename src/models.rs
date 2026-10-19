@@ -96,6 +96,8 @@ pub struct LodMesh(pub Entity);
 pub struct CollisionHull {
     pub planes: Vec<[f32; 4]>,
     pub radius: f32,
+    /// Refined mountain surface (terrain.rs), used instead of the planes: inside when below it.
+    pub surface: Option<std::sync::Arc<Vec<[Vec3; 3]>>>,
 }
 
 impl CollisionHull {
@@ -103,8 +105,24 @@ impl CollisionHull {
         if p.length() > self.radius + 1.0 {
             return false;
         }
+        if let Some(surface) = &self.surface {
+            return p.y >= 0.0 && surface.iter().any(|t| below(t, p));
+        }
         self.planes.iter().all(|n| n[0] * p.x + n[1] * p.y + n[2] * p.z + n[3] < 0.0)
     }
+}
+
+/// Whether `p` lies under triangle `t` (seen from above).
+fn below(t: &[Vec3; 3], p: Vec3) -> bool {
+    let [a, b, c] = t.map(|v| v.xz());
+    let q = p.xz();
+    let area = (b - a).perp_dot(c - a);
+    if area.abs() < 1e-6 {
+        return false;
+    }
+    let (u, v) = ((q - a).perp_dot(c - a) / area, (b - a).perp_dot(q - a) / area);
+    let w = 1.0 - u - v;
+    u >= 0.0 && v >= 0.0 && w >= 0.0 && p.y < t[0].y * w + t[1].y * u + t[2].y * v
 }
 
 /// Geometry drawn only when all `(slot, value)` conditions hold in the root's `ModelState`.
@@ -272,6 +290,7 @@ pub struct ModelAssets<'w> {
     pub mesh_data: Res<'w, Assets<Mesh>>,
     pub palette: Res<'w, Palette>,
     pub dots: Res<'w, crate::dots::DotAssets>,
+    pub terrain: Res<'w, crate::terrain::RefinedTerrain>,
 }
 
 impl ModelAssets<'_> {
@@ -348,8 +367,12 @@ impl ModelAssets<'_> {
                 })
                 .unwrap_or_default();
             if !planes.is_empty() {
-                let radius = extras["radius"].as_f64().unwrap_or(0.0) as f32;
-                e.insert(CollisionHull { planes, radius });
+                let mut radius = extras["radius"].as_f64().unwrap_or(0.0) as f32;
+                let surface = self.terrain.surfaces.get(name).cloned();
+                if let Some(s) = &surface {
+                    radius = s.iter().flatten().map(|v| v.length()).fold(radius, f32::max);
+                }
+                e.insert(CollisionHull { planes, radius, surface });
             }
         }
         if suffix_number(name, "_part").is_some() {
@@ -454,7 +477,7 @@ mod tests {
                     [v[0], v[1], v[2], v[3]]
                 })
                 .collect();
-            CollisionHull { planes, radius: node["extras"]["radius"].as_f64().unwrap() as f32 }
+            CollisionHull { planes, radius: node["extras"]["radius"].as_f64().unwrap() as f32, surface: None }
         };
         let mountain = hull("ce_003_lod0");
         assert!(mountain.contains(bevy::math::Vec3::new(0.0, 10.0, 0.0)));

@@ -580,9 +580,10 @@ fn build_map_geometry(
     meshes: Res<Assets<GltfMesh>>,
     mesh_data: Res<Assets<Mesh>>,
     mut raster: ResMut<MapRaster>,
+    terrain: Res<crate::terrain::RefinedTerrain>,
 ) {
     let Some(theater) = theater else { return };
-    if raster.geometry_theater == theater.id {
+    if raster.geometry_theater == theater.id || !terrain.ready(&theater.id) {
         return;
     }
     let Some(g) = library.files.get(&theater.id).and_then(|h| gltfs.get(h)) else { return };

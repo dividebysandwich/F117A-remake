@@ -961,12 +961,12 @@ impl MfdParams<'_, '_> {
             let (fwd, side) = (Vec2::new(sr, -cr) * s as f32, Vec2::new(cr, sr) * s as f32);
             c.triangle([centre + fwd * 4.0, centre - fwd * 3.0 - side * 2.3, centre - fwd * 3.0 + side * 2.3], colour);
         };
-        // Airbases (crossed circle).
+        // Airbases (runway in a ring).
         if let Some(t) = &self.theater {
             for o in t.world.objects.iter().filter(|o| o.target_flags & 0x100 != 0) {
                 let (x, y, vis) = proj(o.x as i32, o.y as i32);
                 if vis {
-                    icon(c, AIRBASE_ICON, x, y);
+                    tac_icon(c, TacIcon::Airfield, x, y, k > 1);
                 }
             }
         }
@@ -999,7 +999,7 @@ impl MfdParams<'_, '_> {
                     let len = (zoom + 1) as f32 * kf;
                     c.line(x, y, x + (rel.sin() * len) as i32, y - (rel.cos() * len) as i32, 41);
                 }
-                ContactKind::GroundRadar => icon(c, RADAR_ICON, x, y),
+                ContactKind::GroundRadar => tac_icon(c, TacIcon::Radar, x, y, k > 1),
                 ContactKind::Target => icon(c, AIRBASE_ICON, x, y),
             }
         }
@@ -1333,9 +1333,84 @@ fn ordnance_picture(p: usize) -> Option<(i32, i32)> {
     (p < 19).then(|| ((p % 4) as i32 * 80, (p / 4) as i32 * 16))
 }
 
-/// TAC map icons in the sprite atlas, at (8 * icon + 1, 65), 7x7.
-const RADAR_ICON: i32 = 1;
+/// Map icons in the sprite atlas, at (8 * icon + 1, 65), 7x7.
 const AIRBASE_ICON: i32 = 5;
+
+#[derive(Clone, Copy)]
+enum TacIcon {
+    Airfield,
+    Radar,
+}
+
+/// Classic TAC icons, 7x7 around the middle pixel: `g` light green, `w` white, `r` red,
+/// `p` light red, `.` clear.
+const AIRFIELD_PIXELS: [&[u8; 7]; 7] = [b"..ggg..", b".g.w.g.", b"g.www.g", b"g..w..g", b"g.www.g", b".g.w.g.", b"..ggg.."];
+const RADAR_PIXELS: [&[u8; 7]; 7] = [b".p...p.", b"p.rrr.p", b"p..r..p", b".p.r.p.", b"...r...", b"..rrr..", b"......."];
+
+/// A TAC icon centred on (x, y): pixel art on the classic display, drawn at the modern
+/// display's resolution otherwise.
+fn tac_icon(c: &mut Canvas, icon: TacIcon, x: i32, y: i32, hires: bool) {
+    if !hires {
+        let rows = match icon {
+            TacIcon::Airfield => AIRFIELD_PIXELS,
+            TacIcon::Radar => RADAR_PIXELS,
+        };
+        for (j, row) in rows.iter().enumerate() {
+            for (i, &p) in row.iter().enumerate() {
+                let colour = match p {
+                    b'g' => 10,
+                    b'w' => 15,
+                    b'r' => 41,
+                    b'p' => 13,
+                    _ => continue,
+                };
+                c.set(x - 3 + i as i32, y - 3 + j as i32, colour);
+            }
+        }
+        return;
+    }
+    // Pixels whose centres are within `r0..r1` of (cx, cy), between angles `a0..a1` (radians
+    // counter-clockwise from screen right).
+    let ring = |c: &mut Canvas, cx: f32, cy: f32, r0: f32, r1: f32, a0: f32, a1: f32, colour: u8| {
+        let n = r1.ceil() as i32 + 1;
+        for j in -n..=n {
+            for i in -n..=n {
+                let (px, py) = (cx.floor() as i32 + i, cy.floor() as i32 + j);
+                let d = Vec2::new(px as f32 + 0.5 - cx, cy - (py as f32 + 0.5));
+                let t = d.y.atan2(d.x);
+                if (r0..=r1).contains(&d.length()) && (a0..=a1).contains(&t) {
+                    c.set(px, py, colour);
+                }
+            }
+        }
+    };
+    let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
+    let pi = std::f32::consts::PI;
+    match icon {
+        TacIcon::Airfield => {
+            // Ring around a runway with threshold bars and a dashed centre line.
+            ring(c, fx, fy, 8.6, 10.2, -pi, pi, 10);
+            c.fill_rect(x - 2, y - 6, 5, 13, 7);
+            c.fill_rect(x - 3, y - 6, 7, 1, 15);
+            c.fill_rect(x - 3, y + 6, 7, 1, 15);
+            for d in [-3, 1] {
+                c.fill_rect(x, y + d, 1, 2, 15);
+            }
+        }
+        TacIcon::Radar => {
+            // Dish on a tapered mast, waves rising from the feed.
+            ring(c, fx, fy - 1.0, 0.0, 5.8, -pi, 0.0, 41);
+            c.fill_rect(x - 6, y - 1, 13, 1, 13);
+            c.fill_rect(x, y - 4, 1, 3, 41);
+            c.line(x - 1, y + 4, x - 4, y + 9, 41);
+            c.line(x + 1, y + 4, x + 4, y + 9, 41);
+            c.hline(x - 5, x + 5, y + 9, 41);
+            for r in [3.5, 6.5] {
+                ring(c, fx, fy - 4.0, r, r + 1.2, 0.5, pi - 0.5, 13);
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

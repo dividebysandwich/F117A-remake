@@ -18,16 +18,14 @@ pub const FLAG_LINE: u32 = 2;
 pub const FLAG_FLIR: u32 = 4;
 /// Cloud surface: grey ramp by face orientation, hazed per pixel (weather.rs).
 pub const FLAG_CLOUD: u32 = 8;
-/// Cloud puffs: alpha blended (soft edges in modern mode; classic mode dithers).
+/// Smoke plumes: alpha blended (soft edges in modern mode; classic mode dithers).
 pub const FLAG_CLOUD_SOFT: u32 = 16;
 /// Stratus sheet in modern mode: alpha to coverage (soft edges with MSAA, depth written).
 pub const FLAG_CLOUD_COVERAGE: u32 = 32;
-/// Mesh tag bit of cloud volumes: the shader ray-marches the cloud inside its proxy mesh.
-pub const TAG_CLOUD_VOLUME: u32 = 1 << 11;
-/// Mesh tag bit of cumulus volumes (else a cumulonimbus tower).
-pub const TAG_CLOUD_CUMULUS: u32 = 1 << 12;
-/// Mesh tag bit of smoke plume volumes (with `TAG_CLOUD_VOLUME`); bits 16.. carry the plume's
-/// noise offset.
+/// Faceted cumulus and cumulonimbus meshes: solid (no stratus coverage cutout).
+pub const FLAG_CLOUD_SOLID: u32 = 64;
+/// Mesh tag bit of smoke plume volumes: the shader ray-marches the plume inside its proxy
+/// mesh; bits 16.. carry the plume's noise offset.
 pub const TAG_SMOKE: u32 = 1 << 13;
 /// Smoke plume over a fire: its base glows.
 pub const TAG_SMOKE_FIRE: u32 = 1 << 14;

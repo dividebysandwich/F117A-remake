@@ -3,8 +3,8 @@
 //! aircraft wrecks, big ones for buildings, installations and ships. In a conventional war
 //! (ROE 2) towns and roads are burning from the start.
 //!
-//! - Smoke: a volume ray-marched in its proxy cylinder by the palette shader (`TAG_SMOKE`,
-//!   like the cloud volumes): alpha blended in modern mode, a dithered screen door otherwise.
+//! - Smoke: a volume ray-marched in its proxy cylinder by the palette shader (`TAG_SMOKE`):
+//!   alpha blended in modern mode, a dithered screen door otherwise.
 //!   Plumes lean downwind and grow to full height over the first minute or so.
 //! - Fire: mesh particles (small flames in the fire palette colours) rising and fading near the
 //!   viewpoint, plus a flickering local light (with the local lighting option).
@@ -17,7 +17,7 @@ use crate::combat::{Combat, CombatSystems};
 use crate::lighting::LightEmitter;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
-use crate::palette_material::{FLAG_CLOUD, FLAG_LINE, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_CLOUD_VOLUME, TAG_SMOKE, TAG_SMOKE_FIRE, mesh_tag};
+use crate::palette_material::{FLAG_CLOUD, FLAG_LINE, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_SMOKE, TAG_SMOKE_FIRE, mesh_tag};
 use crate::settings::{AppState, SetupSet};
 use crate::world::{Theater, WU, WorldAnchor, WorldPos, map_to_wu, wu_to_bevy};
 
@@ -160,7 +160,8 @@ impl Fires {
 }
 
 /// Proxy of a plume: a closed unit cylinder (y 0..1) with both windings, so the volume also
-/// shows from inside (see `weather::double_sided`; the shader picks the side to march from).
+/// shows from inside (back faces are culled; the shader picks the side to march from:
+/// palette.wgsl `proxy_fragment`).
 fn plume_proxy() -> Mesh {
     // Circumscribes the shader's unit cylinder.
     let mut mesh = Cylinder::new(1.0 / (std::f32::consts::PI / 16.0).cos(), 1.0).mesh().resolution(16).build();
@@ -326,7 +327,7 @@ fn stream(
         let d = DVec2::new(s.pos.x - eye.x, s.pos.z - eye.z).length();
         match (d < SMOKE_RANGE, s.smoke) {
             (true, None) => {
-                let tag = mesh_tag(1, 0, true) | TAG_CLOUD_VOLUME | TAG_SMOKE | TAG_SMOKE_FIRE | (s.seed & 0xFFFF) << 16;
+                let tag = mesh_tag(1, 0, true) | TAG_SMOKE | TAG_SMOKE_FIRE | (s.seed & 0xFFFF) << 16;
                 s.smoke = Some(
                     commands
                         .spawn((

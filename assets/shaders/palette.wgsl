@@ -13,15 +13,11 @@ const MAX_LOCAL_LIGHTS: u32 = 32u;
 const LIGHT_SHADOWS: u32 = 1u;
 const LIGHT_LOCAL: u32 = 2u;
 const FLAG_CLOUD: u32 = 8u;
-// Mesh tag bit of cloud puffs: smooth normals from the puff's centre, soft edges.
-const TAG_CLOUD_VOLUME: u32 = 2048u;
-// Cloud volume shape: cumulus (else a cumulonimbus tower).
-const TAG_CLOUD_CUMULUS: u32 = 4096u;
+// Faceted cumulus / cumulonimbus mesh: no stratus coverage cutout.
+const FLAG_CLOUD_SOLID: u32 = 64u;
 // Smoke plume volume (fires.rs), optionally lit by a fire at its base.
 const TAG_SMOKE: u32 = 8192u;
 const TAG_SMOKE_FIRE: u32 = 16384u;
-// Ray-march steps through a cloud volume.
-const CLOUD_STEPS: u32 = 14u;
 // Cloud colours: the grey ramp (its base entry is the horizon haze colour).
 const CLOUD_RAMP: u32 = 0xE0u;
 
@@ -122,26 +118,21 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.world_position = world.xyz;
     out.clip_position = position_world_to_clip(world.xyz);
     let tag = mesh_functions::get_tag(v.instance_index);
-    // Cloud volumes: the view ray and the sun in the cloud's local space (inverse of the
+    // Smoke volumes: the view ray and the sun in the plume's local space (inverse of the
     // scaled rotation m = diag(1/s^2) m^T).
     out.puff_pos = vec4<f32>(0.0);
     out.puff_eye = vec4<f32>(0.0);
     out.puff_sun = vec3<f32>(0.0);
     out.puff_scale = vec3<f32>(1.0);
-    if ((tag & TAG_CLOUD_VOLUME) != 0u) {
+    if ((tag & TAG_SMOKE) != 0u) {
         let m = mat3x3<f32>(world_from_local[0].xyz, world_from_local[1].xyz, world_from_local[2].xyz);
         let s2 = vec3<f32>(dot(m[0], m[0]), dot(m[1], m[1]), dot(m[2], m[2]));
         let o = world_from_local[3].xyz;
         let eye_local = (transpose(m) * (view.world_position - o)) / s2;
-        out.puff_pos = vec4<f32>(v.position, fract((o.x + o.z) * 0.000137) * 50.0);
-        var shape = select(2.0, 1.0, (tag & TAG_CLOUD_CUMULUS) != 0u);
-        if ((tag & TAG_SMOKE) != 0u) {
-            shape = select(3.0, 4.0, (tag & TAG_SMOKE_FIRE) != 0u);
-            // Plumes carry their noise offset in the tag's high bits (stays put when the
-            // floating origin moves).
-            out.puff_pos.w = f32(tag >> 16u) * 0.01;
-        }
-        out.puff_eye = vec4<f32>(eye_local, shape);
+        // Plumes carry their noise offset in the tag's high bits (stays put when the floating
+        // origin moves). puff_eye.w: 1 smoke, 2 smoke over a fire.
+        out.puff_pos = vec4<f32>(v.position, f32(tag >> 16u) * 0.01);
+        out.puff_eye = vec4<f32>(eye_local, select(1.0, 2.0, (tag & TAG_SMOKE_FIRE) != 0u));
         out.puff_sun = normalize((transpose(m) * globals.sun.xyz) / s2);
         out.puff_scale = sqrt(s2);
     }
@@ -441,48 +432,28 @@ fn whiteout(rgb: vec3<f32>, dist: f32) -> vec3<f32> {
     return mix(rgb, pal(CLOUD_RAMP + 2u), w);
 }
 
-// --- Cloud volumes ---------------------------------------------------------------------------
-// Cheap volumetric clouds: the cloud's proxy mesh (an ellipsoid or cylinder enclosing it) is
-// drawn; per pixel the view ray is intersected with the shape analytically and marched in a
-// few steps through a noise density, with Beer's law opacity and one sample towards the sun
-// for self-shadowing. The light picks the grey palette ramp entry like any other cloud.
+// --- Smoke plumes ----------------------------------------------------------------------------
+// Smoke of burning wrecks and fires (fires.rs): a column rising from the ground (local y 0..1
+// inside a unit cylinder), widening with height and leaning downwind (local +x). The noise
+// scrolls upwards so the smoke billows; dark grey from the cloud ramp, self-shadowed, its base lit orange by the fire underneath.
 
-// Cumulus: unit sphere around (0, 0.45, 0) with vertical radius 0.55, cut flat at y = 0.
-const CU_CENTER: f32 = 0.45;
-const CU_RY: f32 = 0.55;
-// Cumulonimbus: a column of radius ~0.9 with an anvil of 1.35 near the top.
-const CB_BOUND: f32 = 1.4;
+const SMOKE_STEPS: u32 = 12u;
+// Plume lean (local x at the top) and radius at the base / top.
+const SMOKE_LEAN: f32 = 0.4;
+const SMOKE_R0: f32 = 0.06;
+const SMOKE_R1: f32 = 0.58;
+// Rise speed of the noise (metres per second).
+const SMOKE_RISE: f32 = 9.0;
+const FIRE_COLOR: vec3<f32> = vec3<f32>(1.0, 0.42, 0.1);
+// The proxy mesh (fires.rs) circumscribes the unit cylinder (y 0..1) the plume lives in:
+// radius 1 / cos(pi / 16).
+const SMOKE_PROXY: f32 = 1.0196;
 
-fn tower_radius(y: f32) -> f32 {
-    let anvil = smoothstep(0.7, 0.86, y) * 0.45;
-    let top = 1.0 - smoothstep(0.93, 1.0, y) * 0.45;
-    return (0.9 + anvil) * top;
-}
-
-// Ray parameter range (t0, t1) inside the cloud's bounds (empty when t0 >= t1).
-fn volume_bounds(ro: vec3<f32>, rd: vec3<f32>, cumulus: bool, bound: f32) -> vec2<f32> {
-    if (cumulus) {
-        let k = vec3<f32>(1.0, 1.0 / CU_RY, 1.0);
-        let qo = (ro - vec3<f32>(0.0, CU_CENTER, 0.0)) * k;
-        let qd = rd * k;
-        let a = dot(qd, qd);
-        let b = dot(qo, qd);
-        let disc = b * b - a * (dot(qo, qo) - 1.0);
-        if (disc < 0.0) { return vec2<f32>(1.0, 0.0); }
-        let sq = sqrt(disc);
-        var t = vec2<f32>((-b - sq) / a, (-b + sq) / a);
-        // The flat base.
-        if (abs(rd.y) > 1e-6) {
-            let tb = -ro.y / rd.y;
-            if (rd.y > 0.0) { t.x = max(t.x, tb); } else { t.y = min(t.y, tb); }
-        } else if (ro.y < 0.0) {
-            return vec2<f32>(1.0, 0.0);
-        }
-        return t;
-    }
+// Ray parameter range (t0, t1) inside the unit cylinder (empty when t0 >= t1).
+fn cylinder_bounds(ro: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
     let a = rd.x * rd.x + rd.z * rd.z;
     let b = ro.x * rd.x + ro.z * rd.z;
-    let c = ro.x * ro.x + ro.z * ro.z - bound * bound;
+    let c = ro.x * ro.x + ro.z * ro.z - 1.0;
     var t = vec2<f32>(-1e9, 1e9);
     if (a > 1e-9) {
         let disc = b * b - a * c;
@@ -501,136 +472,23 @@ fn volume_bounds(ro: vec3<f32>, rd: vec3<f32>, cumulus: bool, bound: f32) -> vec
     return t;
 }
 
-// Proxy meshes (weather.rs, fires.rs): cumulus ellipsoid (radius 1.08, vertically 0.55 of that
-// around y = 0.45), tower cylinder (radius 1.45), smoke cylinder (radius 1 / cos(pi / 16)),
-// cylinders y 0..1. They are drawn with both windings and back faces culled, so from outside
-// both the near side and (reversed) the far side are rasterised, from inside only the far side,
-// and every fragment is front facing: the near side is picked by its geometry instead.
-const CU_PROXY: f32 = 1.08;
-const CB_PROXY: f32 = 1.45;
-const SMOKE_PROXY: f32 = 1.0196;
-
-// Whether to march from this proxy fragment (local point p, eye ro, shape 1 cumulus, 2 tower,
-// 3/4 smoke): from outside only the side facing the eye, from inside the far side.
-fn proxy_fragment(p: vec3<f32>, ro: vec3<f32>, shape: f32) -> bool {
+// The proxy is drawn with both windings and back faces culled, so from outside both the near
+// side and (reversed) the far side are rasterised, from inside only the far side, and every
+// fragment is front facing: whether to march from this fragment (local point p, eye ro) is
+// decided by its geometry instead — from outside the side facing the eye, from inside the far
+// side.
+fn proxy_fragment(p: vec3<f32>, ro: vec3<f32>) -> bool {
+    let inside = dot(ro.xz, ro.xz) < SMOKE_PROXY * SMOKE_PROXY && ro.y > 0.0 && ro.y < 1.0;
     var n: vec3<f32>;
-    var inside: bool;
-    if (shape < 1.5) {
-        let k = vec3<f32>(1.0, 1.0 / CU_RY, 1.0);
-        let q = (ro - vec3<f32>(0.0, CU_CENTER, 0.0)) * k;
-        inside = dot(q, q) < CU_PROXY * CU_PROXY;
-        n = (p - vec3<f32>(0.0, CU_CENTER, 0.0)) * k * k;
+    if (p.y > 0.9999) {
+        n = vec3<f32>(0.0, 1.0, 0.0);
+    } else if (p.y < 0.0001) {
+        n = vec3<f32>(0.0, -1.0, 0.0);
     } else {
-        let r = select(SMOKE_PROXY, CB_PROXY, shape < 2.5);
-        inside = dot(ro.xz, ro.xz) < r * r && ro.y > 0.0 && ro.y < 1.0;
-        if (p.y > 0.9999) {
-            n = vec3<f32>(0.0, 1.0, 0.0);
-        } else if (p.y < 0.0001) {
-            n = vec3<f32>(0.0, -1.0, 0.0);
-        } else {
-            n = vec3<f32>(p.x, 0.0, p.z);
-        }
+        n = vec3<f32>(p.x, 0.0, p.z);
     }
     return inside || dot(n, ro - p) > 0.0;
 }
-
-// Density 0..1 at local point p. `aspect` scales the noise to the cloud's real proportions.
-fn volume_density(p: vec3<f32>, cumulus: bool, aspect: vec3<f32>, seed: f32, detail: bool) -> f32 {
-    var shape: f32;
-    if (cumulus) {
-        let q = (p - vec3<f32>(0.0, CU_CENTER, 0.0)) * vec3<f32>(1.0, 1.0 / CU_RY, 1.0);
-        shape = (1.0 - length(q)) * smoothstep(0.0, 0.06, p.y);
-    } else {
-        shape = 1.0 - length(p.xz) / tower_radius(p.y);
-    }
-    if (shape < -0.45) { return 0.0; }
-    let pn = p * aspect + vec3<f32>(seed);
-    var n = perlin(pn * 1.6, 1024);
-    if (detail) { n += 0.5 * perlin(pn * 4.1, 1024); }
-    return clamp((shape + 0.55 * n) * 4.0, 0.0, 1.0);
-}
-
-fn cloud_volume(in: VertexOutput, dir: vec3<f32>, modern: bool) -> vec4<f32> {
-    if (in.puff_eye.w > 2.5) {
-        return smoke_volume(in, dir, modern);
-    }
-    let dist = length(dir);
-    let cumulus = in.puff_eye.w < 1.5;
-    let ro = in.puff_eye.xyz;
-    let rd = in.puff_pos.xyz - ro;
-    if (!proxy_fragment(in.puff_pos.xyz, ro, in.puff_eye.w)) { discard; }
-    let tb = volume_bounds(ro, rd, cumulus, CB_BOUND);
-    let t0 = max(tb.x, 0.0);
-    // The march runs from the eye (t = 0) through this proxy point (t = 1); world height
-    // eye.y + dir.y t. An overcast deck hides the part of a tower on its far side.
-    var t1 = tb.y;
-    let eye_y = view.world_position.y;
-    if (globals.clouds.z != 0.0 && abs(dir.y) > 1e-6) {
-        var tl = -1.0;
-        if (eye_y >= globals.clouds.y && dir.y < 0.0) {
-            tl = (globals.clouds.y - eye_y) / dir.y;
-        } else if (eye_y <= globals.clouds.x && dir.y > 0.0) {
-            tl = (globals.clouds.x - eye_y) / dir.y;
-        }
-        // Only where the layer has cloud at the crossing.
-        if (tl > 0.0 && stratus_cover(view.world_position + dir * tl) > 0.5) {
-            t1 = min(t1, tl);
-        }
-    }
-    if (t1 <= t0) { discard; }
-    // Noise in units of the horizontal radius; metres per unit of t.
-    let aspect = in.puff_scale / in.puff_scale.x;
-    let m_per_t = length(rd * in.puff_scale);
-    let dt = (t1 - t0) / f32(CLOUD_STEPS);
-    let ds = dt * m_per_t;
-    let jitter = bayer4(vec2<u32>(in.clip_position.xy));
-    let sun = in.puff_sun * 0.12;
-    var trans = 1.0;
-    var light = 0.0;
-    var glow = 0.0;
-    for (var i = 0u; i < CLOUD_STEPS; i++) {
-        let p = ro + rd * (t0 + (f32(i) + jitter) * dt);
-        let dens = volume_density(p, cumulus, aspect, in.puff_pos.w, true);
-        if (dens <= 0.001) { continue; }
-        // Opaque after a few hundred metres of dense cloud.
-        let a = 1.0 - exp(-dens * ds / 120.0);
-        // Lit where the cloud thins towards the sun; tops brighter than bases.
-        let towards_sun = volume_density(p + sun, cumulus, aspect, in.puff_pos.w, false);
-        let lit = clamp(0.45 + (dens - towards_sun) * 1.2 + 0.35 * (p.y - 0.4), 0.0, 1.0);
-        light += trans * a * lit;
-        // Lightning inside or near the cloud lights it from within.
-        if (globals.bolt_a.w > 0.0) {
-            glow += trans * a * bolt_glow(view.world_position + dir * (t0 + (f32(i) + jitter) * dt));
-        }
-        trans *= 1.0 - a;
-        if (trans < 0.03) { break; }
-    }
-    var alpha = 1.0 - trans;
-    if (alpha < 0.01) { discard; }
-    let base = whiteout(cloud_ramp((1.0 - light / alpha) * 11.0, dist, modern), dist);
-    let rgb = base + BOLT_COLOR * (globals.weather.y + glow / alpha) * flash_scale();
-    if (!modern) {
-        // Classic: a screen door instead of blending.
-        if (alpha < bayer4(vec2<u32>(in.clip_position.xy) + vec2<u32>(2u, 1u))) { discard; }
-        alpha = 1.0;
-    }
-    return vec4<f32>(rgb, alpha);
-}
-
-// --- Smoke plumes ----------------------------------------------------------------------------
-// Smoke of burning wrecks and fires (fires.rs): a column rising from the ground (local y 0..1
-// inside a unit cylinder), widening with height and leaning downwind (local +x). The noise
-// scrolls upwards so the smoke billows; dark grey from the cloud ramp, self-shadowed like the
-// clouds, its base lit orange by the fire underneath.
-
-const SMOKE_STEPS: u32 = 12u;
-// Plume lean (local x at the top) and radius at the base / top.
-const SMOKE_LEAN: f32 = 0.4;
-const SMOKE_R0: f32 = 0.06;
-const SMOKE_R1: f32 = 0.58;
-// Rise speed of the noise (metres per second).
-const SMOKE_RISE: f32 = 9.0;
-const FIRE_COLOR: vec3<f32> = vec3<f32>(1.0, 0.42, 0.1);
 
 // `start`: local height where the smoke has risen clear of the flames.
 fn smoke_density(p: vec3<f32>, aspect: vec3<f32>, seed: f32, rise: f32, start: f32, detail: bool) -> f32 {
@@ -653,11 +511,11 @@ fn smoke_density(p: vec3<f32>, aspect: vec3<f32>, seed: f32, rise: f32, start: f
 
 fn smoke_volume(in: VertexOutput, dir: vec3<f32>, modern: bool) -> vec4<f32> {
     let dist = length(dir);
-    let fire = in.puff_eye.w > 3.5;
+    let fire = in.puff_eye.w > 1.5;
     let ro = in.puff_eye.xyz;
     let rd = in.puff_pos.xyz - ro;
-    if (!proxy_fragment(in.puff_pos.xyz, ro, in.puff_eye.w)) { discard; }
-    let tb = volume_bounds(ro, rd, false, 1.0);
+    if (!proxy_fragment(in.puff_pos.xyz, ro)) { discard; }
+    let tb = cylinder_bounds(ro, rd);
     let t0 = max(tb.x, 0.0);
     let t1 = tb.y;
     if (t1 <= t0) { discard; }
@@ -742,15 +600,19 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if ((material.flags & FLAG_CLOUD) != 0u) {
         let d = length(dir);
         if (in.puff_eye.w > 0.0) {
-            return cloud_volume(in, dir, modern);
+            return smoke_volume(in, dir, modern);
         }
-        // Stratus sheet: only where the layer's coverage field says so.
-        var cover = stratus_cover(in.world_position);
-        if (modern) {
-            if (cover <= 0.0) { discard; }
-        } else {
-            if (cover < bayer4(vec2<u32>(in.clip_position.xy))) { discard; }
-            cover = 1.0;
+        // Stratus sheet: only where the layer's coverage field says so (cumulus and towers
+        // are solid).
+        var cover = 1.0;
+        if ((material.flags & FLAG_CLOUD_SOLID) == 0u) {
+            cover = stratus_cover(in.world_position);
+            if (modern) {
+                if (cover <= 0.0) { discard; }
+            } else {
+                if (cover < bayer4(vec2<u32>(in.clip_position.xy))) { discard; }
+                cover = 1.0;
+            }
         }
         var n = normalize(cross(dpdx(in.world_position), dpdy(in.world_position)));
         if (dot(n, dir) > 0.0) { n = -n; }

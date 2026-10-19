@@ -3,8 +3,9 @@
 //!
 //! - Deck (overcast, storm): two huge planes at the deck's base and top following the
 //!   viewpoint; past their edges the background sphere draws the same deck (palette.wgsl).
-//! - Cumulus: faceted blobs streamed around the viewpoint from the shared cloud field, so
-//!   what is drawn is what blocks the simulation's lines of sight.
+//! - Cumulus and cumulonimbus: faceted meshes (a few lumpy templates per kind) streamed
+//!   around the viewpoint from the shared cloud field, so what is drawn is what blocks the
+//!   simulation's lines of sight.
 //! - Shading is done by the palette shader (`FLAG_CLOUD`): the grey ramp by face orientation,
 //!   hazed per pixel with the weather's visibility.
 
@@ -20,7 +21,7 @@ use crate::camera::EyeCamera;
 use crate::trackcam::TrackCamera;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
-use crate::palette_material::{FLAG_CLOUD, FLAG_CLOUD_COVERAGE, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_CLOUD_CUMULUS, TAG_CLOUD_VOLUME, mesh_tag};
+use crate::palette_material::{FLAG_CLOUD, FLAG_CLOUD_COVERAGE, FLAG_CLOUD_SOLID, PaletteMaterial, PaletteParams, mesh_tag};
 use crate::settings::{AppState, SetupSet};
 use crate::world::{FloatingOrigin, WU, WorldPos, wu_to_bevy};
 
@@ -51,6 +52,9 @@ impl Plugin for WeatherPlugin {
 const DRAW_RADIUS: i32 = 40 * 64;
 /// Size of the deck planes (metres from the viewpoint to their edge).
 const DECK_HALF: f32 = 280_000.0;
+/// Distinct cumulus and cumulonimbus shapes.
+const TEMPLATES: u32 = 8;
+const TOWER_TEMPLATES: u32 = 4;
 /// Horizontal period of the cloud texture (metres, `NOISE_PERIOD` in palette.wgsl).
 const NOISE_PERIOD: f64 = 81920.0;
 
@@ -81,11 +85,10 @@ pub struct WeatherState {
     rain: Option<Entity>,
     drops: Vec<Vec3>,
     rng: u32,
-    /// Cloud volumes (blended).
+    /// Cumulus and cumulonimbus (solid).
     puff_material: Handle<PaletteMaterial>,
-    /// Proxy meshes of cumulus and cumulonimbus volumes.
-    cumulus_proxy: Handle<Mesh>,
-    tower_proxy: Handle<Mesh>,
+    cumulus_templates: Vec<Handle<Mesh>>,
+    tower_templates: Vec<Handle<Mesh>>,
     puffs: HashMap<CloudKey, Streamed>,
     streamed_at: Option<(i32, i32)>,
 }
@@ -165,39 +168,86 @@ fn hash(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// Both windings, so the volume also shows from inside its proxy (back faces are culled; the
-/// shader keeps the near side seen from outside, the far side seen from inside:
-/// palette.wgsl `proxy_fragment`).
-fn double_sided(mut mesh: Mesh) -> Mesh {
-    let tris: Vec<u32> = mesh.indices().expect("indexed mesh").iter().map(|i| i as u32).collect();
-    let back = tris.chunks(3).flat_map(|t| [t[0], t[2], t[1]]);
-    let all: Vec<u32> = tris.iter().copied().chain(back).collect();
-    mesh.insert_indices(bevy::mesh::Indices::U32(all));
+/// Unit 0..1 from a hash.
+fn unit(h: u64) -> f32 {
+    (h & 0xFFFF) as f32 / 65535.0
+}
+
+/// A cumulus shape: a lumpy faceted dome with a flat base, x/z in about -1..1, y in 0..1.
+fn cumulus_mesh(seed: u32) -> Mesh {
+    let mut mesh = positions_only(Sphere::new(1.0).mesh().ico(1).expect("icosphere"));
+    if let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
+        for (i, p) in pos.iter_mut().enumerate() {
+            let bump = 0.8 + 0.35 * unit(hash(((seed as u64) << 32) | i as u64));
+            let v = Vec3::from(*p) * bump;
+            // Flat, slightly bulging base; puffy top.
+            let y = if v.y < 0.0 { v.y * 0.12 } else { v.y };
+            *p = [v.x, (y + 0.12) / 1.27, v.z];
+        }
+    }
     mesh
 }
 
-/// Proxy mesh of a cumulus volume: encloses the shader's ellipsoid (radius 1, vertical
-/// radius 0.55 around y = 0.45; palette.wgsl `volume_bounds`).
-fn cumulus_proxy() -> Mesh {
-    let mut mesh = positions_only(Sphere::new(1.08).mesh().ico(2).expect("icosphere"));
-    if let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
-        for p in pos.iter_mut() {
-            p[1] = 0.45 + 0.55 * p[1];
-        }
-    }
-    double_sided(mesh)
+/// Radius of a cumulonimbus at height y (0..1): a column of about 0.9 with an anvil of 1.35
+/// near the top.
+fn tower_radius(y: f32) -> f32 {
+    let s = |a: f32, b: f32, x: f32| {
+        let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    };
+    (0.9 + s(0.7, 0.86, y) * 0.45) * (1.0 - s(0.93, 1.0, y) * 0.45)
 }
 
-/// Proxy mesh of a cumulonimbus volume: a cylinder around the shader's bound (radius 1.4,
-/// y 0..1).
-fn tower_proxy() -> Mesh {
-    let mut mesh = positions_only(Cylinder::new(1.45, 1.0).mesh().resolution(16).build());
-    if let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
-        for p in pos.iter_mut() {
-            p[1] += 0.5;
+/// A cumulonimbus shape: a lumpy faceted column with an anvil, closed at both ends, x/z in
+/// about -1.4..1.4, y in 0..1.
+fn tower_mesh(seed: u32) -> Mesh {
+    const SIDES: usize = 12;
+    const RINGS: [f32; 11] = [0.0, 0.14, 0.28, 0.42, 0.56, 0.68, 0.78, 0.86, 0.92, 0.97, 1.0];
+    let mut ring = Vec::new();
+    for (r, &y) in RINGS.iter().enumerate() {
+        let row: Vec<Vec3> = (0..SIDES)
+            .map(|j| {
+                let h = hash(((seed as u64) << 32) | (r * SIDES + j) as u64);
+                let a = (j as f32 + 0.3 * (unit(h >> 32) - 0.5)) / SIDES as f32 * std::f32::consts::TAU;
+                let rad = tower_radius(y) * (0.82 + 0.3 * unit(h));
+                // Base and top stay level.
+                let dy = if r == 0 || r == RINGS.len() - 1 { 0.0 } else { 0.025 * (unit(h >> 16) - 0.5) };
+                Vec3::new(a.cos() * rad, y + dy, a.sin() * rad)
+            })
+            .collect();
+        ring.push(row);
+    }
+    let top = Vec3::new(0.0, 1.0 + 0.02 * unit(hash(seed as u64)), 0.0);
+    let mut tris: Vec<[Vec3; 3]> = Vec::new();
+    // Sides, wound outwards from the axis.
+    for r in 0..RINGS.len() - 1 {
+        for j in 0..SIDES {
+            let k = (j + 1) % SIDES;
+            let (a, b, c, d) = (ring[r][j], ring[r][k], ring[r + 1][k], ring[r + 1][j]);
+            for mut t in [[a, b, c], [a, c, d]] {
+                let centre = (t[0] + t[1] + t[2]) / 3.0;
+                let n = (t[1] - t[0]).cross(t[2] - t[0]);
+                if n.dot(Vec3::new(centre.x, 0.0, centre.z)) < 0.0 {
+                    t.swap(1, 2);
+                }
+                tris.push(t);
+            }
         }
     }
-    double_sided(mesh)
+    // Base and top caps.
+    let last = RINGS.len() - 1;
+    for j in 0..SIDES {
+        let k = (j + 1) % SIDES;
+        for (centre, a, b, up) in [(Vec3::ZERO, ring[0][j], ring[0][k], -1.0), (top, ring[last][j], ring[last][k], 1.0)] {
+            let mut t = [centre, a, b];
+            if (t[1] - t[0]).cross(t[2] - t[0]).y * up < 0.0 {
+                t.swap(1, 2);
+            }
+            tris.push(t);
+        }
+    }
+    let pos: Vec<Vec3> = tris.into_iter().flatten().collect();
+    Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default()).with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
 }
 
 fn setup_weather(
@@ -225,11 +275,11 @@ fn setup_weather(
         rng: weather.seed | 1,
         next_flash: if test_strike.is_some() { 2.0 } else { 3.0 },
         puff_material: materials.add(PaletteMaterial {
-            params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | FLAG_CLOUD_SOFT, ..default() },
+            params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | FLAG_CLOUD_SOLID, ..default() },
             globals: palette.globals.clone(),
         }),
-        cumulus_proxy: meshes.add(cumulus_proxy()),
-        tower_proxy: meshes.add(tower_proxy()),
+        cumulus_templates: (0..TEMPLATES).map(|i| meshes.add(cumulus_mesh(weather.seed ^ i))).collect(),
+        tower_templates: (0..TOWER_TEMPLATES).map(|i| meshes.add(tower_mesh(weather.seed ^ (i + 0x100)))).collect(),
         ..default()
     };
     info!("weather: {}", weather.describe());
@@ -317,23 +367,25 @@ fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state:
     let new: Vec<Cloud> = w.clouds_near(x, y, DRAW_RADIUS).filter(|c| !state.puffs.contains_key(&(c.kind, c.gx, c.gy))).collect();
     for c in new {
         let h = hash(((w.seed as u64) << 32) ^ ((c.gx as u16 as u64) << 16) ^ c.gy as u16 as u64 ^ 0xC10D);
-        let (proxy, cumulus) = match c.kind {
-            CloudKind::Cumulonimbus => (state.tower_proxy.clone(), 0),
-            _ => (state.cumulus_proxy.clone(), TAG_CLOUD_CUMULUS),
+        let templates = match c.kind {
+            CloudKind::Cumulonimbus => &state.tower_templates,
+            _ => &state.cumulus_templates,
         };
+        let template = templates[(h % templates.len() as u64) as usize].clone();
         let r_m = c.r as f32 * 32.0 * WU as f32;
         let pos = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, c.base_ft as f64);
         let h_m = (c.top_ft - c.base_ft) as f32 * WU as f32;
         let e = commands
             .spawn((
                 CloudEntity,
-                Mesh3d(proxy),
+                Mesh3d(template),
                 MeshMaterial3d(state.puff_material.clone()),
-                MeshTag(mesh_tag(1, 0, true) | TAG_CLOUD_VOLUME | cumulus),
+                MeshTag(mesh_tag(1, 0, true)),
                 WorldPos(pos),
                 Transform::from_translation((pos - origin.origin).as_vec3())
                     .with_rotation(Quat::from_rotation_y((h >> 16 & 0xFFFF) as f32 / 65535.0 * std::f32::consts::TAU))
                     .with_scale(Vec3::new(r_m, h_m, r_m)),
+                bevy::light::NotShadowCaster,
             ))
             .id();
         state.puffs.insert((c.kind, c.gx, c.gy), (e, (c.x, c.y)));

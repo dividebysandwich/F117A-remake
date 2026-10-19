@@ -42,6 +42,11 @@ pub struct Settings {
     /// `--classic-cockpit`: the original instrument panel layout and 77x60 displays instead
     /// of the modern panel with high-resolution displays and bezel buttons.
     pub classic_cockpit: bool,
+    /// `--classic-flight`: the original's flight model instead of the modern aerodynamic one
+    /// (the default for `--script` runs unless `--modern-flight` is given).
+    pub classic_flight: bool,
+    /// `--no-crashes`: crash protection (auto pull-up, no ground crashes, collisions bounce).
+    pub no_crashes: bool,
 }
 
 /// What the next flight looks like (filled by the menu or command-line flags).
@@ -110,6 +115,8 @@ impl Settings {
             shadows: has("--shadows"),
             local_lights: has("--local-lights"),
             classic_cockpit: has("--classic-cockpit"),
+            classic_flight: has("--classic-flight") || (has("--script") && !has("--modern-flight")),
+            no_crashes: has("--no-crashes"),
         }
     }
 }

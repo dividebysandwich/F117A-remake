@@ -1,5 +1,9 @@
-//! Player flight model: the original's F-117A flight step, integrated per second instead of
-//! per frame. State is kept in the original units so the constants can be compared directly:
+//! Player flight models. The classic one is the original's F-117A flight step, integrated per
+//! second instead of per frame; the modern one (`modern`) is a point-mass aerodynamic model with
+//! fly-by-wire control laws, tuned to the same performance. Both share the engine, fuel and
+//! ground contact rules below.
+//!
+//! Classic model: State is kept in the original units so the constants can be compared directly:
 //! velocity = knots * 27, angles in BAM
 //! (0x10000 = 360 degrees), altitude and positions in world units ("feet"), thrust 0..100,
 //! g in 1/16 g. Per-frame terms that the original does not divide by fs (stall nose drop) are
@@ -11,24 +15,34 @@ use bevy::prelude::*;
 use serde::Deserialize;
 
 use crate::input::{Action, ActionEvent, FlightControls};
+use crate::settings::{SetupSet, Settings};
 use crate::world::{Theater, WorldPos, bevy_to_wu, wu_to_bevy};
+
+mod modern;
 
 pub struct FlightPlugin;
 
 impl Plugin for FlightPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(FlightConstants::default()).add_systems(
-            Update,
-            (handle_actions, step_flight)
-                .chain()
-                .in_set(FlightSystems)
-                .run_if(in_state(crate::settings::AppState::Flight)),
-        );
+        app.insert_resource(FlightConstants::default())
+            .add_systems(OnEnter(crate::settings::AppState::Flight), apply_settings.in_set(SetupSet::Mission))
+            .add_systems(
+                Update,
+                (handle_actions, step_flight)
+                    .chain()
+                    .in_set(FlightSystems)
+                    .run_if(in_state(crate::settings::AppState::Flight)),
+            );
     }
 }
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FlightSystems;
+
+/// Crash protection picks the "no crashes" landing skill (before the combat simulation starts).
+fn apply_settings(settings: Res<Settings>, mut k: ResMut<FlightConstants>) {
+    k.landing = if settings.no_crashes { 0 } else { 1 };
+}
 
 /// BAM -> radians.
 pub fn bam(v: f32) -> f32 {
@@ -155,8 +169,10 @@ pub struct Aircraft {
     pub ended: Option<FlightEnd>,
     /// Angle of attack trim (BAM).
     pub trim: f32,
-    /// Lift force (0..0x2000), as used for the HUD flight path marker.
+    /// Lift force (0..0x2000) of the classic model.
     pub lift: f32,
+    /// HUD flight path marker offset below the nose (BAM).
+    pub fpm: f32,
     pub roll_input: f32,
     pub pitch_input: f32,
     /// Bearing to the current waypoint (BAM), for the autopilot.
@@ -166,6 +182,8 @@ pub struct Aircraft {
     pub damage: FlightDamage,
     fuel_timer: f32,
     stopped_timer: f32,
+    /// Modern model state (unused by the classic one).
+    modern: modern::State,
 }
 
 impl Aircraft {
@@ -199,6 +217,8 @@ impl Aircraft {
             damage: FlightDamage::default(),
             fuel_timer: 0.0,
             stopped_timer: 0.0,
+            fpm: 0.0,
+            modern: modern::State::default(),
         }
     }
 
@@ -291,22 +311,29 @@ fn bam_diff(a: f32, b: f32) -> f32 {
     (a - b + 32768.0).rem_euclid(65536.0) - 32768.0
 }
 
+#[allow(clippy::too_many_arguments)]
 fn step_flight(
     time: Res<Time>,
     controls: Res<FlightControls>,
     k: Res<FlightConstants>,
     tables: Res<SimTables>,
+    settings: Res<Settings>,
     theater: Option<Res<Theater>>,
     mut q: Query<(&mut Aircraft, &mut WorldPos, &mut Transform), With<Player>>,
 ) {
-    // Sub-steps of at most 1/60 s keep accelerated test runs accurate.
+    // Sub-steps (at most 1/60 s classic, 1/120 s modern) keep accelerated test runs accurate.
     let total = time.delta_secs().min(1.0);
+    let max_dt = if settings.classic_flight { 1.0 / 60.0 } else { 1.0 / 120.0 };
     for (mut a, mut pos, mut tf) in &mut q {
         let mut remaining = total;
         while remaining > 1e-6 {
-            let dt = remaining.min(1.0 / 60.0);
+            let dt = remaining.min(max_dt);
             remaining -= dt;
-            step_one(&mut a, &mut pos, &mut tf, dt, &controls, &k, &tables, theater.as_deref());
+            if settings.classic_flight {
+                step_one(&mut a, &mut pos, &mut tf, dt, &controls, &k, &tables, theater.as_deref());
+            } else {
+                modern::step(&mut a, &mut pos, &mut tf, dt, &controls, &k, theater.as_deref());
+            }
         }
     }
 }
@@ -372,36 +399,16 @@ fn step_one(
             pitch_input += (rand::random_range(0.0..turb) - turb / 2.0) / 2.0;
         }
 
-        // --- auto pull-up ("barometric altimeter", no-crash and easy only)
-        if !a.gear_down && pitch_input <= 0.0 && a.velocity > a.stall_speed && k.landing < 2 && roll_b.abs() < 12288.0 {
+        // --- auto pull-up ("barometric altimeter"; the original's no-crash and easy skills, here
+        // crash protection only, so the ground can always be hit otherwise)
+        if !a.gear_down && pitch_input <= 0.0 && a.velocity > a.stall_speed && k.landing == 0 && roll_b.abs() < 12288.0 {
             let kk = ((a.trim - pitch_b) / 8.0 - vz + 200.0) / 8.0;
             if kk > 0.0 {
                 pitch_input = kk.clamp(0.0, 32.0);
             }
         }
 
-        // --- thrust and fuel (engine damage caps the thrust)
-        if let Some(t) = controls.throttle {
-            a.set_thrust = (t.clamp(0.0, 1.0) * 100.0).round();
-        }
-        let set = a.damage.throttle_cap.map_or(a.set_thrust, |cap| a.set_thrust.min(cap));
-        a.thrust += (set - a.thrust) / k.spool_div * dt;
-        if set > a.thrust {
-            a.thrust = (a.thrust + k.fs * dt).min(set);
-        } else {
-            a.thrust = set;
-        }
-        a.fuel_timer += dt;
-        while a.fuel_timer >= 2.0 {
-            a.fuel_timer -= 2.0;
-            if a.set_thrust != 0.0 {
-                a.fuel -= (a.set_thrust * a.set_thrust / k.fuel_div).floor() + 2.0 + a.damage.fuel_leak;
-            }
-        }
-        if a.fuel <= 0.0 {
-            a.fuel = 0.0;
-            a.thrust = 0.0;
-        }
+        engine(a, controls, k, dt);
 
         // --- g-load: bank angle table plus the full pull
         let idx = ((roll_b.abs() as i32 >> 8) & 0x7F) as usize;
@@ -435,6 +442,8 @@ fn step_one(
         let x = ((target - a.velocity) / 4.0).clamp(0.0, a.stall_speed);
         a.lift = ((a.stall_speed - x) * 3072.0 / (a.velocity.abs() + 1.0)).min(8192.0);
         a.trim = roll.cos() * (a.lift - 512.0);
+        let hud_lift = (a.stall_speed * 3072.0 / (a.velocity.abs() + 1.0)).min(8192.0);
+        a.fpm = roll.cos() * (hud_lift - 512.0);
 
         // --- brakes (ground brakes depend on the landing skill; airborne speed brake)
         if a.brakes {
@@ -487,42 +496,74 @@ fn step_one(
         east += (horiz * head2.sin() * dt) as f64;
         north += (horiz * head2.cos() * dt) as f64;
 
-        // --- landing corridor at the nearest friendly base
-        let (corridor, ground) = theater.map(|t| landing_corridor(t, east, north, k.landing)).unwrap_or((false, 0.0));
-        a.in_landing_corridor = corridor;
-        a.ground_altitude = ground;
-        a.altitude = a.altitude.clamp(a.ground_altitude, 60000.0);
-        let on_ground_now = a.altitude <= a.ground_altitude;
-        if on_ground_now && prev_alt > a.ground_altitude {
-            touchdown(a, roll2, l);
-        }
-        if on_ground_now {
-            a.climb_rate = 0.0;
-            if !a.in_landing_corridor && a.knots() > 50.0 && (k.landing != 0 || a.damage.fragile) {
-                a.ended = Some(FlightEnd::Crash);
-                info!("crash: ground contact outside a runway at {:.0} kt", a.knots());
-            }
-        } else {
-            a.has_flown = true;
-        }
-        a.on_ground = on_ground_now;
-
-        // Stopped on a friendly runway after flying: "Safe Landing" ends the mission.
-        if a.on_ground && a.in_landing_corridor && a.has_flown && a.knots() <= 1.0 {
-            a.stopped_timer += dt;
-            if a.stopped_timer > 2.0 && a.ended.is_none() {
-                a.ended = Some(FlightEnd::Landed);
-                info!("safe landing");
-            }
-        } else {
-            a.stopped_timer = 0.0;
-        }
+        ground_contact(a, k, roll2, prev_alt, east, north, theater, dt);
 
         a.roll_input = roll_input;
         a.pitch_input = pitch_input;
         // The 3D view uses the compressed altitude, like the original.
         pos.0 = wu_to_bevy(east, north, a.view_z() as f64);
         tf.rotation = a.orientation;
+    }
+}
+
+/// Thrust spool and fuel burn (engine damage caps the thrust).
+fn engine(a: &mut Aircraft, controls: &FlightControls, k: &FlightConstants, dt: f32) {
+    if let Some(t) = controls.throttle {
+        a.set_thrust = (t.clamp(0.0, 1.0) * 100.0).round();
+    }
+    let set = a.damage.throttle_cap.map_or(a.set_thrust, |cap| a.set_thrust.min(cap));
+    a.thrust += (set - a.thrust) / k.spool_div * dt;
+    if set > a.thrust {
+        a.thrust = (a.thrust + k.fs * dt).min(set);
+    } else {
+        a.thrust = set;
+    }
+    a.fuel_timer += dt;
+    while a.fuel_timer >= 2.0 {
+        a.fuel_timer -= 2.0;
+        if a.set_thrust != 0.0 {
+            a.fuel -= (a.set_thrust * a.set_thrust / k.fuel_div).floor() + 2.0 + a.damage.fuel_leak;
+        }
+    }
+    if a.fuel <= 0.0 {
+        a.fuel = 0.0;
+        a.thrust = 0.0;
+    }
+}
+
+/// Ground altitude and landing corridor, touchdown, ground crashes and the safe landing end.
+/// `a.altitude` has been integrated from `prev_alt`; `a.climb_rate` is the sink at contact.
+#[allow(clippy::too_many_arguments)]
+fn ground_contact(a: &mut Aircraft, k: &FlightConstants, roll: f32, prev_alt: f32, east: f64, north: f64, theater: Option<&Theater>, dt: f32) {
+    // --- landing corridor at the nearest friendly base
+    let (corridor, ground) = theater.map(|t| landing_corridor(t, east, north, k.landing)).unwrap_or((false, 0.0));
+    a.in_landing_corridor = corridor;
+    a.ground_altitude = ground;
+    a.altitude = a.altitude.clamp(a.ground_altitude, 60000.0);
+    let on_ground_now = a.altitude <= a.ground_altitude;
+    if on_ground_now && prev_alt > a.ground_altitude {
+        touchdown(a, roll, k.landing as f32);
+    }
+    if on_ground_now {
+        a.climb_rate = 0.0;
+        if !a.in_landing_corridor && a.knots() > 50.0 && (k.landing != 0 || a.damage.fragile) {
+            a.ended = Some(FlightEnd::Crash);
+            info!("crash: ground contact outside a runway at {:.0} kt", a.knots());
+        }
+    } else {
+        a.has_flown = true;
+    }
+    a.on_ground = on_ground_now;
+
+    // Stopped on a friendly runway after flying: "Safe Landing" ends the mission.
+    if a.on_ground && a.in_landing_corridor && a.has_flown && a.knots() <= 1.0 {
+        a.stopped_timer += dt;
+        if a.stopped_timer > 2.0 && a.ended.is_none() {
+            a.ended = Some(FlightEnd::Landed);
+            info!("safe landing");
+        }
+    } else {
+        a.stopped_timer = 0.0;
     }
 }
 
@@ -557,4 +598,121 @@ fn landing_corridor(t: &Theater, east: f64, north: f64, landing: u8) -> (bool, f
         }
     }
     (false, 0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Flies one model for `secs` (no theater: no runways, ground at 0), with the controls set
+    /// by `ctl` every step. Returns the aircraft and the distance flown (wu).
+    fn fly(classic: bool, mut a: Aircraft, secs: f32, landing: u8, mut ctl: impl FnMut(&Aircraft, &mut FlightControls)) -> (Aircraft, f64) {
+        let tables = SimTables::load();
+        let k = FlightConstants { landing, ..default() };
+        let mut pos = WorldPos(wu_to_bevy(0.0, 0.0, a.view_z() as f64));
+        let mut tf = Transform::default();
+        let mut c = FlightControls::default();
+        let dt = 1.0 / 120.0;
+        for _ in 0..(secs / dt) as usize {
+            ctl(&a, &mut c);
+            if classic {
+                step_one(&mut a, &mut pos, &mut tf, dt, &c, &k, &tables, None);
+            } else {
+                modern::step(&mut a, &mut pos, &mut tf, dt, &c, &k, None);
+            }
+        }
+        let (e, n, _) = bevy_to_wu(pos.0);
+        (a, e.hypot(n))
+    }
+
+    fn airborne(alt: f32, kts: f32, thrust: f32) -> Aircraft {
+        let mut a = Aircraft::new_on_runway(10000.0);
+        a.altitude = alt;
+        a.on_ground = false;
+        a.has_flown = true;
+        a.gear_down = false;
+        a.velocity = kts * 27.0;
+        a.set_thrust = thrust;
+        a.thrust = thrust;
+        a
+    }
+
+    /// Altitude hold by the autopilot (both models), straight ahead.
+    fn level(mut a: Aircraft) -> Aircraft {
+        a.autopilot_alt = a.view_z();
+        a.waypoint_bearing = 0.0;
+        a
+    }
+
+    #[test]
+    fn performance_compared() {
+        for classic in [true, false] {
+            let name = if classic { "classic" } else { "modern" };
+            for alt in [1000.0, 15000.0] {
+                let (a, _) = fly(classic, level(airborne(alt, 400.0, 100.0)), 240.0, 1, |_, _| {});
+                println!("{name}: max speed at {alt} ft: {:.0} kt (alt {:.0})", a.knots(), a.altitude);
+                assert!((480.0..680.0).contains(&a.knots()), "{name} max speed {}", a.knots());
+            }
+            let mut t500 = None;
+            let mut t = 0.0;
+            fly(classic, level(airborne(1000.0, 300.0, 100.0)), 90.0, 1, |a, _| {
+                t += 1.0 / 120.0;
+                if a.knots() >= 500.0 && t500.is_none() {
+                    t500 = Some(t);
+                }
+            });
+            println!("{name}: 300 to 500 kt at full throttle: {t500:?} s");
+            // Idle at 1000 ft with the altitude held: speed it falls to.
+            let (a, _) = fly(classic, level(airborne(1000.0, 300.0, 0.0)), 120.0, 1, |_, _| {});
+            println!("{name}: idle, altitude held: {:.0} kt alt {:.0} stall {:.0} {:?}", a.knots(), a.altitude, a.stall_speed / 27.0, a.ended);
+            // Take-off run: full throttle, pull at 160 kt.
+            let mut lift_off = None;
+            let mut t = 0.0;
+            // No theater, so no runway: crash protection keeps the ground roll legal.
+            let (a, _) = fly(classic, Aircraft::new_on_runway(10000.0), 60.0, 0, |a, c| {
+                c.throttle = Some(1.0);
+                c.pitch = if a.knots() > 160.0 { 0.6 } else { 0.0 };
+                t += 1.0 / 120.0;
+                if !a.on_ground && lift_off.is_none() {
+                    lift_off = Some((t, a.knots()));
+                }
+            });
+            println!("{name}: lift-off {lift_off:?}, after 60 s {:.0} kt alt {:.0}", a.knots(), a.altitude);
+            assert!(lift_off.is_some(), "{name} did not take off");
+            // Full pull, bank 75 deg, 400 kt at 10000 ft for 10 s: heading change and speed.
+            let mut a0 = airborne(10000.0, 400.0, 100.0);
+            a0.orientation = Aircraft::from_euler(0.0, 0.0, 75f32.to_radians());
+            let (a, _) = fly(classic, a0, 10.0, 1, |_, c| c.pitch = 1.0);
+            let (h, p, r) = a.euler();
+            println!(
+                "{name}: 10 s full pull: heading {:.0} pitch {:.0} roll {:.0} {:.0} kt {:.1} g alt {:.0}",
+                h.to_degrees(),
+                p.to_degrees(),
+                r.to_degrees(),
+                a.knots(),
+                a.gees / 16.0,
+                a.altitude
+            );
+            // Roll rate: full stick for 1 s at 400 kt.
+            let (a, _) = fly(classic, airborne(10000.0, 400.0, 70.0), 1.0, 1, |_, c| c.roll = 1.0);
+            println!("{name}: roll after 1 s full stick {:.0} deg", a.euler().2.to_degrees());
+            // Hands off at 400 kt: the path stays level.
+            let (a, _) = fly(classic, airborne(5000.0, 400.0, 70.0), 20.0, 1, |_, _| {});
+            println!("{name}: 20 s hands off: alt {:.0} pitch {:.1} {:.0} kt", a.altitude, a.euler().1.to_degrees(), a.knots());
+        }
+    }
+
+    #[test]
+    fn ground_crash_possible() {
+        for classic in [true, false] {
+            // Dive at the ground, gear up: crashes unless crash protection is on.
+            let mut a0 = airborne(1500.0, 400.0, 70.0);
+            a0.orientation = Aircraft::from_euler(0.0, -20f32.to_radians(), 0.0);
+            let (a, _) = fly(classic, a0.clone(), 30.0, 1, |_, _| {});
+            assert_eq!(a.ended, Some(FlightEnd::Crash), "classic {classic}");
+            let (a, _) = fly(classic, a0, 30.0, 0, |_, _| {});
+            assert_eq!(a.ended, None, "classic {classic} with crash protection");
+            println!("classic {classic}: protected alt {:.0}", a.altitude);
+        }
+    }
 }

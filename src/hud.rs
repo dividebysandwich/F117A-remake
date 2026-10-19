@@ -313,7 +313,6 @@ impl HudParams<'_, '_> {
     pub fn frame(&self, camera_sight: bool) -> Option<HudFrame> {
         let (a, pos) = self.aircraft.single().ok()?;
         let (h, p, r) = a.euler();
-        let lift = (a.stall_speed * 3072.0 / (a.velocity.abs() + 1.0)).min(8192.0);
         // Avionics damage also takes out the INS waypoint cue.
         let bearing = self.waypoints.target().filter(|_| !a.damage.autopilot_failed).map(|wp| waypoint_bearing(pos, wp));
         let bay = self.stores.bays.get(self.stores.selected);
@@ -327,7 +326,7 @@ impl HudParams<'_, '_> {
             gees: a.gees as i32,
             stall_knots: (a.stall_speed / 27.0) as i32,
             climb: a.climb_rate as i32,
-            fpm: (r.cos() * (lift - 512.0)) as i32,
+            fpm: a.fpm as i32,
             gear_down: a.gear_down,
             night_mission: self.tod.night_mission,
             blink: blink(&self.time),

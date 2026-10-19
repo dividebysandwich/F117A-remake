@@ -24,7 +24,7 @@ dev = ["bevy/dynamic_linking"]
 xr = ["dep:bevy_mod_openxr", "dep:bevy_mod_xr", "dep:openxr"]
 
 [dependencies]
-bevy = { version = "0.19.1", features = ["wav"] }
+bevy = { version = "0.19.1", features = ["flac"] }
 bevy_egui = "0.42"
 serde.workspace = true
 ron.workspace = true

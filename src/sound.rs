@@ -6,7 +6,7 @@
 //!   0 = none; Alt-V cycles). Gear, bay doors, the error buzz and speech bypass the level.
 //! - The engine drone follows airspeed only (pitch `(0x83 + (knots & ~1)) * 49716 / 2^18` Hz),
 //!   is silent at 0 kt and with the throttle closed, and only plays at level 3.
-//! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.wav or .ogg) register under id NN, and a
+//! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.flac) register under id NN, and a
 //!   requested id with no sample stays silent, so speech can be added later by dropping files in.
 //! - Radar warning tones come from `sounds/rwr/` instead of the original sounds 8 and 9.
 
@@ -58,11 +58,11 @@ pub fn rwr_id(tone: f117_sim::RwrTone) -> u8 {
 const RWR_FILES: [(f117_sim::RwrTone, &str); 5] = {
     use f117_sim::RwrTone::*;
     [
-        (Track, "Track.ogg"),
-        (Scan, "Scan.ogg"),
-        (SearchWarning, "SearchWarning.ogg"),
-        (SamLaunch, "Launch.ogg"),
-        (AirLaunch, "LaunchWarningUS.ogg"),
+        (Track, "Track.flac"),
+        (Scan, "Scan.flac"),
+        (SearchWarning, "SearchWarning.flac"),
+        (SamLaunch, "Launch.flac"),
+        (AirLaunch, "LaunchWarningUS.flac"),
     ]
 };
 
@@ -102,7 +102,7 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     };
     for e in dir.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        let Some(stem) = name.strip_suffix(".wav").or_else(|| name.strip_suffix(".ogg")) else { continue };
+        let Some(stem) = name.strip_suffix(".flac") else { continue };
         let path = format!("sounds/{name}");
         if let Some(k) = stem.strip_prefix("engine_").and_then(|k| k.parse::<f32>().ok()) {
             bank.engine.push((k, server.load(path)));

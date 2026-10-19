@@ -50,6 +50,15 @@ const SMOKE: u8 = 8;
 const CHUTE: u8 = 15;
 /// STFLT model of the falling wreck.
 const WRECK_MODEL: i32 = 11;
+/// The Mi-24's aircraft type points at STFLT 15, a missile shape with a motor flame (the
+/// original data has no Hind model); drawn as the only helicopter model, the UH-60 (25).
+const HIND_DATA_MODEL: i32 = 15;
+const HELICOPTER_MODEL: i32 = 25;
+
+/// STFLT model drawn for an aircraft type's model number.
+fn aircraft_model(model: i32) -> i32 {
+    if model == HIND_DATA_MODEL { HELICOPTER_MODEL } else { model }
+}
 /// Seconds without new smoke after which the old puffs are no longer drawn.
 const SMOKE_TIMEOUT: f32 = 4.0;
 
@@ -186,6 +195,7 @@ fn sync_objects(
     // --- aircraft
     let mut seen = HashSet::new();
     for (i, u, model) in sim.active_aircraft() {
+        let model = aircraft_model(model);
         if u.flags & fflags::DESTROYED != 0 || (u.wx == 0 && u.wy == 0) {
             continue;
         }

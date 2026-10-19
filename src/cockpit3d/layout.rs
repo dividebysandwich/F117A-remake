@@ -136,8 +136,8 @@ fn top_edge(x: f32) -> f32 {
 }
 
 /// Bezel button cap size (panel pixels).
-const OSB_W: f32 = 14.0;
-const OSB_H: f32 = 7.0;
+const OSB_W: f32 = 16.0;
+const OSB_H: f32 = 8.0;
 
 impl PanelLayout {
     pub fn for_classic(classic: bool) -> Self {
@@ -392,7 +392,9 @@ impl PanelLayout {
         ];
         items.extend(fixed.into_iter().map(|(elem, rect)| Placed { elem, rect, cap: None }));
 
-        let screens = [rect(66.0, 113.0, 85.0, 66.0), rect(171.0, 113.0, 85.0, 66.0)];
+        // Shaped like the HIRES canvas on the panel (panel pixels are not square), so the
+        // screen's pixels are.
+        let screens = [rect(61.5, 116.0, 94.0, 60.0), rect(166.5, 116.0, 94.0, 60.0)];
         let mut blocks = Vec::new();
         let mut bx = |r: PxRect, height: f32, colour: u8| blocks.push(Block { rect: r, height, colour, shape: Shape::Box, base: 0.0 });
         bx(rect(115.0, 92.0, 95.0, 10.0), 0.003, 35);
@@ -480,6 +482,17 @@ mod tests {
                     assert!(!a.overlaps(b), "{:?}: {a:?} overlaps {b:?}", l.style);
                 }
             }
+        }
+    }
+
+    /// The modern screens have the HIRES canvas' shape on the panel (square pixels).
+    #[test]
+    fn modern_screens_square_pixels() {
+        let canvas = crate::mfd::HIRES.0 as f32 / crate::mfd::HIRES.1 as f32;
+        for m in &PanelLayout::modern().mfds {
+            let s = m.screen;
+            let (_, size) = super::super::geometry::panel_rect(s.x, s.y, s.w, s.h, 0.0);
+            assert!((size.x / size.y / canvas - 1.0).abs() < 0.01, "{:?}: {}", m.side, size.x / size.y);
         }
     }
 

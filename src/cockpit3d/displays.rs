@@ -19,13 +19,13 @@ use super::geometry::{
     with_swatch,
 };
 use super::hud_glass::HudGlassMaterial;
-use super::layout::{Elem, OUTLINE, PanelLayout, PanelStyle, PxRect, Shape};
+use super::layout::{Elem, OUTLINE, PanelLayout, PanelStyle, Placed, PxRect, Shape};
 use super::{CockpitMaterials, spawn_box};
 use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit::{CockpitArt, Displays};
 use crate::font::Fonts;
 use crate::mfd::{CLASSIC, HIRES, MfdSide, osb};
-use crate::panel::{LAMPS, draw_gauge, draw_label, draw_lamp, draw_led};
+use crate::panel::{BUTTON, LAMPS, LampId, draw_gauge, draw_label, draw_lamp, draw_led};
 
 /// How far the MFD screens sit behind the panel face (metres).
 const SCREEN_DEPTH: f32 = 0.003;
@@ -36,8 +36,11 @@ const COMBINER_DEPTH: f32 = 0.80;
 const COMBINER: [(f32, f32); 6] = [(45.0, 90.0), (45.0, 14.0), (89.0, 2.0), (232.0, 2.0), (275.0, 14.0), (275.0, 90.0)];
 /// Emissive strength of the displays and lit lights when the cockpit is lit.
 const GLOW_NITS: f32 = 1.0;
-/// Instrument atlas texels per panel pixel.
+/// Instrument atlas texels per panel pixel (down; see `texels`), classic and modern panel.
 pub(super) const TEXELS: i32 = 3;
+const MODERN_TEXELS: i32 = 4;
+/// Largest label text scale (atlas texels per font pixel), so the labels match in size.
+const TEXT_SCALE: i32 = 3;
 /// Instrument atlas size (texels).
 const ATLAS: usize = 512;
 /// Faces stand this far above their surface (metres).
@@ -63,6 +66,8 @@ pub(super) enum CanvasRole {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum Face {
     Item(Elem),
+    /// A lamp that is a button cap on the modern panel (green, `panel::BUTTON`).
+    Button(LampId, Option<&'static str>),
     Osb(MfdSide, u8),
 }
 
@@ -70,6 +75,8 @@ pub(super) enum Face {
 #[derive(Component)]
 pub(super) struct InstrumentAtlas {
     faces: Vec<(Face, [i32; 4])>,
+    /// Texels per panel pixel.
+    texels: i32,
 }
 
 #[derive(Component)]
@@ -109,13 +116,21 @@ fn pack(sizes: &[(i32, i32)]) -> Vec<[i32; 4]> {
     out
 }
 
-fn texels(r: &PxRect) -> (i32, i32) {
-    ((r.w * TEXELS as f32).ceil() as i32, (r.h * TEXELS as f32).ceil() as i32)
+/// Atlas size of a face: `k` texels per panel pixel down, and across either the same (the
+/// classic panel keeps the original's tall pixels) or as many as make the texels square on the
+/// panel.
+fn texels(r: &PxRect, k: i32, square: bool) -> (i32, i32) {
+    let h = (r.h * k as f32).ceil();
+    if !square {
+        return ((r.w * k as f32).ceil() as i32, h as i32);
+    }
+    let (_, size) = panel_rect(r.x, r.y, r.w, r.h, 0.0);
+    ((h * size.x / size.y).round() as i32, h as i32)
 }
 
 /// Yellow and black diagonal stripes.
-fn hazard(c: &mut Canvas, r: [i32; 4]) {
-    let band = 4 * TEXELS;
+fn hazard(c: &mut Canvas, r: [i32; 4], k: i32) {
+    let band = 4 * k;
     for y in 0..r[3] {
         for x in 0..r[2] {
             let colour = if (x + y) / band % 2 == 0 { 18 } else { 38 };
@@ -190,11 +205,17 @@ pub(super) fn spawn_panel(
     }
 
     // Instrument atlas: every lamp, readout, label and bezel button face.
-    let mut faces: Vec<(Face, PxRect)> = layout.items.iter().map(|p| (Face::Item(p.elem), p.rect)).collect();
+    let modern = layout.style == PanelStyle::Modern;
+    let face_of = |p: &Placed| match p.elem {
+        Elem::Lamp(id, label) if modern && p.cap.is_some() => Face::Button(id, label),
+        elem => Face::Item(elem),
+    };
+    let mut faces: Vec<(Face, PxRect)> = layout.items.iter().map(|p| (face_of(p), p.rect)).collect();
     for m in &layout.mfds {
         faces.extend(layout.osbs(m).into_iter().map(|(slot, r)| (Face::Osb(m.side, slot), r)));
     }
-    let slots = pack(&faces.iter().map(|(_, r)| texels(r)).collect::<Vec<_>>());
+    let k = if modern { MODERN_TEXELS } else { TEXELS };
+    let slots = pack(&faces.iter().map(|(_, r)| texels(r, k, modern)).collect::<Vec<_>>());
     let uv = |s: &[i32; 4]| {
         let n = ATLAS as f32;
         (Vec2::new(s[0] as f32 / n, s[1] as f32 / n), Vec2::new((s[0] + s[2]) as f32 / n, (s[1] + s[3]) as f32 / n))
@@ -211,7 +232,7 @@ pub(super) fn spawn_panel(
         fog_enabled: false,
         ..default()
     });
-    let atlas = InstrumentAtlas { faces: faces.iter().zip(&slots).map(|((f, _), s)| (*f, *s)).collect() };
+    let atlas = InstrumentAtlas { faces: faces.iter().zip(&slots).map(|((f, _), s)| (*f, *s)).collect(), texels: k };
     let e = commands.spawn((CanvasRole::Atlas, atlas, atlas_tex, LitMaterial(atlas_mat.clone()))).id();
     commands.entity(root).add_child(e);
     let e = commands.spawn((CanvasRole::Glow, glow_tex)).id();
@@ -220,7 +241,7 @@ pub(super) fn spawn_panel(
     for ((face, _), slot) in faces.iter().zip(&slots) {
         let (uv0, uv1) = uv(slot);
         match face {
-            Face::Item(_) => out.items.push((uv0, uv1)),
+            Face::Item(_) | Face::Button(..) => out.items.push((uv0, uv1)),
             Face::Osb(side, s) => {
                 out.osbs.insert((side_key(*side), *s), (uv0, uv1));
             }
@@ -278,7 +299,8 @@ pub(super) fn spawn_panel(
         }
     }
 
-    // Attitude ball: its own canvas in a ring bezel.
+    // Attitude ball: its own canvas in a ring bezel, round on the panel (`adi` is as wide as
+    // it is high in panel pixels, which are taller than wide).
     let a = layout.adi;
     let (cx, cy) = a.centre();
     let n = (a.w * TEXELS as f32) as usize;
@@ -293,7 +315,7 @@ pub(super) fn spawn_panel(
         fog_enabled: false,
         ..default()
     });
-    let (_, size) = panel_rect(a.x, a.y, a.w, a.h, 0.0);
+    let size = Vec2::splat(panel_rect(a.x, a.y, a.w, a.h, 0.0).1.x);
     let base = layout.surface(cx, cy);
     let tf = Transform::from_translation(panel_point(cx, cy, base + FACE_LIFT)).with_rotation(panel_rotation());
     let e = add(commands, meshes.add(uv_quad(size, Vec2::ZERO, Vec2::ONE)), material, tf);
@@ -476,13 +498,18 @@ pub(super) fn update_displays(
     glow.px.fill(0);
     let lit = d.panel.lamp_states();
     let (emv, egr, ear) = d.panel.gauge_values();
-    let k = TEXELS;
+    let (k, t) = (info.texels, TEXT_SCALE);
     for &(face, r) in &info.faces {
         let glows = match face {
             Face::Item(Elem::Lamp(id, label)) => {
                 let on = lit[id as usize];
                 let style = LAMPS[id as usize].2;
-                draw_lamp(c, &fonts, r, label.unwrap_or_else(|| d.panel.lamp_label(id)), if on { style.on } else { style.off }, k);
+                draw_lamp(c, &fonts, r, label.unwrap_or_else(|| d.panel.lamp_label(id)), if on { style.on } else { style.off }, k, t);
+                on
+            }
+            Face::Button(id, label) => {
+                let on = lit[id as usize];
+                draw_lamp(c, &fonts, r, label.unwrap_or_else(|| d.panel.lamp_label(id)), if on { BUTTON.on } else { BUTTON.off }, k, t);
                 on
             }
             Face::Item(Elem::Led(id)) => {
@@ -494,24 +521,24 @@ pub(super) fn update_displays(
                 true
             }
             Face::Item(Elem::Label(text, fg, bg)) => {
-                draw_label(c, &fonts, r, text, fg, bg, k);
+                draw_label(c, &fonts, r, text, fg, bg, t);
                 true
             }
             Face::Item(Elem::Hazard) => {
-                hazard(c, r);
+                hazard(c, r, k);
                 false
             }
             Face::Osb(side, slot) => match osb(side, slot, &d.mfd.state) {
                 Some((label, _, true)) => {
-                    draw_lamp(c, &fonts, r, label, (38, 47), k);
+                    draw_lamp(c, &fonts, r, label, (38, 47), k, t);
                     true
                 }
                 Some((label, _, false)) => {
-                    draw_lamp(c, &fonts, r, label, (47, 38), k);
+                    draw_lamp(c, &fonts, r, label, (47, 38), k, t);
                     true
                 }
                 None => {
-                    draw_lamp(c, &fonts, r, "", (35, 38), k);
+                    draw_lamp(c, &fonts, r, "", (35, 38), k, t);
                     false
                 }
             },

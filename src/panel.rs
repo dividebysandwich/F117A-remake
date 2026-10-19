@@ -147,6 +147,9 @@ const EMV: LampStyle = LampStyle { off: (38, 55), on: (41, 42) };
 const RED: LampStyle = LampStyle { off: (54, 55), on: (41, 42) };
 const DARK_RED: LampStyle = LampStyle { off: (16, 43), on: (41, 42) };
 const AMBER: LampStyle = LampStyle { off: (16, 43), on: (40, 39) };
+/// Button caps of the modern panel: green text on dark green unlit, dark text on bright green
+/// lit (like the MFD bezel buttons).
+pub const BUTTON: LampStyle = LampStyle { off: (47, 44), on: (38, 47) };
 
 /// Label and colours of every lamp, indexed by `LampId`.
 pub const LAMPS: [(LampId, &str, LampStyle); LAMP_COUNT] = {
@@ -205,8 +208,9 @@ pub enum LedId {
 }
 
 /// Draws a lamp face into the rectangle (x, y, w, h) of a canvas at `k` canvas pixels per
-/// panel pixel: fill, a one-pixel border and the centred label in the text colour.
-pub fn draw_lamp(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, colours: (u8, u8), k: i32) {
+/// panel pixel: fill, a one-pixel border and the centred label in the text colour at up to
+/// `text` canvas pixels per font pixel.
+pub fn draw_lamp(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, colours: (u8, u8), k: i32, text: i32) {
     let (fg, bg) = colours;
     let [x, y, w, h] = r;
     c.fill_rect(x, y, w, h, bg);
@@ -214,7 +218,7 @@ pub fn draw_lamp(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, colour
     c.fill_rect(x, y + h - k, w, k, fg);
     c.fill_rect(x, y, k, h, fg);
     c.fill_rect(x + w - k, y, k, h, fg);
-    text_in(c, fonts, [x + k, y + k, w - 2 * k, h - 2 * k], label, fg, k);
+    text_in(c, fonts, [x + k, y + k, w - 2 * k, h - 2 * k], label, fg, text);
 }
 
 /// Draws a label face: fill and centred text (lines separated by '\n').
@@ -247,10 +251,12 @@ fn text_in(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, fg: u8, k: i
 }
 
 /// LED readout (`1A18:D92D`: atlas digits (67+5d, 31) 4x7, 5 px advance; non-digits show "0"),
-/// centred in the rectangle at `k` canvas pixels per panel pixel, over unlit "8" segments.
+/// centred in the rectangle at up to `k` canvas pixels per panel pixel (smaller if it does not
+/// fit), over unlit "8" segments.
 pub fn draw_led(c: &mut Canvas, sprites: &Canvas, r: [i32; 4], s: &str, k: i32) {
     c.fill_rect(r[0], r[1], r[2], r[3], 38);
     let n = s.len() as i32;
+    let k = (1..=k).rev().find(|&k| (5 * n - 1) * k <= r[2] && 7 * k <= r[3]).unwrap_or(1);
     let x0 = r[0] + (r[2] - (5 * n - 1) * k) / 2;
     let y0 = r[1] + (r[3] - 7 * k) / 2;
     for (i, ch) in s.bytes().enumerate() {

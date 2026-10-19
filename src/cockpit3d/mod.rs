@@ -10,8 +10,8 @@
 //! consoles, seat with ejection handle, side stick (right) and throttle (left).
 //!
 //! The panel's lit buttons are physical caps showing their lamp face, so their state comes
-//! from the panel drawing code (`controls`). Controls are pushed by VR
-//! fingertips, clicked with the mouse on the desktop, or by scripts (`press=Gear`).
+//! from the panel drawing code (`controls`). Controls are touched by VR fingertips (which
+//! highlights them) and pressed with the trigger, clicked with the mouse on the desktop, or by scripts (`press=Gear`).
 //! The stick and throttle are grabbed with the VR controllers (`levers`).
 //!
 //! VR input arrives through `Hands` (filled by the XR module, in the cockpit frame).
@@ -141,6 +141,8 @@ pub struct CockpitMaterials {
     pub metal: Handle<StandardMaterial>,
     pub hand: Handle<StandardMaterial>,
     pub flash: Handle<StandardMaterial>,
+    /// Frame around the control a VR fingertip touches.
+    pub highlight: Handle<StandardMaterial>,
     pub unit_cube: Handle<Mesh>,
 }
 
@@ -173,6 +175,13 @@ fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<Standard
         fog_enabled: false,
         ..default()
     });
+    let highlight = materials.add(StandardMaterial {
+        base_color: Color::srgb(1.0, 0.9, 0.4),
+        emissive: LinearRgba::rgb(2.0, 1.6, 0.6),
+        unlit: true,
+        fog_enabled: false,
+        ..default()
+    });
     commands.insert_resource(CockpitMaterials {
         panel_grey,
         dark,
@@ -185,6 +194,7 @@ fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<Standard
         metal,
         hand,
         flash,
+        highlight,
         unit_cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
     });
 }

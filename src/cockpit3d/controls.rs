@@ -4,8 +4,8 @@
 //! comes from the panel drawing code); the layout says which faces are caps. The modern
 //! panel's MFD bezel buttons are caps too, with page-dependent labels (`mfd::osb`). Extra
 //! buttons on two side panels carry text labels. Every control has a local frame with +Z pointing out of
-//! its face; a VR fingertip pushing the cap in by most of its travel fires it once (with a
-//! haptic tick), a mouse click or a script `press=` fires it directly.
+//! its face. A VR fingertip touching a control highlights it (with a light haptic tick) and
+//! pulling the trigger then fires it; a mouse click or a script `press=` fires it directly.
 
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::light::NotShadowCaster;
@@ -88,6 +88,13 @@ const TRAVEL: f32 = 0.005;
 const SIDE_HEIGHT: f32 = 0.008;
 /// Fingertip radius.
 const FINGER: f32 = 0.008;
+/// A fingertip touches a control within this distance of its face (in front or pushed in), and
+/// this far beyond its footprint.
+const TOUCH_GAP: f32 = 0.012;
+const TOUCH_MARGIN: f32 = 0.006;
+/// Highlight frame: gap around the footprint and bar width.
+const HIGHLIGHT_GAP: f32 = 0.0015;
+const HIGHLIGHT_BAR: f32 = 0.0015;
 
 #[derive(Component)]
 pub(super) struct Control {
@@ -98,9 +105,10 @@ pub(super) struct Control {
     travel: f32,
     /// Current push depth (metres), from the fingers or a click animation.
     depth: f32,
-    latched: bool,
     /// Per hand: the finger was in front of the face inside the footprint.
     armed: [bool; 2],
+    /// A VR fingertip touches it.
+    touched: bool,
     /// Seconds left of a click/script press animation.
     click: f32,
 }
@@ -108,6 +116,37 @@ pub(super) struct Control {
 /// The moving part of a control (cap, lever arm).
 #[derive(Component)]
 pub(super) struct Moving;
+
+/// Frame around a control shown while a fingertip touches it.
+#[derive(Component)]
+pub(super) struct Highlight;
+
+/// A highlight frame (hidden) around a footprint of half size `half`, at `z` (under the
+/// moving part, so it goes in with the cap).
+fn spawn_highlight(commands: &mut Commands, mats: &CockpitMaterials, half: Vec2, z: f32) -> Entity {
+    let (hx, hy) = (half.x + HIGHLIGHT_GAP + HIGHLIGHT_BAR / 2.0, half.y + HIGHLIGHT_GAP + HIGHLIGHT_BAR / 2.0);
+    let bars = [
+        (Vec2::new(0.0, hy), Vec2::new(2.0 * hx + HIGHLIGHT_BAR, HIGHLIGHT_BAR)),
+        (Vec2::new(0.0, -hy), Vec2::new(2.0 * hx + HIGHLIGHT_BAR, HIGHLIGHT_BAR)),
+        (Vec2::new(hx, 0.0), Vec2::new(HIGHLIGHT_BAR, 2.0 * hy - HIGHLIGHT_BAR)),
+        (Vec2::new(-hx, 0.0), Vec2::new(HIGHLIGHT_BAR, 2.0 * hy - HIGHLIGHT_BAR)),
+    ];
+    let kids: Vec<Entity> = bars
+        .into_iter()
+        .map(|(c, s)| {
+            commands
+                .spawn((
+                    Mesh3d(mats.unit_cube.clone()),
+                    MeshMaterial3d(mats.highlight.clone()),
+                    Transform::from_xyz(c.x, c.y, z).with_scale(s.extend(0.001)),
+                    NoFrustumCulling,
+                    NotShadowCaster,
+                ))
+                .id()
+        })
+        .collect();
+    commands.spawn((Highlight, Transform::default(), Visibility::Hidden)).add_children(&kids).id()
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn spawn_controls(
@@ -155,7 +194,8 @@ pub(super) fn spawn_controls(
                 NoFrustumCulling,
             ))
             .id();
-        let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[face, skirt]).id();
+        let highlight = spawn_highlight(commands, mats, size / 2.0, CAP_HEIGHT);
+        let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[face, skirt, highlight]).id();
         let c = commands
             .spawn((Control::new(kind, effect, size / 2.0, CAP_HEIGHT, TRAVEL), tf, Visibility::default()))
             .add_child(moving)
@@ -202,7 +242,8 @@ pub(super) fn spawn_controls(
                         NoFrustumCulling,
                     ))
                     .id();
-                let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[face, skirt]).id();
+                let highlight = spawn_highlight(commands, mats, size / 2.0, SIDE_HEIGHT);
+                let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[face, skirt, highlight]).id();
                 let tf = Transform::from_translation(centre).with_rotation(rot);
                 let c = commands
                     .spawn((Control::new(kind, effect, size / 2.0, SIDE_HEIGHT, TRAVEL), tf, Visibility::default()))
@@ -239,7 +280,8 @@ pub(super) fn spawn_controls(
                         NoFrustumCulling,
                     ))
                     .id();
-                let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[arm, wheel]).id();
+                let highlight = spawn_highlight(commands, mats, Vec2::splat(0.016), 0.069);
+                let moving = commands.spawn((Moving, Transform::default(), Visibility::default())).add_children(&[arm, wheel, highlight]).id();
                 let c = commands
                     .spawn((Control::new(kind, effect, Vec2::splat(0.02), 0.07, 0.01), Transform::from_translation(centre).with_rotation(rot), Visibility::default()))
                     .add_child(moving)
@@ -303,7 +345,7 @@ fn side_slot(s: f32, row: u8, col: u8) -> (Vec3, Quat) {
 
 impl Control {
     fn new(kind: Kind, effect: Effect, half: Vec2, height: f32, travel: f32) -> Self {
-        Self { kind, effect, half, height, travel, depth: 0.0, latched: false, armed: [false; 2], click: 0.0 }
+        Self { kind, effect, half, height, travel, depth: 0.0, armed: [false; 2], touched: false, click: 0.0 }
     }
 }
 
@@ -362,14 +404,15 @@ impl Fire<'_, '_> {
 /// Seconds a clicked control stays pushed in.
 const CLICK_SECONDS: f32 = 0.18;
 
-/// Fingertip pokes, mouse clicks and script presses.
+/// Fingertip touches with the trigger, mouse clicks and script presses.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn interact(
     time: Res<Time<Real>>,
     settings: Res<crate::settings::Settings>,
     view: Res<ViewState>,
     mut hands: ResMut<Hands>,
-    mut controls: Query<(&mut Control, &Transform)>,
+    mut controls: Query<(Entity, &mut Control, &Transform)>,
+    mut was_touching: Local<[Option<Entity>; 2]>,
     mut fire: Fire,
     mut presses: MessageReader<PressControl>,
     buttons: Res<ButtonInput<MouseButton>>,
@@ -386,7 +429,7 @@ pub(super) fn interact(
             let lit = matches!(c.effect, Effect::Osb(side, slot) if osb(side, slot, &mfd).is_some_and(|o| o.2));
             (!matches!(c.kind, Kind::Cap | Kind::Osb), lit)
         };
-        if let Some((mut c, _)) = controls.iter_mut().filter(|(c, _)| c.effect.action(&mfd) == Some(*a)).min_by_key(|(c, _)| rank(c)) {
+        if let Some((_, mut c, _)) = controls.iter_mut().filter(|(_, c, _)| c.effect.action(&mfd) == Some(*a)).min_by_key(|(_, c, _)| rank(c)) {
             c.click = CLICK_SECONDS;
             fire.fire(c.effect);
         } else {
@@ -407,7 +450,7 @@ pub(super) fn interact(
         let o = inv.transform_point3(ray.origin);
         let d = inv.transform_vector3(*ray.direction).normalize();
         let mut best: Option<(f32, Mut<Control>)> = None;
-        for (c, tf) in &mut controls {
+        for (_, c, tf) in &mut controls {
             let n = tf.rotation * Vec3::Z;
             let plane = tf.translation + n * c.height;
             let denom = d.dot(n);
@@ -429,18 +472,21 @@ pub(super) fn interact(
         }
     }
 
-    // VR fingertips.
-    for (mut c, tf) in &mut controls {
+    // VR fingertips: each hand touches the control whose face is nearest its fingertip (not
+    // while it holds the stick or throttle); the trigger fires it. Pushing a cap moves it but
+    // does not fire it.
+    let mut touching: [Option<(f32, Entity)>; 2] = [None; 2];
+    for (e, mut c, tf) in &mut controls {
         c.click = (c.click - dt).max(0.0);
         let mut depth: f32 = 0.0;
-        for (h, hand) in hands.hands.iter_mut().enumerate() {
+        for (h, hand) in hands.hands.iter().enumerate() {
             // The ejection handle has to be grabbed and pulled (no accidental pokes).
             if !hand.active || !cockpit_view || c.kind == Kind::EjectHandle {
                 c.armed[h] = false;
                 continue;
             }
             let local = tf.rotation.inverse() * (hand.finger - tf.translation);
-            let inside = local.x.abs() <= c.half.x + 0.006 && local.y.abs() <= c.half.y + 0.006 && local.z > -0.04;
+            let inside = local.x.abs() <= c.half.x + TOUCH_MARGIN && local.y.abs() <= c.half.y + TOUCH_MARGIN && local.z > -0.04;
             if !inside {
                 c.armed[h] = false;
                 continue;
@@ -450,29 +496,56 @@ pub(super) fn interact(
                 c.armed[h] = true;
             }
             if c.armed[h] {
-                let push = (face - local.z).clamp(0.0, c.travel);
-                if !c.latched && push >= c.travel * 0.7 {
-                    hand.haptic = hand.haptic.max(0.6);
-                }
-                depth = depth.max(push);
+                depth = depth.max((face - local.z).clamp(0.0, c.travel));
             }
-        }
-        if !c.latched && depth >= c.travel * 0.7 {
-            c.latched = true;
-            fire.fire(c.effect);
-        } else if c.latched && depth < c.travel * 0.3 {
-            c.latched = false;
+            let gap = local.z - face;
+            if hand.squeeze < 0.4 && gap < TOUCH_GAP && gap > -c.travel - TOUCH_GAP && touching[h].is_none_or(|(g, _)| gap.abs() < g) {
+                touching[h] = Some((gap.abs(), e));
+            }
         }
         c.depth = if c.click > 0.0 { c.travel } else { depth };
     }
+    for (h, hand) in hands.hands.iter_mut().enumerate() {
+        let touched = touching[h].map(|(_, e)| e);
+        if touched.is_some() && touched != was_touching[h] {
+            hand.haptic = hand.haptic.max(0.1);
+        }
+        was_touching[h] = touched;
+        if let Some(e) = touched
+            && hand.trigger_pulled()
+            && let Ok((_, mut c, _)) = controls.get_mut(e)
+        {
+            hand.haptic = hand.haptic.max(0.6);
+            c.click = CLICK_SECONDS;
+            c.depth = c.travel;
+            fire.fire(c.effect);
+        }
+    }
+    for (e, mut c, _) in &mut controls {
+        let touched = touching.iter().flatten().any(|&(_, t)| t == e);
+        if c.touched != touched {
+            c.touched = touched;
+        }
+    }
 }
 
-/// Moves the caps in, and the gear lever to the gear position.
-pub(super) fn animate(controls: Query<(&Control, &Children)>, mut moving: Query<&mut Transform, With<Moving>>, aircraft: Query<&Aircraft, With<Player>>) {
+/// Moves the caps in, the gear lever to the gear position, and shows the touched controls'
+/// highlights.
+pub(super) fn animate(
+    controls: Query<(&Control, &Children)>,
+    mut moving: Query<(&mut Transform, &Children), With<Moving>>,
+    mut highlights: Query<&mut Visibility, With<Highlight>>,
+    aircraft: Query<&Aircraft, With<Player>>,
+) {
     let gear = aircraft.single().is_ok_and(|a| a.gear_down);
     for (c, children) in &controls {
         for child in children.iter() {
-            if let Ok(mut tf) = moving.get_mut(child) {
+            if let Ok((mut tf, parts)) = moving.get_mut(child) {
+                for part in parts.iter() {
+                    if let Ok(mut v) = highlights.get_mut(part) {
+                        v.set_if_neq(if c.touched { Visibility::Inherited } else { Visibility::Hidden });
+                    }
+                }
                 let mut t = Transform::from_xyz(0.0, 0.0, -c.depth);
                 if c.kind == Kind::GearLever {
                     t.rotation = Quat::from_rotation_x(if gear { 0.5 } else { -0.5 });

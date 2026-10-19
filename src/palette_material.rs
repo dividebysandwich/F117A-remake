@@ -24,6 +24,9 @@ pub const FLAG_CLOUD_SOFT: u32 = 16;
 pub const FLAG_CLOUD_COVERAGE: u32 = 32;
 /// Faceted cumulus and cumulonimbus meshes: solid (no stratus coverage cutout).
 pub const FLAG_CLOUD_SOLID: u32 = 64;
+/// Dot lights: drawn in the transparent pass (after all opaque geometry, depth tested but not
+/// written; see dots.rs).
+pub const FLAG_DOT: u32 = 128;
 /// Mesh tag bit of warm objects (aircraft, vehicles, buildings, fires): bright in the FLIR
 /// picture, everything else cold.
 pub const TAG_WARM: u32 = 1 << 11;
@@ -61,7 +64,7 @@ impl Material for PaletteMaterial {
     // The prepass pipeline is only used for the shadow maps (no camera has a depth prepass):
     // world geometry casts sun shadows when the shadows option is on.
     fn alpha_mode(&self) -> AlphaMode {
-        if self.params.flags & FLAG_CLOUD_SOFT != 0 {
+        if self.params.flags & (FLAG_CLOUD_SOFT | FLAG_DOT) != 0 {
             AlphaMode::Blend
         } else if self.params.flags & FLAG_CLOUD_COVERAGE != 0 {
             AlphaMode::AlphaToCoverage

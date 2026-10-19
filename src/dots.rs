@@ -4,18 +4,24 @@
 //! pixels of whichever view draws it (main view, XR eyes, tracking camera), drawn with the
 //! line material (solid colour, distance haze as in the original), so the lights read the same
 //! at any resolution, distance or zoom.
+//!
+//! Dots are drawn in the transparent pass (`dot_materials`): as opaque geometry, which writes
+//! depth, tens of thousands of these tiny quads hang the binning pass of the Steam Frame's GPU
+//! (Turnip, Adreno 750) at night.
+
+use std::collections::HashMap;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, MeshTag, PrimitiveTopology};
 use bevy::prelude::*;
 
-use crate::palette_material::TAG_DOT;
+use crate::palette_material::{FLAG_DOT, PaletteMaterial, TAG_DOT};
 
 pub struct DotsPlugin;
 
 impl Plugin for DotsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_dot_assets);
+        app.init_resource::<DotMaterials>().add_systems(Startup, setup_dot_assets).add_systems(PostUpdate, dot_materials);
     }
 }
 
@@ -59,4 +65,48 @@ pub fn dot_batch(points: &[Vec3]) -> Mesh {
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, corners)
         .with_inserted_indices(Indices::U32(idx))
+}
+
+/// The dot variant of each palette material a dot was given (by the material it copies), and
+/// the reverse.
+#[derive(Resource, Default)]
+struct DotMaterials {
+    twins: HashMap<AssetId<PaletteMaterial>, Handle<PaletteMaterial>>,
+    sources: HashMap<AssetId<PaletteMaterial>, AssetId<PaletteMaterial>>,
+}
+
+/// Gives every dot the dot variant of its material (spawners and colour changes such as the
+/// PAPI's assign ordinary line materials), and keeps the variants' colours in step.
+fn dot_materials(
+    mut dots: ResMut<DotMaterials>,
+    mut materials: ResMut<Assets<PaletteMaterial>>,
+    mut q: Query<(&MeshTag, &mut MeshMaterial3d<PaletteMaterial>), Changed<MeshMaterial3d<PaletteMaterial>>>,
+) {
+    for (tag, mut material) in &mut q {
+        let source = material.0.id();
+        if tag.0 & TAG_DOT == 0 || dots.sources.contains_key(&source) {
+            continue;
+        }
+        let twin = match dots.twins.get(&source) {
+            Some(h) => h.clone(),
+            None => {
+                let Some(m) = materials.get(source) else { continue };
+                let mut m = m.clone();
+                m.params.flags |= FLAG_DOT;
+                let h = materials.add(m);
+                dots.twins.insert(source, h.clone());
+                dots.sources.insert(h.id(), source);
+                h
+            }
+        };
+        material.0 = twin;
+    }
+    for (source, twin) in &dots.twins {
+        let Some(word) = materials.get(*source).map(|m| m.params.word) else { continue };
+        if let Some(mut m) = materials.get_mut(twin)
+            && m.params.word != word
+        {
+            m.params.word = word;
+        }
+    }
 }

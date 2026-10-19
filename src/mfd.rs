@@ -949,15 +949,22 @@ impl MfdParams<'_, '_> {
             c.line(p.0, p.1, q.0, q.1, 8);
         }
         let s = if k == 1 { 1 } else { 2 };
-        let icon = |c: &mut Canvas, kind: i32, row: i32, x: i32, y: i32| {
-            c.blit_scaled(&art.sprites, kind * 8 + 1, row * 8 + 41, 7, 7, x - 3 * s - s / 2, y - 3 * s - s / 2, s, Some(0), None);
+        let icon = |c: &mut Canvas, kind: i32, x: i32, y: i32| {
+            c.blit_scaled(&art.sprites, kind * 8 + 1, 65, 7, 7, x - 3 * s - s / 2, y - 3 * s - s / 2, s, Some(0), None);
+        };
+        // Aircraft: a triangle pointing along `rel` (radians clockwise from display up).
+        let plane = |c: &mut Canvas, rel: f32, x: i32, y: i32, colour: u8| {
+            let centre = Vec2::new(x as f32, y as f32) + if s == 1 { Vec2::splat(0.5) } else { Vec2::ZERO };
+            let (sr, cr) = rel.sin_cos();
+            let (fwd, side) = (Vec2::new(sr, -cr) * s as f32, Vec2::new(cr, sr) * s as f32);
+            c.triangle([centre + fwd * 4.0, centre - fwd * 3.0 - side * 2.3, centre - fwd * 3.0 + side * 2.3], colour);
         };
         // Airbases (crossed circle).
         if let Some(t) = &self.theater {
             for o in t.world.objects.iter().filter(|o| o.target_flags & 0x100 != 0) {
                 let (x, y, vis) = proj(o.x as i32, o.y as i32);
                 if vis {
-                    icon(c, 5, 3, x, y);
+                    icon(c, AIRBASE_ICON, x, y);
                 }
             }
         }
@@ -971,22 +978,23 @@ impl MfdParams<'_, '_> {
             }
             match ct.kind {
                 ContactKind::Aircraft => {
-                    let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16).wrapping_add(0x800);
+                    let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16) as f32 / 65536.0 * std::f32::consts::TAU;
+                    // Red level with us, dark red below, yellow above.
                     let dalt = ct.alt - a.altitude;
-                    let band = if dalt < -1000.0 { 1 } else if dalt > 1000.0 { 2 } else { 0 };
-                    icon(c, (rel >> 12) as i32 & 15, band, x, y);
+                    let colour = if dalt < -1000.0 { 40 } else if dalt > 1000.0 { 17 } else { 41 };
+                    plane(c, rel, x, y, colour);
                 }
                 ContactKind::Missile => {
                     let rel = (ct.heading as f32 / 65536.0) * std::f32::consts::TAU - h;
                     let len = (zoom + 1) as f32 * kf;
                     c.line(x, y, x + (rel.sin() * len) as i32, y - (rel.cos() * len) as i32, 41);
                 }
-                ContactKind::GroundRadar => icon(c, 1, 3, x, y),
-                ContactKind::Target => icon(c, 5, 3, x, y),
+                ContactKind::GroundRadar => icon(c, RADAR_ICON, x, y),
+                ContactKind::Target => icon(c, AIRBASE_ICON, x, y),
             }
         }
-        // Own aircraft.
-        icon(c, 0, 3, 38 * k, 42 * k);
+        // Own aircraft, blue.
+        plane(c, 0.0, 38 * k, 42 * k, 9);
     }
 
     /// Tracking camera page (`1A18:BF71`). With the camera picture live the background stays
@@ -1082,7 +1090,7 @@ impl MfdParams<'_, '_> {
     fn draw_wpn(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
         c.clear(0);
         for (i, bay) in self.stores.bays.iter().enumerate().take(4) {
-            if let Some(&(sx, sy)) = ORDNANCE_PICTURES.get(bay.picture) {
+            if let Some((sx, sy)) = ordnance_picture(bay.picture) {
                 c.copy_rect(&art.ordnance, sx, sy, 77, 15, 0, 15 * i as i32);
             }
         }
@@ -1163,7 +1171,7 @@ impl MfdParams<'_, '_> {
         if let Some(t) = &self.theater {
             for o in t.world.objects.iter().filter(|o| o.target_flags & 0x100 != 0) {
                 let p = view.to_screen(o.x as f64, o.y as f64);
-                c.blit_scaled(&art.sprites, 5 * 8 + 1, 3 * 8 + 41, 7, 7, p.x as i32 - 7, p.y as i32 - 7, 2, Some(0), None);
+                c.blit_scaled(&art.sprites, AIRBASE_ICON * 8 + 1, 65, 7, 7, p.x as i32 - 7, p.y as i32 - 7, 2, Some(0), None);
             }
         }
         let blink = crate::hud::blink(&self.time);
@@ -1275,7 +1283,7 @@ impl MfdParams<'_, '_> {
             if i == self.stores.selected {
                 c.fill_rect(1, y + 1, w - 2, row - 1, 8);
             }
-            if let Some(&(sx, sy)) = ORDNANCE_PICTURES.get(bay.picture) {
+            if let Some((sx, sy)) = ordnance_picture(bay.picture) {
                 // The side view without the picture's frame lines.
                 c.blit_scaled(&art.ordnance, sx + 1, sy + 1, 75, 13, w - 152, y + (row - 26) / 2, 2, Some(0), None);
             }
@@ -1309,28 +1317,15 @@ fn arc_range(arc: &MapArc) -> (f64, f64) {
     })
 }
 
-/// Weapon side views in ORDNANCE.PIC (`DS:00A2`), 77x15 each.
-const ORDNANCE_PICTURES: [(i32, i32); 19] = [
-    (9, 37),
-    (9, 64),
-    (9, 89),
-    (9, 117),
-    (9, 142),
-    (9, 172),
-    (104, 37),
-    (104, 64),
-    (105, 89),
-    (106, 117),
-    (106, 143),
-    (106, 172),
-    (198, 37),
-    (198, 64),
-    (197, 90),
-    (198, 117),
-    (200, 144),
-    (200, 173),
-    (198, 15),
-];
+/// Weapon side views in `images/ordnance.idx`: picture `p` is the 77x15 box (frame included)
+/// at (p % 4 * 80, p / 4 * 16).
+fn ordnance_picture(p: usize) -> Option<(i32, i32)> {
+    (p < 19).then(|| ((p % 4) as i32 * 80, (p / 4) as i32 * 16))
+}
+
+/// TAC map icons in the sprite atlas, at (8 * icon + 1, 65), 7x7.
+const RADAR_ICON: i32 = 1;
+const AIRBASE_ICON: i32 = 5;
 
 #[cfg(test)]
 mod tests {

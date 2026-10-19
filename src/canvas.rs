@@ -163,6 +163,26 @@ impl Canvas {
         }
     }
 
+    /// Filled triangle: every pixel whose centre is inside (or on an edge).
+    pub fn triangle(&mut self, p: [Vec2; 3], c: u8) {
+        let edge = |a: Vec2, b: Vec2, q: Vec2| (b - a).perp_dot(q - a);
+        let area = edge(p[0], p[1], p[2]);
+        if area == 0.0 {
+            return;
+        }
+        let lo = p[0].min(p[1]).min(p[2]).floor();
+        let hi = p[0].max(p[1]).max(p[2]).ceil();
+        for y in lo.y as i32..hi.y as i32 {
+            for x in lo.x as i32..hi.x as i32 {
+                let q = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+                let w = [edge(p[1], p[2], q), edge(p[2], p[0], q), edge(p[0], p[1], q)];
+                if w.iter().all(|&w| w * area >= 0.0) {
+                    self.set(x, y, c);
+                }
+            }
+        }
+    }
+
     /// Circle outline (polyline).
     pub fn circle(&mut self, cx: f32, cy: f32, r: f32, c: u8) {
         let steps = ((r * 1.5) as i32).clamp(12, 256);

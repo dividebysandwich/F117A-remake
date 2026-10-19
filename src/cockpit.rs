@@ -4,9 +4,9 @@
 //! of the 320x200 screen is a fixed direction from the eye. The 3D cockpit keeps that mapping
 //! for its panel picture and HUD (`cockpit3d::geometry`).
 //!
-//! The instrument panel itself is built from meshes (`cockpit3d`); only the original sprite
-//! atlas (the top 91 rows of 256PIT: HUD symbols, LED digits, TAC icons, approach indexer) is
-//! kept, as `images/sprites.idx`.
+//! The instrument panel itself is built from meshes (`cockpit3d`); HUD symbols, LED digits, TAC
+//! map icons and the approach indexer come from a sprite atlas, `images/sprites.idx`, at the
+//! positions of the original 256PIT atlas (drawn by `tools/gen_images.py`).
 
 use bevy::prelude::*;
 
@@ -28,8 +28,8 @@ impl Plugin for CockpitPlugin {
 pub const FOCAL: f32 = 256.0;
 pub const VSCALE: f32 = 0.75;
 
-/// Original pictures used as sprite sources: the 256PIT sprite atlas (rows 0..90 of the
-/// driver's page 2), its night-HUD variant and ORDNANCE.PIC (weapon side views).
+/// Pictures used as sprite sources: the sprite atlas, its night-HUD variant and the weapon side
+/// views.
 #[derive(Resource)]
 pub struct CockpitArt {
     pub sprites: Canvas,
@@ -40,7 +40,7 @@ pub struct CockpitArt {
 
 pub(crate) fn load_idx(name: &str) -> Canvas {
     let path = crate::asset_path::asset(&format!("images/{name}.idx"));
-    let px = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e} (run tools/build-assets.sh)", path.display()));
+    let px = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e} (run tools/gen_images.py)", path.display()));
     assert_eq!(px.len() % 320, 0, "{}: not 320 pixels wide", path.display());
     Canvas::from_pixels(320, px.len() / 320, px)
 }
@@ -48,7 +48,7 @@ pub(crate) fn load_idx(name: &str) -> Canvas {
 /// The night-HUD atlas: 15 -> 10 in the HUD sprite rectangles.
 pub fn night_atlas(sprites: &Canvas) -> Canvas {
     let mut c = sprites.clone();
-    for (x0, y0, x1, y1) in [(0, 0, 140, 29), (0, 30, 64, 37), (38, 75, 91, 87)] {
+    for (x0, y0, x1, y1) in [(0, 0, 140, 29), (38, 75, 93, 87)] {
         c.recolor_rect(x0, y0, x1, y1, 15, 10);
     }
     c

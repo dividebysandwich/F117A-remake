@@ -1,11 +1,11 @@
-//! The original bitmap fonts (MGRAPHIC.EXE, exported to `assets/fonts/fonts.ron` by
-//! f117-convert) and text drawing into palette canvases (docs/re/cockpit.md section 6).
+//! The flight font (3x5 pixels, advance 4, drawn below as ASCII art) and text drawing into
+//! palette canvases.
 //!
 //! Strings are byte strings: bytes >= 0x80 change the foreground colour to `b & 0x7F`
-//! (use [`ink`]), 0 ends the string. Flight text is font 0 (3x5, advance 4), upper-cased.
+//! (use [`ink`]), 0 ends the string. Lower case is drawn as upper case.
 
 use bevy::prelude::*;
-use f117_formats::font::Font;
+use f117_formats::font::{Font, Glyph};
 
 use crate::canvas::Canvas;
 
@@ -16,11 +16,8 @@ pub const HUD_FONT: usize = 0;
 pub struct Fonts(pub Vec<Font>);
 
 impl Fonts {
-    pub fn load() -> Self {
-        let path = crate::asset_path::asset("fonts/fonts.ron");
-        let p = path.display();
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e} (run tools/build-assets.sh)"));
-        Self(ron::from_str(&text).unwrap_or_else(|e| panic!("{p}: {e}")))
+    pub fn builtin() -> Self {
+        Self(vec![flight_font()])
     }
 
     pub fn font(&self, i: usize) -> &Font {
@@ -50,12 +47,102 @@ impl Fonts {
 
 }
 
+/// Glyphs of the flight font, `#` = set pixel.
+const GLYPHS: &[(char, [&str; 5])] = &[
+    (' ', ["...", "...", "...", "...", "..."]),
+    ('!', [".#.", ".#.", ".#.", "...", ".#."]),
+    ('"', ["#.#", "#.#", "...", "...", "..."]),
+    ('#', ["#.#", "###", "#.#", "###", "#.#"]),
+    ('$', [".##", "##.", ".#.", ".##", "##."]),
+    ('%', ["#..", "..#", ".#.", "#..", "..#"]),
+    ('&', [".#.", "#.#", ".#.", "#.#", ".##"]),
+    ('\'', [".#.", ".#.", "...", "...", "..."]),
+    ('(', ["..#", ".#.", ".#.", ".#.", "..#"]),
+    (')', ["#..", ".#.", ".#.", ".#.", "#.."]),
+    ('*', ["...", "#.#", ".#.", "#.#", "..."]),
+    ('+', ["...", ".#.", "###", ".#.", "..."]),
+    (',', ["...", "...", "...", ".#.", "#.."]),
+    ('-', ["...", "...", "###", "...", "..."]),
+    ('.', ["...", "...", "...", "...", ".#."]),
+    ('/', ["..#", "..#", ".#.", "#..", "#.."]),
+    ('0', ["###", "#.#", "#.#", "#.#", "###"]),
+    ('1', [".#.", "##.", ".#.", ".#.", "###"]),
+    ('2', ["###", "..#", "###", "#..", "###"]),
+    ('3', ["###", "..#", ".##", "..#", "###"]),
+    ('4', ["#.#", "#.#", "###", "..#", "..#"]),
+    ('5', ["###", "#..", "###", "..#", "###"]),
+    ('6', ["###", "#..", "###", "#.#", "###"]),
+    ('7', ["###", "..#", "..#", ".#.", ".#."]),
+    ('8', ["###", "#.#", "###", "#.#", "###"]),
+    ('9', ["###", "#.#", "###", "..#", "###"]),
+    (':', ["...", ".#.", "...", ".#.", "..."]),
+    (';', ["...", ".#.", "...", ".#.", "#.."]),
+    ('<', ["..#", ".#.", "#..", ".#.", "..#"]),
+    ('=', ["...", "###", "...", "###", "..."]),
+    ('>', ["#..", ".#.", "..#", ".#.", "#.."]),
+    ('?', ["###", "..#", ".##", "...", ".#."]),
+    ('@', ["###", "#.#", "###", "#..", "###"]),
+    ('A', [".#.", "#.#", "###", "#.#", "#.#"]),
+    ('B', ["##.", "#.#", "##.", "#.#", "##."]),
+    ('C', [".##", "#..", "#..", "#..", ".##"]),
+    ('D', ["##.", "#.#", "#.#", "#.#", "##."]),
+    ('E', ["###", "#..", "##.", "#..", "###"]),
+    ('F', ["###", "#..", "##.", "#..", "#.."]),
+    ('G', [".##", "#..", "#.#", "#.#", ".##"]),
+    ('H', ["#.#", "#.#", "###", "#.#", "#.#"]),
+    ('I', ["###", ".#.", ".#.", ".#.", "###"]),
+    ('J', ["..#", "..#", "..#", "#.#", ".#."]),
+    ('K', ["#.#", "#.#", "##.", "#.#", "#.#"]),
+    ('L', ["#..", "#..", "#..", "#..", "###"]),
+    ('M', ["#.#", "###", "###", "#.#", "#.#"]),
+    ('N', ["##.", "#.#", "#.#", "#.#", "#.#"]),
+    ('O', [".#.", "#.#", "#.#", "#.#", ".#."]),
+    ('P', ["##.", "#.#", "##.", "#..", "#.."]),
+    ('Q', [".#.", "#.#", "#.#", "##.", ".##"]),
+    ('R', ["##.", "#.#", "##.", "#.#", "#.#"]),
+    ('S', [".##", "#..", ".#.", "..#", "##."]),
+    ('T', ["###", ".#.", ".#.", ".#.", ".#."]),
+    ('U', ["#.#", "#.#", "#.#", "#.#", "###"]),
+    ('V', ["#.#", "#.#", "#.#", "#.#", ".#."]),
+    ('W', ["#.#", "#.#", "###", "###", "#.#"]),
+    ('X', ["#.#", "#.#", ".#.", "#.#", "#.#"]),
+    ('Y', ["#.#", "#.#", ".#.", ".#.", ".#."]),
+    ('Z', ["###", "..#", ".#.", "#..", "###"]),
+    ('[', ["##.", "#..", "#..", "#..", "##."]),
+    ('\\', ["#..", "#..", ".#.", "..#", "..#"]),
+    (']', [".##", "..#", "..#", "..#", ".##"]),
+    ('^', [".#.", "#.#", "...", "...", "..."]),
+    ('_', ["...", "...", "...", "...", "###"]),
+    ('`', ["#..", ".#.", "...", "...", "..."]),
+    ('{', [".##", ".#.", "##.", ".#.", ".##"]),
+    ('|', [".#.", ".#.", ".#.", ".#.", ".#."]),
+    ('}', ["##.", ".#.", ".##", ".#.", "##."]),
+    ('~', ["...", ".##", "##.", "...", "..."]),
+];
+
+/// Builds the flight font: printable ASCII, lower case sharing the upper-case glyphs, and a
+/// blank row below each glyph for opaque backgrounds.
+fn flight_font() -> Font {
+    let (first, last) = (b' ', b'~');
+    let glyphs = (first..=last)
+        .map(|code| {
+            let ch = code.to_ascii_uppercase() as char;
+            let art = GLYPHS.iter().find(|(c, _)| *c == ch).map_or(["..."; 5], |(_, a)| *a);
+            let mut rows: Vec<u16> =
+                art.iter().map(|r| r.bytes().enumerate().filter(|&(_, b)| b == b'#').fold(0, |m, (x, _)| m | 0x8000 >> x)).collect();
+            rows.push(0);
+            Glyph { code, width: 3, advance: 4, rows }
+        })
+        .collect();
+    Font { index: 0, first, last, height: 5, extra_height: 1, fixed_width: 3, spacing: 1, glyphs }
+}
+
 /// Colour-change byte for strings.
 pub const fn ink(colour: u8) -> u8 {
     0x80 | (colour & 0x7F)
 }
 
-/// Upper-cases a string as VGAME does before drawing (`1A18:F2B8`).
+/// Upper-cases a string before drawing (flight text is upper case).
 pub fn upper(s: &str) -> Vec<u8> {
     s.bytes().map(|b| b.to_ascii_uppercase()).collect()
 }
@@ -93,4 +180,23 @@ pub fn draw_text_scaled(c: &mut Canvas, f: &Font, mut x: i32, y: i32, s: &[u8], 
         x += g.advance as i32 * scale;
     }
     x
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flight_font_covers_ascii() {
+        let fonts = Fonts::builtin();
+        let f = fonts.font(HUD_FONT);
+        for code in b' '..=b'~' {
+            let g = f.glyph(code).unwrap_or_else(|| panic!("no glyph for {:?}", code as char));
+            assert_eq!((g.width, g.advance, g.rows.len()), (3, 4, 6));
+            assert!(code == b' ' || g.rows.iter().any(|&r| r != 0), "{:?} is blank", code as char);
+        }
+        assert_ne!(f.glyph(b'+').unwrap().rows, f.glyph(b'-').unwrap().rows);
+        assert_eq!(f.glyph(b'a').unwrap().rows, f.glyph(b'A').unwrap().rows);
+        assert_eq!(fonts.width(b"ZM+"), 12);
+    }
 }

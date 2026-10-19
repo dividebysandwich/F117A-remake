@@ -1,4 +1,4 @@
-//! Cockpit art and display drawing shared by the 3D cockpit (docs/re/visuals.md 4.1/4.2).
+//! Cockpit art and display drawing shared by the 3D cockpit.
 //!
 //! The original projects with `sx = cx + f*x/z`, `sy = cy - 0.75*f*y/z`, f = 256, so each pixel
 //! of the 320x200 screen is a fixed direction from the eye. The 3D cockpit keeps that mapping
@@ -33,7 +33,7 @@ pub const VSCALE: f32 = 0.75;
 #[derive(Resource)]
 pub struct CockpitArt {
     pub sprites: Canvas,
-    /// The atlas with the HUD sprites recoloured 15 -> 10 (night HUD, VGAME `1A18:01BF`).
+    /// The atlas with the HUD sprites recoloured 15 -> 10 (night HUD).
     pub atlas_night: Canvas,
     pub ordnance: Canvas,
 }
@@ -57,7 +57,7 @@ pub fn night_atlas(sprites: &Canvas) -> Canvas {
 fn setup(mut commands: Commands) {
     let sprites = load_idx("sprites");
     commands.insert_resource(CockpitArt { atlas_night: night_atlas(&sprites), sprites, ordnance: load_idx("ordnance") });
-    commands.insert_resource(Fonts::load());
+    commands.insert_resource(Fonts::builtin());
 }
 
 /// Everything the HUD, MFDs and panel instruments draw from.

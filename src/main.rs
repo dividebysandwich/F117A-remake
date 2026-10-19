@@ -5,6 +5,7 @@ mod canvas;
 mod cockpit;
 mod cockpit3d;
 mod combat;
+mod crash_log;
 mod dots;
 mod fires;
 mod flight;
@@ -74,6 +75,7 @@ fn main() {
         }
         app.add_plugins(plugins);
     }
+    app.add_plugins(crash_log::CrashLogPlugin);
     app.insert_state(settings.initial_state)
     .insert_resource(settings.clone())
     .insert_resource(MissionSetup::from_args())

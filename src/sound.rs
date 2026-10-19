@@ -2,7 +2,8 @@
 //!
 //! - Effects are requested by id with a priority (`makeSound(id, prio)`); they play when
 //!   `prio >= 3 - level` (level 3 = all sounds, 2 = no engine, 1 = firing and explosions only,
-//!   0 = none; Alt-V cycles). Gear, bay doors, the error buzz and speech bypass the level.
+//!   0 = none; Alt-V cycles, with an extra step at level 3 that halves the engine first).
+//!   Gear, bay doors, the error buzz and speech bypass the level.
 //! - The engine drone follows airspeed only (pitch `(0x83 + (knots & ~1)) * 49716 / 2^18` Hz),
 //!   is silent at 0 kt and with the throttle closed, and only plays at level 3.
 //! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.flac) register under id NN, and a
@@ -65,15 +66,19 @@ const RWR_FILES: [(stealth_sim::RwrTone, &str); 5] = {
     ]
 };
 
-/// Alt-V sound level (3 = all sounds .. 0 = none).
+/// Alt-V sound level (3 = all sounds .. 0 = none); `engine_half` = level 3 with the engine
+/// at half volume.
 #[derive(Resource)]
-pub struct SoundLevel(pub u8);
+pub struct SoundLevel(pub u8, pub bool);
 
 impl Default for SoundLevel {
     fn default() -> Self {
-        Self(3)
+        Self(3, false)
     }
 }
+
+/// Engine drone volume at full level.
+const ENGINE_VOLUME: f32 = 0.8;
 
 #[derive(Resource, Default)]
 struct SoundBank {
@@ -131,7 +136,11 @@ fn play_sounds(
 ) {
     for ActionEvent(a) in actions.read() {
         if *a == Action::Volume {
-            level.0 = if level.0 == 0 { 3 } else { level.0 - 1 };
+            *level = match *level {
+                SoundLevel(3, false) => SoundLevel(3, true),
+                SoundLevel(0, _) => SoundLevel(3, false),
+                SoundLevel(l, _) => SoundLevel(l - 1, false),
+            };
         }
     }
     let Some(bank) = bank else {
@@ -246,22 +255,26 @@ fn engine_drone(
         .clone();
     let freq = |k: f32| 0x83 as f32 + ((k as u32) & !1) as f32;
     let speed = freq(knots) / freq(sample_knots);
+    let volume = if level.1 { ENGINE_VOLUME * 0.5 } else { ENGINE_VOLUME };
     match drone.single_mut() {
         Ok((e, d, sink)) if d.sample_knots != sample_knots => {
             let _ = sink;
             commands.entity(e).despawn();
-            spawn_drone(&mut commands, handle, sample_knots, speed);
+            spawn_drone(&mut commands, handle, sample_knots, speed, volume);
         }
-        Ok((_, _, Some(sink))) => sink.set_speed(speed),
+        Ok((_, _, Some(mut sink))) => {
+            sink.set_speed(speed);
+            sink.set_volume(Volume::Linear(volume));
+        }
         Ok(_) => {}
-        Err(_) => spawn_drone(&mut commands, handle, sample_knots, speed),
+        Err(_) => spawn_drone(&mut commands, handle, sample_knots, speed, volume),
     }
 }
 
-fn spawn_drone(commands: &mut Commands, handle: Handle<AudioSource>, sample_knots: f32, speed: f32) {
+fn spawn_drone(commands: &mut Commands, handle: Handle<AudioSource>, sample_knots: f32, speed: f32, volume: f32) {
     commands.spawn((
         AudioPlayer(handle),
-        PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(0.8), speed, ..default() },
+        PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(volume), speed, ..default() },
         EngineDrone { sample_knots },
     ));
 }

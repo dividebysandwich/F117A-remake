@@ -4,7 +4,7 @@
 //! was held when grabbed) deflects pitch (tilt back = nose up) and roll; twisting it about the
 //! stick's axis is the rudder. Trigger = fire weapon, A = gun, B = select weapon, stick click =
 //! designate target. Letting go re-centres the stick.
-//! Squeeze near the throttle handle and slide it: forward = more thrust; it stays where it is
+//! Squeeze near the throttle handle and slide it along its rails: forward = more thrust; it stays where it is
 //! released, with a haptic tick every 10 %. X = flare, Y = chaff, left stick click = decoy.
 //! The ejection handle is pulled up with either hand.
 //! Without VR both animate from the keyboard/gamepad controls.
@@ -30,7 +30,8 @@ const TWIST_HYSTERESIS: f32 = 0.03;
 /// Throttle rail on the left console: idle and full positions of the handle.
 const THROTTLE_IDLE: Vec3 = Vec3::new(-0.40, -0.40, -0.02);
 const THROTTLE_FULL: Vec3 = Vec3::new(-0.40, -0.40, -0.20);
-const THROTTLE_PIVOT_Y: f32 = -0.49;
+/// Console top under the throttle rail.
+const THROTTLE_RAIL_Y: f32 = -0.4805;
 
 /// Reach for grabbing (metres from the grip centre).
 const GRAB_REACH: f32 = 0.10;
@@ -113,22 +114,48 @@ pub(super) fn spawn_levers(commands: &mut Commands, root: Entity, mats: &Cockpit
         .id();
     commands.entity(root).add_child(stick);
 
-    // Throttle: slot plate, arm and handle; the arm leans from its pivot below the console.
-    let slot_len = THROTTLE_IDLE.z - THROTTLE_FULL.z + 0.03;
+    // Throttle: slot plate between two guide rails; a carriage slides along them carrying a
+    // straight stem and the handle.
+    let slot_len = THROTTLE_IDLE.z - THROTTLE_FULL.z + 0.05;
+    let slot_z = (THROTTLE_IDLE.z + THROTTLE_FULL.z) / 2.0;
     let slot = commands
         .spawn((
             Mesh3d(mats.unit_cube.clone()),
             MeshMaterial3d(mats.black.clone()),
-            Transform::from_xyz(THROTTLE_IDLE.x, -0.4805, (THROTTLE_IDLE.z + THROTTLE_FULL.z) / 2.0).with_scale(Vec3::new(0.02, 0.002, slot_len)),
+            Transform::from_xyz(THROTTLE_IDLE.x, THROTTLE_RAIL_Y, slot_z).with_scale(Vec3::new(0.02, 0.002, slot_len)),
             NoFrustumCulling,
         ))
         .id();
     commands.entity(root).add_child(slot);
+    for side in [-1.0, 1.0] {
+        let rail = commands
+            .spawn((
+                Mesh3d(mats.unit_cube.clone()),
+                MeshMaterial3d(mats.metal.clone()),
+                Transform::from_xyz(THROTTLE_IDLE.x + side * 0.014, THROTTLE_RAIL_Y + 0.003, slot_z)
+                    .with_scale(Vec3::new(0.005, 0.006, slot_len)),
+                NoFrustumCulling,
+            ))
+            .id();
+        commands.entity(root).add_child(rail);
+    }
+    // Heights relative to the handle centre.
+    let rail_top = THROTTLE_RAIL_Y + 0.006 - THROTTLE_IDLE.y;
+    let carriage = commands
+        .spawn((
+            Mesh3d(mats.unit_cube.clone()),
+            MeshMaterial3d(mats.metal.clone()),
+            Transform::from_xyz(0.0, rail_top + 0.004, 0.0).with_scale(Vec3::new(0.036, 0.008, 0.035)),
+            NoFrustumCulling,
+        ))
+        .id();
+    let stem_bottom = rail_top + 0.008;
+    let stem_top = -0.025;
     let arm = commands
         .spawn((
             Mesh3d(mats.unit_cube.clone()),
             MeshMaterial3d(mats.metal.clone()),
-            Transform::from_xyz(0.0, -0.045, 0.0).with_scale(Vec3::new(0.012, 0.09, 0.012)),
+            Transform::from_xyz(0.0, (stem_bottom + stem_top) / 2.0, 0.0).with_scale(Vec3::new(0.014, stem_top - stem_bottom, 0.014)),
             NoFrustumCulling,
         ))
         .id();
@@ -150,7 +177,7 @@ pub(super) fn spawn_levers(commands: &mut Commands, root: Entity, mats: &Cockpit
         .id();
     let lever = commands
         .spawn((ThrottleLever, Transform::from_translation(THROTTLE_IDLE), Visibility::default()))
-        .add_children(&[arm, handle, buttons])
+        .add_children(&[carriage, arm, handle, buttons])
         .id();
     commands.entity(root).add_child(lever);
 }
@@ -309,11 +336,6 @@ pub(super) fn animate_levers(
     }
     if let (Ok(mut tf), Ok(a)) = (throttle.single_mut(), aircraft.single()) {
         let t = controls.throttle.unwrap_or(a.set_thrust / 100.0);
-        let pos = throttle_handle(t);
-        tf.translation = pos;
-        // Lean the arm about its pivot below the console.
-        let mid = (THROTTLE_IDLE.z + THROTTLE_FULL.z) / 2.0;
-        let lean = ((pos.z - mid) / (pos.y - THROTTLE_PIVOT_Y)).atan();
-        tf.rotation = Quat::from_rotation_x(lean);
+        tf.translation = throttle_handle(t);
     }
 }

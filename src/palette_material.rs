@@ -66,8 +66,14 @@ impl Material for PaletteMaterial {
         layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        // Only positions are used (models have no normals or UVs).
-        let vertex_layout = layout.0.get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0)])?;
+        // Only positions are used (models have no normals or UVs). Batched dot lights (scenery
+        // lamps) also carry each vertex's quad corner as UV.
+        let mut attributes = vec![Mesh::ATTRIBUTE_POSITION.at_shader_location(0)];
+        if layout.0.contains(Mesh::ATTRIBUTE_UV_0) {
+            attributes.push(Mesh::ATTRIBUTE_UV_0.at_shader_location(1));
+            descriptor.vertex.shader_defs.push("DOT_BATCH".into());
+        }
+        let vertex_layout = layout.0.get_layout(&attributes)?;
         descriptor.vertex.buffers = vec![vertex_layout];
         // Back faces are culled like the original's plane visibility test (the converter
         // winds polygons towards their plane's visible side; dot billboards face the camera).

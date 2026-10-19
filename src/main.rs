@@ -20,6 +20,7 @@ mod palette;
 mod palette_material;
 mod panel;
 mod player;
+mod scenery;
 mod script;
 mod settings;
 mod sound;
@@ -87,7 +88,7 @@ fn main() {
     ))
     .add_plugins((hud::HudPlugin, mfd::MfdPlugin, panel::PanelPlugin))
     .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin, trails::TrailsPlugin))
-    .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin));
+    .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin));
     mission::from_args(&mut app);
     if let Some(scale) = std::env::args()
         .collect::<Vec<_>>()

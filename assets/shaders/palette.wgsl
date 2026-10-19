@@ -50,6 +50,10 @@ struct PaletteMaterial {
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
     @location(0) position: vec3<f32>,
+#ifdef DOT_BATCH
+    // Batched dots: four vertices at each dot's centre, spread by their quad corner.
+    @location(1) corner: vec2<f32>,
+#endif
 };
 
 struct VertexOutput {
@@ -90,7 +94,13 @@ fn vertex(v: Vertex) -> VertexOutput {
     // pixels (so the tracking camera's zoom doesn't magnify them); in XR at most the original
     // pixel's angular size.
     if (((tag >> 7u) & 1u) == 1u) {
+#ifdef DOT_BATCH
+        let center = world.xyz;
+        let corner = v.corner;
+#else
         let center = world_from_local[3].xyz;
+        let corner = v.position.xy;
+#endif
         let clip = position_world_to_clip(center);
         let vp = view.viewport.zw;
         var px = max(vp.y / 200.0 * DOT_SIZE, DOT_MIN_PIXELS);
@@ -98,7 +108,7 @@ fn vertex(v: Vertex) -> VertexOutput {
             px = min(px, max(globals.dots.x * 0.5 * vp.y * view.clip_from_view[1][1], DOT_MIN_PIXELS));
         }
         out.world_position = center;
-        out.clip_position = clip + vec4<f32>(v.position.xy * px * 2.0 / vp * clip.w, 0.0, 0.0);
+        out.clip_position = clip + vec4<f32>(corner * px * 2.0 / vp * clip.w, 0.0, 0.0);
     }
 
     // Per-object haze (2AA0:0120): fog = clamp((depth/512 in object units) - sizeClass, 0, 31) >> 1

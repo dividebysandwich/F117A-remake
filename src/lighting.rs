@@ -143,7 +143,7 @@ fn update_sun(
     ambient.brightness = 600.0 + 800.0 * daylight;
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn collect_local_lights(
     settings: Res<Settings>,
     palette: Option<Res<Palette>>,
@@ -152,6 +152,7 @@ fn collect_local_lights(
     emitters: Query<(&LightEmitter, &GlobalTransform, &InheritedVisibility)>,
     dots: Query<(&GlobalTransform, &InheritedVisibility, &MeshMaterial3d<PaletteMaterial>, Option<&bevy::camera::visibility::RenderLayers>), With<DotLight>>,
     materials: Res<Assets<PaletteMaterial>>,
+    lamps: Query<(&crate::scenery::LampBatch, &GlobalTransform, &InheritedVisibility)>,
 ) {
     state.lights.clear();
     if !settings.local_lights {
@@ -186,6 +187,21 @@ fn collect_local_lights(
             let c = palette.color((m.params.word & 0xFF) as u8).to_linear();
             let range = 25.0;
             all.push((d / range, p.extend(range), Vec4::new(c.red, c.green, c.blue, 0.0) * 0.8));
+        }
+        // Street lamps and lit windows of the extra scenery (hidden by day).
+        for (batch, tf, vis) in &lamps {
+            if !vis.get() || tf.translation().distance(eye) > 600.0 + crate::scenery::BLOCK_RADIUS {
+                continue;
+            }
+            let c = palette.color(batch.colour).to_linear();
+            let colour = Vec4::new(c.red, c.green, c.blue, 0.0) * 0.8;
+            for &l in &batch.points {
+                let p = tf.transform_point(l);
+                let d = p.distance(eye);
+                if d < 600.0 {
+                    all.push((d / 25.0, p.extend(25.0), colour));
+                }
+            }
         }
     }
     all.sort_by(|a, b| a.0.total_cmp(&b.0));

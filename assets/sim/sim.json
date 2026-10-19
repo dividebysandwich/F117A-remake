@@ -325,7 +325,8 @@
       "radar": 17,
       "model": 15,
       "unknown": 2,
-      "kills": 0
+      "kills": 0,
+      "kind": "Helicopter"
     },
     {
       "name": "F-5",
@@ -402,7 +403,8 @@
       "radar": 0,
       "model": 25,
       "unknown": 2,
-      "kills": 0
+      "kills": 0,
+      "kind": "Helicopter"
     },
     {
       "name": "A-6",
@@ -456,6 +458,52 @@
       "agility": 2,
       "radar": -1,
       "model": 32,
+      "unknown": 2,
+      "kills": 0
+    },
+    {
+      "name": "Geran-2",
+      "nato": "Shahed",
+      "max_speed": 115,
+      "range": 1500,
+      "agility": 1,
+      "radar": 0,
+      "model": 100,
+      "kind": "Drone",
+      "unknown": 2,
+      "kills": 0
+    },
+    {
+      "name": "Geran-3",
+      "nato": "Shahed",
+      "max_speed": 350,
+      "range": 1000,
+      "agility": 1,
+      "radar": 0,
+      "model": 101,
+      "kind": "Drone",
+      "unknown": 2,
+      "kills": 0
+    },
+    {
+      "name": "Su-34",
+      "nato": "Fullback",
+      "max_speed": 700,
+      "range": 600,
+      "agility": 3,
+      "radar": 19,
+      "model": 22,
+      "unknown": 2,
+      "kills": 0
+    },
+    {
+      "name": "Su-35",
+      "nato": "Flanker-E",
+      "max_speed": 750,
+      "range": 800,
+      "agility": 5,
+      "radar": 20,
+      "model": 22,
       "unknown": 2,
       "kills": 0
     }

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::Trig;
 
+/// Table sizes of the original data (the remake appends its own entries after them).
 pub const N_THREATS: usize = 23;
 pub const N_AIRCRAFT: usize = 29;
 pub const N_MISSILES: usize = 41;
@@ -37,6 +38,25 @@ pub struct AircraftType {
     pub unknown: i16,
     /// Initial kill counter.
     pub kills: i16,
+    /// How the AI flies it (not in the original data: all fixed-wing).
+    #[serde(default, skip_serializing_if = "AircraftKind::is_plane")]
+    pub kind: AircraftKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum AircraftKind {
+    #[default]
+    Plane,
+    /// Hovers, takes off vertically, flies low.
+    Helicopter,
+    /// One-way attack drone: flies its route to the target and never fights.
+    Drone,
+}
+
+impl AircraftKind {
+    pub fn is_plane(&self) -> bool {
+        *self == Self::Plane
+    }
 }
 
 /// Missile / SAM / player weapon projectile type.

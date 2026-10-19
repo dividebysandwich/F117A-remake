@@ -55,9 +55,18 @@ const WRECK_MODEL: i32 = 11;
 const HIND_DATA_MODEL: i32 = 15;
 const HELICOPTER_MODEL: i32 = 25;
 
+/// The remake's own aircraft models (the Geran drones) are numbered from here, in
+/// `models/drones.glb` (tools/models/drones.py).
+const REMAKE_MODELS: i32 = 100;
+
 /// STFLT model drawn for an aircraft type's model number.
 fn aircraft_model(model: i32) -> i32 {
     if model == HIND_DATA_MODEL { HELICOPTER_MODEL } else { model }
+}
+
+/// Model file (stem) holding a model number.
+fn model_file(model: i32) -> &'static str {
+    if model >= REMAKE_MODELS { "drones" } else { "stflt" }
 }
 /// Seconds without new smoke after which the old puffs are no longer drawn.
 const SMOKE_TIMEOUT: f32 = 4.0;
@@ -131,7 +140,7 @@ const FRIENDLY_LOD_RANGE: f32 = 40.0;
 
 /// `no_fog`: no distance haze (friendly aircraft stay visible from far away).
 fn spawn_model(commands: &mut Commands, assets: &ModelAssets, file: &Handle<bevy::gltf::Gltf>, model: i32, no_fog: bool) -> Option<Entity> {
-    let e = assets.spawn(commands, file, &format!("stflt_{:03}", model.clamp(0, 999)), LEVEL_AIRCRAFT, no_fog)?;
+    let e = assets.spawn(commands, file, &format!("{}_{:03}", model_file(model), model.clamp(0, 999)), LEVEL_AIRCRAFT, no_fog)?;
     commands.entity(e).insert((
         SimObject,
         WorldPos::default(),
@@ -207,6 +216,7 @@ fn sync_objects(
             }
         }
         if !vis.aircraft.contains_key(&i) {
+            let file = library.load(&server, model_file(model));
             let Some(e) = spawn_model(&mut commands, &assets, &file, model, friendly) else { continue };
             if friendly {
                 commands.entity(e).insert(crate::models::LodRange(FRIENDLY_LOD_RANGE));

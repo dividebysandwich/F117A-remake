@@ -13,7 +13,7 @@ mod tiles;
 mod weapons;
 mod weather;
 
-pub use data::{AircraftType, MissileType, SimData, TheaterTiles, ThreatType, WeaponType};
+pub use data::{AircraftKind, AircraftType, MissileType, SimData, TheaterTiles, ThreatType, WeaponType};
 pub use rng::Rng;
 pub use types::*;
 
@@ -157,6 +157,10 @@ pub struct Sim {
     pub(crate) nearest_base_dist: i32,
     pub(crate) traffic_base: i32,
     pub(crate) traffic_toggle: bool,
+    /// Base traffic flight slots (the mission's last 4; flights added later go after them):
+    /// two flying, two parked. None with fewer than 8 flights.
+    #[serde(default)]
+    pub(crate) traffic_slots: Option<[usize; 4]>,
     /// Apron parking spots for the parked base traffic (not in the original): world x, y and
     /// heading; empty = parked on the base object as in the original.
     #[serde(default)]
@@ -356,6 +360,10 @@ impl Sim {
             nearest_base_dist: 0x7FFF,
             traffic_base: -1,
             traffic_toggle: false,
+            traffic_slots: (w.flights.len() >= 8).then(|| {
+                let n = w.flights.len();
+                [n - 1, n - 2, n - 3, n - 4]
+            }),
             parking: Vec::new(),
             chaff_lamp: 0,
             flare_lamp: 0,

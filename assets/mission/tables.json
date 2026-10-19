@@ -919,6 +919,30 @@
       "nick": " Tbolt II",
       "speed": 400,
       "range": 300
+    },
+    {
+      "name": "Geran-2",
+      "nick": " Shahed",
+      "speed": 115,
+      "range": 1500
+    },
+    {
+      "name": "Geran-3",
+      "nick": " Shahed",
+      "speed": 350,
+      "range": 1000
+    },
+    {
+      "name": "Su-34",
+      "nick": " Fullback",
+      "speed": 700,
+      "range": 600
+    },
+    {
+      "name": "Su-35",
+      "nick": " Flanker-E",
+      "speed": 750,
+      "range": 800
     }
   ],
   "suit": [

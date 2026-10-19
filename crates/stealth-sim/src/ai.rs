@@ -359,12 +359,9 @@ impl Sim {
         self.emit(SimEvent::AircraftTakeoff { unit: i, base: b });
     }
 
-    /// Base traffic: the last 4 flight units live at the nearest friendly base.
+    /// Base traffic: the last 4 flight units of the mission live at the nearest friendly base.
     pub(crate) fn update_base_traffic(&mut self) {
-        let nf = self.flights.len();
-        if nf < 8 {
-            return;
-        }
+        let Some([t0, t1, t2, t3]) = self.traffic_slots else { return };
         let b = self.nearest_base;
         if b == self.traffic_base {
             return;
@@ -399,13 +396,13 @@ impl Sim {
             .filter(|&(x, y, _)| ((x >> 5) - o.x).abs() < 0x100 && ((y >> 5) - o.y).abs() < 0x100)
             .collect();
         spots.sort_by_key(|&(x, y, _)| ((x >> 5) - o.x).pow(2) + ((y >> 5) - o.y).pow(2));
-        for (k, spec) in [(nf - 1, s1), (nf - 2, s2)] {
+        for (k, spec) in [(t0, s1), (t1, s2)] {
             let u = &mut self.flights[k];
             u.flags = 0;
             u.spec = spec;
             u.wp = b;
         }
-        for (n, k) in [nf - 3, nf - 4].into_iter().enumerate() {
+        for (n, k) in [t2, t3].into_iter().enumerate() {
             let u = &mut self.flights[k];
             u.spec = park;
             u.flags = fflags::EXISTS | fflags::AIRBORNE;
@@ -432,12 +429,12 @@ impl Sim {
 
     /// Every 128 frames one of the two traffic aircraft (alternating) appears on approach.
     pub(crate) fn spawn_traffic(&mut self) {
-        let nf = self.flights.len();
-        if nf < 8 || self.traffic_base < 0 {
+        let Some([t0, t1, ..]) = self.traffic_slots else { return };
+        if self.traffic_base < 0 {
             return;
         }
         self.traffic_toggle = !self.traffic_toggle;
-        let k = if self.traffic_toggle { nf - 1 } else { nf - 2 };
+        let k = if self.traffic_toggle { t0 } else { t1 };
         if self.flights[k].flags & fflags::EXISTS != 0 {
             return;
         }

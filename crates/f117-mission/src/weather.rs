@@ -12,6 +12,8 @@ use crate::MscRand;
 
 /// Cloud grid square in map units (64 per km).
 pub const CELL: i32 = 192;
+/// Grid square of storm cells: thunderstorm towers are far wider than cumulus.
+pub const STORM_CELL: i32 = 4 * CELL;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Sky {
@@ -51,7 +53,7 @@ impl Sky {
             Self::Clear | Self::Overcast => 0,
             Self::Scattered => 25,
             Self::Broken => 55,
-            Self::Storm => 12,
+            Self::Storm => 30,
         }
     }
 }
@@ -152,8 +154,14 @@ impl Weather {
         }
     }
 
-    /// The cloud in grid square (gx, gy), if any.
+    /// Grid square size of this sky's clouds (map units).
+    pub fn cell(&self) -> i32 {
+        if self.sky == Sky::Storm { STORM_CELL } else { CELL }
+    }
+
+    /// The cloud in grid square (gx, gy) (of [`Weather::cell`] size), if any.
     pub fn cloud(&self, gx: i32, gy: i32) -> Option<Cloud> {
+        let cell = self.cell();
         let cover = self.sky.cell_cover();
         if cover == 0 {
             return None;
@@ -163,10 +171,10 @@ impl Weather {
             return None;
         }
         let f = |shift: u32, n: u64| ((h >> shift) % n) as i32;
-        let r = CELL / 4 + f(8, (CELL / 4) as u64);
+        let r = cell / 4 + f(8, (cell / 5) as u64);
         let (base_ft, top_ft) = if self.sky == Sky::Storm {
-            // Towering cells through the deck.
-            (self.base_ft, 25000 + f(40, 10) * 1000)
+            // Cumulonimbus towers through the deck (radius 3 - 5.4 km).
+            (self.base_ft, 22000 + f(40, 10) * 1000)
         } else {
             let b = self.base_ft + f(40, 8) * 100;
             (b, b + 1500 + f(48, 36) * 100)
@@ -174,8 +182,8 @@ impl Weather {
         Some(Cloud {
             gx,
             gy,
-            x: gx * CELL + CELL / 2 + f(16, (CELL / 2) as u64) - CELL / 4,
-            y: gy * CELL + CELL / 2 + f(24, (CELL / 2) as u64) - CELL / 4,
+            x: gx * cell + cell / 2 + f(16, (cell / 2) as u64) - cell / 4,
+            y: gy * cell + cell / 2 + f(24, (cell / 2) as u64) - cell / 4,
             r,
             base_ft,
             top_ft,
@@ -184,8 +192,9 @@ impl Weather {
 
     /// Clouds whose centre is within `radius` map units of (x, y).
     pub fn clouds_near(&self, x: i32, y: i32, radius: i32) -> impl Iterator<Item = Cloud> + '_ {
-        let (gx0, gx1) = ((x - radius).div_euclid(CELL), (x + radius).div_euclid(CELL));
-        let (gy0, gy1) = ((y - radius).div_euclid(CELL), (y + radius).div_euclid(CELL));
+        let cell = self.cell();
+        let (gx0, gx1) = ((x - radius).div_euclid(cell), (x + radius).div_euclid(cell));
+        let (gy0, gy1) = ((y - radius).div_euclid(cell), (y + radius).div_euclid(cell));
         let r2 = radius as i64 * radius as i64;
         (gy0..=gy1).flat_map(move |gy| (gx0..=gx1).filter_map(move |gx| self.cloud(gx, gy))).filter(move |c| {
             let (dx, dy) = ((c.x - x) as i64, (c.y - y) as i64);
@@ -198,7 +207,7 @@ impl Weather {
         if self.sky.has_deck() && (self.base_ft..=self.top_ft).contains(&alt_ft) {
             return true;
         }
-        self.clouds_near(x, y, CELL).any(|c| {
+        self.clouds_near(x, y, self.cell()).any(|c| {
             let (dx, dy) = ((c.x - x) as i64, (c.y - y) as i64);
             dx * dx + dy * dy <= (c.r as i64).pow(2) && (c.base_ft..=c.top_ft).contains(&alt_ft)
         })
@@ -219,13 +228,14 @@ impl Weather {
         let (ax, ay) = (a.0 as f64, a.1 as f64);
         let (dx, dy) = ((b.0 - a.0) as f64, (b.1 - a.1) as f64);
         let len2 = dx * dx + dy * dy;
-        let reach = CELL;
-        let (gx0, gx1) = ((a.0.min(b.0) - reach).div_euclid(CELL), (a.0.max(b.0) + reach).div_euclid(CELL));
-        let (gy0, gy1) = ((a.1.min(b.1) - reach).div_euclid(CELL), (a.1.max(b.1) + reach).div_euclid(CELL));
+        let cell = self.cell();
+        let reach = cell;
+        let (gx0, gx1) = ((a.0.min(b.0) - reach).div_euclid(cell), (a.0.max(b.0) + reach).div_euclid(cell));
+        let (gy0, gy1) = ((a.1.min(b.1) - reach).div_euclid(cell), (a.1.max(b.1) + reach).div_euclid(cell));
         for gy in gy0..=gy1 {
             for gx in gx0..=gx1 {
                 // Skip squares far from the line before hashing.
-                let (cx, cy) = ((gx * CELL + CELL / 2) as f64, (gy * CELL + CELL / 2) as f64);
+                let (cx, cy) = ((gx * cell + cell / 2) as f64, (gy * cell + cell / 2) as f64);
                 let t = if len2 > 0.0 { (((cx - ax) * dx + (cy - ay) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
                 let (px, py) = (ax + dx * t - cx, ay + dy * t - cy);
                 if px * px + py * py > (reach as f64).powi(2) {
@@ -315,6 +325,18 @@ mod tests {
         let far = (c.x + CELL * 3, c.y);
         if s.clouds_near(far.0, far.1, CELL).all(|o| (o.x - far.0).abs() + (o.y - far.1).abs() > 2 * CELL) {
             assert!(s.los_clear((far.0, far.1, 0), (far.0, far.1, 30000)));
+        }
+    }
+
+    #[test]
+    fn storm_towers_are_wide() {
+        let s = Weather { sky: Sky::Storm, base_ft: 2000, top_ft: 9000, vis_km: 8, seed: 99 };
+        let towers: Vec<Cloud> = (0..20).flat_map(|y| (0..20).filter_map(move |x| s.cloud(x, y))).collect();
+        assert!(towers.len() > 60, "{}", towers.len());
+        for c in towers {
+            // At least 3 km radius, under 2.5 times as tall as wide.
+            assert!(c.r >= 3 * 64);
+            assert!(((c.top_ft - c.base_ft) as f32 * 0.3048) < 2.5 * 2.0 * c.r as f32 / 64.0 * 1000.0);
         }
     }
 

@@ -13,14 +13,14 @@ use std::collections::HashMap;
 use bevy::math::DVec3;
 use bevy::mesh::{MeshTag, VertexAttributeValues};
 use bevy::prelude::*;
-use f117_mission::weather::{CELL, Cloud};
+use f117_mission::weather::Cloud;
 use f117_mission::{Sky, Weather};
 
 use crate::camera::EyeCamera;
 use crate::trackcam::TrackCamera;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
-use crate::palette_material::{FLAG_CLOUD, PaletteMaterial, PaletteParams, mesh_tag};
+use crate::palette_material::{FLAG_CLOUD, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_CLOUD_CUMULUS, TAG_CLOUD_VOLUME, mesh_tag};
 use crate::settings::{AppState, SetupSet};
 use crate::world::{FloatingOrigin, WU, WorldPos, wu_to_bevy};
 
@@ -50,8 +50,6 @@ impl Plugin for WeatherPlugin {
 const DRAW_RADIUS: i32 = 40 * 64;
 /// Size of the deck planes (metres from the viewpoint to their edge).
 const DECK_HALF: f32 = 280_000.0;
-/// Distinct cumulus shapes.
-const TEMPLATES: u32 = 8;
 /// Horizontal period of the cloud texture (metres, `NOISE_PERIOD` in palette.wgsl).
 const NOISE_PERIOD: f64 = 81920.0;
 
@@ -76,8 +74,10 @@ pub struct WeatherState {
     rain: Option<Entity>,
     drops: Vec<Vec3>,
     rng: u32,
-    material: Handle<PaletteMaterial>,
-    templates: Vec<Handle<Mesh>>,
+    /// Cloud volumes (blended).
+    puff_material: Handle<PaletteMaterial>,
+    /// Proxy mesh of this sky's cloud volumes.
+    proxy: Handle<Mesh>,
     puffs: HashMap<(i32, i32), Entity>,
     streamed_at: Option<(i32, i32)>,
 }
@@ -143,20 +143,38 @@ fn hash(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// A cumulus shape: a lumpy faceted dome with a flat base, x/z in about -1..1, y in 0..1.
-fn cumulus_mesh(seed: u32) -> Mesh {
-    let mut mesh = positions_only(Sphere::new(1.0).mesh().ico(1).expect("icosphere"));
+/// Both windings, so the volume also shows from inside its proxy (the shader keeps the front
+/// faces seen from outside, the back faces seen from inside).
+fn double_sided(mut mesh: Mesh) -> Mesh {
+    let tris: Vec<u32> = mesh.indices().expect("indexed mesh").iter().map(|i| i as u32).collect();
+    let back = tris.chunks(3).flat_map(|t| [t[0], t[2], t[1]]);
+    let all: Vec<u32> = tris.iter().copied().chain(back).collect();
+    mesh.insert_indices(bevy::mesh::Indices::U32(all));
+    mesh
+}
+
+/// Proxy mesh of a cumulus volume: encloses the shader's ellipsoid (radius 1, vertical
+/// radius 0.55 around y = 0.45; palette.wgsl `volume_bounds`).
+fn cumulus_proxy() -> Mesh {
+    let mut mesh = positions_only(Sphere::new(1.08).mesh().ico(2).expect("icosphere"));
     if let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
-        for (i, p) in pos.iter_mut().enumerate() {
-            let h = hash(((seed as u64) << 32) | i as u64);
-            let bump = 0.8 + 0.35 * ((h & 0xFFFF) as f32 / 65535.0);
-            let v = Vec3::from(*p) * bump;
-            // Flat, slightly bulging base; puffy top.
-            let y = if v.y < 0.0 { v.y * 0.12 } else { v.y };
-            *p = [v.x, (y + 0.12) / 1.27, v.z];
+        for p in pos.iter_mut() {
+            p[1] = 0.45 + 0.55 * p[1];
         }
     }
-    mesh
+    double_sided(mesh)
+}
+
+/// Proxy mesh of a cumulonimbus volume: a cylinder around the shader's bound (radius 1.4,
+/// y 0..1).
+fn tower_proxy() -> Mesh {
+    let mut mesh = positions_only(Cylinder::new(1.45, 1.0).mesh().resolution(16).build());
+    if let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
+        for p in pos.iter_mut() {
+            p[1] += 0.5;
+        }
+    }
+    double_sided(mesh)
 }
 
 fn setup_weather(
@@ -176,8 +194,11 @@ fn setup_weather(
         weather,
         rng: weather.seed | 1,
         next_flash: 3.0,
-        material: material.clone(),
-        templates: (0..TEMPLATES).map(|i| meshes.add(cumulus_mesh(weather.seed ^ i))).collect(),
+        puff_material: materials.add(PaletteMaterial {
+            params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | FLAG_CLOUD_SOFT, ..default() },
+            globals: palette.globals.clone(),
+        }),
+        proxy: meshes.add(if weather.sky == Sky::Storm { tower_proxy() } else { cumulus_proxy() }),
         ..default()
     };
     info!("weather: {}", weather.describe());
@@ -243,17 +264,18 @@ fn follow_deck(origin: Res<FloatingOrigin>, eyes: Eyes, mut decks: Query<(&DeckP
 /// Spawns the cumulus near the viewpoint and drops the ones left behind.
 fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state: ResMut<WeatherState>) {
     let (x, y) = state.eye_map;
+    let w = state.weather;
+    let cell = w.cell();
     if let Some((sx, sy)) = state.streamed_at
-        && (sx - x).abs() < CELL / 2
-        && (sy - y).abs() < CELL / 2
+        && (sx - x).abs() < cell / 2
+        && (sy - y).abs() < cell / 2
     {
         return;
     }
     state.streamed_at = Some((x, y));
-    let w = state.weather;
-    let keep = (DRAW_RADIUS + CELL) as i64;
+    let keep = (DRAW_RADIUS + cell) as i64;
     state.puffs.retain(|&(gx, gy), e| {
-        let (cx, cy) = ((gx * CELL + CELL / 2 - x) as i64, (gy * CELL + CELL / 2 - y) as i64);
+        let (cx, cy) = ((gx * cell + cell / 2 - x) as i64, (gy * cell + cell / 2 - y) as i64);
         let near = cx * cx + cy * cy <= keep * keep;
         if !near {
             commands.entity(*e).try_despawn();
@@ -263,16 +285,16 @@ fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state:
     let new: Vec<Cloud> = w.clouds_near(x, y, DRAW_RADIUS).filter(|c| !state.puffs.contains_key(&(c.gx, c.gy))).collect();
     for c in new {
         let h = hash(((w.seed as u64) << 32) ^ ((c.gx as u16 as u64) << 16) ^ c.gy as u16 as u64 ^ 0xC10D);
-        let template = state.templates[(h % TEMPLATES as u64) as usize].clone();
+        let cumulus = if w.sky == Sky::Storm { 0 } else { TAG_CLOUD_CUMULUS };
         let r_m = c.r as f32 * 32.0 * WU as f32;
         let pos = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, c.base_ft as f64);
         let h_m = (c.top_ft - c.base_ft) as f32 * WU as f32;
         let e = commands
             .spawn((
                 CloudEntity,
-                Mesh3d(template),
-                MeshMaterial3d(state.material.clone()),
-                MeshTag(mesh_tag(1, 0, true)),
+                Mesh3d(state.proxy.clone()),
+                MeshMaterial3d(state.puff_material.clone()),
+                MeshTag(mesh_tag(1, 0, true) | TAG_CLOUD_VOLUME | cumulus),
                 WorldPos(pos),
                 Transform::from_translation((pos - origin.origin).as_vec3())
                     .with_rotation(Quat::from_rotation_y((h >> 16 & 0xFFFF) as f32 / 65535.0 * std::f32::consts::TAU))

@@ -13,6 +13,12 @@ const MAX_LOCAL_LIGHTS: u32 = 32u;
 const LIGHT_SHADOWS: u32 = 1u;
 const LIGHT_LOCAL: u32 = 2u;
 const FLAG_CLOUD: u32 = 8u;
+// Mesh tag bit of cloud puffs: smooth normals from the puff's centre, soft edges.
+const TAG_CLOUD_VOLUME: u32 = 2048u;
+// Cloud volume shape: cumulus (else a cumulonimbus tower).
+const TAG_CLOUD_CUMULUS: u32 = 4096u;
+// Ray-march steps through a cloud volume.
+const CLOUD_STEPS: u32 = 14u;
 // Cloud colours: the grey ramp (its base entry is the horizon haze colour).
 const CLOUD_RAMP: u32 = 0xE0u;
 
@@ -71,6 +77,13 @@ struct VertexOutput {
     @location(1) @interpolate(flat) fog: u32,
     // Unrounded fog level (modern mode: smooth haze between ramp entries).
     @location(2) @interpolate(flat) fog_f: f32,
+    // Cloud volumes, in the cloud's local space (unit radius, y 0..1): position (w: noise
+    // offset of this cloud), eye (w: 1 cumulus, 2 tower), sun direction, scale (metres per
+    // local unit on each axis).
+    @location(3) puff_pos: vec4<f32>,
+    @location(4) @interpolate(flat) puff_eye: vec4<f32>,
+    @location(5) @interpolate(flat) puff_sun: vec3<f32>,
+    @location(6) @interpolate(flat) puff_scale: vec3<f32>,
 };
 
 // Dot lights: size relative to one original pixel (320x200 screen) and lower bound in pixels.
@@ -98,6 +111,22 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.world_position = world.xyz;
     out.clip_position = position_world_to_clip(world.xyz);
     let tag = mesh_functions::get_tag(v.instance_index);
+    // Cloud volumes: the view ray and the sun in the cloud's local space (inverse of the
+    // scaled rotation m = diag(1/s^2) m^T).
+    out.puff_pos = vec4<f32>(0.0);
+    out.puff_eye = vec4<f32>(0.0);
+    out.puff_sun = vec3<f32>(0.0);
+    out.puff_scale = vec3<f32>(1.0);
+    if ((tag & TAG_CLOUD_VOLUME) != 0u) {
+        let m = mat3x3<f32>(world_from_local[0].xyz, world_from_local[1].xyz, world_from_local[2].xyz);
+        let s2 = vec3<f32>(dot(m[0], m[0]), dot(m[1], m[1]), dot(m[2], m[2]));
+        let o = world_from_local[3].xyz;
+        let eye_local = (transpose(m) * (view.world_position - o)) / s2;
+        out.puff_pos = vec4<f32>(v.position, fract((o.x + o.z) * 0.000137) * 50.0);
+        out.puff_eye = vec4<f32>(eye_local, select(2.0, 1.0, (tag & TAG_CLOUD_CUMULUS) != 0u));
+        out.puff_sun = normalize((transpose(m) * globals.sun.xyz) / s2);
+        out.puff_scale = sqrt(s2);
+    }
 
     // Dot lights: the unit quad expanded around the origin to a constant size in this view's
     // pixels (so the tracking camera's zoom doesn't magnify them); in XR at most the original
@@ -320,9 +349,14 @@ fn cloud_noise(world: vec3<f32>, dist: f32) -> f32 {
 // Cloud colour at `world` on a face with normal n (facing the viewer) seen `dist` metres
 // away: tops light, undersides dark, sun side lighter, textured by noise, hazing to the
 // horizon colour with distance.
-fn cloud_color(world: vec3<f32>, n: vec3<f32>, dist: f32, modern: bool) -> vec3<f32> {
+fn cloud_color(noise: f32, n: vec3<f32>, dist: f32, modern: bool) -> vec3<f32> {
     let shading = (1.0 - n.y) * 4.0 + 4.0 - 3.0 * max(dot(n, globals.sun.xyz), 0.0);
-    let k = clamp(shading + 4.5 * cloud_noise(world, dist), 0.0, 14.0);
+    return cloud_ramp(shading + 4.5 * noise, dist, modern);
+}
+
+// Grey ramp entry k (0 lightest), hazed with distance.
+fn cloud_ramp(shade: f32, dist: f32, modern: bool) -> vec3<f32> {
+    let k = clamp(shade, 0.0, 14.0);
     let fog = clamp(dist / max(globals.weather.z, 1.0) * 15.0, 0.0, 15.0);
     let f = max(k - fog, 0.0);
     if (modern) {
@@ -331,10 +365,146 @@ fn cloud_color(world: vec3<f32>, n: vec3<f32>, dist: f32, modern: bool) -> vec3<
     return pal(CLOUD_RAMP + u32(round(f)));
 }
 
+// 4x4 ordered dither threshold (classic mode's soft cloud edges).
+fn bayer4(p: vec2<u32>) -> f32 {
+    var m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+    return (m[(p.y & 3u) * 4u + (p.x & 3u)] + 0.5) / 16.0;
+}
+
 // Inside a cloud: everything but the cockpit fades into it.
 fn whiteout(rgb: vec3<f32>, dist: f32) -> vec3<f32> {
     let w = globals.clouds.w * smoothstep(3.0, 60.0, dist);
     return mix(rgb, pal(CLOUD_RAMP + 2u), w);
+}
+
+// --- Cloud volumes ---------------------------------------------------------------------------
+// Cheap volumetric clouds: the cloud's proxy mesh (an ellipsoid or cylinder enclosing it) is
+// drawn; per pixel the view ray is intersected with the shape analytically and marched in a
+// few steps through a noise density, with Beer's law opacity and one sample towards the sun
+// for self-shadowing. The light picks the grey palette ramp entry like any other cloud.
+
+// Cumulus: unit sphere around (0, 0.45, 0) with vertical radius 0.55, cut flat at y = 0.
+const CU_CENTER: f32 = 0.45;
+const CU_RY: f32 = 0.55;
+// Cumulonimbus: a column of radius ~0.9 with an anvil of 1.35 near the top.
+const CB_BOUND: f32 = 1.4;
+
+fn tower_radius(y: f32) -> f32 {
+    let anvil = smoothstep(0.7, 0.86, y) * 0.45;
+    let top = 1.0 - smoothstep(0.93, 1.0, y) * 0.45;
+    return (0.9 + anvil) * top;
+}
+
+// Ray parameter range (t0, t1) inside the cloud's bounds (empty when t0 >= t1).
+fn volume_bounds(ro: vec3<f32>, rd: vec3<f32>, cumulus: bool) -> vec2<f32> {
+    if (cumulus) {
+        let k = vec3<f32>(1.0, 1.0 / CU_RY, 1.0);
+        let qo = (ro - vec3<f32>(0.0, CU_CENTER, 0.0)) * k;
+        let qd = rd * k;
+        let a = dot(qd, qd);
+        let b = dot(qo, qd);
+        let disc = b * b - a * (dot(qo, qo) - 1.0);
+        if (disc < 0.0) { return vec2<f32>(1.0, 0.0); }
+        let sq = sqrt(disc);
+        var t = vec2<f32>((-b - sq) / a, (-b + sq) / a);
+        // The flat base.
+        if (abs(rd.y) > 1e-6) {
+            let tb = -ro.y / rd.y;
+            if (rd.y > 0.0) { t.x = max(t.x, tb); } else { t.y = min(t.y, tb); }
+        } else if (ro.y < 0.0) {
+            return vec2<f32>(1.0, 0.0);
+        }
+        return t;
+    }
+    let a = rd.x * rd.x + rd.z * rd.z;
+    let b = ro.x * rd.x + ro.z * rd.z;
+    let c = ro.x * ro.x + ro.z * ro.z - CB_BOUND * CB_BOUND;
+    var t = vec2<f32>(-1e9, 1e9);
+    if (a > 1e-9) {
+        let disc = b * b - a * c;
+        if (disc < 0.0) { return vec2<f32>(1.0, 0.0); }
+        let sq = sqrt(disc);
+        t = vec2<f32>((-b - sq) / a, (-b + sq) / a);
+    } else if (c > 0.0) {
+        return vec2<f32>(1.0, 0.0);
+    }
+    if (abs(rd.y) > 1e-6) {
+        let ty = vec2<f32>(-ro.y / rd.y, (1.0 - ro.y) / rd.y);
+        t = vec2<f32>(max(t.x, min(ty.x, ty.y)), min(t.y, max(ty.x, ty.y)));
+    } else if (ro.y < 0.0 || ro.y > 1.0) {
+        return vec2<f32>(1.0, 0.0);
+    }
+    return t;
+}
+
+// Density 0..1 at local point p. `aspect` scales the noise to the cloud's real proportions.
+fn volume_density(p: vec3<f32>, cumulus: bool, aspect: vec3<f32>, seed: f32, detail: bool) -> f32 {
+    var shape: f32;
+    if (cumulus) {
+        let q = (p - vec3<f32>(0.0, CU_CENTER, 0.0)) * vec3<f32>(1.0, 1.0 / CU_RY, 1.0);
+        shape = (1.0 - length(q)) * smoothstep(0.0, 0.06, p.y);
+    } else {
+        shape = 1.0 - length(p.xz) / tower_radius(p.y);
+    }
+    if (shape < -0.45) { return 0.0; }
+    let pn = p * aspect + vec3<f32>(seed);
+    var n = perlin(pn * 1.6, 1024);
+    if (detail) { n += 0.5 * perlin(pn * 4.1, 1024); }
+    return clamp((shape + 0.55 * n) * 4.0, 0.0, 1.0);
+}
+
+fn cloud_volume(in: VertexOutput, front: bool, dir: vec3<f32>, modern: bool) -> vec4<f32> {
+    let dist = length(dir);
+    let cumulus = in.puff_eye.w < 1.5;
+    let ro = in.puff_eye.xyz;
+    let rd = in.puff_pos.xyz - ro;
+    let tb = volume_bounds(ro, rd, cumulus);
+    // The proxy is double sided: front faces from outside the bounds, back faces from inside.
+    if (front == (tb.x <= 0.0)) { discard; }
+    let t0 = max(tb.x, 0.0);
+    // The march runs from the eye (t = 0) through this proxy point (t = 1); world height
+    // eye.y + dir.y t. An overcast deck hides the part of a tower on its far side.
+    var t1 = tb.y;
+    let eye_y = view.world_position.y;
+    if (globals.clouds.z != 0.0 && abs(dir.y) > 1e-6) {
+        if (eye_y >= globals.clouds.y && dir.y < 0.0) {
+            t1 = min(t1, (globals.clouds.y - eye_y) / dir.y);
+        } else if (eye_y <= globals.clouds.x && dir.y > 0.0) {
+            t1 = min(t1, (globals.clouds.x - eye_y) / dir.y);
+        }
+    }
+    if (t1 <= t0) { discard; }
+    // Noise in units of the horizontal radius; metres per unit of t.
+    let aspect = in.puff_scale / in.puff_scale.x;
+    let m_per_t = length(rd * in.puff_scale);
+    let dt = (t1 - t0) / f32(CLOUD_STEPS);
+    let ds = dt * m_per_t;
+    let jitter = bayer4(vec2<u32>(in.clip_position.xy));
+    let sun = in.puff_sun * 0.12;
+    var trans = 1.0;
+    var light = 0.0;
+    for (var i = 0u; i < CLOUD_STEPS; i++) {
+        let p = ro + rd * (t0 + (f32(i) + jitter) * dt);
+        let dens = volume_density(p, cumulus, aspect, in.puff_pos.w, true);
+        if (dens <= 0.001) { continue; }
+        // Opaque after a few hundred metres of dense cloud.
+        let a = 1.0 - exp(-dens * ds / 120.0);
+        // Lit where the cloud thins towards the sun; tops brighter than bases.
+        let towards_sun = volume_density(p + sun, cumulus, aspect, in.puff_pos.w, false);
+        let lit = clamp(0.45 + (dens - towards_sun) * 1.2 + 0.35 * (p.y - 0.4), 0.0, 1.0);
+        light += trans * a * lit;
+        trans *= 1.0 - a;
+        if (trans < 0.03) { break; }
+    }
+    var alpha = 1.0 - trans;
+    if (alpha < 0.01) { discard; }
+    let rgb = flash(whiteout(cloud_ramp((1.0 - light / alpha) * 11.0, dist, modern), dist));
+    if (!modern) {
+        // Classic: a screen door instead of blending.
+        if (alpha < bayer4(vec2<u32>(in.clip_position.xy) + vec2<u32>(2u, 1u))) { discard; }
+        alpha = 1.0;
+    }
+    return vec4<f32>(rgb, alpha);
 }
 
 // Lightning: a brief flash over the world.
@@ -343,14 +513,18 @@ fn flash(rgb: vec3<f32>) -> vec3<f32> {
 }
 
 @fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     let dir = in.world_position - view.world_position;
     let modern = globals.params.w != 0.0;
     if ((material.flags & FLAG_CLOUD) != 0u) {
+        let d = length(dir);
+        if (in.puff_eye.w > 0.0) {
+            return cloud_volume(in, front, dir, modern);
+        }
         var n = normalize(cross(dpdx(in.world_position), dpdy(in.world_position)));
         if (dot(n, dir) > 0.0) { n = -n; }
-        let d = length(dir);
-        return vec4<f32>(flash(whiteout(cloud_color(in.world_position, n, d, modern), d)), 1.0);
+        let noise = cloud_noise(in.world_position, d);
+        return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d)), 1.0);
     }
     if ((material.flags & 1u) != 0u) {
         // Background: sky bands above the horizon, ground gradient below.
@@ -368,12 +542,14 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             if (eye_y <= globals.clouds.x && nd.y >= 0.0) {
                 let d = (globals.clouds.x - eye_y) / max(nd.y, 1e-4);
                 let hit = view.world_position + nd * d;
-                return vec4<f32>(flash(whiteout(cloud_color(hit, vec3<f32>(0.0, -1.0, 0.0), d, modern), d)), 1.0);
+                let c = cloud_color(cloud_noise(hit, d), vec3<f32>(0.0, -1.0, 0.0), d, modern);
+                return vec4<f32>(flash(whiteout(c, d)), 1.0);
             }
             if (eye_y >= globals.clouds.y && nd.y < 0.0) {
                 let d = (eye_y - globals.clouds.y) / max(-nd.y, 1e-4);
                 let hit = view.world_position + nd * d;
-                return vec4<f32>(whiteout(cloud_color(hit, vec3<f32>(0.0, 1.0, 0.0), d, modern), d), 1.0);
+                let c = cloud_color(cloud_noise(hit, d), vec3<f32>(0.0, 1.0, 0.0), d, modern);
+                return vec4<f32>(whiteout(c, d), 1.0);
             }
         }
         var bg: vec3<f32>;

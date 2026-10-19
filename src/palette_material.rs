@@ -18,6 +18,12 @@ pub const FLAG_LINE: u32 = 2;
 pub const FLAG_FLIR: u32 = 4;
 /// Cloud surface: grey ramp by face orientation, hazed per pixel (weather.rs).
 pub const FLAG_CLOUD: u32 = 8;
+/// Cloud puffs: alpha blended (soft edges in modern mode; classic mode dithers).
+pub const FLAG_CLOUD_SOFT: u32 = 16;
+/// Mesh tag bit of cloud volumes: the shader ray-marches the cloud inside its proxy mesh.
+pub const TAG_CLOUD_VOLUME: u32 = 1 << 11;
+/// Mesh tag bit of cumulus volumes (else a cumulonimbus tower).
+pub const TAG_CLOUD_CUMULUS: u32 = 1 << 12;
 
 #[derive(Clone, Copy, Debug, Default, ShaderType)]
 pub struct PaletteParams {
@@ -46,6 +52,10 @@ impl Material for PaletteMaterial {
 
     // The prepass pipeline is only used for the shadow maps (no camera has a depth prepass):
     // world geometry casts sun shadows when the shadows option is on.
+    fn alpha_mode(&self) -> AlphaMode {
+        if self.params.flags & FLAG_CLOUD_SOFT != 0 { AlphaMode::Blend } else { AlphaMode::Opaque }
+    }
+
     fn enable_prepass() -> bool {
         true
     }

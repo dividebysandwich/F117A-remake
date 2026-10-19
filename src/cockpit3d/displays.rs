@@ -15,6 +15,7 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 
 use super::geometry::{
+    panel_box,
     beam, panel_patch_uv, panel_point, panel_polygon, panel_rect, panel_rotation, pixel_dir, recess_walls, rect_minus_holes, uv_quad,
     with_swatch,
 };
@@ -185,7 +186,6 @@ pub(super) fn spawn_panel(
     }
 
     // Solid parts.
-    let mut cubes: HashMap<u8, Handle<Mesh>> = HashMap::new();
     let mut knobs: HashMap<u8, Handle<Mesh>> = HashMap::new();
     for b in &layout.blocks {
         let (cx, cy) = b.rect.centre();
@@ -193,8 +193,8 @@ pub(super) fn spawn_panel(
         let centre = panel_point(cx, cy, b.base + b.height / 2.0);
         let (mesh, tf) = match b.shape {
             Shape::Box => (
-                cubes.entry(b.colour).or_insert_with(|| meshes.add(with_swatch(Cuboid::new(1.0, 1.0, 1.0).into(), b.colour))).clone(),
-                Transform::from_translation(centre).with_rotation(panel_rotation()).with_scale(size.extend(b.height)),
+                meshes.add(with_swatch(panel_box(b.rect.x, b.rect.y, b.rect.w, b.rect.h, b.base, b.height), b.colour)),
+                Transform::default(),
             ),
             Shape::Knob => (
                 knobs.entry(b.colour).or_insert_with(|| meshes.add(with_swatch(Cylinder::new(0.5, 1.0).into(), b.colour))).clone(),

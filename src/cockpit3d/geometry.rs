@@ -110,6 +110,36 @@ pub fn recess_walls(x0: f32, y0: f32, x1: f32, y1: f32, depth: f32) -> Mesh {
         .with_inserted_indices(Indices::U32(idx))
 }
 
+/// Box on the panel over the pixel rectangle (x, y, w, h) from `base` to `base + height` metres
+/// along the normal, its corners where the pixels' corners are (so a box's edges follow the
+/// projected pixel rows and columns and adjacent boxes meet).
+pub fn panel_box(x: f32, y: f32, w: f32, h: f32, base: f32, height: f32) -> Mesh {
+    let c = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)];
+    let lo = c.map(|(px, py)| panel_point(px, py, base));
+    let hi = c.map(|(px, py)| panel_point(px, py, base + height));
+    let mut faces: Vec<[Vec3; 4]> = vec![hi, lo];
+    faces.extend((0..4).map(|k| [lo[k], lo[(k + 1) % 4], hi[(k + 1) % 4], hi[k]]));
+    let centre = (lo.iter().chain(&hi).copied().sum::<Vec3>()) / 8.0;
+    let (mut pos, mut normals, mut idx) = (Vec::new(), Vec::new(), Vec::new());
+    for q in faces {
+        let mut n = (q[1] - q[0]).cross(q[3] - q[0]).normalize();
+        let mut q = q;
+        // Outward faces, wound counter-clockwise seen from outside.
+        if n.dot(q[0] - centre) < 0.0 {
+            n = -n;
+            q.reverse();
+        }
+        let b = pos.len() as u32;
+        pos.extend(q.map(|p| p.to_array()));
+        normals.extend([n.to_array(); 4]);
+        idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
+    }
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_indices(Indices::U32(idx))
+}
+
 /// Transform of a unit cuboid stretched between two points with the given cross-section.
 pub fn beam(a: Vec3, b: Vec3, thickness: Vec2) -> Transform {
     let d = b - a;

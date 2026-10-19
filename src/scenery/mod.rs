@@ -48,7 +48,7 @@ impl Plugin for SceneryPlugin {
             Update,
             (
                 build_scenery.run_if(resource_exists::<Theater>).run_if(not(resource_exists::<Scenery>)),
-                (stream_blocks, airfields, lamps_at_night, papi_lights).run_if(resource_exists::<Scenery>),
+                (stream_blocks, airfields, lamps_at_night, papi_lights, share_parking).run_if(resource_exists::<Scenery>),
             )
                 .chain()
                 .run_if(in_state(AppState::Flight)),
@@ -370,6 +370,27 @@ fn lamps_at_night(
     let step = (time.elapsed_secs() * 2.0 * airfield::STROBE_PHASES as f32) as usize % airfield::STROBE_PHASES;
     for (s, mut vis) in &mut strobes {
         vis.set_if_neq(if on && s.0 == step { Visibility::Inherited } else { Visibility::Hidden });
+    }
+}
+
+/// Hands the apron parking spots to the combat simulation, which parks its base traffic there.
+fn share_parking(scenery: Res<Scenery>, combat: Option<ResMut<crate::combat::Combat>>) {
+    let Some(mut combat) = combat else { return };
+    if combat.sim.has_parking() {
+        return;
+    }
+    let wu = crate::world::WU;
+    let spots: Vec<(i32, i32, i32)> = scenery
+        .airfields
+        .iter()
+        .flat_map(|a| &a.parking)
+        .map(|&(p, d)| {
+            let heading = (d.x.atan2(d.y) / std::f64::consts::TAU * 65536.0).round() as i32 & 0xFFFF;
+            ((p.x / wu).round() as i32, 0x100000 - (p.y / wu).round() as i32, heading)
+        })
+        .collect();
+    if !spots.is_empty() {
+        combat.sim.set_parking(spots);
     }
 }
 

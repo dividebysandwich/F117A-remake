@@ -55,6 +55,8 @@ pub struct Airfield {
     pub helipad: Option<(DVec2, DVec2)>,
     /// Apron floodlight masts.
     pub floods: Vec<DVec2>,
+    /// Aircraft parking spots on the apron and the direction parked aircraft face.
+    pub parking: Vec<(DVec2, DVec2)>,
     /// PAPI per runway end.
     pub papi: Vec<Papi>,
 }
@@ -118,7 +120,7 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
     let ax = Axes::new(rw);
     let (l, w) = (rw.half_len, rw.half_width);
     let half = if w > 50.0 { 12.0 } else { 9.0 };
-    let mut a = Airfield { runway: *rw, taxiways: vec![], pads: vec![], buildings: vec![], holds: vec![], helipad: None, floods: vec![], papi: vec![] };
+    let mut a = Airfield { runway: *rw, taxiways: vec![], pads: vec![], buildings: vec![], holds: vec![], helipad: None, floods: vec![], parking: vec![], papi: vec![] };
     let free_line = |p: DVec2, q: DVec2, r: f64| {
         let n = (p.distance(q) / 20.0).ceil().max(1.0) as usize;
         (0..=n).all(|i| ground.is_dry_clear(p.lerp(q, i as f64 / n as f64), r))
@@ -212,6 +214,8 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
         });
         a.helipad = Some((ax.at(u1 - 30.0, s * (v0 + depth - 30.0)), ax.u));
         a.floods = vec![ax.at(u0 + 5.0, s * (v0 + depth - 5.0)), ax.at(uc, s * (v0 + depth - 5.0)), ax.at(u1 - 70.0, s * (v0 + depth - 5.0))];
+        // A row across the middle of the apron, clear of the helipad, facing the runway.
+        a.parking = (0..4).map(|k| (ax.at(u0 + 50.0 + k as f64 * 45.0, s * (v0 + depth * 0.5)), -ax.v * s)).collect();
     }
 
     // Hardened aircraft shelters near both runway ends, doors towards the taxiway.

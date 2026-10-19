@@ -156,6 +156,10 @@ pub struct Sim {
     pub(crate) nearest_base_dist: i32,
     pub(crate) traffic_base: i32,
     pub(crate) traffic_toggle: bool,
+    /// Apron parking spots for the parked base traffic (not in the original): world x, y and
+    /// heading; empty = parked on the base object as in the original.
+    #[serde(default)]
+    pub(crate) parking: Vec<(i32, i32, i32)>,
     /// Lamp timers: chaff / flare / EMV.
     pub(crate) chaff_lamp: i32,
     pub(crate) flare_lamp: i32,
@@ -351,6 +355,7 @@ impl Sim {
             nearest_base_dist: 0x7FFF,
             traffic_base: -1,
             traffic_toggle: false,
+            parking: Vec::new(),
             chaff_lamp: 0,
             flare_lamp: 0,
             emv_lamp: 0,
@@ -529,6 +534,18 @@ impl Sim {
 
     pub(crate) fn ac_type(&self, spec: i32) -> &AircraftType {
         &self.aircraft_types[(spec.max(0) as usize).min(self.aircraft_types.len() - 1)]
+    }
+
+    /// Sets the apron parking spots (world x, y, heading) and re-places the base traffic.
+    pub fn set_parking(&mut self, spots: Vec<(i32, i32, i32)>) {
+        if self.parking != spots {
+            self.parking = spots;
+            self.traffic_base = -1;
+        }
+    }
+
+    pub fn has_parking(&self) -> bool {
+        !self.parking.is_empty()
     }
 
     /// Whether aircraft spec `spec` is friendly (radar type -1).

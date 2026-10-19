@@ -391,6 +391,14 @@ impl Sim {
             (0, 0)
         };
         let park = if friendly || neutral { 10 } else { 11 };
+        // The two apron spots nearest the base (within 4 km), if any.
+        let mut spots: Vec<(i32, i32, i32)> = self
+            .parking
+            .iter()
+            .copied()
+            .filter(|&(x, y, _)| ((x >> 5) - o.x).abs() < 0x100 && ((y >> 5) - o.y).abs() < 0x100)
+            .collect();
+        spots.sort_by_key(|&(x, y, _)| ((x >> 5) - o.x).pow(2) + ((y >> 5) - o.y).pow(2));
         for (k, spec) in [(nf - 1, s1), (nf - 2, s2)] {
             let u = &mut self.flights[k];
             u.flags = 0;
@@ -403,12 +411,20 @@ impl Sim {
             u.flags = fflags::EXISTS | fflags::AIRBORNE;
             u.speed = 0;
             u.wp = b;
-            u.x = o.x + 2 + 2 * n as i32;
-            u.y = o.y;
             u.alt = if carrier { 140 } else { 12 };
-            u.wx = u.x << 5;
-            u.wy = u.y << 5;
-            u.heading = if self.ns == 1 { 0 } else { s16(0x8000) };
+            if let Some(&(wx, wy, heading)) = spots.get(n).filter(|_| !carrier) {
+                u.x = wx >> 5;
+                u.y = wy >> 5;
+                u.wx = wx;
+                u.wy = wy;
+                u.heading = s16(heading);
+            } else {
+                u.x = o.x + 2 + 2 * n as i32;
+                u.y = o.y;
+                u.wx = u.x << 5;
+                u.wy = u.y << 5;
+                u.heading = if self.ns == 1 { 0 } else { s16(0x8000) };
+            }
             u.pitch = 0;
             u.bank = 0;
         }

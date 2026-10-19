@@ -142,7 +142,7 @@ pub struct ArticulatedPart {
     pub rest: Quat,
 }
 
-/// Jet exhaust (nozzle exits `..._exhaust` and the airborne flames `..._s13v1`): alternates
+/// Jet exhaust (nozzle exits `..._exhaust`, airborne flames `..._s13v1`, missile motors `..._s14v1`): alternates
 /// between red and yellow like the original's flickering afterburners.
 #[derive(Component)]
 pub struct ExhaustGlow;
@@ -406,18 +406,22 @@ impl ModelAssets<'_> {
                 }
             } else {
                 for prim in &mesh.primitives {
-                    let color = node_color
-                        .or_else(|| {
-                            prim.material.as_ref().and_then(|m| material_names.get(&m.id())).and_then(|n| index_from_name(n))
-                        })
-                        .unwrap_or(15);
+                    let prim_color =
+                        prim.material.as_ref().and_then(|m| material_names.get(&m.id())).and_then(|n| index_from_name(n));
+                    let color = node_color.or(prim_color).unwrap_or(15);
                     let material = if name.contains("_lines_pal_") {
                         self.palette.line_material(color)
                     } else {
                         self.palette.material(color)
                     };
                     let child = commands.spawn((Mesh3d(prim.mesh.clone()), MeshMaterial3d(material), tag.clone())).id();
-                    if name.ends_with("_exhaust") || name.ends_with("_s13v1") {
+                    // `_s14v1` is the missile motor flame (STFLT 1/10/15). The F-117 keeps its
+                    // original shape, so its nozzle faces stay in the body mesh.
+                    if name.ends_with("_exhaust")
+                        || name.ends_with("_s13v1")
+                        || name.ends_with("_s14v1")
+                        || name == "stflt_024_lod0" && prim_color == Some(EXHAUST_COLOURS[0])
+                    {
                         commands.entity(child).insert(ExhaustGlow);
                     }
                     // Flat ground overlays are stacked a few centimetres apart (world.rs painter's

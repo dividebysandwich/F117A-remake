@@ -160,7 +160,7 @@ impl Fires {
 }
 
 /// Proxy of a plume: a closed unit cylinder (y 0..1) with both windings, so the volume also
-/// shows from inside (see `weather::double_sided`).
+/// shows from inside (see `weather::double_sided`; the shader picks the side to march from).
 fn plume_proxy() -> Mesh {
     // Circumscribes the shader's unit cylinder.
     let mut mesh = Cylinder::new(1.0 / (std::f32::consts::PI / 16.0).cos(), 1.0).mesh().resolution(16).build();

@@ -165,8 +165,9 @@ fn hash(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// Both windings, so the volume also shows from inside its proxy (the shader keeps the front
-/// faces seen from outside, the back faces seen from inside).
+/// Both windings, so the volume also shows from inside its proxy (back faces are culled; the
+/// shader keeps the near side seen from outside, the far side seen from inside:
+/// palette.wgsl `proxy_fragment`).
 fn double_sided(mut mesh: Mesh) -> Mesh {
     let tris: Vec<u32> = mesh.indices().expect("indexed mesh").iter().map(|i| i as u32).collect();
     let back = tris.chunks(3).flat_map(|t| [t[0], t[2], t[1]]);

@@ -501,6 +501,39 @@ fn volume_bounds(ro: vec3<f32>, rd: vec3<f32>, cumulus: bool, bound: f32) -> vec
     return t;
 }
 
+// Proxy meshes (weather.rs, fires.rs): cumulus ellipsoid (radius 1.08, vertically 0.55 of that
+// around y = 0.45), tower cylinder (radius 1.45), smoke cylinder (radius 1 / cos(pi / 16)),
+// cylinders y 0..1. They are drawn with both windings and back faces culled, so from outside
+// both the near side and (reversed) the far side are rasterised, from inside only the far side,
+// and every fragment is front facing: the near side is picked by its geometry instead.
+const CU_PROXY: f32 = 1.08;
+const CB_PROXY: f32 = 1.45;
+const SMOKE_PROXY: f32 = 1.0196;
+
+// Whether to march from this proxy fragment (local point p, eye ro, shape 1 cumulus, 2 tower,
+// 3/4 smoke): from outside only the side facing the eye, from inside the far side.
+fn proxy_fragment(p: vec3<f32>, ro: vec3<f32>, shape: f32) -> bool {
+    var n: vec3<f32>;
+    var inside: bool;
+    if (shape < 1.5) {
+        let k = vec3<f32>(1.0, 1.0 / CU_RY, 1.0);
+        let q = (ro - vec3<f32>(0.0, CU_CENTER, 0.0)) * k;
+        inside = dot(q, q) < CU_PROXY * CU_PROXY;
+        n = (p - vec3<f32>(0.0, CU_CENTER, 0.0)) * k * k;
+    } else {
+        let r = select(SMOKE_PROXY, CB_PROXY, shape < 2.5);
+        inside = dot(ro.xz, ro.xz) < r * r && ro.y > 0.0 && ro.y < 1.0;
+        if (p.y > 0.9999) {
+            n = vec3<f32>(0.0, 1.0, 0.0);
+        } else if (p.y < 0.0001) {
+            n = vec3<f32>(0.0, -1.0, 0.0);
+        } else {
+            n = vec3<f32>(p.x, 0.0, p.z);
+        }
+    }
+    return inside || dot(n, ro - p) > 0.0;
+}
+
 // Density 0..1 at local point p. `aspect` scales the noise to the cloud's real proportions.
 fn volume_density(p: vec3<f32>, cumulus: bool, aspect: vec3<f32>, seed: f32, detail: bool) -> f32 {
     var shape: f32;
@@ -517,7 +550,7 @@ fn volume_density(p: vec3<f32>, cumulus: bool, aspect: vec3<f32>, seed: f32, det
     return clamp((shape + 0.55 * n) * 4.0, 0.0, 1.0);
 }
 
-fn cloud_volume(in: VertexOutput, front: bool, dir: vec3<f32>, modern: bool) -> vec4<f32> {
+fn cloud_volume(in: VertexOutput, dir: vec3<f32>, modern: bool) -> vec4<f32> {
     if (in.puff_eye.w > 2.5) {
         return smoke_volume(in, dir, modern);
     }
@@ -525,9 +558,8 @@ fn cloud_volume(in: VertexOutput, front: bool, dir: vec3<f32>, modern: bool) -> 
     let cumulus = in.puff_eye.w < 1.5;
     let ro = in.puff_eye.xyz;
     let rd = in.puff_pos.xyz - ro;
+    if (!proxy_fragment(in.puff_pos.xyz, ro, in.puff_eye.w)) { discard; }
     let tb = volume_bounds(ro, rd, cumulus, CB_BOUND);
-    // The proxy is double sided: front faces from outside the bounds, back faces from inside.
-    if (front == (tb.x <= 0.0)) { discard; }
     let t0 = max(tb.x, 0.0);
     // The march runs from the eye (t = 0) through this proxy point (t = 1); world height
     // eye.y + dir.y t. An overcast deck hides the part of a tower on its far side.
@@ -624,11 +656,8 @@ fn smoke_volume(in: VertexOutput, dir: vec3<f32>, modern: bool) -> vec4<f32> {
     let fire = in.puff_eye.w > 3.5;
     let ro = in.puff_eye.xyz;
     let rd = in.puff_pos.xyz - ro;
+    if (!proxy_fragment(in.puff_pos.xyz, ro, in.puff_eye.w)) { discard; }
     let tb = volume_bounds(ro, rd, false, 1.0);
-    // Both windings of the proxy show from outside (the near side and, reversed, the far
-    // side): keep the near one, where the ray enters at this point (t = 1). From inside only
-    // the reversed faces show.
-    if (tb.x > 0.0 && abs(tb.x - 1.0) > abs(tb.y - 1.0)) { discard; }
     let t0 = max(tb.x, 0.0);
     let t1 = tb.y;
     if (t1 <= t0) { discard; }
@@ -707,13 +736,13 @@ fn flash(rgb: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
 }
 
 @fragment
-fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let dir = in.world_position - view.world_position;
     let modern = globals.params.w != 0.0;
     if ((material.flags & FLAG_CLOUD) != 0u) {
         let d = length(dir);
         if (in.puff_eye.w > 0.0) {
-            return cloud_volume(in, front, dir, modern);
+            return cloud_volume(in, dir, modern);
         }
         // Stratus sheet: only where the layer's coverage field says so.
         var cover = stratus_cover(in.world_position);

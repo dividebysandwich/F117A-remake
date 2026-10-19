@@ -25,7 +25,7 @@ use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit::{CockpitArt, Displays};
 use crate::font::Fonts;
 use crate::mfd::{CLASSIC, HIRES, MfdSide, osb};
-use crate::panel::{BUTTON, LAMPS, LampId, draw_gauge, draw_label, draw_lamp, draw_led};
+use crate::panel::{BUTTON, LAMPS, LampId, draw_gauge, draw_label, draw_lamp, draw_led, draw_led_bars};
 
 /// How far the MFD screens sit behind the panel face (metres).
 const SCREEN_DEPTH: f32 = 0.003;
@@ -68,6 +68,8 @@ pub(super) enum Face {
     Item(Elem),
     /// A lamp that is a button cap on the modern panel (green, `panel::BUTTON`).
     Button(LampId, Option<&'static str>),
+    /// The EMV gauge as LED bar graphs on the modern panel (`panel::draw_led_bars`).
+    LedBars,
     Osb(MfdSide, u8),
 }
 
@@ -208,6 +210,7 @@ pub(super) fn spawn_panel(
     let modern = layout.style == PanelStyle::Modern;
     let face_of = |p: &Placed| match p.elem {
         Elem::Lamp(id, label) if modern && p.cap.is_some() => Face::Button(id, label),
+        Elem::Gauge if modern => Face::LedBars,
         elem => Face::Item(elem),
     };
     let mut faces: Vec<(Face, PxRect)> = layout.items.iter().map(|p| (face_of(p), p.rect)).collect();
@@ -241,7 +244,7 @@ pub(super) fn spawn_panel(
     for ((face, _), slot) in faces.iter().zip(&slots) {
         let (uv0, uv1) = uv(slot);
         match face {
-            Face::Item(_) | Face::Button(..) => out.items.push((uv0, uv1)),
+            Face::Item(_) | Face::Button(..) | Face::LedBars => out.items.push((uv0, uv1)),
             Face::Osb(side, s) => {
                 out.osbs.insert((side_key(*side), *s), (uv0, uv1));
             }
@@ -520,6 +523,10 @@ pub(super) fn update_displays(
                 draw_gauge(c, r, emv, egr, ear);
                 true
             }
+            Face::LedBars => {
+                draw_led_bars(c, glow, r, emv, egr, ear);
+                false
+            }
             Face::Item(Elem::Label(text, fg, bg)) => {
                 draw_label(c, &fonts, r, text, fg, bg, t);
                 true
@@ -533,9 +540,11 @@ pub(super) fn update_displays(
                     draw_lamp(c, &fonts, r, label, (38, 47), k, t);
                     true
                 }
+                // Unlit: light grey label on a dark cap.
                 Some((label, _, false)) => {
-                    draw_lamp(c, &fonts, r, label, (47, 38), k, t);
-                    true
+                    draw_lamp(c, &fonts, r, "", (35, 38), k, t);
+                    draw_label(c, &fonts, [r[0] + k, r[1] + k, r[2] - 2 * k, r[3] - 2 * k], label, 7, 38, t);
+                    false
                 }
                 None => {
                     draw_lamp(c, &fonts, r, "", (35, 38), k, t);

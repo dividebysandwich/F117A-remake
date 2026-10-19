@@ -148,7 +148,7 @@ const RED: LampStyle = LampStyle { off: (54, 55), on: (41, 42) };
 const DARK_RED: LampStyle = LampStyle { off: (16, 43), on: (41, 42) };
 const AMBER: LampStyle = LampStyle { off: (16, 43), on: (40, 39) };
 /// Button caps of the modern panel: green text on dark green unlit, dark text on bright green
-/// lit (like the MFD bezel buttons).
+/// lit (like the lit MFD bezel buttons).
 pub const BUTTON: LampStyle = LampStyle { off: (47, 44), on: (38, 47) };
 
 /// Label and colours of every lamp, indexed by `LampId`.
@@ -287,6 +287,53 @@ pub fn draw_gauge(c: &mut Canvas, r: [i32; 4], emv: i32, egr: i32, ear: i32) {
     }
     if ear > 0 {
         bar(ear, if emv + ear > 100 { 15 } else { 11 }, 6, 9);
+    }
+}
+
+/// LED bar graph modules per strip of the modern panel's EMV gauge, and segments per module.
+const LED_MODULES: i32 = 4;
+const LED_SEGMENTS: i32 = 10;
+
+/// The modern panel's EMV gauge: two strips of LED bar graph modules, EGR (upper) and EAR
+/// (lower). The radar signal lights segments from the left in yellow, EMV from the right in
+/// green, and segments lit by both are red. Each segment is either lit or dark; lit ones are
+/// also drawn into `glow`.
+pub fn draw_led_bars(c: &mut Canvas, glow: &mut Canvas, r: [i32; 4], emv: i32, egr: i32, ear: i32) {
+    let [x, y, w, h] = r;
+    c.fill_rect(x, y, w, h, 38);
+    let n = LED_MODULES * LED_SEGMENTS;
+    // Lit segment counts on the 0..99 scale (any signal lights one; EMV 0 still lights the
+    // rightmost segment, as the original's gauge fills its rightmost column).
+    let count = |v: i32| if v > 0 { ((v * n + 50) / 99).clamp(1, n) } else { 0 };
+    let right = count(emv).max(1);
+    let gap = (h / 12).max(1);
+    let strip_h = (h - 3 * gap) / 2;
+    let module_w = (w - (LED_MODULES + 1) * gap) as f32 / LED_MODULES as f32;
+    let pitch = module_w / LED_SEGMENTS as f32;
+    let margin = (strip_h / 6).max(1);
+    for (row, signal) in [egr, ear].into_iter().enumerate() {
+        let left = count(signal);
+        let sy = y + gap + row as i32 * (strip_h + gap);
+        for m in 0..LED_MODULES {
+            let mx = x as f32 + (gap + m * gap) as f32 + m as f32 * module_w;
+            c.fill_rect(mx.round() as i32, sy, (mx + module_w).round() as i32 - mx.round() as i32, strip_h, 0);
+            for s in 0..LED_SEGMENTS {
+                let i = m * LED_SEGMENTS + s;
+                let colour = match (i < left, i >= n - right) {
+                    (true, true) => Some(13),
+                    (true, false) => Some(17),
+                    (false, true) => Some(10),
+                    (false, false) => None,
+                };
+                let x0 = (mx + s as f32 * pitch + pitch * 0.15).round() as i32;
+                let x1 = (mx + (s + 1) as f32 * pitch - pitch * 0.15).round() as i32;
+                let (y0, sh) = (sy + margin, strip_h - 2 * margin);
+                c.fill_rect(x0, y0, x1 - x0, sh, colour.unwrap_or(35));
+                if let Some(colour) = colour {
+                    glow.fill_rect(x0, y0, x1 - x0, sh, colour);
+                }
+            }
+        }
     }
 }
 

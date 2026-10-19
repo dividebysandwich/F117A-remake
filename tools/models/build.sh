@@ -1,6 +1,7 @@
 #!/bin/sh
 # Rebuilds the remodelled vehicles in the .blend masters and splices them into assets/models.
 #   tools/models/build.sh [stflt ce cu ...]   (default: all files)
+# The other models' detail is added afterwards by tools/models/detail.py (see there).
 set -e
 cd "$(dirname "$0")/../.."
 tmp=$(mktemp -d)

@@ -438,6 +438,10 @@ fn whiteout(rgb: vec3<f32>, dist: f32) -> vec3<f32> {
 // scrolls upwards so the smoke billows; dark grey from the cloud ramp, self-shadowed, its base lit orange by the fire underneath.
 
 const SMOKE_STEPS: u32 = 12u;
+// XR (two large eye views on a mobile GPU): fewer steps, a single noise octave and no
+// self-shadow sample — about a sixth of the noise evaluations, so a screen full of plumes
+// can't stall the GPU long enough to lose the device.
+const SMOKE_STEPS_XR: u32 = 6u;
 // Plume lean (local x at the top) and radius at the base / top.
 const SMOKE_LEAN: f32 = 0.4;
 const SMOKE_R0: f32 = 0.06;
@@ -521,7 +525,9 @@ fn smoke_volume(in: VertexOutput, dir: vec3<f32>, modern: bool) -> vec4<f32> {
     if (t1 <= t0) { discard; }
     let aspect = in.puff_scale / in.puff_scale.x;
     let m_per_t = length(rd * in.puff_scale);
-    let dt = (t1 - t0) / f32(SMOKE_STEPS);
+    let xr = globals.dots.x > 0.0;
+    let steps = select(SMOKE_STEPS, SMOKE_STEPS_XR, xr);
+    let dt = (t1 - t0) / f32(steps);
     let ds = dt * m_per_t;
     // Opaque within about a fifth of the plume's width.
     let thick = in.puff_scale.x * 0.2;
@@ -535,13 +541,16 @@ fn smoke_volume(in: VertexOutput, dir: vec3<f32>, modern: bool) -> vec4<f32> {
     var trans = 1.0;
     var light = 0.0;
     var glow = 0.0;
-    for (var i = 0u; i < SMOKE_STEPS; i++) {
+    for (var i = 0u; i < steps; i++) {
         let p = ro + rd * (t0 + (f32(i) + jitter) * dt);
-        let dens = smoke_density(p, aspect, in.puff_pos.w, rise, start, true);
+        let dens = smoke_density(p, aspect, in.puff_pos.w, rise, start, !xr);
         if (dens <= 0.001) { continue; }
         let a = 1.0 - exp(-dens * ds / thick);
-        let towards_sun = smoke_density(p + sun, aspect, in.puff_pos.w, rise, start, false);
-        let lit = clamp(0.4 + (dens - towards_sun) * 1.4 + 0.25 * p.y, 0.0, 1.0);
+        var lit = clamp(0.5 + 0.25 * p.y, 0.0, 1.0);
+        if (!xr) {
+            let towards_sun = smoke_density(p + sun, aspect, in.puff_pos.w, rise, start, false);
+            lit = clamp(0.4 + (dens - towards_sun) * 1.4 + 0.25 * p.y, 0.0, 1.0);
+        }
         light += trans * a * lit;
         if (fire) {
             let g = 1.0 - smoothstep(start, glow_top, p.y);

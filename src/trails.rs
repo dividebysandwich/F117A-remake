@@ -181,6 +181,11 @@ impl Trail {
         }
     }
 
+    /// At least one segment to draw (an empty mesh is neither uploaded nor drawn).
+    fn drawable(&self) -> bool {
+        self.points.len() + self.head.is_some() as usize >= 2
+    }
+
     fn rebuild(&self, mesh: &mut Mesh, now: f32) {
         let s = self.style;
         let mut pts: Vec<(DVec3, f32, f32)> = self
@@ -201,20 +206,18 @@ impl Trail {
         let mut tan = Vec::with_capacity(2 * n);
         let mut side = Vec::with_capacity(2 * n);
         let mut idx = Vec::with_capacity(6 * n.saturating_sub(1));
-        if n >= 2 {
-            for i in 0..n {
-                let (p, w, a) = pts[i];
-                let d = (pts[(i + 1).min(n - 1)].0 - pts[i.saturating_sub(1)].0).as_vec3();
-                let t = d.try_normalize().unwrap_or(Vec3::Z);
-                let local = (p - self.anchor).as_vec3();
-                pos.extend([local, local]);
-                tan.extend([t, t]);
-                side.extend([[-w, a], [w, a]]);
-            }
-            for i in 0..n as u32 - 1 {
-                let k = 2 * i;
-                idx.extend([k, k + 1, k + 2, k + 1, k + 3, k + 2]);
-            }
+        for i in 0..n {
+            let (p, w, a) = pts[i];
+            let d = (pts[(i + 1).min(n - 1)].0 - pts[i.saturating_sub(1)].0).as_vec3();
+            let t = d.try_normalize().unwrap_or(Vec3::Z);
+            let local = (p - self.anchor).as_vec3();
+            pos.extend([local, local]);
+            tan.extend([t, t]);
+            side.extend([[-w, a], [w, a]]);
+        }
+        for i in 0..n as u32 - 1 {
+            let k = 2 * i;
+            idx.extend([k, k + 1, k + 2, k + 1, k + 3, k + 2]);
         }
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
         mesh.insert_attribute(ATTRIBUTE_TANGENT, tan);
@@ -254,6 +257,7 @@ fn update_trails(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TrailMaterial>>,
     player: Query<(&Aircraft, &WorldPos), With<Player>>,
+    mut visibility: Query<&mut Visibility>,
 ) {
     let trails = &mut *trails;
     let sim = &combat.sim;
@@ -330,7 +334,8 @@ fn update_trails(
                     MeshMaterial3d(material),
                     WorldPos(p),
                     Transform::default(),
-                    Visibility::Inherited,
+                    // Shown once the ribbon has a segment (empty meshes upset some GPU drivers).
+                    Visibility::Hidden,
                     NoFrustumCulling,
                     bevy::light::NotShadowCaster,
                 ))
@@ -353,8 +358,10 @@ fn update_trails(
     });
     for t in trails.active.values_mut().chain(trails.detached.iter_mut()) {
         t.prune(now);
-        if let Some(mut mesh) = meshes.get_mut(&t.mesh) {
-            t.rebuild(&mut mesh, now);
+        let drawn = t.drawable()
+            && meshes.get_mut(&t.mesh).map(|mut mesh| t.rebuild(&mut mesh, now)).is_some();
+        if let Ok(mut v) = visibility.get_mut(t.entity) {
+            v.set_if_neq(if drawn { Visibility::Inherited } else { Visibility::Hidden });
         }
     }
 }

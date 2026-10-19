@@ -350,7 +350,7 @@ fn stream_tiles(
             }
             commands.entity(e).insert((
                 WorldPos(pos),
-                Transform::from_scale(Vec3::splat((unit * WU) as f32)),
+                Transform::from_scale(Vec3::splat(crate::models::tile_model_scale(&name, unit))),
                 TileObject { lod: lod as u8, order: k as u16, destroyed: shape != o.shape || wrecked },
             ));
             entities.push(e);

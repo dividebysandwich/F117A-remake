@@ -257,6 +257,7 @@ impl Ground {
                             ((centre(col) + o.x as f64 * unit) * WU) as f32,
                             ((centre(row) + o.y as f64 * unit) * WU) as f32,
                         );
+                        let scale = handles.model(o.shape as usize).map_or(scale, |(_, n)| crate::models::tile_model_scale(&n, unit));
                         let place = |p: Vec2| origin + p * scale;
                         for (j, (tri, s)) in geom.flat.iter().enumerate() {
                             let p = tri.map(place);

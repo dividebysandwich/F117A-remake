@@ -218,6 +218,15 @@ fn update_camera_distance(
     }
 }
 
+/// Helicopters placed as theater tile objects: modelled in aircraft units (not the tile
+/// level's), with the rotor on the antenna slot 16 instead of the rotor slot 17.
+pub const TILE_HELICOPTERS: [&str; 2] = ["vn_066", "vn_077"];
+
+/// Model scale (metres per model unit) of a tile object at a level of `unit` world units.
+pub fn tile_model_scale(name: &str, unit: f64) -> f32 {
+    if TILE_HELICOPTERS.contains(&name) { crate::player::AIRCRAFT_MODEL_SCALE as f32 } else { (unit * crate::world::WU) as f32 }
+}
+
 /// Range multiplier for a model's last (coarsest) detail level.
 const LAST_LOD_RANGE: f32 = 4.0;
 
@@ -393,9 +402,13 @@ impl ModelAssets<'_> {
             }
         }
         if suffix_number(name, "_part").is_some() {
+            let mut slot = extras["state_slot"].as_u64().unwrap_or(0) as usize;
+            if slot == 16 && TILE_HELICOPTERS.iter().any(|h| name.starts_with(h)) {
+                slot = 17;
+            }
             e.insert(ArticulatedPart {
                 root,
-                slot: extras["state_slot"].as_u64().unwrap_or(0) as usize,
+                slot,
                 axis: extras["axis"].as_u64().unwrap_or(0) as u8,
                 rest: node.transform.rotation,
             });

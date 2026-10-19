@@ -97,7 +97,7 @@ pub(crate) struct GenResult {
     pub mtime: i32,
     pub tod: i32,
     pub escort: i32,
-    pub cbdc: i32,
+    pub special_start: i32,
     pub waypoints: [(i32, i32); 4],
     pub base_xp: i32,
     pub base_yp: i32,
@@ -126,7 +126,7 @@ pub(crate) struct Gen<'a> {
     realism: i32,
     avail: [u8; 20],
     /// DS:CBDC: the special aircraft's start object; a stale global between missions.
-    cbdc: i32,
+    special_start: i32,
 }
 
 /// `rollWeaponAvailability` (1A18:0E23), spec §2. Quirk kept: it tests `avail[map[r]]` but sets
@@ -165,7 +165,7 @@ impl<'a> Gen<'a> {
         diff: u8,
         realism: bool,
         avail: [u8; 20],
-        cbdc: i16,
+        special_start: i16,
     ) -> Self {
         let mut avail = avail;
         // also forced at 1A18:07F6 / 0E84: no AIM-9 / AIM-120 on the Lockheed
@@ -182,7 +182,7 @@ impl<'a> Gen<'a> {
             diff: diff as i32,
             realism: realism as i32,
             avail,
-            cbdc: cbdc as i32,
+            special_start: special_start as i32,
         }
     }
 
@@ -634,27 +634,27 @@ impl<'a> Gen<'a> {
             special = None;
             if ty == 5 {
                 let mut best = 0x7FFF;
-                self.cbdc = -1;
+                self.special_start = -1;
                 for i in 0..self.woc() {
                     let d = s16(self.dist(t[0].idx, i) - bd[0]).abs();
                     let f = self.o(i).flags;
                     if d < best && f & F::AIRFIELD != 0 && f & F::NEUTRAL == 0 {
-                        self.cbdc = i;
+                        self.special_start = i;
                         best = d;
                     }
                 }
-                if self.cbdc == -1 {
+                if self.special_start == -1 {
                     stage = Stage::Restart;
                     continue;
                 }
-                self.position_unit(0, self.cbdc);
+                self.position_unit(0, self.special_start);
                 self.w.flights[0].waypoint = t[0].idx as i16;
                 self.w.flights[0].flags |= 4;
                 escort = 0;
-                intercept_ref = Some(self.obj_ref(self.cbdc));
-                special = Some(SpecialRoute { start: self.cbdc, dest: t[0].idx });
+                intercept_ref = Some(self.obj_ref(self.special_start));
+                special = Some(SpecialRoute { start: self.special_start, dest: t[0].idx });
                 let sp = self.w.flights[0].speed as i32 >> 6;
-                mtime = cdiv(self.dist(self.cbdc, t[0].idx), 3 * sp);
+                mtime = cdiv(self.dist(self.special_start, t[0].idx), 3 * sp);
             }
             if ty == 6 || ty == 7 {
                 let mut best = 0x7FFF;
@@ -665,26 +665,26 @@ impl<'a> Gen<'a> {
                     }
                     let d = s16(self.dist(t[0].idx, i) - bd[0]).abs();
                     if d < best && i != t[0].base {
-                        self.cbdc = i;
+                        self.special_start = i;
                         best = d;
                     }
                 }
-                intercept_ref = Some(self.obj_ref(self.cbdc));
+                intercept_ref = Some(self.obj_ref(self.special_start));
                 if ty == 7 {
                     self.position_unit(0, t[0].idx);
-                    self.w.flights[0].waypoint = self.cbdc as i16;
+                    self.w.flights[0].waypoint = self.special_start as i16;
                     self.w.flights[0].flags |= 4;
                     escort = 0;
-                    special = Some(SpecialRoute { start: t[0].idx, dest: self.cbdc });
-                    self.cbdc = t[0].idx;
+                    special = Some(SpecialRoute { start: t[0].idx, dest: self.special_start });
+                    self.special_start = t[0].idx;
                 } else {
-                    self.position_unit(0, self.cbdc);
+                    self.position_unit(0, self.special_start);
                     self.w.flights[0].waypoint = t[0].idx as i16;
                     self.w.flights[0].flags |= 4;
                     escort = 0;
-                    special = Some(SpecialRoute { start: self.cbdc, dest: t[0].idx });
+                    special = Some(SpecialRoute { start: self.special_start, dest: t[0].idx });
                     let sp = (self.w.flights[0].speed as i32 & 0xFFDF) >> 5;
-                    mtime = cdiv(self.dist(self.cbdc, t[0].idx), sp);
+                    mtime = cdiv(self.dist(self.special_start, t[0].idx), sp);
                 }
             }
             if ty == 8 {
@@ -695,7 +695,7 @@ impl<'a> Gen<'a> {
                 self.w.flights[0].flags |= 0x40;
                 escort = 0;
                 self.w.flights[0].waypoint = t[0].idx as i16;
-                self.cbdc = t[0].idx;
+                self.special_start = t[0].idx;
                 special = Some(SpecialRoute { start: t[0].idx, dest: t[0].idx });
             }
             if escort == 0 {
@@ -776,7 +776,7 @@ impl<'a> Gen<'a> {
                 }
             }
             if self.w.flights[i].flags & 0x100 != 0 && escort != -1 {
-                self.position_unit(i, self.cbdc);
+                self.position_unit(i, self.special_start);
                 self.w.flights[i].fuel = 0x4E1F;
             }
             if i != 0 {
@@ -902,7 +902,7 @@ impl<'a> Gen<'a> {
             mtime: s16(mtime),
             tod,
             escort,
-            cbdc: self.cbdc,
+            special_start: self.special_start,
             waypoints,
             base_xp,
             base_yp,

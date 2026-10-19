@@ -123,7 +123,7 @@ impl TextCtx<'_> {
             ),
             5 => format!(
                 "Destroy the AN-72 Coaler leaving {} airbase at {} hours and arriving at {place} airbase at {} hours.",
-                self.name(self.obj(g.cbdc).name as i32),
+                self.name(self.obj(g.special_start).name as i32),
                 g.depart,
                 g.deadline
             ),

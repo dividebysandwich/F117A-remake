@@ -13,7 +13,7 @@ fn data() -> &'static GameData {
 fn central_europe_reference_briefing() {
     let data = data();
     let s = MissionSettings { theater: 3, roe: 2, kind: MissionKind::Strike, opponents: 1, ..Default::default() };
-    let input = GenInput { holdrand: 0x5A41C429, weapon_unavailable: [0; 20], stale_cbdc: 0 };
+    let input = GenInput { holdrand: 0x5A41C429, weapon_unavailable: [0; 20], stale_special_start: 0 };
     let m = generate_exact(data, &s, &input).unwrap();
     eprintln!("{}", m.briefing.lines.join("\n"));
     eprintln!("orders: {:?}", m.orders);

@@ -111,7 +111,7 @@ pub struct GenInput {
     /// DS:D878[20]: 1 = weapon out of stock.
     pub weapon_unavailable: [u8; 20],
     /// DS:CBDC: stale "special aircraft start" global left by a previous mission (0 at start).
-    pub stale_cbdc: i16,
+    pub stale_special_start: i16,
 }
 
 /// START.EXE tables plus the theaters, loaded once from the game directory (the original nine)
@@ -328,11 +328,11 @@ pub fn weapon_availability(rng: &mut MscRand, tables: &StartTables, plane: Plane
 /// Generate a mission.
 pub fn generate(data: &GameData, settings: &MissionSettings, seed: Seed) -> Result<Mission> {
     let input = match seed {
-        Seed::Holdrand(h) => GenInput { holdrand: h, weapon_unavailable: [0; 20], stale_cbdc: 0 },
+        Seed::Holdrand(h) => GenInput { holdrand: h, weapon_unavailable: [0; 20], stale_special_start: 0 },
         Seed::Srand(s) => {
             let mut r = MscRand::srand(s);
             let avail = weapon_availability(&mut r, &data.tables, settings.plane);
-            GenInput { holdrand: r.state, weapon_unavailable: avail, stale_cbdc: 0 }
+            GenInput { holdrand: r.state, weapon_unavailable: avail, stale_special_start: 0 }
         }
     };
     generate_exact(data, settings, &input)
@@ -346,7 +346,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
     let x = &data.tables;
     let th = &data.theaters[s.theater];
     let lockheed = s.plane == Plane::Lockheed;
-    let g = generator::Gen::new(x, th, input.holdrand, s.roe, s.kind.index(), s.opponents, lockheed, input.weapon_unavailable, input.stale_cbdc)
+    let g = generator::Gen::new(x, th, input.holdrand, s.roe, s.kind.index(), s.opponents, lockheed, input.weapon_unavailable, input.stale_special_start)
         .run();
     let mut avail = input.weapon_unavailable;
     avail[0] = lockheed as u8;

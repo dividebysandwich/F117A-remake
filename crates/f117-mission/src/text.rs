@@ -61,6 +61,8 @@ pub(crate) struct TextCtx<'a> {
     pub x: &'a StartTables,
     pub g: &'a GenResult,
     pub theater: usize,
+    /// Start date (month, day, year) replacing the START table's.
+    pub date: Option<(u8, u8, u16)>,
     pub kind: usize,
     pub roe: usize,
     pub lockheed: bool,
@@ -143,9 +145,10 @@ impl TextCtx<'_> {
     /// Briefing date (1A18:25D9).
     pub fn date(&self, sorties: u16) -> String {
         let x = self.x;
-        let mut mon = x.date_month[self.theater] as usize;
-        let mut yr = x.date_year[self.theater] as u32;
-        let mut day = x.date_day[self.theater] as u32 + sorties as u32;
+        let (m, d, y) = self.date.unwrap_or((x.date_month[self.theater], x.date_day[self.theater], x.date_year[self.theater]));
+        let mut mon = m as usize;
+        let mut yr = y as u32;
+        let mut day = d as u32 + sorties as u32;
         while mon < x.month_len.len() && (x.month_len[mon] as u32) < day {
             day -= x.month_len[mon] as u32;
             mon += 1;

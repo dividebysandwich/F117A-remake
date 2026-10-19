@@ -1,7 +1,9 @@
 //! Fires and smoke (not in the original). Everything destroyed on the ground burns for the rest
 //! of the flight: a plume of smoke rising into the sky over a fire, small ones for vehicles and
 //! aircraft wrecks, big ones for buildings, installations and ships. In a conventional war
-//! (ROE 2) towns and roads are burning from the start.
+//! (ROE 2) towns and roads are burning from the start. Theaters with a front line (the
+//! remake's own) burn along it in every mission: the fighting positions on both sides, the
+//! ruined towns.
 //!
 //! - Smoke: a volume ray-marched in its proxy cylinder by the palette shader (`TAG_SMOKE`):
 //!   alpha blended in modern mode, a dithered screen door otherwise.
@@ -45,6 +47,10 @@ const FIRE_RANGE: f64 = 5_000.0;
 const GROW_SECS: f32 = 75.0;
 /// A kill this close to a burning site (metres) feeds that fire instead of starting one.
 const MERGE_M: f64 = 40.0;
+/// Front line: metres of line per fire where the fighting is heaviest (intensity 1), and how
+/// far either side of the line the fires reach.
+const FRONT_SPACING_M: f64 = 1200.0;
+const FRONT_DEPTH_M: f64 = 7000.0;
 
 /// Fresh flame colours: yellow-orange, orange, white; they cool to red-orange and dark red.
 /// (Palette entries outside the time-of-day fade, 0x50..0x5F and below 0x10.)
@@ -117,6 +123,8 @@ struct Fires {
     sites: Vec<Site>,
     /// The war's fires have been placed (or the mission isn't a war).
     war_done: bool,
+    /// The front line's fires have been placed.
+    front_done: bool,
     /// Wind direction for the plumes (radians), from the mission's weather seed.
     wind: f32,
     rng: u32,
@@ -269,12 +277,55 @@ fn is_town_name(name: &str) -> bool {
     !n.is_empty() && !NOT.iter().any(|k| n.contains(k))
 }
 
-/// The war's fires, once the scenery layout exists.
+/// Fires along the front line and in the ruined towns: (ground point in metres, big).
+fn front_sites(theater: &Theater, scenery: &crate::scenery::Scenery, seed: u64) -> Vec<(DVec2, bool)> {
+    let mut rng = crate::scenery::Rng::new(seed ^ 0xF407);
+    let mut out = Vec::new();
+    for w in theater.front.windows(2) {
+        let ((ax, ay, k), (bx, by, _)) = (w[0], w[1]);
+        let (a, b) = (DVec2::new(ax, ay), DVec2::new(bx, by));
+        let len = a.distance(b);
+        let along = (b - a) / len.max(1.0);
+        let expected = len * k / FRONT_SPACING_M;
+        let n = expected.floor() as usize + rng.chance(expected.fract()) as usize;
+        for _ in 0..n {
+            // Most fires close to the line, some deep in the rear.
+            let off = rng.range(-1.0, 1.0);
+            let p = a + along * rng.range(0.0, len) + along.perp() * off * off * off.signum() * FRONT_DEPTH_M;
+            if scenery.is_open(p, 8.0) {
+                out.push((p, rng.chance(0.3 * k)));
+            }
+        }
+    }
+    for t in theater.towns.iter().filter(|t| t.ruined >= 0.3) {
+        let c = DVec2::new(t.x, t.y);
+        for _ in 0..1 + (t.ruined * 2.5) as usize {
+            let p = c + DVec2::from_angle(rng.range(0.0, std::f64::consts::TAU)) * rng.range(0.0, t.r * 0.9);
+            out.push((p, rng.chance(0.35)));
+        }
+    }
+    out
+}
+
+/// The front line's fires and the war's, once the scenery layout exists.
 fn war_fires(mut fires: ResMut<Fires>, scenery: Option<Res<crate::scenery::Scenery>>, theater: Option<Res<Theater>>) {
-    if fires.war_done {
+    if fires.war_done && fires.front_done {
         return;
     }
     let (Some(scenery), Some(theater)) = (scenery, theater) else { return };
+    if !fires.front_done {
+        fires.front_done = true;
+        let sites = front_sites(&theater, &scenery, fires.rng as u64);
+        if !sites.is_empty() {
+            info!("fires: {} burning along the front", sites.len());
+        }
+        for (p, big) in sites {
+            fires.add(wu_to_bevy(p.x / WU, p.y / WU, 0.0), if big { Size::Big } else { Size::Small }, GROW_SECS);
+        }
+    }
+    if fires.war_done {
+        return;
+    }
     fires.war_done = true;
     let seed = fires.rng as u64 ^ 0xF1AE;
     let mut sites = scenery.war_sites(seed);

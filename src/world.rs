@@ -169,6 +169,29 @@ pub struct Theater {
     pub tiles: TileSets,
     pub world: World,
     pub model_count: usize,
+    /// Model attribute bytes (.3DX attr) by shape, for the simulation's wreck test. Only the
+    /// remake's theaters carry them (the originals' are in the VGAME export).
+    #[serde(default)]
+    pub model_attr: Vec<u8>,
+    /// Remake theaters: the front line, where the fighting goes on: points (metres east,
+    /// north) with the intensity of the fighting on the stretch after them (0..1).
+    #[serde(default)]
+    pub front: Vec<(f64, f64, f64)>,
+    /// Remake theaters: the real towns for the scenery layout.
+    #[serde(default)]
+    pub towns: Vec<TownSite>,
+}
+
+/// A town of a remake theater: centre (metres east, north), radius (metres), size class
+/// (0 village, 1 town, 2 city), and whether it lies in ruins (on or behind the front line).
+#[derive(Deserialize, Clone, Debug)]
+pub struct TownSite {
+    pub x: f64,
+    pub y: f64,
+    pub r: f64,
+    pub kind: u8,
+    #[serde(default)]
+    pub ruined: f64,
 }
 
 impl Theater {
@@ -177,6 +200,14 @@ impl Theater {
         let p = path.display();
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e}"));
         ron::from_str(&text).unwrap_or_else(|e| panic!("{p}: {e}"))
+    }
+
+    /// Tile data for the simulation (`findNearestTile`), for theaters not in the VGAME export.
+    pub fn sim_tiles(&self) -> f117_sim::TheaterTiles {
+        let level = |l: usize| -> Vec<Vec<(i16, i16, u8)>> {
+            self.tiles.tiles.get(l).map(|v| v.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect()).unwrap_or_default()
+        };
+        f117_sim::TheaterTiles { grid: self.grid.clone(), objects: [level(1), level(2)], model_attr: self.model_attr.clone() }
     }
 
     /// Number of theater models (shapes beyond this index are appended specials).

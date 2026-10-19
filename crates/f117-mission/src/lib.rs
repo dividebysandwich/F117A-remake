@@ -8,7 +8,7 @@ pub mod world;
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use f117_formats::{GameDir, THEATERS};
+use f117_formats::{ALL_THEATERS, GameDir, THEATERS};
 use serde::{Deserialize, Serialize};
 
 pub use rng::MscRand;
@@ -17,8 +17,8 @@ pub use text::{Briefing, Orders, OrdersLine};
 pub use weather::{CloudKind, Layer, Sky, Weather};
 pub use world::{FlightUnit, MissionWorld, NAMES_BYTES, TheaterData, WorldObject};
 
-pub const THEATER_NAMES: [&str; 9] =
-    ["Libya", "Persian Gulf", "North Cape", "Central Europe", "Vietnam", "Middle East", "Desert Storm", "Cuba", "Korea"];
+pub const THEATER_NAMES: [&str; 10] =
+    ["Libya", "Persian Gulf", "North Cape", "Central Europe", "Vietnam", "Middle East", "Desert Storm", "Cuba", "Korea", "Ukraine"];
 pub const ROE_NAMES: [&str; 3] = ["Cold War", "Limited War", "Conventional War"];
 pub const OPPONENT_NAMES: [&str; 4] = ["Green", "Regular", "Veteran", "Elite"];
 
@@ -61,7 +61,7 @@ pub enum Plane {
 /// Player choices that feed the generator (§1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionSettings {
-    /// Index into [`THEATERS`] / [`THEATER_NAMES`].
+    /// Index into [`ALL_THEATERS`] / [`THEATER_NAMES`].
     pub theater: usize,
     /// 0 Cold War, 1 Limited War, 2 Conventional War.
     pub roe: u8,
@@ -114,8 +114,9 @@ pub struct GenInput {
     pub stale_cbdc: i16,
 }
 
-/// START.EXE tables plus all nine theaters, loaded once from the game directory and shipped
-/// as JSON in `assets/mission` (`tables.json`, `theaters/<code>.json`).
+/// START.EXE tables plus the theaters, loaded once from the game directory (the original nine)
+/// and shipped as JSON in `assets/mission` (`tables.json`, `theaters/<code>.json`, with the
+/// remake's own theaters after the original ones).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameData {
     pub tables: StartTables,
@@ -133,7 +134,7 @@ impl GameData {
     pub fn load_json(dir: &Path) -> Result<Self> {
         let read = |name: String| std::fs::read(dir.join(&name)).with_context(|| format!("{}", dir.join(&name).display()));
         let tables = serde_json::from_slice(&read("tables.json".into())?).context("tables.json")?;
-        let theaters = THEATERS
+        let theaters = ALL_THEATERS
             .iter()
             .map(|code| {
                 let name = format!("theaters/{}.json", code.to_ascii_lowercase());
@@ -147,7 +148,7 @@ impl GameData {
     pub fn write_json(&self, dir: &Path) -> Result<()> {
         std::fs::create_dir_all(dir.join("theaters"))?;
         std::fs::write(dir.join("tables.json"), serde_json::to_string_pretty(&self.tables)?)?;
-        for (t, code) in self.theaters.iter().zip(THEATERS) {
+        for (t, code) in self.theaters.iter().zip(ALL_THEATERS) {
             std::fs::write(dir.join(format!("theaters/{}.json", code.to_ascii_lowercase())), serde_json::to_string(t)?)?;
         }
         Ok(())
@@ -349,7 +350,7 @@ pub fn generate_from_dir(game: &GameDir, settings: &MissionSettings, seed: Seed)
 
 /// Generate from exact emulator inputs.
 pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) -> Result<Mission> {
-    ensure!(s.theater < THEATERS.len(), "theater {} out of range", s.theater);
+    ensure!(s.theater < data.theaters.len(), "theater {} out of range", s.theater);
     ensure!(s.roe <= 2, "roe {} out of range", s.roe);
     ensure!(s.opponents <= 3, "opponents {} out of range", s.opponents);
     let x = &data.tables;
@@ -360,7 +361,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
     let mut avail = input.weapon_unavailable;
     avail[0] = lockheed as u8;
     avail[1] = lockheed as u8;
-    let ctx = text::TextCtx { x, g: &g, theater: s.theater, kind: s.kind.index() as usize, roe: s.roe as usize, lockheed };
+    let ctx = text::TextCtx { x, g: &g, theater: th.index, date: th.date, kind: s.kind.index() as usize, roe: s.roe as usize, lockheed };
     let w = &g.world;
     let obj = |i: i32| w.objects[i.rem_euclid(w.objects.len() as i32) as usize];
 
@@ -430,7 +431,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
     briefing.weather_line = weather.describe();
     Ok(Mission {
         settings: s.clone(),
-        theater_code: THEATERS[s.theater].into(),
+        theater_code: ALL_THEATERS[s.theater].into(),
         theater_name: THEATER_NAMES[s.theater].into(),
         rng: RngInfo { holdrand_entry: input.holdrand, holdrand_exit: g.rng.state, rand_calls: g.rng.calls },
         weapon_unavailable: avail.to_vec(),

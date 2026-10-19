@@ -263,7 +263,7 @@ impl Sim {
             bays[k] = (b.weapon as i32, b.count as i32);
         }
         let display_shape = objects.iter().map(|o| o.shape).collect();
-        let theater = s.theater.min(8);
+        let theater = s.theater;
         let seed = opts.seed.unwrap_or(m.rng.holdrand_exit);
         let mut sim = Self {
             threats: data.threats.clone(),
@@ -280,7 +280,8 @@ impl Sim {
             night: m.night,
             lockheed,
             theater,
-            ns: data.start_dir[theater] as i32,
+            // Remake theaters use the original airbase models, laid out like Central Europe's.
+            ns: data.start_dir.get(theater).copied().unwrap_or(1) as i32,
             rng: Rng::new(seed),
             frame: 0,
             mission_tick: 0,

@@ -4,6 +4,9 @@
 //! lines, farms, industry, transmission and pole lines, radio masts, forests and lone trees;
 //! the desert theaters otherwise keep their original look.
 //!
+//! The steppe theaters' open land is farmland: fields and shelterbelts (`fields`), streamed in
+//! larger blocks further out.
+//!
 //! The layout is generated once per theater (`network`), clear of water, concrete and the
 //! theater's own objects (`ground`). Around the viewpoint, 1 km blocks are built into one mesh
 //! per palette colour (`content`), drawn with the palette materials and haze like the theater
@@ -15,6 +18,7 @@ mod airfield;
 pub use airfield::PapiSite;
 pub use network::Rng;
 mod content;
+mod fields;
 mod geom;
 mod ground;
 mod network;
@@ -32,7 +36,7 @@ use crate::palette::{DetailLevel, Palette, REMAP_DETAIL_HIGH};
 use crate::palette_material::{TAG_DOT, dot_scale, mesh_tag};
 use crate::settings::AppState;
 use crate::world::{ShapeHandles, Theater, WorldAnchor, WorldPos, bevy_to_wu, WU};
-use content::{BLOCK, Tier};
+use content::Tier;
 use geom::Geom;
 
 pub struct SceneryPlugin;
@@ -58,13 +62,14 @@ fn radius(tier: Tier) -> f64 {
         Tier::Main => 7000.0,
         Tier::Detail => 1000.0,
         Tier::Far => 3500.0,
+        Tier::Fields => 24_000.0,
     }
 }
 
 /// The other tree tier of a block (shown until this one is built, so trees don't blink).
 fn counterpart(tier: Tier) -> Option<Tier> {
     match tier {
-        Tier::Main => None,
+        Tier::Main | Tier::Fields => None,
         Tier::Detail => Some(Tier::Far),
         Tier::Far => Some(Tier::Detail),
     }
@@ -207,7 +212,7 @@ fn build_scenery(
     for r in fields.iter().flat_map(airfield::footprint) {
         ground.claim(r);
     }
-    let net = style.as_ref().map(|s| network::Network::build(&ground, s)).unwrap_or_default();
+    let net = style.as_ref().map(|s| network::Network::build(&ground, s, &theater.towns)).unwrap_or_default();
     info!(
         "scenery: {} airfields, {} towns, {} roads, {} buildings, {} power lines in {:.2?}",
         fields.len(),
@@ -244,20 +249,24 @@ fn stream_blocks(
     let eye = bevy::math::DVec2::new(east, north) * WU;
     let mut wanted = Vec::new();
     // Alt-D: detail 2 drops the trees, detail 0 and 1 all extra scenery.
-    let tiers: &[Tier] = match (scenery.style.is_some(), detail.0) {
-        (false, _) | (_, 0..=1) => &[],
-        (_, 2) => &[Tier::Main],
-        _ => &[Tier::Main, Tier::Detail, Tier::Far],
+    let fields = scenery.style.as_ref().is_some_and(|s| s.fields);
+    let tiers: &[Tier] = match (scenery.style.is_some(), detail.0, fields) {
+        (false, _, _) | (_, 0..=1, _) => &[],
+        (_, 2, false) => &[Tier::Main],
+        (_, 2, true) => &[Tier::Main, Tier::Fields],
+        (_, _, false) => &[Tier::Main, Tier::Detail, Tier::Far],
+        (_, _, true) => &[Tier::Main, Tier::Detail, Tier::Far, Tier::Fields],
     };
     for &tier in tiers {
         let r = radius(tier);
-        let (lo, hi) = (((eye - r) / BLOCK).floor().as_ivec2(), ((eye + r) / BLOCK).floor().as_ivec2());
+        let size = tier.block_size();
+        let (lo, hi) = (((eye - r) / size).floor().as_ivec2(), ((eye + r) / size).floor().as_ivec2());
         for by in lo.y..=hi.y {
             for bx in lo.x..=hi.x {
-                let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * BLOCK;
+                let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * size;
                 let d = c.distance(eye);
-                let near_trees = tier == Tier::Far && d < radius(Tier::Detail) + BLOCK * 0.5;
-                if d < r + BLOCK * 0.5 && !near_trees {
+                let near_trees = tier == Tier::Far && d < radius(Tier::Detail) + size * 0.5;
+                if d < r + size * 0.5 && !near_trees {
                     wanted.push((d, (tier, bx, by)));
                 }
             }
@@ -281,7 +290,7 @@ fn stream_blocks(
     wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
     for &(_, key @ (tier, bx, by)) in wanted.iter().take(BUILDS_PER_FRAME) {
         let geom = content::build(&scenery, bx, by, tier);
-        let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * BLOCK;
+        let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * tier.block_size();
         let e = spawn_block(&mut commands, &mut meshes, &palette, geom, DVec3::new(c.x, 0.0, -c.y), tier);
         blocks.0.insert(key, e);
     }
@@ -293,8 +302,12 @@ fn mesh(topology: PrimitiveTopology, pos: Vec<Vec3>) -> Mesh {
 
 fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Palette, geom: Geom, origin: DVec3, tier: Tier) -> Entity {
     // Haze like the original's LOD1 objects, starting a little further out (whole blocks share
-    // their centre's haze level).
-    let tag = MeshTag(mesh_tag(1, if tier == Tier::Main { 6 } else { 5 }, false));
+    // their centre's haze level); farmland is ground and hazes like the coarse terrain levels.
+    let tag = MeshTag(match tier {
+        Tier::Fields => mesh_tag(3, 4, false),
+        Tier::Main => mesh_tag(1, 6, false),
+        _ => mesh_tag(1, 5, false),
+    });
     let root = commands.spawn((SceneryBlock, WorldPos(origin), Transform::default(), Visibility::default())).id();
     let mut children = Vec::new();
     for (c, tris) in geom.solid {

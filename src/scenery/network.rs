@@ -95,6 +95,8 @@ pub struct Town {
     pub kind: TownKind,
     /// Street grid axis.
     pub u: DVec2,
+    /// Share of the buildings in ruins (front-line towns).
+    pub ruined: f64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -138,6 +140,8 @@ pub enum Kind {
     Mast,
     /// Hardened aircraft shelter (`h`: arch height, door at the `dir` end).
     Shelter,
+    /// A gutted building: broken walls up to `h`, rubble inside.
+    Ruin,
     Radar,
     Windsock,
     /// Airfield guidance sign.
@@ -225,7 +229,7 @@ impl Network {
         self.town_index.at(p).iter().map(|&i| &self.towns[i as usize]).find(|t| t.c.distance(p) < t.r * f)
     }
 
-    pub fn build(ground: &Ground, style: &Style) -> Network {
+    pub fn build(ground: &Ground, style: &Style, sites: &[crate::world::TownSite]) -> Network {
         let mut n = Network {
             towns: vec![],
             town_index: Index::default(),
@@ -238,6 +242,7 @@ impl Network {
             pylon_index: Index::default(),
             pylons: vec![],
         };
+        n.real_towns(sites);
         n.place_towns(ground, style);
         for t in 0..n.towns.len() {
             n.streets(t, ground, style);
@@ -255,6 +260,24 @@ impl Network {
         n
     }
 
+    /// The theater's own towns (remake theaters), where they really are.
+    fn real_towns(&mut self, sites: &[crate::world::TownSite]) {
+        for s in sites {
+            let kind = match s.kind {
+                0 => TownKind::Village,
+                1 => TownKind::Town,
+                _ => TownKind::City,
+            };
+            let c = DVec2::new(s.x, s.y);
+            let mut rng = Rng::new(hash(0x70_5EED, c.x as i64, c.y as i64, 0));
+            let u = DVec2::from_angle(rng.range(0.0, std::f64::consts::PI));
+            let id = self.towns.len() as u32;
+            let d = DVec2::splat(s.r + 200.0);
+            self.town_index.insert(c - d, c + d, id);
+            self.towns.push(Town { c, r: s.r, kind, u, ruined: s.ruined });
+        }
+    }
+
     fn place_towns(&mut self, ground: &Ground, style: &Style) {
         let spacing = 6500.0;
         let cells = (THEATER_M / spacing) as i64;
@@ -265,7 +288,7 @@ impl Network {
                     continue;
                 }
                 let c = DVec2::new((gx as f64 + rng.range(0.15, 0.85)) * spacing, (gy as f64 + rng.range(0.15, 0.85)) * spacing);
-                let (kind, r) = match rng.weighted(&[0.68, 0.25, 0.07]) {
+                let (kind, r) = match rng.weighted(&style.town_mix) {
                     0 => (TownKind::Village, rng.range(160.0, 300.0)),
                     1 => (TownKind::Town, rng.range(420.0, 700.0)),
                     _ => (TownKind::City, rng.range(900.0, 1400.0)),
@@ -287,7 +310,7 @@ impl Network {
                 let id = self.towns.len() as u32;
                 let d = DVec2::splat(r + 200.0);
                 self.town_index.insert(c - d, c + d, id);
-                self.towns.push(Town { c, r, kind, u });
+                self.towns.push(Town { c, r, kind, u, ruined: 0.0 });
             }
         }
     }
@@ -298,7 +321,7 @@ impl Network {
         let (c, r, u) = (town.c, town.r, town.u);
         let v = u.perp();
         let mut rng = Rng::new(hash(style.seed, t as i64, 0, 2));
-        let spacing = street_spacing(town.kind);
+        let spacing = street_spacing(town.kind) * style.street_scale;
         let (n, width) = match town.kind {
             TownKind::Village => (0, 7.0),
             _ => ((r / spacing) as i32, 8.0),
@@ -406,8 +429,8 @@ impl Network {
     /// tower and industrial sites at the edge.
     fn town_buildings(&mut self, t: usize, ground: &Ground, style: &Style) {
         let town = &self.towns[t];
-        let (c, r, kind, u) = (town.c, town.r, town.kind, town.u);
-        let spacing = street_spacing(kind);
+        let (c, r, kind, u, ruined) = (town.c, town.r, town.kind, town.u, town.ruined);
+        let spacing = street_spacing(kind) * style.street_scale;
         let mut rng = Rng::new(hash(style.seed, t as i64, 0, 3));
         let streets: Vec<(DVec2, DVec2, f64)> = self
             .roads
@@ -424,6 +447,11 @@ impl Network {
                 while s < len {
                     let p = a + dir * s;
                     let core = 1.0 - p.distance(c) / r;
+                    if style.panel_district(kind, core) {
+                        // Panel blocks stand inside the blocks (below), not on the street.
+                        s += rng.range(20.0, 40.0);
+                        continue;
+                    }
                     let mut b = style.building(&mut rng, kind, core);
                     let step = b.l as f64 + rng.range(4.0, 14.0) * if core < 0.3 { 1.8 } else { 1.0 };
                     // Lot centre: across the street, clear of the cross streets.
@@ -432,12 +460,65 @@ impl Network {
                     let back = width * 0.5 + rng.range(3.0, 7.0) + b.w as f64 * 0.5;
                     b.p = p + dir.perp() * side * back;
                     b.dir = dir;
+                    if ruined > 0.0 && rng.chance(ruined) {
+                        b.kind = Kind::Ruin;
+                    }
                     // Fewer buildings towards the edge.
-                    if !near_cross && rng.chance(0.35 + core * 0.9) {
+                    if !near_cross && rng.chance(style.lot_fill + core * 0.9) {
                         lots.push(b);
                     }
                     s += step;
                 }
+            }
+        }
+        let mut panels = Vec::new();
+        if style.soviet && kind != TownKind::Village {
+            // Microdistricts: rows of panel blocks inside the street blocks.
+            let n = (r / spacing) as i32 + 1;
+            let usable = spacing - 2.0 * 22.0;
+            for i in -n..n {
+                for j in -n..n {
+                    let q = c + u * ((i as f64 + 0.5) * spacing) + u.perp() * ((j as f64 + 0.5) * spacing);
+                    let core = 1.0 - q.distance(c) / r;
+                    if !style.panel_district(kind, core) {
+                        continue;
+                    }
+                    // Rows along one of the street axes, 40-50 m apart.
+                    let (along, across) = if (i + j) & 1 == 0 { (u, u.perp()) } else { (u.perp(), u) };
+                    let rows = (usable / rng.range(38.0, 52.0)).floor().max(1.0) as i32;
+                    for k in 0..rows {
+                        let off = -usable * 0.5 + (k as f64 + 0.5) * usable / rows as f64;
+                        let mut b = style.panel(&mut rng, core, usable);
+                        let slack = (usable - b.l as f64).max(0.0) * 0.5;
+                        b.p = q + across * off + along * rng.range(-slack, slack);
+                        b.dir = along;
+                        if b.l < 30.0 && rng.chance(0.6) {
+                            // Point towers in a row.
+                            for t in [-1.0, 1.0] {
+                                let mut tw = b;
+                                tw.p = q + across * off + along * t * usable * 0.3;
+                                tw.seed = rng.u64();
+                                panels.push(tw);
+                            }
+                            continue;
+                        }
+                        if rng.chance(0.12) {
+                            continue;
+                        }
+                        panels.push(b);
+                    }
+                }
+            }
+            for b in panels.iter_mut() {
+                if rng.chance(ruined) {
+                    b.kind = Kind::Ruin;
+                }
+            }
+        }
+        // The rows of a block never overlap: only the ground and the streets are checked.
+        for b in panels {
+            if ground.is_free(b.p, b.w as f64 * 0.5) && self.road_clear(b.p, b.w as f64 * 0.5) {
+                self.add_building(b);
             }
         }
         if kind != TownKind::Village || rng.chance(0.7) {
@@ -756,7 +837,7 @@ fn route(ground: &Ground, seed: u64, a: DVec2, b: DVec2) -> Option<Vec<DVec2>> {
         let pts = subdivide(&pts, 120.0);
         let ok = pts.windows(2).all(|w| {
             let n = (w[0].distance(w[1]) / 40.0).ceil() as usize;
-            (0..=n).all(|i| ground.is_free(w[0].lerp(w[1], i as f64 / n.max(1) as f64), 6.0))
+            (0..=n).all(|i| ground.is_passable(w[0].lerp(w[1], i as f64 / n.max(1) as f64), 6.0))
         });
         if ok {
             return Some(pts);

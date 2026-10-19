@@ -53,7 +53,7 @@ impl Sky {
 }
 
 /// Odds of [`Sky::ALL`] per theater ([`crate::THEATER_NAMES`] order).
-const ODDS: [[u8; 5]; 9] = [
+const ODDS: [[u8; 5]; 10] = [
     [60, 25, 10, 4, 1],   // Libya
     [65, 20, 10, 3, 2],   // Persian Gulf
     [15, 20, 25, 30, 10], // North Cape
@@ -63,6 +63,7 @@ const ODDS: [[u8; 5]; 9] = [
     [50, 25, 15, 8, 2],   // Desert Storm
     [30, 30, 20, 5, 15],  // Cuba
     [25, 25, 25, 20, 5],  // Korea
+    [20, 25, 25, 22, 8],  // Ukraine
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

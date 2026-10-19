@@ -25,8 +25,8 @@ impl Plugin for MenuPlugin {
     }
 }
 
-/// Theaters in the original's order (file prefix, display name, era text).
-pub const THEATERS: [(&str, &str); 9] = [
+/// Theaters in the original's order, then the remake's own (file prefix, display name).
+pub const THEATERS: [(&str, &str); 10] = [
     ("lb", "Libya (1986)"),
     ("pg", "Persian Gulf (1984)"),
     ("nc", "North Cape"),
@@ -36,6 +36,7 @@ pub const THEATERS: [(&str, &str); 9] = [
     ("ku", "Desert Storm"),
     ("cu", "Cuba"),
     ("ko", "Korea"),
+    ("ua", "Ukraine (2026)"),
 ];
 
 #[derive(Resource)]
@@ -142,7 +143,7 @@ pub(crate) const BRIGHT: egui::Color32 = egui::Color32::from_rgb(190, 255, 205);
 pub(crate) const AMBER: egui::Color32 = egui::Color32::from_rgb(255, 176, 0);
 
 /// Hover facts per theater ([`THEATERS`] order).
-const THEATER_FACTS: [&[&str]; 9] = [
+const THEATER_FACTS: [&[&str]; 10] = [
     &["Gulf of Sidra and the Libyan coast", "Era of Operation El Dorado Canyon", "Clear desert skies most days"],
     &["Iran-Iraq Tanker War era", "Over water and coastal desert", "Clearest weather of all theaters"],
     &["Arctic Norway and the Kola Peninsula", "Home of the Soviet Northern Fleet", "Frequent low overcast"],
@@ -152,6 +153,7 @@ const THEATER_FACTS: [&[&str]; 9] = [
     &["Kuwait and Iraq, 1991", "The F-117A's real combat debut", "Mostly clear desert skies"],
     &["Caribbean island theater", "Sea and land targets", "Tropical: storms in 15% of missions"],
     &["Korean peninsula north of the DMZ", "Mountainous terrain", "Changeable weather, any sky is likely"],
+    &["Eastern Ukraine, Crimea and southern Russia", "Front line from Kharkiv to Kherson burns", "Open farmland, ruined towns at the front"],
 ];
 const ROE: [(&str, &[&str]); 3] = [
     ("Cold War", &["Covert peacetime operation", "Staying undetected matters most", "Fewer enemy aircraft on patrol", "Exact rules of engagement are in the briefing"]),

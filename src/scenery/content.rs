@@ -9,12 +9,20 @@ use bevy::math::DVec2;
 use bevy::prelude::*;
 
 use super::Scenery;
+use super::fields;
 use super::geom::{Geom, rect, ring};
 use super::network::{Building, Kind, Network, Rng, RoadKind, Roof, hash, noise};
 use super::style::Tree;
 
 /// Block size (metres).
 pub const BLOCK: f64 = 1000.0;
+/// Block size of the farmland tier (metres).
+pub const FIELD_BLOCK: f64 = 4000.0;
+/// Heights of the fields and shelterbelt strips: above the coarsest ground overlays (sea,
+/// lakes), below the finer ones (woods, airfields) and the roads.
+const FIELD_Y: f32 = 0.08;
+const BELT_Y: f32 = 0.11;
+const BELT: u8 = 0xAC;
 /// Height of road surfaces above the ground overlays (metres).
 const ROAD_Y: f32 = 0.9;
 const ROAD: u8 = 0xEC;
@@ -37,6 +45,14 @@ pub enum Tier {
     /// Distant trees: one small 3-sided cone or double cone per tree (3-6 triangles instead
     /// of 10-30), no bushes or trunks.
     Far,
+    /// Farmland: fields and the shelterbelt strips, in `FIELD_BLOCK` blocks.
+    Fields,
+}
+
+impl Tier {
+    pub fn block_size(self) -> f64 {
+        if self == Tier::Fields { FIELD_BLOCK } else { BLOCK }
+    }
 }
 
 /// Block-local frame: ground metres -> Bevy (x east, y up, z south) around the block centre.
@@ -92,8 +108,61 @@ pub fn build(sc: &Scenery, bx: i32, by: i32, tier: Tier) -> Geom {
         }
         Tier::Detail => trees(sc, &f, &mut g, false),
         Tier::Far => trees(sc, &f, &mut g, true),
+        Tier::Fields => {
+            let min = DVec2::new(bx as f64, by as f64) * FIELD_BLOCK;
+            farmland(sc, &Frame::around(min + FIELD_BLOCK * 0.5), min, min + FIELD_BLOCK, &mut g);
+        }
     }
     g
+}
+
+/// Whether a rectangle of farmland is open land away from the towns.
+fn farmland_ok(sc: &Scenery, min: DVec2, max: DVec2, r: f64) -> bool {
+    let d = DVec2::splat(200.0);
+    let clear_of_towns = !sc.net.town_index.around(min - d, max + d).any(|i| {
+        let t = &sc.net.towns[i as usize];
+        let q = t.c.clamp(min, max);
+        q.distance(t.c) < t.r * 1.1 + 60.0
+    });
+    clear_of_towns && sc.ground.rect_free(min, max, r)
+}
+
+/// A shelterbelt's ground rectangle, if it may stand.
+fn belt_rect(sc: &Scenery, a: DVec2, b: DVec2) -> Option<(DVec2, DVec2)> {
+    let h = DVec2::splat(fields::BELT_WIDTH * 0.5);
+    let (min, max) = (a.min(b) - h, a.max(b) + h);
+    farmland_ok(sc, min, max, 4.0).then_some((min, max))
+}
+
+/// Fields and shelterbelt strips of the sections whose corner lies in the block.
+fn farmland(sc: &Scenery, f: &Frame, min: DVec2, max: DVec2, g: &mut Geom) {
+    let Some(style) = &sc.style else { return };
+    let quad = |g: &mut Geom, lo: DVec2, hi: DVec2, y: f32, c: u8| {
+        g.ground(c, &[f.at(lo, y), f.at(DVec2::new(hi.x, lo.y), y), f.at(hi, y), f.at(DVec2::new(lo.x, hi.y), y)]);
+    };
+    for (sx, sy) in fields::sections(min, max - 1.0) {
+        let corner = DVec2::new(sx as f64, sy as f64) * fields::SECTION;
+        if corner.x < min.x || corner.y < min.y {
+            continue;
+        }
+        for field in fields::section(style.seed, sx, sy) {
+            let (mut lo, mut hi) = (field.min, field.max);
+            if !farmland_ok(sc, lo, hi, 12.0) {
+                // A smaller field in the middle, short of the obstacle.
+                let inset = (hi - lo) * 0.22;
+                (lo, hi) = (lo + inset, hi - inset);
+                if !farmland_ok(sc, lo, hi, 12.0) {
+                    continue;
+                }
+            }
+            quad(g, lo, hi, FIELD_Y, field.colour);
+        }
+        for (a, b) in fields::belts(style.seed, sx, sy) {
+            if let Some((lo, hi)) = belt_rect(sc, a, b) {
+                quad(g, lo, hi, BELT_Y, BELT);
+            }
+        }
+    }
 }
 
 fn roads(net: &Network, f: &Frame, g: &mut Geom) {
@@ -192,6 +261,7 @@ pub(super) fn building(b: &Building, f: &Frame, g: &mut Geom) {
             }
             windows(b, c, d, &mut rng, g);
         }
+        Kind::Ruin => ruin(b, c, d, &mut rng, g),
         Kind::Silo => {
             let r = ring(c, b.l * 0.5, 8, 0.0);
             g.walls(b.wall, &r, 0.0, b.h);
@@ -278,6 +348,66 @@ pub(super) fn building(b: &Building, f: &Frame, g: &mut Geom) {
             g.block(b.wall, b.roof_colour, &foot, 0.4, b.h);
             g.face(b.roof_colour, &foot.iter().map(|p| *p + Vec3::Y * 0.4).collect::<Vec<_>>(), -Vec3::Y);
         }
+    }
+}
+
+/// Wall colour of burnt-out walls and of the inside faces of ruins.
+const SOOT: u8 = 0xEB;
+const RUBBLE: u8 = 0xE8;
+
+/// A gutted building: wall panels broken off at random heights with gaps blown in them, soot
+/// grey inside, a floor slab hanging down here and there, rubble mounds in the shell.
+fn ruin(b: &Building, c: Vec3, d: Vec2, rng: &mut Rng, g: &mut Geom) {
+    let along = Vec3::new(d.x, 0.0, d.y);
+    let across = Vec3::new(-d.y, 0.0, d.x);
+    let foot = rect(c, d, b.l, b.w);
+    // How much still stands: one end usually more than the other.
+    let (s0, s1) = (rng.range(0.15, 1.0) as f32, rng.range(0.1, 0.8) as f32);
+    let wall = if rng.chance(0.3) { SOOT } else { b.wall };
+    let panel = if b.h > 8.0 { 4.0 } else { 3.0 };
+    for i in 0..4 {
+        let (p, q) = (foot[i], foot[(i + 1) % 4]);
+        let len = p.distance(q);
+        let n = (len / panel).ceil().max(1.0) as usize;
+        let out = (p + q) * 0.5 - c;
+        let out = Vec3::new(out.x, 0.0, out.z).normalize_or_zero();
+        let mut prev = b.h * rng.range(0.2, 1.0) as f32;
+        for k in 0..n {
+            let (t0, t1) = (k as f32 / n as f32, (k + 1) as f32 / n as f32);
+            let (a, e) = (p.lerp(q, t0), p.lerp(q, t1));
+            // Standing share along the building's length.
+            let x = ((e - c).dot(along) / b.l + 0.5).clamp(0.0, 1.0);
+            let stand = s0 + (s1 - s0) * x;
+            let h = (b.h * stand * rng.range(0.4, 1.1) as f32).clamp(0.6, b.h);
+            if rng.chance(0.15) {
+                prev = 0.6;
+                continue;
+            }
+            let (h0, h1) = (prev.min(h + 2.0), h);
+            prev = h1;
+            g.face(wall, &[a, e, e + Vec3::Y * h1, a + Vec3::Y * h0], out);
+            let inset = -out * 0.3;
+            g.face(SOOT, &[a + inset, e + inset, e + inset + Vec3::Y * h1, a + inset + Vec3::Y * h0], -out);
+        }
+    }
+    // A slab hanging from a floor that still stands.
+    if b.h > 8.0 && rng.chance(0.6) {
+        let y = 3.0 * (rng.range(1.0, (b.h * s0 / 3.0).max(1.5) as f64)).floor() as f32;
+        let x0 = rng.range(-0.45, 0.1) as f32 * b.l;
+        let x1 = x0 + rng.range(0.15, 0.35) as f32 * b.l;
+        let drop = rng.range(1.5, 5.0) as f32;
+        let at = |x: f32, s: f32, dy: f32| c + along * x + across * s * (b.w * 0.5 - 0.4) + Vec3::Y * (y - dy);
+        let pts = [at(x0, -1.0, 0.0), at(x1, -1.0, drop), at(x1, 1.0, drop * 0.4), at(x0, 1.0, 0.0)];
+        g.face(0xE6, &pts, Vec3::Y);
+        g.face(SOOT, &pts, -Vec3::Y);
+    }
+    // Rubble inside and spilling out.
+    let mounds = 2 + (b.l / 25.0) as usize;
+    for _ in 0..mounds {
+        let p = c + along * rng.range(-0.5, 0.5) as f32 * b.l + across * rng.range(-0.7, 0.7) as f32 * b.w;
+        let r = rng.range(2.5, 6.0) as f32 + b.w * 0.15;
+        let h = (b.h * (1.0 - s0.min(s1)) * 0.25 + rng.range(0.8, 2.5) as f32).min(r * 0.9);
+        g.spire(rng.pick(&[RUBBLE, 0xE7, 0xE9, 0xEA]), &ring(p, r, 5, rng.range(0.0, 6.3) as f32), 0.0, p + Vec3::Y * h);
     }
 }
 
@@ -399,8 +529,10 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
             let (gx, gy) = (gx0 + i, gy0 + j);
             let mut rng = Rng::new(hash(seed, gx, gy, 9));
             let p = DVec2::new((gx as f64 + rng.range(0.1, 0.9)) * TREE_GRID, (gy as f64 + rng.range(0.1, 0.9)) * TREE_GRID);
+            // The theater's own woods are dense, elsewhere the noise decides.
+            let wood = sc.ground.is_forest(p, 3.0);
             let cover = noise(seed, p, 1600.0);
-            let forest = ((cover - style.forest) / 0.1).clamp(0.0, 1.0);
+            let forest = if wood { 1.0 } else { ((cover - style.forest) / 0.1).clamp(0.0, 1.0) };
             let roll = rng.f();
             let in_town = sc.net.town_at(p, 0.95).is_some();
             let (tree, bush) = if in_town {
@@ -411,7 +543,7 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
             if !tree && !bush {
                 continue;
             }
-            if !sc.ground.is_free(p, 3.0) || !sc.net.road_clear(p, 4.0) || !sc.net.building_clear(p, 3.0) {
+            if !(wood || sc.ground.is_free(p, 3.0)) || !sc.net.road_clear(p, 4.0) || !sc.net.building_clear(p, 3.0) {
                 continue;
             }
             let c = f.at(p, 0.0);
@@ -425,58 +557,100 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
             }
             let h = rng.range(8.0, 18.0) as f32;
             let phase = rng.range(0.0, 6.3) as f32;
-            match style.tree(&mut rng) {
-                Tree::Conifer if far => {
-                    let col = rng.pick(&[0xAD, 0xAE]);
-                    g.spire(col, &ring(c, h * 0.26, 3, phase), h * 0.08, c + Vec3::Y * h);
-                }
-                Tree::Broadleaf if far => {
-                    let col = rng.pick(&[0xAB, 0xAC, 0xAD]);
-                    let crown = ring(c, h * 0.33, 3, phase);
-                    g.spire(col, &crown, h * 0.58, c + Vec3::Y * h);
-                    g.spire(col, &crown, h * 0.58, c + Vec3::Y * h * 0.28);
-                }
-                Tree::Palm if far => {
-                    let crown = ring(c, h * 0.3, 3, phase);
-                    g.spire(0xA8, &crown, h * 0.9, c + Vec3::Y * h * 1.02);
-                    g.spire(0xA8, &crown, h * 0.9, c + Vec3::Y * h * 0.7);
-                }
-                Tree::Conifer => {
-                    let col = rng.pick(&[0xAD, 0xAE]);
-                    g.spire(col, &ring(c, h * 0.27, 5, phase), h * 0.08, c + Vec3::Y * h * 0.72);
-                    g.spire(col, &ring(c, h * 0.19, 5, phase + 0.6), h * 0.45, c + Vec3::Y * h);
-                }
-                Tree::Broadleaf => {
-                    let col = rng.pick(&[0xAB, 0xAC, 0xAD]);
-                    let crown = ring(c, h * 0.33, 6, phase);
-                    let mid = h * 0.58;
-                    g.walls(0xCD, &ring(c, 0.35, 3, phase), 0.0, h * 0.35);
-                    g.spire(col, &crown, mid, c + Vec3::Y * h);
-                    g.spire(col, &crown, mid, c + Vec3::Y * h * 0.28);
-                }
-                Tree::Palm => {
-                    let lean = Vec3::new(rng.range(-1.0, 1.0) as f32, 0.0, rng.range(-1.0, 1.0) as f32) * h * 0.08;
-                    let top = c + lean + Vec3::Y * h;
-                    let base = ring(c, 0.35, 3, phase);
-                    for k in 0..3 {
-                        let (a, b) = (base[k], base[(k + 1) % 3]);
-                        let out = (a + b) * 0.5 - c;
-                        g.face(0xCC, &[a, b, top + (b - c) * 0.5, top + (a - c) * 0.5], out);
+            let kind = style.tree(&mut rng);
+            tree_at(g, &mut rng, kind, c, h, phase, far);
+        }
+    }
+    if style.fields {
+        belt_trees(sc, f, g, far);
+    }
+}
+
+/// Two staggered rows of trees along the shelterbelts crossing a block.
+fn belt_trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
+    let Some(style) = &sc.style else { return };
+    let (min, max) = (f.min, f.min + DVec2::splat(BLOCK));
+    let m = DVec2::splat(fields::SECTION);
+    for (sx, sy) in fields::sections(min - m, max) {
+        for (a, b) in fields::belts(style.seed, sx, sy) {
+            // Only the part of the belt in this block.
+            let (lo, hi) = (a.max(min - 10.0), b.min(max + 10.0));
+            if lo.x > hi.x || lo.y > hi.y || belt_rect(sc, a, b).is_none() {
+                continue;
+            }
+            let dir = (b - a).normalize();
+            let side = dir.perp();
+            let (s0, s1) = ((lo - a).dot(dir), (hi - a).dot(dir));
+            let mut k = (s0 / 8.0).ceil();
+            while k * 8.0 < s1 {
+                for row in [-1.0, 1.0] {
+                    let mut rng = Rng::new(hash(style.seed, (a.x + k * 8.0 * dir.x) as i64, (a.y + k * 8.0 * dir.y) as i64, row as i64 + 20));
+                    let p = a + dir * (k * 8.0 + row * 2.0 + rng.range(-1.5, 1.5)) + side * row * rng.range(2.0, 4.5);
+                    if !f.contains(p) || rng.chance(0.08) || !sc.net.road_clear(p, 4.0) {
+                        continue;
                     }
-                    for k in 0..6 {
-                        let a = phase + k as f32 * TAU / 6.0;
-                        let d = Vec3::new(a.cos(), 0.0, a.sin());
-                        let tip = top + d * h * 0.38 - Vec3::Y * h * 0.18;
-                        let side = Vec3::new(-d.z, 0.0, d.x) * h * 0.06;
-                        let mid = top + d * h * 0.2 + Vec3::Y * 0.4;
-                        // Fronds are seen from above and below.
-                        g.face(0xA8, &[top, mid + side, tip], Vec3::Y);
-                        g.face(0xA8, &[top, mid + side, tip], -Vec3::Y);
-                        g.face(0xA8, &[top, tip, mid - side], Vec3::Y);
-                        g.face(0xA8, &[top, tip, mid - side], -Vec3::Y);
-                    }
+                    let kind = if rng.chance(0.9) { Tree::Broadleaf } else { Tree::Conifer };
+                    let (h, phase) = (rng.range(9.0, 20.0) as f32, rng.range(0.0, 6.3) as f32);
+                    tree_at(g, &mut rng, kind, f.at(p, 0.0), h, phase, far);
                 }
+                k += 1.0;
             }
         }
     }
+}
+
+/// One tree of height `h` at ground point `c`, turned by `phase`.
+fn tree_at(g: &mut Geom, rng: &mut Rng, kind: Tree, c: Vec3, h: f32, phase: f32, far: bool) {
+    match kind {
+        Tree::Conifer if far => {
+            let col = rng.pick(&[0xAD, 0xAE]);
+            g.spire(col, &ring(c, h * 0.26, 3, phase), h * 0.08, c + Vec3::Y * h);
+        }
+        Tree::Broadleaf if far => {
+            let col = rng.pick(&[0xAB, 0xAC, 0xAD]);
+            let crown = ring(c, h * 0.33, 3, phase);
+            g.spire(col, &crown, h * 0.58, c + Vec3::Y * h);
+            g.spire(col, &crown, h * 0.58, c + Vec3::Y * h * 0.28);
+        }
+        Tree::Palm if far => {
+            let crown = ring(c, h * 0.3, 3, phase);
+            g.spire(0xA8, &crown, h * 0.9, c + Vec3::Y * h * 1.02);
+            g.spire(0xA8, &crown, h * 0.9, c + Vec3::Y * h * 0.7);
+        }
+        Tree::Conifer => {
+            let col = rng.pick(&[0xAD, 0xAE]);
+            g.spire(col, &ring(c, h * 0.27, 5, phase), h * 0.08, c + Vec3::Y * h * 0.72);
+            g.spire(col, &ring(c, h * 0.19, 5, phase + 0.6), h * 0.45, c + Vec3::Y * h);
+        }
+        Tree::Broadleaf => {
+            let col = rng.pick(&[0xAB, 0xAC, 0xAD]);
+            let crown = ring(c, h * 0.33, 6, phase);
+            let mid = h * 0.58;
+            g.walls(0xCD, &ring(c, 0.35, 3, phase), 0.0, h * 0.35);
+            g.spire(col, &crown, mid, c + Vec3::Y * h);
+            g.spire(col, &crown, mid, c + Vec3::Y * h * 0.28);
+        }
+        Tree::Palm => {
+            let lean = Vec3::new(rng.range(-1.0, 1.0) as f32, 0.0, rng.range(-1.0, 1.0) as f32) * h * 0.08;
+            let top = c + lean + Vec3::Y * h;
+            let base = ring(c, 0.35, 3, phase);
+            for k in 0..3 {
+                let (a, b) = (base[k], base[(k + 1) % 3]);
+                let out = (a + b) * 0.5 - c;
+                g.face(0xCC, &[a, b, top + (b - c) * 0.5, top + (a - c) * 0.5], out);
+            }
+            for k in 0..6 {
+                let a = phase + k as f32 * TAU / 6.0;
+                let d = Vec3::new(a.cos(), 0.0, a.sin());
+                let tip = top + d * h * 0.38 - Vec3::Y * h * 0.18;
+                let side = Vec3::new(-d.z, 0.0, d.x) * h * 0.06;
+                let mid = top + d * h * 0.2 + Vec3::Y * 0.4;
+                // Fronds are seen from above and below.
+                g.face(0xA8, &[top, mid + side, tip], Vec3::Y);
+                g.face(0xA8, &[top, mid + side, tip], -Vec3::Y);
+                g.face(0xA8, &[top, tip, mid - side], Vec3::Y);
+                g.face(0xA8, &[top, tip, mid - side], -Vec3::Y);
+            }
+        }
+            }
 }

@@ -1,7 +1,8 @@
 //! Where scenery may go, from the theater's own tile objects: the flat ground overlays (water,
-//! fields, concrete) decide land and water like the original's painter's order, the footprints
-//! of raised geometry (mountains, buildings, airbases, targets) are kept clear, and the flat
-//! road lines of the coarse levels are picked up as highways.
+//! fields, concrete, woods) decide land and water like the original's painter's order, the
+//! footprints of raised geometry (mountains, buildings, airbases, targets) are kept clear, and
+//! the flat road lines of the coarse levels are picked up as highways. Overlays in a node named
+//! `..._forest` (the remake's own theaters) are woods, which the scenery fills with trees.
 
 use std::collections::HashMap;
 
@@ -61,6 +62,8 @@ enum Surface {
     Land,
     /// Solid colour (runways, concrete, ...).
     Solid,
+    /// Woods: no buildings, dense trees.
+    Forest,
 }
 
 /// The surface a colour word gives a flat polygon (None: invisible), judged by the colour it
@@ -91,6 +94,26 @@ struct FlatTri {
 }
 
 impl FlatTri {
+    /// Whether the triangle overlaps an axis-aligned rectangle (separating axes).
+    fn overlaps(&self, lo: Vec2, hi: Vec2) -> bool {
+        let [a, b, c] = self.p;
+        if a.x.max(b.x).max(c.x) < lo.x || a.x.min(b.x).min(c.x) > hi.x || a.y.max(b.y).max(c.y) < lo.y || a.y.min(b.y).min(c.y) > hi.y {
+            return false;
+        }
+        let corners = [lo, Vec2::new(hi.x, lo.y), hi, Vec2::new(lo.x, hi.y)];
+        for (p, q) in [(a, b), (b, c), (c, a)] {
+            let n = (q - p).perp();
+            let tri = [a, b, c].map(|v| n.dot(v));
+            let (tmin, tmax) = (tri[0].min(tri[1]).min(tri[2]), tri[0].max(tri[1]).max(tri[2]));
+            let box_ = corners.map(|v| n.dot(v));
+            let (bmin, bmax) = (box_[0].min(box_[1]).min(box_[2]).min(box_[3]), box_[0].max(box_[1]).max(box_[2]).max(box_[3]));
+            if bmax < tmin || bmin > tmax {
+                return false;
+            }
+        }
+        true
+    }
+
     fn contains(&self, q: Vec2) -> bool {
         let [a, b, c] = self.p;
         let s = |p: Vec2, q0: Vec2, q1: Vec2| (q0 - p).perp_dot(q1 - p);
@@ -144,12 +167,44 @@ impl Ground {
             .map(|t| t.surface)
     }
 
-    /// Land, not concrete, and at least `r` metres from raised tile geometry.
+    /// Land, not concrete or woods, and at least `r` metres from raised tile geometry.
     pub fn is_free(&self, p: DVec2, r: f64) -> bool {
+        if matches!(self.top(p), Some(Surface::Water | Surface::Solid | Surface::Forest)) {
+            return false;
+        }
+        self.boxes_clear(p, r, false)
+    }
+
+    /// Land a road may cross (woods too), at least `r` metres from raised tile geometry.
+    pub fn is_passable(&self, p: DVec2, r: f64) -> bool {
         if matches!(self.top(p), Some(Surface::Water | Surface::Solid)) {
             return false;
         }
         self.boxes_clear(p, r, false)
+    }
+
+    /// In the woods, at least `r` metres from raised tile geometry.
+    pub fn is_forest(&self, p: DVec2, r: f64) -> bool {
+        self.top(p) == Some(Surface::Forest) && self.boxes_clear(p, r, true)
+    }
+
+    /// No water, concrete or woods under an axis-aligned rectangle, and no raised geometry
+    /// within `r` metres of it.
+    pub fn rect_free(&self, min: DVec2, max: DVec2, r: f64) -> bool {
+        let (lo, hi) = (min.as_vec2(), max.as_vec2());
+        let blocked = self.tri_index.around(min, max).any(|i| {
+            let t = &self.tris[i as usize];
+            t.surface != Surface::Land && t.overlaps(lo, hi)
+        });
+        if blocked {
+            return false;
+        }
+        let d = DVec2::splat(r);
+        let (a, b) = ((min - d).as_vec2(), (max + d).as_vec2());
+        !self.box_index.around(min - d, max + d).any(|i| {
+            let (bx, _) = self.boxes[i as usize];
+            bx.min.x < b.x && bx.max.x > a.x && bx.min.y < b.y && bx.max.y > a.y
+        })
     }
 
     /// Not water or concrete at the point, and at least `r` metres from raised geometry
@@ -299,7 +354,7 @@ fn extract(assets: &ModelAssets, gltf: &Gltf, name: &str, remap: &[u16], day: &V
     let mut geom = ShapeGeom::default();
     let Some(node) = gltf.named_nodes.get(name) else { return geom };
     let materials: HashMap<AssetId<GltfMaterial>, &str> = gltf.named_materials.iter().map(|(n, h)| (h.id(), n.as_ref())).collect();
-    walk(assets, node, Transform::IDENTITY, false, &materials, remap, day, &mut geom);
+    walk(assets, node, Transform::IDENTITY, false, false, &materials, remap, day, &mut geom);
     geom
 }
 
@@ -309,6 +364,7 @@ fn walk(
     handle: &Handle<GltfNode>,
     parent: Transform,
     in_lod0: bool,
+    in_forest: bool,
     materials: &HashMap<AssetId<GltfMaterial>, &str>,
     remap: &[u16],
     day: &VgaPalette,
@@ -322,6 +378,7 @@ fn walk(
         return;
     }
     let tf = parent.mul_transform(node.transform);
+    let forest = in_forest || name.ends_with("_forest");
     if lod0 && let Some(mesh) = node.mesh.as_ref().and_then(|m| assets.meshes.get(m)) {
         for prim in &mesh.primitives {
             let Some(m) = assets.mesh_data.get(&prim.mesh) else { continue };
@@ -348,7 +405,7 @@ fn walk(
             for t in idx.as_chunks::<3>().0 {
                 let p = [pos[t[0]], pos[t[1]], pos[t[2]]];
                 if p.iter().all(|v| v.y.abs() < 1.0) {
-                    if let Some(s) = surface(word, day) {
+                    if let Some(s) = surface(word, day).map(|s| if forest { Surface::Forest } else { s }) {
                         let q = p.map(ground);
                         if s == Surface::Solid {
                             let r = Rect::from_corners(q[0].min(q[1]).min(q[2]), q[0].max(q[1]).max(q[2]));
@@ -369,6 +426,6 @@ fn walk(
         }
     }
     for c in &node.children {
-        walk(assets, c, tf, lod0, materials, remap, day, geom);
+        walk(assets, c, tf, lod0, forest, materials, remap, day, geom);
     }
 }

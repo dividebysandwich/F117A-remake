@@ -191,6 +191,17 @@ fn start_combat(
             }
         },
     };
+    // Remake theaters have no tiles in the VGAME export: take them from the theater file.
+    let data = if data.theaters.get(m.settings.theater).is_none() {
+        let mut d = (*data).clone();
+        let theater = crate::world::Theater::load(&m.theater_code.to_ascii_lowercase());
+        let tiles = theater.sim_tiles();
+        d.theaters.resize(m.settings.theater, tiles.clone());
+        d.theaters.push(tiles);
+        Arc::new(d)
+    } else {
+        data
+    };
     let landing = match constants.landing {
         0 => LandingMode::NoCrashes,
         2 => LandingMode::Realistic,

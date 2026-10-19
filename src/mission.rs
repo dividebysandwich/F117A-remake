@@ -88,7 +88,10 @@ pub fn from_args(app: &mut App) {
     let args: Vec<String> = std::env::args().collect();
     let get = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
     let Some(seed) = get("--mission").and_then(|s| s.parse::<u16>().ok()) else { return };
-    let theater = get("--theater-index").and_then(|s| s.parse().ok()).unwrap_or(3);
+    let theater = get("--theater-index")
+        .and_then(|s| s.parse().ok())
+        .or_else(|| get("--theater").and_then(|c| theater_index(&c)))
+        .unwrap_or(3);
     // The menu's other choices (also used when the menu relaunches the game in VR).
     let roe = get("--roe").and_then(|s| s.parse().ok()).unwrap_or(1);
     let kind = get("--kind")
@@ -123,7 +126,7 @@ pub fn from_args(app: &mut App) {
 
 /// Theater index of a theater code ("ce" -> 3).
 pub fn theater_index(code: &str) -> Option<usize> {
-    f117_formats::THEATERS.iter().position(|t| t.eq_ignore_ascii_case(code))
+    f117_formats::ALL_THEATERS.iter().position(|t| t.eq_ignore_ascii_case(code))
 }
 
 /// OnEnter(Flight): every flight flies a mission. Without one (`--fly`, `--theater`, `--script`)

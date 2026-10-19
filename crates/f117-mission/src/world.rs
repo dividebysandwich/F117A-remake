@@ -197,7 +197,12 @@ pub(crate) struct Candidate {
 /// Everything START loads for one theater.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TheaterData {
+    /// Original theater whose START rules apply (mission table rows, dates, grid references):
+    /// its own index for the original theaters.
     pub index: usize,
+    /// Briefing start date (month, day, year) of a remake theater.
+    #[serde(default)]
+    pub date: Option<(u8, u8, u16)>,
     pub world: MissionWorld,
     /// `.3DG` grids: g4 (4x4), g3 (16x16), g2/g1/g0 (32 blocks of 4x4).
     pub(crate) g: [Vec<u8>; 5],
@@ -228,7 +233,7 @@ impl TheaterData {
             .iter()
             .map(|lv| lv.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect())
             .collect();
-        let mut td = Self { index: theater, world, g, tiles, cand_lod12: vec![Vec::new(); 256], cand_lod3: vec![Vec::new(); 256], grid_size };
+        let mut td = Self { index: theater, date: None, world, g, tiles, cand_lod12: vec![Vec::new(); 256], cand_lod3: vec![Vec::new(); 256], grid_size };
         td.build_candidates();
         Ok(td)
     }

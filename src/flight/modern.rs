@@ -46,7 +46,7 @@ const CD0: f32 = 0.040;
 const CD_K: f32 = 0.16;
 const CD_GEAR: f32 = 0.025;
 const CD_FLAPS: f32 = 0.04;
-const CD_SPEED_BRAKE: f32 = 0.08;
+const CD_SPEED_BRAKE: f32 = 0.12;
 const CD_BAY: f32 = 0.008;
 /// Side force per radian of sideslip.
 const CY_BETA: f32 = 0.8;
@@ -69,7 +69,7 @@ const TAU_BETA: f32 = 0.3;
 
 /// Ground: rolling friction, wheel brakes (g), nose-up rotation rate (rad/s), tail strike pitch.
 const ROLL_FRICTION: f32 = 0.02;
-const WHEEL_BRAKES: f32 = 0.4;
+const WHEEL_BRAKES: f32 = 1.0;
 const ROTATE_RATE: f32 = 0.15;
 const MAX_GROUND_PITCH: f32 = 0.22;
 /// Carrier catapult and arresting wire (g).

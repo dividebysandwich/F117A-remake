@@ -703,6 +703,36 @@ mod tests {
     }
 
     #[test]
+    fn brakes() {
+        for classic in [true, false] {
+            for throttle in [0.0, 0.3, 0.6, 1.0] {
+                // Rolling at 120 kt with the brakes on (no runway: crash protection).
+                let mut a0 = Aircraft::new_on_runway(10000.0);
+                a0.velocity = 120.0 * 27.0;
+                a0.brakes = true;
+                let mut stop = None;
+                let mut t = 0.0;
+                let (a, d) = fly(classic, a0, 30.0, 0, |a, c| {
+                    c.throttle = Some(throttle);
+                    t += 1.0 / 120.0;
+                    if a.knots() < 1.0 && stop.is_none() {
+                        stop = Some(t);
+                    }
+                });
+                println!("classic {classic} throttle {throttle}: stopped {stop:?} after {d:.0} wu, {:.0} kt after 30 s", a.knots());
+            }
+            // Speed brake: 10 s at idle from 400 kt, altitude held, with and without.
+            let speeds = [false, true].map(|brakes| {
+                let mut a0 = level(airborne(5000.0, 400.0, 0.0));
+                a0.brakes = brakes;
+                fly(classic, a0, 10.0, 1, |_, _| {}).0.knots()
+            });
+            println!("classic {classic}: 10 s idle from 400 kt: {:.0} kt, with speed brake {:.0} kt", speeds[0], speeds[1]);
+            assert!(speeds[1] < speeds[0] - 50.0);
+        }
+    }
+
+    #[test]
     fn ground_crash_possible() {
         for classic in [true, false] {
             // Dive at the ground, gear up: crashes unless crash protection is on.

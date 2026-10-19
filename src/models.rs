@@ -221,8 +221,13 @@ fn update_camera_distance(
 /// Range multiplier for a model's last (coarsest) detail level.
 const LAST_LOD_RANGE: f32 = 4.0;
 
+/// On a model root: its own range multiplier for the last detail level (instead of
+/// `LAST_LOD_RANGE`).
+#[derive(Component, Clone, Copy)]
+pub struct LodRange(pub f32);
+
 fn apply_model_state(
-    roots: Query<(&ModelState, &CameraDistance)>,
+    roots: Query<(&ModelState, &CameraDistance, Option<&LodRange>)>,
     mut lods: Query<(&LodLevel, &mut LodShown, &mut Visibility), (Without<CondNode>, Without<ArticulatedPart>)>,
     mut conds: Query<(&CondNode, &mut Visibility), Without<LodLevel>>,
     mut parts: Query<(&ArticulatedPart, &mut Transform)>,
@@ -231,16 +236,17 @@ fn apply_model_state(
     globals: Res<ModelGlobals>,
 ) {
     for (lod, mut shown, mut vis) in &mut lods {
-        let Ok((_, dist)) = roots.get(lod.root) else { continue };
+        let Ok((_, dist, range)) = roots.get(lod.root) else { continue };
         // The chosen level is the first whose max_dist covers the distance.
         let prev = all_lods
             .iter()
             .filter(|l| l.root == lod.root && l.level < lod.level)
             .map(|l| l.max_dist)
             .fold(0.0, f32::max);
-        // The last level stays drawn LAST_LOD_RANGE times further than its model says.
+        // The last level stays drawn LAST_LOD_RANGE (or the root's LodRange) times further
+        // than its model says.
         let last = !all_lods.iter().any(|l| l.root == lod.root && l.level > lod.level);
-        let max_dist = if last { lod.max_dist * LAST_LOD_RANGE } else { lod.max_dist };
+        let max_dist = if last { lod.max_dist * range.map_or(LAST_LOD_RANGE, |r| r.0) } else { lod.max_dist };
         let picks = |d: f32| d <= max_dist && (lod.level == 0 || d > prev);
         let main = picks(dist.main);
         let track = dist.track.map_or(main, picks);
@@ -260,12 +266,12 @@ fn apply_model_state(
         }
     }
     for (c, mut vis) in &mut conds {
-        let Ok((state, _)) = roots.get(c.root) else { continue };
+        let Ok((state, _, _)) = roots.get(c.root) else { continue };
         let show = c.conds.iter().all(|&(s, v)| state.0.get(s) == Some(&v));
         vis.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     }
     for (p, mut tf) in &mut parts {
-        let Ok((state, _)) = roots.get(p.root) else { continue };
+        let Ok((state, _, _)) = roots.get(p.root) else { continue };
         let value = state.0[p.slot].wrapping_add(globals.angle(p.slot));
         let angle = -(value as u16 as f32) / 65536.0 * std::f32::consts::TAU;
         let r = match p.axis {

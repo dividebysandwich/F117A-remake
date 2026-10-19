@@ -68,7 +68,7 @@ struct Effect {
 
 #[derive(Resource, Default)]
 struct SimVisuals {
-    aircraft: HashMap<usize, (Entity, i32)>,
+    aircraft: HashMap<usize, (Entity, (i32, bool))>,
     proj: [Option<(Entity, i32)>; N_PROJ],
     cms: [Option<Cartridge>; 4],
     bullets: Vec<Entity>,
@@ -117,8 +117,12 @@ pub fn attitude(heading: i32, pitch: i32, roll: i32) -> Quat {
     Aircraft::from_euler(bam(heading as u16 as f32), bam(pitch as i16 as f32), bam(roll as i16 as f32))
 }
 
-fn spawn_model(commands: &mut Commands, assets: &ModelAssets, file: &Handle<bevy::gltf::Gltf>, model: i32) -> Option<Entity> {
-    let e = assets.spawn(commands, file, &format!("stflt_{:03}", model.clamp(0, 999)), LEVEL_AIRCRAFT, false)?;
+/// Friendly aircraft: last detail level range multiplier (32769 model units x 40 = 80 km).
+const FRIENDLY_LOD_RANGE: f32 = 40.0;
+
+/// `no_fog`: no distance haze (friendly aircraft stay visible from far away).
+fn spawn_model(commands: &mut Commands, assets: &ModelAssets, file: &Handle<bevy::gltf::Gltf>, model: i32, no_fog: bool) -> Option<Entity> {
+    let e = assets.spawn(commands, file, &format!("stflt_{:03}", model.clamp(0, 999)), LEVEL_AIRCRAFT, no_fog)?;
     commands.entity(e).insert((
         SimObject,
         WorldPos::default(),
@@ -185,14 +189,19 @@ fn sync_objects(
         if u.flags & fflags::DESTROYED != 0 || (u.wx == 0 && u.wy == 0) {
             continue;
         }
-        if vis.aircraft.get(&i).is_some_and(|&(_, m)| m != model) {
+        let friendly = sim.friendly_aircraft(u.spec);
+        let key = (model, friendly);
+        if vis.aircraft.get(&i).is_some_and(|&(_, k)| k != key) {
             if let Some((e, _)) = vis.aircraft.remove(&i) {
                 commands.entity(e).try_despawn();
             }
         }
         if !vis.aircraft.contains_key(&i) {
-            let Some(e) = spawn_model(&mut commands, &assets, &file, model) else { continue };
-            vis.aircraft.insert(i, (e, model));
+            let Some(e) = spawn_model(&mut commands, &assets, &file, model, friendly) else { continue };
+            if friendly {
+                commands.entity(e).insert(crate::models::LodRange(FRIENDLY_LOD_RANGE));
+            }
+            vis.aircraft.insert(i, (e, key));
         }
         seen.insert(i);
         let (e, _) = vis.aircraft[&i];
@@ -243,7 +252,7 @@ fn sync_objects(
             continue;
         }
         if vis.proj[s].is_none() {
-            let Some(e) = spawn_model(&mut commands, &assets, &file, model) else { continue };
+            let Some(e) = spawn_model(&mut commands, &assets, &file, model, false) else { continue };
             // Rocket motor glow on missiles (not on bombs / equipment), so they can be followed.
             if crate::trails::is_missile(m.spec) {
                 let material = vis.material(&mut materials, &globals, TRACER);
@@ -367,7 +376,7 @@ fn sync_objects(
     let w = sim.wreck();
     if w.alt > 0 && w.x != 0 {
         if vis.wreck.is_none() {
-            vis.wreck = spawn_model(&mut commands, &assets, &file, WRECK_MODEL);
+            vis.wreck = spawn_model(&mut commands, &assets, &file, WRECK_MODEL, false);
         }
         if let Some(e) = vis.wreck
             && let Ok((mut pos, mut tf, _, _)) = q.get_mut(e)
@@ -534,7 +543,7 @@ fn own_shadow(
     let Ok((a, pos)) = player.single() else { return };
     let Ok((mut spos, mut tf, mut vis)) = shadow.single_mut() else {
         let file = library.load(&server, "stflt");
-        if let Some(e) = spawn_model(&mut commands, &assets, &file, SHADOW_MODEL) {
+        if let Some(e) = spawn_model(&mut commands, &assets, &file, SHADOW_MODEL, false) {
             commands.entity(e).insert((OwnShadow, Visibility::Hidden));
         }
         return;

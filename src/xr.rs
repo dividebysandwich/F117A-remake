@@ -4,8 +4,8 @@
 //!   falls back to the normal window). The XR tracking root becomes the rig's eye camera
 //!   (`camera::spawn_rig`), so the headset sits at the pilot's eye point and follows the
 //!   aircraft; `RigOffset` recentres it (on entering the flight, the left menu button or Home).
-//! - Input: one action set (grip/aim poses, squeeze, trigger, A/B/X/Y, stick click, menu,
-//!   haptics) with bindings for the common controllers, read into `cockpit3d::Hands` in the
+//! - Input: one action set (grip/aim poses, squeeze, trigger, A/B/X/Y, thumbstick and its
+//!   click, menu, haptics) with bindings for the common controllers, read into `cockpit3d::Hands` in the
 //!   cockpit frame. The cockpit module turns that into button pokes, stick and throttle.
 
 use bevy::app::PluginGroupBuilder;
@@ -27,7 +27,10 @@ use bevy_mod_xr::spaces::XrSpaceSyncSet;
 use openxr::{Haptic, Posef};
 
 use crate::camera::{EyeCamera, MAIN_BACKGROUND_LAYER, RigOffset, View, ViewState, XrRoot};
-use crate::cockpit3d::{BUTTON_MENU, BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_THUMB, Hands, HandsUpdate};
+use crate::cockpit3d::{
+    BUTTON_MENU, BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT, BUTTON_STICK_UP, BUTTON_THUMB, Hands,
+    HandsUpdate,
+};
 use crate::settings::AppState;
 
 /// Whether an OpenXR runtime is installed and active and offers Vulkan through
@@ -129,6 +132,7 @@ struct XrActions {
     primary: openxr::Action<bool>,
     secondary: openxr::Action<bool>,
     thumb: openxr::Action<bool>,
+    thumbstick: openxr::Action<openxr::Vector2f>,
     menu: openxr::Action<bool>,
     haptic: openxr::Action<Haptic>,
     /// /user/hand/left, /user/hand/right
@@ -176,6 +180,7 @@ fn create_actions(instance: Res<OxrInstance>, mut commands: Commands) {
             primary: set.create_action("primary", "Primary button", &hands)?,
             secondary: set.create_action("secondary", "Secondary button", &hands)?,
             thumb: set.create_action("thumb_click", "Thumbstick click", &hands)?,
+            thumbstick: set.create_action("thumbstick", "Thumbstick", &hands)?,
             menu: set.create_action("menu", "Menu / recentre", &hands)?,
             haptic: set.create_action("haptic", "Haptics", &hands)?,
             set,
@@ -247,7 +252,11 @@ fn suggest_bindings(actions: Option<Res<XrActions>>, mut out: MessageWriter<OxrS
         add(a.trigger.as_raw(), trigger);
         add(a.primary.as_raw(), primary);
         add(a.secondary.as_raw(), secondary);
-        add(a.thumb.as_raw(), thumb);
+        add(a.thumb.as_raw(), thumb.clone());
+        // Thumbstick directions wherever there is a thumbstick (not the Vive's trackpad).
+        if !thumb.is_empty() {
+            add(a.thumbstick.as_raw(), both("input/thumbstick"));
+        }
         add(a.menu.as_raw(), menu);
     }
 }
@@ -305,6 +314,14 @@ fn read_hands(
             | (b(&actions.secondary) as u8 * BUTTON_SECONDARY)
             | (b(&actions.thumb) as u8 * BUTTON_THUMB)
             | (b(&actions.menu) as u8 * BUTTON_MENU);
+        // Stick directions engage at 70 % and release below 50 % (no chatter at the edge).
+        let v = actions.thumbstick.state(&session, path).map_or(Vec2::ZERO, |s| Vec2::new(s.current_state.x, s.current_state.y));
+        for (bit, amount) in [(BUTTON_STICK_UP, v.y), (BUTTON_STICK_DOWN, -v.y), (BUTTON_STICK_RIGHT, v.x), (BUTTON_STICK_LEFT, -v.x)] {
+            let edge = if hand.prev_buttons & bit != 0 { 0.5 } else { 0.7 };
+            if amount > edge {
+                hand.buttons |= bit;
+            }
+        }
         let mut grip = None;
         let mut aim = None;
         for (s, tf, flags) in &spaces {

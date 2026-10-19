@@ -54,6 +54,9 @@ pub enum Action {
     CamLeft,
     DesignateTarget,
     SelectTarget,
+    /// Locks the nearest target ahead: AIR mode with an air-to-air missile selected, else GND
+    /// (not in the original; it is HUD mode + camera ahead, which re-acquires the nearest).
+    NearestTarget,
     SelectWaypoint,
     ChangeWaypoint,
     ResetWaypoint,
@@ -176,6 +179,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::KeyM, CamLeft),
         (None, K::KeyN, DesignateTarget),
         (None, K::KeyB, SelectTarget),
+        (None, K::KeyT, NearestTarget),
         (None, K::F7, SelectWaypoint),
         (None, K::F8, ChangeWaypoint),
         (Shift, K::F8, ResetWaypoint),

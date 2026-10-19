@@ -276,6 +276,7 @@ fn collect_commands(mut actions: MessageReader<ActionEvent>, mut combat: ResMut<
             Action::DesignateTarget => c.designate = true,
             Action::SelectTarget => c.next_target = true,
             Action::CamAhead => c.camera_dir = Some(0),
+            Action::NearestTarget => c.nearest_target = true,
             Action::CamRight => c.camera_dir = Some(0x4000),
             Action::CamRear => c.camera_dir = Some(0x8000),
             Action::CamLeft => c.camera_dir = Some(0xC000),

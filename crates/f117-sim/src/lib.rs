@@ -176,6 +176,8 @@ pub struct Sim {
     pub(crate) gnd_lock: i32,
     pub(crate) targeting: TargetingState,
     pub(crate) gnd_cooldown: i32,
+    /// Frames left for a nearest-target request to wait for the HUD mode (`Commands::nearest_target`).
+    pub(crate) nearest_req: u8,
     /// DS:E556.
     pub(crate) cam_dir: i32,
     pub(crate) last_missile_slot: i32,
@@ -360,6 +362,7 @@ impl Sim {
             gnd_lock: -1,
             targeting: TargetingState::default(),
             gnd_cooldown: 0,
+            nearest_req: 0,
             cam_dir: 0,
             last_missile_slot: -1,
             maverick_view: false,

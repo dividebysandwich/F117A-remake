@@ -2,21 +2,25 @@
 //!
 //! VR: squeeze the grip near the stick to take it. Tilting the controller (relative to how it
 //! was held when grabbed) deflects pitch (tilt back = nose up) and roll; twisting it about the
-//! stick's axis is the rudder. Trigger = fire weapon, A = gun, B = select weapon, stick click =
-//! designate target. Letting go re-centres the stick.
+//! stick's axis is the rudder. Letting go re-centres the stick.
 //! Squeeze near the throttle handle and slide it along its rails: forward = more thrust; it stays where it is
-//! released, with a haptic tick every 10 %. X = flare, Y = chaff, left stick click = decoy.
+//! released, with a haptic tick every 10 %.
+//! The controller buttons are mapped in the input mapping (`InputConfig::vr_buttons`); a trigger
+//! only counts while its hand holds the stick or throttle.
 //! The ejection handle is pulled up with either hand.
 //! Without VR both animate from the keyboard/gamepad controls.
 
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::prelude::*;
 
-use super::{BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_THUMB, CockpitMaterials, Hands};
+use super::{
+    BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT, BUTTON_STICK_UP, BUTTON_THUMB, CockpitMaterials, Hands,
+};
 use crate::flight::{Aircraft, Player};
+use crate::hotas::{ButtonTarget, InputConfig, VrHand, VrInput};
 use crate::input::{Action, ActionEvent, FlightControls};
 
-const STICK_PIVOT: Vec3 = Vec3::new(0.40, -0.48, -0.12);
+const STICK_PIVOT: Vec3 = Vec3::new(0.40, -0.48, -0.22);
 /// Grip centre above the pivot.
 const GRIP_HEIGHT: f32 = 0.11;
 /// Full deflection (radians).
@@ -28,8 +32,8 @@ const TWIST_DEADZONE: f32 = 0.15;
 const TWIST_HYSTERESIS: f32 = 0.03;
 
 /// Throttle rail on the left console: idle and full positions of the handle.
-const THROTTLE_IDLE: Vec3 = Vec3::new(-0.40, -0.40, -0.02);
-const THROTTLE_FULL: Vec3 = Vec3::new(-0.40, -0.40, -0.20);
+const THROTTLE_IDLE: Vec3 = Vec3::new(-0.40, -0.40, -0.12);
+const THROTTLE_FULL: Vec3 = Vec3::new(-0.40, -0.40, -0.30);
 /// Console top under the throttle rail.
 const THROTTLE_RAIL_Y: f32 = -0.4805;
 
@@ -209,9 +213,25 @@ fn stick_angles(delta: Quat) -> (f32, f32) {
     (v.z.atan2(v.y), v.x.atan2(v.y))
 }
 
-/// VR grabbing: writes `FlightControls` (after the keyboard/gamepad) and the HOTAS buttons.
+/// `Hand::buttons` bit of a controller input (the trigger is analog).
+fn vr_bit(input: VrInput) -> u8 {
+    match input {
+        VrInput::Trigger => 0,
+        VrInput::Primary => BUTTON_PRIMARY,
+        VrInput::Secondary => BUTTON_SECONDARY,
+        VrInput::ThumbClick => BUTTON_THUMB,
+        VrInput::ThumbUp => BUTTON_STICK_UP,
+        VrInput::ThumbDown => BUTTON_STICK_DOWN,
+        VrInput::ThumbLeft => BUTTON_STICK_LEFT,
+        VrInput::ThumbRight => BUTTON_STICK_RIGHT,
+    }
+}
+
+/// VR grabbing: writes `FlightControls` (after the keyboard/gamepad) and the mapped controller
+/// buttons.
 pub(super) fn grab_levers(
     mut hands: ResMut<Hands>,
+    config: Res<InputConfig>,
     mut grabs: Local<Grabs>,
     mut controls: ResMut<FlightControls>,
     mut actions: MessageWriter<ActionEvent>,
@@ -249,16 +269,6 @@ pub(super) fn grab_levers(
         } else {
             0.0
         };
-        controls.gun |= right.held(BUTTON_PRIMARY);
-        if right.trigger_pulled() {
-            actions.write(ActionEvent(Action::FireWeapon));
-        }
-        if right.just_pressed(BUTTON_SECONDARY) {
-            actions.write(ActionEvent(Action::SelectWeapon));
-        }
-        if right.just_pressed(BUTTON_THUMB) {
-            actions.write(ActionEvent(Action::DesignateTarget));
-        }
     }
 
     // --- throttle (left hand)
@@ -287,15 +297,26 @@ pub(super) fn grab_levers(
         }
         controls.throttle = Some(t);
     }
-    if left.active {
-        if left.just_pressed(BUTTON_PRIMARY) {
-            actions.write(ActionEvent(Action::Flare));
+
+    // --- mapped buttons; a trigger only while its hand holds the throttle / stick (otherwise it
+    // presses the cockpit control under the fingertip)
+    for (side, hand, holding) in [(VrHand::Left, &*left, grabs.throttle.is_some()), (VrHand::Right, &*right, grabs.stick.is_some())] {
+        if !hand.active {
+            continue;
         }
-        if left.just_pressed(BUTTON_SECONDARY) {
-            actions.write(ActionEvent(Action::Chaff));
-        }
-        if left.just_pressed(BUTTON_THUMB) {
-            actions.write(ActionEvent(Action::Decoy));
+        for m in config.vr_buttons.iter().filter(|m| m.hand == side) {
+            let (held, pressed) = match m.input {
+                VrInput::Trigger if !holding => continue,
+                VrInput::Trigger => (hand.trigger > 0.7, hand.trigger_pulled()),
+                input => (hand.held(vr_bit(input)), hand.just_pressed(vr_bit(input))),
+            };
+            match m.target {
+                ButtonTarget::Gun => controls.gun |= held,
+                ButtonTarget::Action(a) if pressed => {
+                    actions.write(ActionEvent(a));
+                }
+                ButtonTarget::Action(_) => {}
+            }
         }
     }
 

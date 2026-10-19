@@ -82,6 +82,11 @@ pub const BUTTON_PRIMARY: u8 = 1; // A / X
 pub const BUTTON_SECONDARY: u8 = 2; // B / Y
 pub const BUTTON_THUMB: u8 = 4; // thumbstick click
 pub const BUTTON_MENU: u8 = 8;
+/// Thumbstick pushed up / down / left / right.
+pub const BUTTON_STICK_UP: u8 = 16;
+pub const BUTTON_STICK_DOWN: u8 = 32;
+pub const BUTTON_STICK_LEFT: u8 = 64;
+pub const BUTTON_STICK_RIGHT: u8 = 128;
 
 #[derive(Default, Clone)]
 pub struct Hand {

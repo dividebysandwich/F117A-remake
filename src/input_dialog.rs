@@ -1,12 +1,13 @@
 //! Input mapping dialog (opened from the main menu): binds joystick / HOTAS axes and buttons to
-//! the flight controls and every action, and saves the mapping as JSON.
+//! the flight controls and every action, picks what the VR controller buttons do, and saves the
+//! mapping as JSON.
 
 use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use crate::hotas::{AxisControl, ButtonTarget, Hotas, InputConfig, Source, action_list, action_name};
+use crate::hotas::{AxisControl, ButtonTarget, Hotas, InputConfig, Source, VrHand, VrInput, action_list, action_name, default_vr_buttons};
 use crate::menu::{AMBER, BRIGHT, DIM, GREEN};
 
 #[derive(Resource, Default)]
@@ -241,6 +242,8 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
                         ui.end_row();
                     }
                 });
+                ui.add_space(8.0);
+                vr_buttons(ui, config);
             });
         });
 
@@ -262,6 +265,55 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
         dialog.capture = None;
         dialog.status = None;
     }
+}
+
+fn target_name(t: Option<ButtonTarget>) -> String {
+    match t {
+        None => "-".to_string(),
+        Some(t) => Binding::Button(t).name(),
+    }
+}
+
+/// VR controller buttons: a target picked per hand and input (no capture: the controllers are
+/// usually not awake at the desktop menu).
+fn vr_buttons(ui: &mut egui::Ui, config: &mut InputConfig) {
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("[ VR CONTROLLERS ]").color(AMBER).size(14.0));
+        if ui.button("DEFAULTS").clicked() {
+            config.vr_buttons = default_vr_buttons();
+        }
+    });
+    ui.label(
+        egui::RichText::new("A trigger only counts while its hand holds the throttle (left) or stick (right); otherwise it presses the control under the fingertip.")
+            .color(DIM)
+            .small(),
+    );
+    let targets: Vec<ButtonTarget> =
+        std::iter::once(ButtonTarget::Gun).chain(action_list().into_iter().map(|(a, _)| ButtonTarget::Action(a))).collect();
+    egui::Grid::new("vr_buttons").num_columns(3).spacing([14.0, 4.0]).striped(true).show(ui, |ui| {
+        ui.label("");
+        ui.label(egui::RichText::new("LEFT HAND").color(GREEN));
+        ui.label(egui::RichText::new("RIGHT HAND").color(GREEN));
+        ui.end_row();
+        for input in VrInput::ALL {
+            let (l, r) = (input.name(VrHand::Left), input.name(VrHand::Right));
+            ui.label(if l == r { l.to_string() } else { format!("{l} / {r}") });
+            for hand in [VrHand::Left, VrHand::Right] {
+                let current = config.vr_button(hand, input);
+                let mut picked = current;
+                egui::ComboBox::from_id_salt(("vr", hand, input)).width(190.0).selected_text(target_name(current)).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut picked, None, "-");
+                    for &t in &targets {
+                        ui.selectable_value(&mut picked, Some(t), target_name(Some(t)));
+                    }
+                });
+                if picked != current {
+                    config.bind_vr(hand, input, picked);
+                }
+            }
+            ui.end_row();
+        }
+    });
 }
 
 fn row_buttons(ui: &mut egui::Ui, what: Binding, capturing: bool, start: &mut Option<Binding>, clear: impl FnOnce()) {

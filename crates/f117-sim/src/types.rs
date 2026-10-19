@@ -246,6 +246,11 @@ pub struct Commands {
     pub designate: bool,
     /// 'b': next target.
     pub next_target: bool,
+    /// Lock the nearest enemy ahead (not in the original): turns the tracking camera ahead, and
+    /// once the HUD is in the selected weapon's mode (AIR for air-to-air missiles, else GND)
+    /// picks the nearest hostile flight or ground object in sight.
+    #[serde(default)]
+    pub nearest_target: bool,
     /// Camera keys `/` `,` `.` `m`: 0 / 0x4000 / 0x8000 / 0xC000.
     pub camera_dir: Option<u16>,
     /// Shift-F10.

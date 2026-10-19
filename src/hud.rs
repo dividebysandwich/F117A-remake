@@ -187,7 +187,7 @@ fn reset_hud(mut hud: ResMut<HudState>, mut msg: ResMut<HudMessages>) {
     *msg = HudMessages::default();
 }
 
-fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, mut wps: ResMut<Waypoints>) {
+fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, mut wps: ResMut<Waypoints>, stores: Res<Stores>) {
     let n = wps.points.len();
     for ActionEvent(a) in actions.read() {
         match a {
@@ -197,6 +197,10 @@ fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, 
                     HudMode::Air => HudMode::Gnd,
                     HudMode::Gnd => HudMode::Nav,
                 }
+            }
+            Action::NearestTarget => {
+                let air = stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
+                hud.mode = if air { HudMode::Air } else { HudMode::Gnd };
             }
             Action::HudDeclutter => hud.declutter = (hud.declutter + 1) % 3,
             Action::DayNightHud => hud.night = !hud.night,

@@ -2,6 +2,9 @@ use crate::Sim;
 use crate::math::{abs16, approx, cdiv, clamp_v, isqrt, s16};
 use crate::types::*;
 
+/// Frames a nearest-target request waits for the HUD to switch to the weapon's mode.
+const NEAREST_WAIT: u8 = 8;
+
 impl Sim {
     /// keyDispatch (V:CBA0) for this frame's commands.
     pub(crate) fn handle_keys(&mut self, ps: &PlayerState) {
@@ -52,6 +55,10 @@ impl Sim {
         }
         if let Some(d) = c.camera_dir {
             self.camera_key(d as i32);
+        }
+        if c.nearest_target {
+            self.camera_key(0);
+            self.nearest_req = NEAREST_WAIT;
         }
         if c.toggle_training {
             self.pflags ^= pflags::TRAINING;

@@ -65,6 +65,7 @@ rolled from its own random stream. A clear sky behaves exactly like the original
 | Mission orders | F10 |
 | Tracking camera ahead, rear, right, left | `/` / `.` / `,` / M |
 | Designate / next target | N / B |
+| Nearest enemy target ahead (AIR or GND mode by the selected weapon; not in the original) | T |
 | Zoom / unzoom / wide angle | Z / X / C |
 | Map zoom in / out, north up / heading up (modern panel) | Alt Z / Alt X / Alt F3 |
 | Time acceleration / normal | Shift Z / Shift X |
@@ -84,8 +85,11 @@ external views the right mouse button orbits the camera around the aircraft.
 **VR (`--vr`):** the headset is recentred on entering the flight (left menu button or Home
 recentres). Push buttons with your fingertip. Grab the stick (right side) with the grip button:
 tilt for pitch and roll, twist for rudder; trigger fires, A gun, B selects the weapon, stick
-click designates. Grab the throttle (left side) and slide it forward/back; X flare, Y chaff,
-stick click decoy. Grab the yellow handle at the front of the seat and pull up to eject.
+click locks the nearest target ahead, stick right next target, stick down designates. Grab the
+throttle (left side) and slide it forward/back; trigger opens/closes the bay doors, X flare,
+Y chaff, stick click decoy. The triggers only count while holding the stick or throttle.
+All controller buttons can be remapped in the menu's input mapping (VR CONTROLLERS).
+Grab the yellow handle at the front of the seat and pull up to eject.
 On Linux you need the `openxr` loader and a runtime (Monado, WiVRn, SteamVR); build with
 `--release`.
 

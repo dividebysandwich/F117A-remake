@@ -53,6 +53,7 @@ impl Sim {
     pub(crate) fn update_targeting(&mut self, ps: &PlayerState) {
         self.select_ground();
         self.select_air();
+        self.nearest_target();
         self.designate();
         self.lock_oval(ps);
         self.bombsight();
@@ -160,6 +161,70 @@ impl Sim {
         }
         if self.air_lock & 0x80 != 0 {
             self.air_lock = -1;
+        }
+    }
+
+    /// Nearest enemy ahead (`Commands::nearest_target`, not in the original), once the HUD mode
+    /// matches the selected weapon: same window, range and sight rules as the 'B' selection,
+    /// but only hostile targets (no friendly or neutral objects, no friendly aircraft).
+    fn nearest_target(&mut self) {
+        if self.nearest_req == 0 {
+            return;
+        }
+        self.nearest_req -= 1;
+        let (w, _) = self.bays[self.cur_bay];
+        let spec = self.weapon_types[(w.max(0) as usize).min(19)].spec as i32;
+        let air = spec > 0 && self.missile(spec).class == 7;
+        let want = if air { HudMode::Air } else { HudMode::Gnd };
+        if self.hud_mode != want || self.external_view {
+            return;
+        }
+        self.nearest_req = 0;
+        self.targeting.target_killed = false;
+        let mut best = -1;
+        if air {
+            let mut best_r = 0x12C0;
+            for (j, u) in self.flights.iter().enumerate() {
+                let (r, b) = self.range_bearing(u.x, u.y);
+                if u.flags & fflags::AIRBORNE != 0
+                    && u.flags & fflags::DESTROYED == 0
+                    && u.speed != 0
+                    && self.ac_type(u.spec).radar != -1
+                    && r < best_r
+                    && self.cam_off(b) < 0x2000
+                    && self.player_sees(u.x, u.y, u.alt)
+                {
+                    best_r = r;
+                    best = j as i32;
+                }
+            }
+            if best != -1 {
+                self.air_lock = best;
+            }
+        } else {
+            let mut best_r = 100 << (6 - self.night as i32);
+            for i in 0..self.objects.len() {
+                let o = self.objects[i];
+                let (r, b) = self.range_bearing(o.x, o.y);
+                if o.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) != 0
+                    || (i == 0 && (o.x == 0 || o.y == 0 || o.shape == 0))
+                    || r >= best_r
+                    || self.cam_off(b) >= 0x2000
+                    || !self.player_sees(o.x, o.y, 0)
+                {
+                    continue;
+                }
+                best = i as i32;
+                best_r = r;
+            }
+            if best != -1 {
+                self.gnd_lock = best;
+            }
+        }
+        // Nothing hostile: whatever the original's camera-ahead acquisition locked stays.
+        let locked = if air { self.air_lock >= 0 } else { self.valid_gnd().is_some() };
+        if !locked {
+            self.msg("No target ahead");
         }
     }
 

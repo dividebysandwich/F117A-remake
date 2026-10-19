@@ -367,7 +367,7 @@ fn mfd_keys(
             Action::MissionOrders => MfdCmd::RightPage(RightMfd::Ord),
             Action::SelectWaypoint | Action::ChangeWaypoint | Action::LastWaypoint | Action::NextWaypoint => MfdCmd::RightPage(RightMfd::Way),
             Action::Flir => MfdCmd::Flir,
-            Action::CamAhead => MfdCmd::Cam(CamDir::Ahead),
+            Action::CamAhead | Action::NearestTarget => MfdCmd::Cam(CamDir::Ahead),
             Action::CamRear => MfdCmd::Cam(CamDir::Rear),
             Action::CamRight => MfdCmd::Cam(CamDir::Right),
             Action::CamLeft => MfdCmd::Cam(CamDir::Left),

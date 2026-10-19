@@ -96,6 +96,86 @@ pub struct ButtonMapping {
     pub source: Source,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VrHand {
+    Left,
+    Right,
+}
+
+/// A VR controller input usable as a button (thumbstick directions count when pushed most of
+/// the way).
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VrInput {
+    Trigger,
+    /// A / X.
+    Primary,
+    /// B / Y.
+    Secondary,
+    ThumbClick,
+    ThumbUp,
+    ThumbDown,
+    ThumbLeft,
+    ThumbRight,
+}
+
+impl VrInput {
+    pub const ALL: [VrInput; 8] = [
+        VrInput::Trigger,
+        VrInput::Primary,
+        VrInput::Secondary,
+        VrInput::ThumbClick,
+        VrInput::ThumbUp,
+        VrInput::ThumbDown,
+        VrInput::ThumbLeft,
+        VrInput::ThumbRight,
+    ];
+
+    pub fn name(self, hand: VrHand) -> &'static str {
+        match (self, hand) {
+            (VrInput::Trigger, _) => "Trigger",
+            (VrInput::Primary, VrHand::Left) => "X",
+            (VrInput::Primary, VrHand::Right) => "A",
+            (VrInput::Secondary, VrHand::Left) => "Y",
+            (VrInput::Secondary, VrHand::Right) => "B",
+            (VrInput::ThumbClick, _) => "Stick click",
+            (VrInput::ThumbUp, _) => "Stick up",
+            (VrInput::ThumbDown, _) => "Stick down",
+            (VrInput::ThumbLeft, _) => "Stick left",
+            (VrInput::ThumbRight, _) => "Stick right",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct VrButtonMapping {
+    pub hand: VrHand,
+    pub input: VrInput,
+    pub target: ButtonTarget,
+}
+
+/// Default VR controller buttons. The triggers only count while the hand holds the stick or
+/// throttle (otherwise they press the cockpit control under the fingertip).
+pub fn default_vr_buttons() -> Vec<VrButtonMapping> {
+    use Action as A;
+    use VrHand::*;
+    use VrInput::*;
+    [
+        (Right, Trigger, ButtonTarget::Action(A::FireWeapon)),
+        (Right, Primary, ButtonTarget::Gun),
+        (Right, Secondary, ButtonTarget::Action(A::SelectWeapon)),
+        (Right, ThumbClick, ButtonTarget::Action(A::NearestTarget)),
+        (Right, ThumbRight, ButtonTarget::Action(A::SelectTarget)),
+        (Right, ThumbDown, ButtonTarget::Action(A::DesignateTarget)),
+        (Left, Trigger, ButtonTarget::Action(A::BayDoors)),
+        (Left, Primary, ButtonTarget::Action(A::Flare)),
+        (Left, Secondary, ButtonTarget::Action(A::Chaff)),
+        (Left, ThumbClick, ButtonTarget::Action(A::Decoy)),
+    ]
+    .into_iter()
+    .map(|(hand, input, target)| VrButtonMapping { hand, input, target })
+    .collect()
+}
+
 /// Saved input mapping (`<config dir>/f117/input.json`).
 #[derive(Resource, Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(default)]
@@ -104,11 +184,12 @@ pub struct InputConfig {
     pub gamepad_defaults: bool,
     pub axes: Vec<AxisMapping>,
     pub buttons: Vec<ButtonMapping>,
+    pub vr_buttons: Vec<VrButtonMapping>,
 }
 
 impl Default for InputConfig {
     fn default() -> Self {
-        Self { gamepad_defaults: true, axes: Vec::new(), buttons: Vec::new() }
+        Self { gamepad_defaults: true, axes: Vec::new(), buttons: Vec::new(), vr_buttons: default_vr_buttons() }
     }
 }
 
@@ -153,6 +234,18 @@ impl InputConfig {
     pub fn bind_button(&mut self, target: ButtonTarget, device: String, source: Source) {
         self.buttons.retain(|m| m.target != target && !(m.device == device && m.source == source));
         self.buttons.push(ButtonMapping { target, device, source });
+    }
+
+    pub fn vr_button(&self, hand: VrHand, input: VrInput) -> Option<ButtonTarget> {
+        self.vr_buttons.iter().find(|m| m.hand == hand && m.input == input).map(|m| m.target)
+    }
+
+    /// Sets (or with None clears) what a VR controller input does.
+    pub fn bind_vr(&mut self, hand: VrHand, input: VrInput, target: Option<ButtonTarget>) {
+        self.vr_buttons.retain(|m| !(m.hand == hand && m.input == input));
+        if let Some(target) = target {
+            self.vr_buttons.push(VrButtonMapping { hand, input, target });
+        }
     }
 }
 
@@ -331,11 +424,16 @@ mod tests {
         c.bind_button(ButtonTarget::Action(Action::Flare), "Stick".into(), Source::Button(0x10120));
         c.bind_button(ButtonTarget::Action(Action::Chaff), "Stick".into(), Source::AxisNegative(0x30010));
         assert_eq!(c.buttons.len(), 2, "a button does one thing");
+        c.bind_vr(VrHand::Left, VrInput::Trigger, Some(ButtonTarget::Gun));
+        assert_eq!(c.vr_button(VrHand::Left, VrInput::Trigger), Some(ButtonTarget::Gun));
+        c.bind_vr(VrHand::Left, VrInput::Primary, None);
+        assert_eq!(c.vr_button(VrHand::Left, VrInput::Primary), None);
         let back: InputConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
         assert_eq!(back, c);
         // Missing fields fall back to the defaults.
         let partial: InputConfig = serde_json::from_str("{}").unwrap();
         assert!(partial.gamepad_defaults);
+        assert_eq!(partial.vr_buttons, default_vr_buttons());
     }
 
     #[test]

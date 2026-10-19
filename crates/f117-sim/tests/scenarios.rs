@@ -457,6 +457,7 @@ fn ten_minute_missions_all_theaters() {
                     designate: r == 107,
                     next_target: r == 108,
                     camera_dir: (r == 109).then_some(0x4000),
+                    nearest_target: r == 110,
                     ..Default::default()
                 };
                 for e in sim.step(&p, 15) {
@@ -509,4 +510,31 @@ fn supply_drop_fixed_and_original() {
         assert_eq!(delivered, fix, "fix {fix}");
         assert_eq!(sim.objectives().secondary_done, delivered);
     }
+}
+
+#[test]
+fn nearest_target_skips_friendlies_and_waits_for_hud_mode() {
+    let Some(d) = data() else { return };
+    let m = mission(d, 3, 0x1234, 0);
+    let mut sim = Sim::new(&d.sim, &m);
+    let (cx, cy) = sandbox(&mut sim, &m);
+    for o in sim.objects_mut().iter_mut() {
+        o.flags |= 0x80;
+    }
+    // Ahead (north): a friendly object at 300, a hostile one at 600 map units.
+    place_site(&mut sim, 1, 0, cx, cy - 300);
+    sim.objects_mut()[1].flags = 0x0400;
+    place_site(&mut sim, 2, 0, cx, cy - 600);
+    sim.set_bay(0, 9, 2);
+    sim.select_bay(0);
+    let mut p = player_at(cx, cy, 2000, 0, 300);
+    p.camera_mfd = true;
+    p.cmd.nearest_target = true;
+    // Still in NAV: the request waits for the HUD to switch.
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    sim.step(&p, 15);
+    p.hud_mode = HudMode::Gnd;
+    sim.step(&p, 15);
+    assert_eq!(sim.targeting().ground, Some(2));
 }

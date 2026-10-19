@@ -1,5 +1,5 @@
-//! Input mapping dialog (opened from the main menu): binds joystick / HOTAS axes and buttons to
-//! the flight controls and every action, picks what the VR controller buttons do, and saves the
+//! Input mapping dialog (opened from the main menu): binds keyboard keys and joystick / HOTAS
+//! axes and buttons to the flight controls and every action, picks what the VR controller buttons do, and saves the
 //! mapping as JSON.
 
 use std::collections::{HashMap, HashSet};
@@ -7,7 +7,8 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use crate::hotas::{AxisControl, ButtonTarget, Hotas, InputConfig, Source, VrHand, VrInput, action_list, action_name, default_vr_buttons};
+use crate::hotas::{AxisControl, ButtonTarget, Hotas, InputConfig, Source, VrHand, VrInput, action_name, default_vr_buttons};
+use crate::input::{Mods, all_actions, default_key_mappings};
 use crate::menu::{AMBER, BRIGHT, DIM, GREEN};
 
 #[derive(Resource, Default)]
@@ -23,14 +24,15 @@ pub struct InputDialog {
 enum Binding {
     Axis(AxisControl),
     Button(ButtonTarget),
+    Key(ButtonTarget),
 }
 
 impl Binding {
     fn name(self) -> String {
         match self {
             Binding::Axis(a) => a.name().to_string(),
-            Binding::Button(ButtonTarget::Gun) => "Gun".to_string(),
-            Binding::Button(ButtonTarget::Action(a)) => action_name(a),
+            Binding::Button(ButtonTarget::Gun) | Binding::Key(ButtonTarget::Gun) => "Gun".to_string(),
+            Binding::Button(ButtonTarget::Action(a)) | Binding::Key(ButtonTarget::Action(a)) => action_name(a),
         }
     }
 }
@@ -79,6 +81,7 @@ impl Capture {
                         Binding::Button(_) if v > 0.5 => Found::Button(Source::AxisPositive(code)),
                         Binding::Button(_) if v < -0.5 => Found::Button(Source::AxisNegative(code)),
                         Binding::Button(_) => continue,
+                        Binding::Key(_) => continue,
                     };
                     found = found.or(Some((d.name.clone(), input)));
                 }
@@ -93,8 +96,33 @@ fn binding_label(device: &str, source: &str) -> String {
     format!("{device}: {source}")
 }
 
+/// Modifier keys, which only count together with another key.
+const MODIFIERS: [KeyCode; 8] = [
+    KeyCode::ShiftLeft,
+    KeyCode::ShiftRight,
+    KeyCode::AltLeft,
+    KeyCode::AltRight,
+    KeyCode::ControlLeft,
+    KeyCode::ControlRight,
+    KeyCode::SuperLeft,
+    KeyCode::SuperRight,
+];
+
+/// The first key pressed this frame (other than a modifier or Esc), with the modifier held.
+fn pressed_key(keys: &ButtonInput<KeyCode>) -> Option<(Mods, KeyCode)> {
+    let key = keys.get_just_pressed().copied().find(|k| !MODIFIERS.contains(k) && *k != KeyCode::Escape)?;
+    let mods = if keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]) {
+        Mods::Alt
+    } else if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+        Mods::Shift
+    } else {
+        Mods::None
+    };
+    Some((mods, key))
+}
+
 /// Draws the dialog when open (called from the menu's egui pass).
-pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputConfig, hotas: &Hotas) {
+pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputConfig, hotas: &Hotas, keys: &ButtonInput<KeyCode>) {
     if !dialog.open {
         return;
     }
@@ -105,6 +133,12 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             dialog.capture = None;
             dialog.status = None;
+        } else if let Binding::Key(target) = cap.what {
+            if let Some((mods, key)) = pressed_key(keys) {
+                config.bind_key(target, mods, key);
+                dialog.status = Some(format!("{} -> {}", cap.what.name().to_ascii_uppercase(), crate::input::key_label(mods, key)));
+                dialog.capture = None;
+            }
         } else if let Some((device, input)) = cap.poll(hotas) {
             let what = cap.what;
             let label = match (what, input) {
@@ -157,6 +191,9 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
                         config.axes.clear();
                         config.buttons.clear();
                     }
+                    if ui.button("DEFAULT KEYS").clicked() {
+                        config.keys = default_key_mappings();
+                    }
                 });
             });
             ui.separator();
@@ -175,7 +212,7 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
                         .on_hover_text("Left stick, right stick rudder, triggers throttle, face buttons fire / gun / weapons / bay");
                     match &dialog.status {
                         Some(text) => ui.colored_label(AMBER, text),
-                        None => ui.label(egui::RichText::new("Click BIND, then move an axis or press a button. Esc cancels.").color(DIM)),
+                        None => ui.label(egui::RichText::new("Click BIND, then move an axis or press a button; + adds a key. Esc cancels.").color(DIM)),
                     };
                     ui.label(
                         egui::RichText::new("The aircraft on the right shows what the mapped axes do: invert an axis if it moves the wrong way.")
@@ -226,13 +263,34 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
                 });
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new("[ BUTTONS ]").color(AMBER).size(14.0));
-                egui::Grid::new("buttons").num_columns(4).spacing([14.0, 4.0]).striped(true).show(ui, |ui| {
-                    let targets = std::iter::once((ButtonTarget::Gun, "Backspace (held)".to_string()))
-                        .chain(action_list().into_iter().map(|(a, keys)| (ButtonTarget::Action(a), keys)));
-                    for (target, keys) in targets {
+                egui::Grid::new("buttons").num_columns(5).spacing([14.0, 4.0]).striped(true).show(ui, |ui| {
+                    ui.label("");
+                    ui.label(egui::RichText::new("KEYBOARD").color(GREEN));
+                    ui.label("");
+                    ui.label(egui::RichText::new("JOYSTICK").color(GREEN));
+                    ui.end_row();
+                    let targets = std::iter::once(ButtonTarget::Gun).chain(all_actions().into_iter().map(ButtonTarget::Action));
+                    for target in targets {
+                        let key = Binding::Key(target);
+                        ui.label(key.name());
+                        let capturing_key = dialog.capture.as_ref().is_some_and(|c| c.what == key);
+                        let labels: Vec<String> = config.keys_for(target).map(|m| m.label()).collect();
+                        let text = match (capturing_key, labels.is_empty()) {
+                            (true, _) => "PRESS A KEY...".to_string(),
+                            (false, true) => "-".to_string(),
+                            (false, false) => labels.join(", "),
+                        };
+                        ui.label(egui::RichText::new(text).color(if labels.is_empty() || capturing_key { DIM } else { BRIGHT }));
+                        ui.horizontal(|ui| {
+                            let add = egui::Button::new(if capturing_key { "WAITING" } else { "+" }).selected(capturing_key);
+                            if ui.add(add).on_hover_text("Add a key (it is taken from any other action)").clicked() && !capturing_key {
+                                start = Some(key);
+                            }
+                            if ui.button("CLEAR").clicked() {
+                                config.keys.retain(|m| m.target != target);
+                            }
+                        });
                         let what = Binding::Button(target);
-                        ui.label(what.name());
-                        ui.label(egui::RichText::new(keys).color(DIM).small());
                         let capturing = dialog.capture.as_ref().is_some_and(|c| c.what == what);
                         match config.button(target) {
                             Some(m) => ui.label(binding_label(&m.device, &m.source.label())),
@@ -289,7 +347,7 @@ fn vr_buttons(ui: &mut egui::Ui, config: &mut InputConfig) {
             .small(),
     );
     let targets: Vec<ButtonTarget> =
-        std::iter::once(ButtonTarget::Gun).chain(action_list().into_iter().map(|(a, _)| ButtonTarget::Action(a))).collect();
+        std::iter::once(ButtonTarget::Gun).chain(all_actions().into_iter().map(ButtonTarget::Action)).collect();
     egui::Grid::new("vr_buttons").num_columns(3).spacing([14.0, 4.0]).striped(true).show(ui, |ui| {
         ui.label("");
         ui.label(egui::RichText::new("LEFT HAND").color(GREEN));

@@ -106,18 +106,40 @@ pub fn action_by_name(name: &str) -> Option<Action> {
     BINDINGS.iter().map(|b| b.2).find(|a| format!("{a:?}").eq_ignore_ascii_case(name))
 }
 
-/// Default key bindings as (action, key label), e.g. (ThrottleMax, "Shift+Equal").
-pub fn default_keys() -> impl Iterator<Item = (Action, String)> {
-    BINDINGS.iter().map(|&(m, key, action)| {
-        let name = format!("{key:?}");
-        let name = name.strip_prefix("Key").or_else(|| name.strip_prefix("Digit")).unwrap_or(&name).to_string();
-        let label = match m {
-            Mods::None => name,
-            Mods::Shift => format!("Shift+{name}"),
-            Mods::Alt => format!("Alt+{name}"),
-        };
-        (action, label)
-    })
+/// A key with the modifier held with it, as text: "Shift+Equal", "F1", "1".
+pub fn key_label(mods: Mods, key: KeyCode) -> String {
+    let name = format!("{key:?}");
+    let name = name.strip_prefix("Key").or_else(|| name.strip_prefix("Digit")).unwrap_or(&name).to_string();
+    match mods {
+        Mods::None => name,
+        Mods::Shift => format!("Shift+{name}"),
+        Mods::Alt => format!("Alt+{name}"),
+    }
+}
+
+/// A key by its `KeyCode` variant name (e.g. "KeyB", "F10").
+pub fn key_from_name(name: &str) -> Option<KeyCode> {
+    use bevy::reflect::{FromReflect, enums::DynamicEnum};
+    KeyCode::from_reflect(&DynamicEnum::new(name, ()))
+}
+
+/// Every action, in the key summary's order.
+pub fn all_actions() -> Vec<Action> {
+    let mut out: Vec<Action> = Vec::new();
+    for &(_, _, a) in BINDINGS {
+        if !out.contains(&a) {
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// Default keyboard bindings: the manual's key summary, plus Backspace for the gun.
+pub fn default_key_mappings() -> Vec<crate::hotas::KeyMapping> {
+    use crate::hotas::{ButtonTarget, KeyMapping};
+    std::iter::once(KeyMapping { target: ButtonTarget::Gun, mods: Mods::None, key: KeyCode::Backspace })
+        .chain(BINDINGS.iter().map(|&(mods, key, action)| KeyMapping { target: ButtonTarget::Action(action), mods, key }))
+        .collect()
 }
 
 /// Continuous controls, in the original's stick units.
@@ -137,14 +159,16 @@ pub struct FlightControls {
     pub gun: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Mods {
+/// Modifier held with a key (Alt wins over Shift).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum Mods {
     None,
     Shift,
     Alt,
 }
 
-/// Default bindings, from the manual's key summary (IBM version).
+/// Default bindings, from the manual's key summary (IBM version); the input mapping can change
+/// them.
 const BINDINGS: &[(Mods, KeyCode, Action)] = {
     use Action::*;
     use KeyCode as K;
@@ -259,6 +283,7 @@ const STICK_KEYS: &[(KeyCode, f32, f32)] = &[
 
 fn read_keyboard(
     keys: Res<ButtonInput<KeyCode>>,
+    config: Res<crate::hotas::InputConfig>,
     time: Res<Time<Real>>,
     mut stick: ResMut<VirtualStick>,
     mut controls: ResMut<FlightControls>,
@@ -267,8 +292,9 @@ fn read_keyboard(
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
     let mods = if alt { Mods::Alt } else if shift { Mods::Shift } else { Mods::None };
-    for &(m, key, action) in BINDINGS {
-        if m == mods && keys.just_pressed(key) {
+    for m in &config.keys {
+        let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
+        if m.mods == mods && keys.just_pressed(m.key) {
             if action == Action::StickSensitivity {
                 stick.sensitivity = (stick.sensitivity + 1) % 3;
             }
@@ -301,7 +327,11 @@ fn read_keyboard(
     if !held {
         stick.full = false;
     }
-    controls.gun = keys.pressed(KeyCode::Backspace);
+    // The gun fires with any modifier unless its key needs one.
+    controls.gun = config
+        .keys
+        .iter()
+        .any(|m| m.target == crate::hotas::ButtonTarget::Gun && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods));
     controls.yaw = 0.0;
     controls.throttle = None;
 }

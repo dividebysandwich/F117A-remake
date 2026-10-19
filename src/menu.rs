@@ -294,6 +294,7 @@ fn menu_ui(
     mut dialog: ResMut<crate::input_dialog::InputDialog>,
     mut input_config: ResMut<crate::hotas::InputConfig>,
     hotas: Res<crate::hotas::Hotas>,
+    keys: Res<ButtonInput<KeyCode>>,
 ) -> Result {
     // Generator data is loaded on first use.
     let Some(data) = data else {
@@ -467,7 +468,7 @@ fn menu_ui(
                     state.seed = rand::random();
                     state.dirty = true;
                 }
-                if facts(ui.add(big_button("CONTROLS")), &["Map joystick and HOTAS axes and buttons", "Saved for the next flights"]).clicked() {
+                if facts(ui.add(big_button("CONTROLS")), &["Map keys, joystick and HOTAS axes and buttons", "Saved for the next flights"]).clicked() {
                     dialog.open = true;
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -497,7 +498,7 @@ fn menu_ui(
                 });
             });
         });
-    crate::input_dialog::show(ctx, &mut dialog, input_config.bypass_change_detection(), &hotas);
+    crate::input_dialog::show(ctx, &mut dialog, input_config.bypass_change_detection(), &hotas, &keys);
     if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover) {
         state.dirty = true;
     }

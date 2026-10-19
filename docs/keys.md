@@ -3,6 +3,7 @@
 Overlay labels like `<`, `>`
 refer to the unshifted keys `,` and `.` on a US keyboard ("Shift >" = Shift + `.`).
 To be cross-checked against VGAME's keyboard dispatch table (M2).
+These are the defaults: the menu's CONTROLS dialog rebinds every key except the stick keys.
 
 | Group | Action | Key |
 |---|---|---|

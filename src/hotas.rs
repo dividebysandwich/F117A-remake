@@ -10,7 +10,7 @@ use bevy::platform::cell::SyncCell;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::input::{Action, ActionEvent, FlightControls};
+use crate::input::{Action, ActionEvent, FlightControls, Mods};
 
 pub fn build(app: &mut App) {
     app.insert_resource(InputConfig::load()).insert_resource(Hotas::new());
@@ -153,6 +153,36 @@ pub struct VrButtonMapping {
     pub target: ButtonTarget,
 }
 
+/// A keyboard key (with a modifier) bound to the gun or an action.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct KeyMapping {
+    pub target: ButtonTarget,
+    pub mods: Mods,
+    #[serde(with = "key_name")]
+    pub key: KeyCode,
+}
+
+impl KeyMapping {
+    pub fn label(&self) -> String {
+        crate::input::key_label(self.mods, self.key)
+    }
+}
+
+/// Keys saved by their `KeyCode` variant name.
+mod key_name {
+    use bevy::prelude::KeyCode;
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+    pub fn serialize<S: Serializer>(key: &KeyCode, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&format!("{key:?}"))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<KeyCode, D::Error> {
+        let name = String::deserialize(d)?;
+        crate::input::key_from_name(&name).ok_or_else(|| D::Error::custom(format!("unknown key {name}")))
+    }
+}
+
 /// Default VR controller buttons. The triggers only count while the hand holds the stick or
 /// throttle (otherwise they press the cockpit control under the fingertip).
 pub fn default_vr_buttons() -> Vec<VrButtonMapping> {
@@ -185,11 +215,13 @@ pub struct InputConfig {
     pub axes: Vec<AxisMapping>,
     pub buttons: Vec<ButtonMapping>,
     pub vr_buttons: Vec<VrButtonMapping>,
+    /// Keyboard keys for the gun and actions (the keyboard stick keys are fixed).
+    pub keys: Vec<KeyMapping>,
 }
 
 impl Default for InputConfig {
     fn default() -> Self {
-        Self { gamepad_defaults: true, axes: Vec::new(), buttons: Vec::new(), vr_buttons: default_vr_buttons() }
+        Self { gamepad_defaults: true, axes: Vec::new(), buttons: Vec::new(), vr_buttons: default_vr_buttons(), keys: crate::input::default_key_mappings() }
     }
 }
 
@@ -234,6 +266,17 @@ impl InputConfig {
     pub fn bind_button(&mut self, target: ButtonTarget, device: String, source: Source) {
         self.buttons.retain(|m| m.target != target && !(m.device == device && m.source == source));
         self.buttons.push(ButtonMapping { target, device, source });
+    }
+
+    /// Keys bound to a target.
+    pub fn keys_for(&self, target: ButtonTarget) -> impl Iterator<Item = &KeyMapping> {
+        self.keys.iter().filter(move |m| m.target == target)
+    }
+
+    /// Adds a key to a target, taking it away from any other target.
+    pub fn bind_key(&mut self, target: ButtonTarget, mods: Mods, key: KeyCode) {
+        self.keys.retain(|m| !(m.mods == mods && m.key == key));
+        self.keys.push(KeyMapping { target, mods, key });
     }
 
     pub fn vr_button(&self, hand: VrHand, input: VrInput) -> Option<ButtonTarget> {
@@ -381,21 +424,6 @@ pub fn read_hotas(mut hotas: ResMut<Hotas>, config: Res<InputConfig>, mut contro
     }
 }
 
-/// Every action with its default key(s), in the key summary's order.
-pub fn action_list() -> Vec<(Action, String)> {
-    let mut out: Vec<(Action, String)> = Vec::new();
-    for (action, key) in crate::input::default_keys() {
-        match out.iter_mut().find(|(a, _)| *a == action) {
-            Some((_, keys)) => {
-                keys.push_str(", ");
-                keys.push_str(&key);
-            }
-            None => out.push((action, key)),
-        }
-    }
-    out
-}
-
 /// "ThrottleUp" -> "Throttle up".
 pub fn action_name(a: Action) -> String {
     let mut s = String::new();
@@ -434,6 +462,12 @@ mod tests {
         let partial: InputConfig = serde_json::from_str("{}").unwrap();
         assert!(partial.gamepad_defaults);
         assert_eq!(partial.vr_buttons, default_vr_buttons());
+        assert_eq!(partial.keys, crate::input::default_key_mappings());
+        c.bind_key(ButtonTarget::Action(Action::Chaff), Mods::None, KeyCode::Digit1);
+        assert!(c.keys_for(ButtonTarget::Action(Action::Flare)).next().is_none(), "a key does one thing");
+        assert_eq!(c.keys_for(ButtonTarget::Action(Action::Chaff)).count(), 2);
+        let back: InputConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back, c);
     }
 
     #[test]

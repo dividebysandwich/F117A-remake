@@ -11,7 +11,7 @@ use bevy::gltf::{Gltf, GltfMaterial, GltfMesh, GltfNode};
 use bevy::prelude::*;
 
 use crate::palette::{Palette, index_from_name};
-use crate::palette_material::{LEVEL_AIRCRAFT, mesh_tag};
+use crate::palette_material::{LEVEL_AIRCRAFT, PaletteMaterial, mesh_tag};
 use bevy::mesh::MeshTag;
 
 pub struct ModelsPlugin;
@@ -23,7 +23,8 @@ impl Plugin for ModelsPlugin {
             (update_camera_distance, apply_model_state)
                 .chain()
                 .before(bevy::transform::TransformSystems::Propagate),
-        );
+        )
+        .add_systems(Update, flicker_exhaust);
     }
 }
 
@@ -121,6 +122,30 @@ pub struct ArticulatedPart {
     /// Original axis code: 0 = yaw (around up), 1 = pitch, 2 = roll.
     pub axis: u8,
     pub rest: Quat,
+}
+
+/// Jet exhaust (nozzle exits `..._exhaust` and the airborne flames `..._s13v1`): alternates
+/// between red and yellow like the original's flickering afterburners.
+#[derive(Component)]
+pub struct ExhaustGlow;
+
+/// Exhaust colours (light red, yellow) and flicker rate in colour changes per second.
+const EXHAUST_COLOURS: [u8; 2] = [13, 17];
+const EXHAUST_RATE: f32 = 12.0;
+
+fn flicker_exhaust(
+    time: Res<Time>,
+    palette: Option<Res<Palette>>,
+    mut glows: Query<&mut MeshMaterial3d<PaletteMaterial>, With<ExhaustGlow>>,
+) {
+    let Some(palette) = palette else { return };
+    let c = EXHAUST_COLOURS[(time.elapsed_secs() * EXHAUST_RATE) as usize % 2];
+    let m = palette.material(c);
+    for mut mat in &mut glows {
+        if mat.0 != m {
+            mat.0 = m.clone();
+        }
+    }
 }
 
 /// Parses a trailing number after `tag` (e.g. "x_lod2" with "_lod" -> 2).
@@ -369,6 +394,9 @@ impl ModelAssets<'_> {
                         self.palette.material(color)
                     };
                     let child = commands.spawn((Mesh3d(prim.mesh.clone()), MeshMaterial3d(material), tag.clone())).id();
+                    if name.ends_with("_exhaust") || name.ends_with("_s13v1") {
+                        commands.entity(child).insert(ExhaustGlow);
+                    }
                     // Flat ground overlays are stacked a few centimetres apart (world.rs painter's
                     // order); as sun shadow casters they would only shadow the overlays below.
                     if tag.0 & 7 != LEVEL_AIRCRAFT && self.is_flat(&prim.mesh) {

@@ -744,17 +744,17 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             continue;
         }
         let (east, north, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
-        contacts.list.push(Contact { kind: ContactKind::Aircraft, east, north, alt: alt as f32, heading: u.heading as u16 });
+        contacts.list.push(Contact { kind: ContactKind::Aircraft, east, north, alt: alt as f32, heading: u.heading as u16, friendly: sim.friendly_aircraft(u.spec) });
     }
     for (_, m, _, _) in sim.active_projectiles() {
         let (east, north) = map_wu(m.x, m.y);
-        contacts.list.push(Contact { kind: ContactKind::Missile, east, north, alt: m.alt as f32, heading: m.heading as u16 });
+        contacts.list.push(Contact { kind: ContactKind::Missile, east, north, alt: m.alt as f32, heading: m.heading as u16, friendly: false });
     }
     let objects = sim.objects();
     for (i, ob) in objects.iter().enumerate().take(sim.ground_unit_count()).skip(3) {
         if ob.unit_type > 0 && ob.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) == 0 && i < objects.len() {
             let (east, north) = map_wu(ob.x, ob.y);
-            contacts.list.push(Contact { kind: ContactKind::GroundRadar, east, north, alt: 0.0, heading: 0 });
+            contacts.list.push(Contact { kind: ContactKind::GroundRadar, east, north, alt: 0.0, heading: 0, friendly: false });
         }
     }
     let done = [o.primary_done, o.secondary_done];
@@ -767,7 +767,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             && (ob.x, ob.y) != (0, 0)
         {
             let (east, north) = map_wu(ob.x, ob.y);
-            contacts.list.push(Contact { kind: ContactKind::Target, east, north, alt: 0.0, heading: 0 });
+            contacts.list.push(Contact { kind: ContactKind::Target, east, north, alt: 0.0, heading: 0, friendly: false });
         }
     }
 

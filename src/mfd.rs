@@ -323,6 +323,8 @@ pub struct Contact {
     pub alt: f32,
     /// Binary angle.
     pub heading: u16,
+    /// Friendly aircraft.
+    pub friendly: bool,
 }
 
 /// Mission clock for the WAY page ("TIME hh:mm:ss"): seconds of the day at take-off (from the
@@ -979,9 +981,17 @@ impl MfdParams<'_, '_> {
             match ct.kind {
                 ContactKind::Aircraft => {
                     let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16) as f32 / 65536.0 * std::f32::consts::TAU;
-                    // Red level with us, dark red below, yellow above.
+                    // Friendly blue; hostile red level with us, dark red below, yellow above.
                     let dalt = ct.alt - a.altitude;
-                    let colour = if dalt < -1000.0 { 40 } else if dalt > 1000.0 { 17 } else { 41 };
+                    let colour = if ct.friendly {
+                        9
+                    } else if dalt < -1000.0 {
+                        40
+                    } else if dalt > 1000.0 {
+                        17
+                    } else {
+                        41
+                    };
                     plane(c, rel, x, y, colour);
                 }
                 ContactKind::Missile => {

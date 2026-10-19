@@ -531,6 +531,11 @@ impl Sim {
         &self.aircraft_types[(spec.max(0) as usize).min(self.aircraft_types.len() - 1)]
     }
 
+    /// Whether aircraft spec `spec` is friendly (radar type -1).
+    pub fn friendly_aircraft(&self, spec: i32) -> bool {
+        self.ac_type(spec).radar == -1
+    }
+
     pub(crate) fn threat_type(&self, t: i32) -> Option<&ThreatType> {
         if t <= 0 { None } else { self.threats.get(t as usize) }
     }

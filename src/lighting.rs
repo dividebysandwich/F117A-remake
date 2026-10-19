@@ -202,12 +202,12 @@ fn collect_local_lights(
             if !vis.get() || tf.translation().distance(eye) > 600.0 + batch.radius {
                 continue;
             }
-            let c = palette.color(batch.colour).to_linear();
-            let colour = Vec4::new(c.red, c.green, c.blue, 0.0) * 0.8;
-            for &l in &batch.points {
+            for (&l, &colour) in batch.points.iter().zip(&batch.colours) {
                 let p = tf.transform_point(l);
                 let d = p.distance(eye);
                 if d < 600.0 {
+                    let c = palette.color(colour).to_linear();
+                    let colour = Vec4::new(c.red, c.green, c.blue, 0.0) * 0.8;
                     all.push((d / 25.0, p.extend(25.0), colour));
                 }
             }

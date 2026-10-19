@@ -31,7 +31,7 @@ use bevy::math::{DVec2, DVec3};
 use bevy::mesh::{MeshTag, PrimitiveTopology};
 use bevy::prelude::*;
 
-use crate::dots::dot_batch;
+use crate::dots::{dot_batch, dot_batch_coloured};
 use crate::models::{ModelAssets, ModelLibrary};
 use crate::palette::{DetailLevel, Palette, REMAP_DETAIL_HIGH};
 use crate::palette_material::{TAG_DOT, TAG_WARM, dot_scale, mesh_tag};
@@ -181,8 +181,9 @@ struct SceneryBlock;
 /// Batched lamp dots of a block (block-local positions), lit at night.
 #[derive(Component)]
 pub struct LampBatch {
-    pub colour: u8,
+    /// Positions and palette colours, in drawing order.
     pub points: Vec<Vec3>,
+    pub colours: Vec<u8>,
     /// Largest distance of a point from the batch origin.
     pub radius: f32,
 }
@@ -336,10 +337,14 @@ fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Pal
         );
     }
     let dots = (MeshTag(tag.0 | TAG_DOT), bevy::light::NotShadowCaster, Visibility::Hidden);
-    for (c, points) in geom.lamps {
-        let m = meshes.add(dot_batch(&points));
+    // All lamps of the block in one mesh with per-vertex colours, so they keep their drawing
+    // order (dots don't write depth: the later of two overlapping lamps is on top, e.g. a mast's
+    // red beacon over its flood lamp).
+    if let Some(&(first, _)) = geom.lamps.first() {
+        let (colours, points): (Vec<u8>, Vec<Vec3>) = geom.lamps.into_iter().unzip();
+        let m = meshes.add(dot_batch_coloured(&points, &colours));
         let radius = points.iter().map(|p| p.length()).fold(0.0, f32::max);
-        children.push(commands.spawn((Mesh3d(m), MeshMaterial3d(palette.line_material(c)), dots.clone(), LampBatch { colour: c, points, radius })).id());
+        children.push(commands.spawn((Mesh3d(m), MeshMaterial3d(palette.line_material(first)), dots.clone(), LampBatch { points, colours, radius })).id());
     }
     for (phase, points) in geom.strobes {
         let m = meshes.add(dot_batch(&points));

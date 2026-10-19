@@ -102,6 +102,13 @@ impl Material for PaletteMaterial {
             attributes.push(Mesh::ATTRIBUTE_UV_0.at_shader_location(1));
             descriptor.vertex.shader_defs.push("DOT_BATCH".into());
         }
+        if layout.0.contains(crate::dots::ATTRIBUTE_DOT_COLOUR) {
+            attributes.push(crate::dots::ATTRIBUTE_DOT_COLOUR.at_shader_location(2));
+            descriptor.vertex.shader_defs.push("DOT_COLOUR".into());
+            if let Some(fragment) = descriptor.fragment.as_mut() {
+                fragment.shader_defs.push("DOT_COLOUR".into());
+            }
+        }
         let vertex_layout = layout.0.get_layout(&attributes)?;
         descriptor.vertex.buffers = vec![vertex_layout];
         // Back faces are culled like the original's plane visibility test (the converter

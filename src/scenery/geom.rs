@@ -14,8 +14,9 @@ pub struct Geom {
     /// Ground-level surfaces (roads).
     pub flat: BTreeMap<u8, Vec<Vec3>>,
     pub lines: BTreeMap<u8, Vec<Vec3>>,
-    /// Lights shown at night (street lamps, windows, beacons).
-    pub lamps: BTreeMap<u8, Vec<Vec3>>,
+    /// Lights shown at night (street lamps, windows, beacons) with their colours, in drawing
+    /// order: where two overlap, the later one is on top.
+    pub lamps: Vec<(u8, Vec3)>,
     /// White flashers by sequence phase (approach lighting), lit one phase at a time at night.
     pub strobes: BTreeMap<usize, Vec<Vec3>>,
     /// PAPI light units (red below their angle, white above).
@@ -70,7 +71,7 @@ impl Geom {
     }
 
     pub fn lamp(&mut self, c: u8, p: Vec3) {
-        self.lamps.entry(c).or_default().push(p);
+        self.lamps.push((c, p));
     }
 
     pub fn strobe(&mut self, phase: usize, p: Vec3) {

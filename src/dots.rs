@@ -12,7 +12,8 @@
 use std::collections::HashMap;
 
 use bevy::asset::RenderAssetUsages;
-use bevy::mesh::{Indices, MeshTag, PrimitiveTopology};
+use bevy::mesh::{Indices, MeshTag, MeshVertexAttribute, PrimitiveTopology};
+use bevy::render::render_resource::VertexFormat;
 use bevy::prelude::*;
 
 use crate::palette_material::{FLAG_DOT, PaletteMaterial, TAG_DOT};
@@ -48,6 +49,16 @@ impl DotLight {
             bevy::light::NotShadowCaster,
         )
     }
+}
+
+/// Per-vertex palette colour of a dot batch with lamps of several colours (otherwise the
+/// material's colour).
+pub const ATTRIBUTE_DOT_COLOUR: MeshVertexAttribute = MeshVertexAttribute::new("DotColour", 0x7D07_0001, VertexFormat::Uint32);
+
+/// A dot batch whose dots have their own palette colours, drawn in the given order.
+pub fn dot_batch_coloured(points: &[Vec3], colours: &[u8]) -> Mesh {
+    let colours: Vec<u32> = colours.iter().flat_map(|&c| [c as u32; 4]).collect();
+    dot_batch(points).with_inserted_attribute(ATTRIBUTE_DOT_COLOUR, colours)
 }
 
 fn setup_dot_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {

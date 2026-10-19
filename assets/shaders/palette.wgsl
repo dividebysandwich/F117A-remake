@@ -78,6 +78,10 @@ struct Vertex {
     // Batched dots: four vertices at each dot's centre, spread by their quad corner.
     @location(1) corner: vec2<f32>,
 #endif
+#ifdef DOT_COLOUR
+    // Palette colour of each dot in a batch of several colours (dots.rs `dot_batch_coloured`).
+    @location(2) colour: u32,
+#endif
 };
 
 struct VertexOutput {
@@ -95,6 +99,9 @@ struct VertexOutput {
     @location(6) @interpolate(flat) puff_scale: vec3<f32>,
     // Warm object or dot light (FLIR).
     @location(7) @interpolate(flat) warm: u32,
+#ifdef DOT_COLOUR
+    @location(8) @interpolate(flat) dot_colour: u32,
+#endif
 };
 
 // Dot lights: size relative to one original pixel (320x200 screen) and lower bound in pixels.
@@ -123,6 +130,9 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.clip_position = position_world_to_clip(world.xyz);
     let tag = mesh_functions::get_tag(v.instance_index);
     out.warm = select(0u, 1u, (tag & (TAG_WARM | 128u)) != 0u);
+#ifdef DOT_COLOUR
+    out.dot_colour = v.colour;
+#endif
     // Smoke volumes: the view ray and the sun in the plume's local space (inverse of the
     // scaled rotation m = diag(1/s^2) m^T).
     out.puff_pos = vec4<f32>(0.0);
@@ -733,7 +743,10 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
 
     let word = material.word;
     let hi = (word >> 8u) & 0xFFu;
-    let lo = word & 0xFFu;
+    var lo = word & 0xFFu;
+#ifdef DOT_COLOUR
+    lo = in.dot_colour;
+#endif
     let px = vec2<u32>(in.clip_position.xy);
     let is_line = (material.flags & 2u) != 0u;
     var rgb: vec3<f32>;

@@ -124,6 +124,16 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
         ctx.request_repaint();
     }
 
+    let value = |control| config.axes.iter().find(|m| m.control == control).and_then(|m| hotas.axis(&m.device, m.code).map(|raw| m.output(raw)));
+    let stick = Stick {
+        roll: value(AxisControl::Roll).unwrap_or(0.0),
+        pitch: value(AxisControl::Pitch).unwrap_or(0.0),
+        yaw: value(AxisControl::Yaw).unwrap_or(0.0),
+        throttle: value(AxisControl::Throttle),
+    };
+    // The preview follows the stick without other repaint triggers.
+    ctx.request_repaint();
+
     let screen = ctx.content_rect();
     let mut open = true;
     let mut start: Option<Binding> = None;
@@ -149,20 +159,31 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
                 });
             });
             ui.separator();
-            let devices = hotas.devices();
-            if devices.is_empty() {
-                ui.colored_label(AMBER, "NO JOYSTICKS DETECTED  (connect a device; it shows up here)");
-            } else {
-                for d in &devices {
-                    ui.label(egui::RichText::new(format!("> {}", d.name)).color(GREEN));
-                }
-            }
-            ui.checkbox(&mut config.gamepad_defaults, "Standard gamepad layout")
-                .on_hover_text("Left stick, right stick rudder, triggers throttle, face buttons fire / gun / weapons / bay");
-            match &dialog.status {
-                Some(text) => ui.colored_label(AMBER, text),
-                None => ui.label(egui::RichText::new("Click BIND, then move an axis or press a button. Esc cancels.").color(DIM)),
-            };
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width((ui.available_width() - PREVIEW.x - 16.0).max(200.0));
+                    let devices = hotas.devices();
+                    if devices.is_empty() {
+                        ui.colored_label(AMBER, "NO JOYSTICKS DETECTED  (connect a device; it shows up here)");
+                    } else {
+                        for d in &devices {
+                            ui.label(egui::RichText::new(format!("> {}", d.name)).color(GREEN));
+                        }
+                    }
+                    ui.checkbox(&mut config.gamepad_defaults, "Standard gamepad layout")
+                        .on_hover_text("Left stick, right stick rudder, triggers throttle, face buttons fire / gun / weapons / bay");
+                    match &dialog.status {
+                        Some(text) => ui.colored_label(AMBER, text),
+                        None => ui.label(egui::RichText::new("Click BIND, then move an axis or press a button. Esc cancels.").color(DIM)),
+                    };
+                    ui.label(
+                        egui::RichText::new("The aircraft on the right shows what the mapped axes do: invert an axis if it moves the wrong way.")
+                            .color(DIM)
+                            .small(),
+                    );
+                });
+                preview(ui, stick);
+            });
             ui.separator();
 
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -253,4 +274,115 @@ fn row_buttons(ui: &mut egui::Ui, what: Binding, capturing: bool, start: &mut Op
             clear();
         }
     });
+}
+
+/// Mapped axis outputs, for the preview.
+#[derive(Clone, Copy)]
+struct Stick {
+    roll: f32,
+    pitch: f32,
+    yaw: f32,
+    /// None: no throttle axis (or it hasn't moved yet).
+    throttle: Option<f32>,
+}
+
+const PREVIEW: egui::Vec2 = egui::vec2(300.0, 190.0);
+
+/// Planform outline (x right, z forward), clockwise from the nose, and the faceted ridge above it.
+const OUTLINE: [(f32, f32); 8] = [(0.0, 3.0), (2.6, -1.6), (1.0, -1.0), (0.55, -2.1), (0.0, -1.7), (-0.55, -2.1), (-1.0, -1.0), (-2.6, -1.6)];
+const RIDGE: Vec3 = Vec3::new(0.0, 0.4, -0.4);
+/// V tails (root front, root rear, tip).
+const TAILS: [[Vec3; 3]; 2] = [
+    [Vec3::new(0.35, 0.15, -1.2), Vec3::new(0.55, 0.15, -1.95), Vec3::new(1.15, 0.95, -2.25)],
+    [Vec3::new(-0.35, 0.15, -1.2), Vec3::new(-0.55, 0.15, -1.95), Vec3::new(-1.15, 0.95, -2.25)],
+];
+/// Exhaust slot centres.
+const SLOTS: [Vec3; 2] = [Vec3::new(0.32, 0.12, -1.8), Vec3::new(-0.32, 0.12, -1.8)];
+
+/// Exhaust colour: dull red at idle through orange and yellow to blue-white at full thrust.
+fn exhaust_color(t: f32) -> egui::Color32 {
+    const STOPS: [(f32, [f32; 3]); 4] = [(0.0, [110.0, 25.0, 10.0]), (0.4, [235.0, 95.0, 20.0]), (0.75, [255.0, 205.0, 80.0]), (1.0, [200.0, 225.0, 255.0])];
+    let t = t.clamp(0.0, 1.0);
+    let i = STOPS.iter().rposition(|s| s.0 <= t).unwrap_or(0).min(STOPS.len() - 2);
+    let (a, b) = (STOPS[i], STOPS[i + 1]);
+    let f = (t - a.0) / (b.0 - a.0);
+    let c: Vec<u8> = (0..3).map(|k| (a.1[k] + (b.1[k] - a.1[k]) * f) as u8).collect();
+    egui::Color32::from_rgb(c[0], c[1], c[2])
+}
+
+/// A small F-117 seen from behind and above, deflected by the stick, rudder and throttle.
+fn preview(ui: &mut egui::Ui, s: Stick) {
+    let (rect, _) = ui.allocate_exact_size(PREVIEW, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, DIM), egui::StrokeKind::Inside);
+    // Stick right banks right, pull pitches up, right rudder yaws right.
+    let attitude = Quat::from_rotation_y(s.yaw * 0.35) * Quat::from_rotation_x(-s.pitch * 0.35) * Quat::from_rotation_z(-s.roll * 0.6);
+    let view = Quat::from_rotation_x(-0.32);
+    let centre = rect.center() + egui::vec2(0.0, 6.0);
+    let project = |p: Vec3| {
+        let v = view * p;
+        let depth = v.z + 13.0;
+        centre + egui::vec2(v.x, -v.y) * (380.0 / depth)
+    };
+    let depth = |p: Vec3| (view * p).z;
+
+    // Fixed ground grid as the reference.
+    let grid = egui::Stroke::new(1.0, egui::Color32::from_rgb(14, 50, 24));
+    for i in -4..=4 {
+        let x = i as f32 * 1.5;
+        painter.line_segment([project(Vec3::new(x, -2.0, -4.0)), project(Vec3::new(x, -2.0, 8.0))], grid);
+    }
+    for i in -2..=5 {
+        let z = i as f32 * 1.5;
+        painter.line_segment([project(Vec3::new(-6.0, -2.0, z)), project(Vec3::new(6.0, -2.0, z))], grid);
+    }
+
+    // Facets: the ridge fan over the outline, the tails; far ones first.
+    let outline: Vec<Vec3> = OUTLINE.iter().map(|&(x, z)| Vec3::new(x, 0.0, z)).collect();
+    let mut faces: Vec<[Vec3; 3]> = (0..outline.len()).map(|i| [RIDGE, outline[i], outline[(i + 1) % outline.len()]]).collect();
+    faces.extend(TAILS);
+    let mut faces: Vec<[Vec3; 3]> = faces.into_iter().map(|f| f.map(|p| attitude * p)).collect();
+    faces.sort_by(|a, b| {
+        let d = |f: &[Vec3; 3]| f.iter().map(|p| depth(*p)).sum::<f32>();
+        d(b).total_cmp(&d(a))
+    });
+    let light = Vec3::new(0.3, 1.0, -0.4).normalize();
+    for f in faces {
+        let n = (f[1] - f[0]).cross(f[2] - f[0]).normalize_or_zero();
+        let lit = n.dot(light).abs();
+        let g = (20.0 + 70.0 * lit) as u8;
+        let fill = egui::Color32::from_rgb(g / 4, g, g / 3);
+        painter.add(egui::Shape::convex_polygon(f.iter().map(|p| project(*p)).collect(), fill, egui::Stroke::new(1.0, GREEN)));
+    }
+
+    // Exhaust flames behind the slots: colour and length from the throttle.
+    let t = s.throttle.unwrap_or(0.0);
+    let color = exhaust_color(t);
+    let len = 0.6 + 2.2 * t;
+    let glow = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 70);
+    for slot in SLOTS {
+        let wide = [slot + Vec3::new(-0.38, 0.0, 0.05), slot + Vec3::new(0.38, 0.0, 0.05), slot + Vec3::new(0.0, 0.0, -len * 1.3)];
+        let flame = [slot + Vec3::new(-0.25, 0.0, 0.0), slot + Vec3::new(0.25, 0.0, 0.0), slot + Vec3::new(0.0, 0.0, -len)];
+        painter.circle_filled(project(attitude * slot), 4.0 + 8.0 * t, glow);
+        painter.add(egui::Shape::convex_polygon(wide.iter().map(|p| project(attitude * *p)).collect(), glow, egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(flame.iter().map(|p| project(attitude * *p)).collect(), color, egui::Stroke::NONE));
+    }
+
+    // Readouts.
+    let dir = |v: f32, neg: &str, pos: &str| match v {
+        v if v > 0.02 => format!("{pos} {:.0}%", v * 100.0),
+        v if v < -0.02 => format!("{neg} {:.0}%", -v * 100.0),
+        _ => "CENTRE".to_string(),
+    };
+    let font = egui::FontId::monospace(11.0);
+    let lines = [
+        format!("ROLL   {}", dir(s.roll, "LEFT", "RIGHT")),
+        format!("PITCH  {}", dir(s.pitch, "DOWN", "UP")),
+        format!("RUDDER {}", dir(s.yaw, "LEFT", "RIGHT")),
+    ];
+    for (i, l) in lines.iter().enumerate() {
+        painter.text(rect.left_top() + egui::vec2(6.0, 5.0 + i as f32 * 13.0), egui::Align2::LEFT_TOP, l, font.clone(), GREEN);
+    }
+    let thr = s.throttle.map_or("THROTTLE -".to_string(), |t| format!("THROTTLE {:.0}%", t * 100.0));
+    painter.text(rect.right_bottom() + egui::vec2(-6.0, -5.0), egui::Align2::RIGHT_BOTTOM, thr, font, if s.throttle.is_some() { color } else { DIM });
 }

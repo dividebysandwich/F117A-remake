@@ -17,6 +17,7 @@ impl Plugin for MenuPlugin {
         app.add_plugins(EguiPlugin::default())
             .insert_resource(EguiGlobalSettings { auto_create_primary_context: false, ..default() })
             .init_resource::<MenuState>()
+            .init_resource::<crate::input_dialog::InputDialog>()
             .insert_resource(VrAvailable(vr_available()))
             .add_systems(OnEnter(AppState::Menu), spawn_menu_camera)
             .add_systems(OnExit(AppState::Menu), despawn_menu_camera)
@@ -135,10 +136,10 @@ fn despawn_menu_camera(mut commands: Commands, q: Query<Entity, With<MenuCamera>
 const BG: egui::Color32 = egui::Color32::from_rgb(4, 12, 6);
 const FIELD: egui::Color32 = egui::Color32::from_rgb(8, 28, 13);
 const HOVER: egui::Color32 = egui::Color32::from_rgb(18, 70, 32);
-const GREEN: egui::Color32 = egui::Color32::from_rgb(64, 255, 110);
-const DIM: egui::Color32 = egui::Color32::from_rgb(30, 130, 60);
-const BRIGHT: egui::Color32 = egui::Color32::from_rgb(190, 255, 205);
-const AMBER: egui::Color32 = egui::Color32::from_rgb(255, 176, 0);
+pub(crate) const GREEN: egui::Color32 = egui::Color32::from_rgb(64, 255, 110);
+pub(crate) const DIM: egui::Color32 = egui::Color32::from_rgb(30, 130, 60);
+pub(crate) const BRIGHT: egui::Color32 = egui::Color32::from_rgb(190, 255, 205);
+pub(crate) const AMBER: egui::Color32 = egui::Color32::from_rgb(255, 176, 0);
 
 /// Hover facts per theater ([`THEATERS`] order).
 const THEATER_FACTS: [&[&str]; 9] = [
@@ -256,6 +257,9 @@ fn menu_ui(
     mut next: ResMut<NextState<AppState>>,
     mut exit: MessageWriter<AppExit>,
     vr: Res<VrAvailable>,
+    mut dialog: ResMut<crate::input_dialog::InputDialog>,
+    mut input_config: ResMut<crate::hotas::InputConfig>,
+    hotas: Res<crate::hotas::Hotas>,
 ) -> Result {
     // Generator data is loaded on first use.
     let Some(data) = data else {
@@ -288,6 +292,9 @@ fn menu_ui(
         .max_width(width)
         .frame(egui::Frame::window(&ctx.global_style()).inner_margin(16.0))
         .show(ctx, |ui| {
+            if dialog.open {
+                ui.disable();
+            }
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("F-117A NIGHTHAWK STEALTH FIGHTER").heading().color(BRIGHT));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -392,6 +399,9 @@ fn menu_ui(
                     state.seed = rand::random();
                     state.dirty = true;
                 }
+                if facts(ui.add(big_button("CONTROLS")), &["Map joystick and HOTAS axes and buttons", "Saved for the next flights"]).clicked() {
+                    dialog.open = true;
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let can_fly = matches!(state.mission, Some(Ok(_)));
                     let fly = ui.add_enabled(can_fly, big_button("FLY").fill(DIM));
@@ -419,6 +429,7 @@ fn menu_ui(
                 });
             });
         });
+    crate::input_dialog::show(ctx, &mut dialog, input_config.bypass_change_detection(), &hotas);
     if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover) {
         state.dirty = true;
     }

@@ -11,16 +11,17 @@ impl Plugin for InputPlugin {
         app.init_resource::<FlightControls>()
             .init_resource::<VirtualStick>()
             .add_message::<ActionEvent>()
-            .add_systems(PreUpdate, (read_keyboard, read_gamepad).chain().in_set(InputSystemsSet).after(bevy::input::InputSystems));
+            .add_plugins(crate::hotas::build)
+            .add_systems(PreUpdate, (read_keyboard, read_gamepad, crate::hotas::read_hotas).chain().in_set(InputSystemsSet).after(bevy::input::InputSystems));
     }
 }
 
-/// Keyboard and gamepad reading (other input sources run after it and override).
+/// Keyboard, gamepad and joystick reading (other input sources run after it and override).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InputSystemsSet;
 
 /// Discrete actions (one message per key press).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Action {
     ThrottleUp,
     ThrottleDown,
@@ -95,6 +96,20 @@ pub struct ActionEvent(pub Action);
 /// Looks up an action by its name (e.g. "ThrottleMax"), for scripts and config files.
 pub fn action_by_name(name: &str) -> Option<Action> {
     BINDINGS.iter().map(|b| b.2).find(|a| format!("{a:?}").eq_ignore_ascii_case(name))
+}
+
+/// Default key bindings as (action, key label), e.g. (ThrottleMax, "Shift+Equal").
+pub fn default_keys() -> impl Iterator<Item = (Action, String)> {
+    BINDINGS.iter().map(|&(m, key, action)| {
+        let name = format!("{key:?}");
+        let name = name.strip_prefix("Key").or_else(|| name.strip_prefix("Digit")).unwrap_or(&name).to_string();
+        let label = match m {
+            Mods::None => name,
+            Mods::Shift => format!("Shift+{name}"),
+            Mods::Alt => format!("Alt+{name}"),
+        };
+        (action, label)
+    })
 }
 
 /// Continuous controls, in the original's stick units.
@@ -281,8 +296,17 @@ fn read_keyboard(
     controls.throttle = None;
 }
 
-/// Gamepad: left stick = stick, right stick X = rudder, triggers = throttle, A = fire, B = gun.
-fn read_gamepad(gamepads: Query<&Gamepad>, mut controls: ResMut<FlightControls>, mut actions: MessageWriter<ActionEvent>) {
+/// Gamepad: left stick = stick, right stick X = rudder, triggers = throttle, A = fire, B = gun
+/// (unless turned off in the input mapping).
+fn read_gamepad(
+    gamepads: Query<&Gamepad>,
+    config: Res<crate::hotas::InputConfig>,
+    mut controls: ResMut<FlightControls>,
+    mut actions: MessageWriter<ActionEvent>,
+) {
+    if !config.gamepad_defaults {
+        return;
+    }
     for pad in &gamepads {
         let x = pad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
         let y = pad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);

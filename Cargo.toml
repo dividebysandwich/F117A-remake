@@ -34,6 +34,8 @@ f117-mission = { path = "crates/f117-mission" }
 f117-sim = { path = "crates/f117-sim" }
 anyhow.workspace = true
 rand = "0.9"
+gilrs = "0.11"
+dirs = "6"
 bevy_mod_openxr = { version = "0.6", optional = true }
 bevy_mod_xr = { version = "0.6", optional = true }
 openxr = { version = "0.21", optional = true }

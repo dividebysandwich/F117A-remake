@@ -5,7 +5,7 @@
 //! (use [`ink`]), 0 ends the string. Lower case is drawn as upper case.
 
 use bevy::prelude::*;
-use f117_formats::font::{Font, Glyph};
+use stealth_formats::font::{Font, Glyph};
 
 use crate::canvas::Canvas;
 

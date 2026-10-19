@@ -16,8 +16,8 @@ use std::collections::HashMap;
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use f117_formats::terrain::{GRID_DIM, Grid, LEVEL_UNIT, TileSets};
-use f117_formats::wld::World;
+use stealth_formats::terrain::{GRID_DIM, Grid, LEVEL_UNIT, TileSets};
+use stealth_formats::wld::World;
 use serde::Deserialize;
 
 use crate::models::{ModelAssets, ModelLibrary};
@@ -47,7 +47,7 @@ pub struct ShapeHandles {
 }
 
 impl ShapeHandles {
-    fn new(theater: &Theater, mission: Option<&f117_mission::Mission>, overrides: &mut TileOverrides) -> Self {
+    fn new(theater: &Theater, mission: Option<&stealth_mission::Mission>, overrides: &mut TileOverrides) -> Self {
         let count = theater.model_count();
         let mut models: Vec<(String, u16)> = (0..count as u16).map(|i| (theater.id.clone(), i)).collect();
         if theater.index == 6 {
@@ -203,11 +203,11 @@ impl Theater {
     }
 
     /// Tile data for the simulation (`findNearestTile`), for theaters not in the exported sim data.
-    pub fn sim_tiles(&self) -> f117_sim::TheaterTiles {
+    pub fn sim_tiles(&self) -> stealth_sim::TheaterTiles {
         let level = |l: usize| -> Vec<Vec<(i16, i16, u8)>> {
             self.tiles.tiles.get(l).map(|v| v.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect()).unwrap_or_default()
         };
-        f117_sim::TheaterTiles { grid: self.grid.clone(), objects: [level(1), level(2)], model_attr: self.model_attr.clone() }
+        stealth_sim::TheaterTiles { grid: self.grid.clone(), objects: [level(1), level(2)], model_attr: self.model_attr.clone() }
     }
 
     /// Number of theater models (shapes beyond this index are appended specials).

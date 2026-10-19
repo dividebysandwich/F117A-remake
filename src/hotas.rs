@@ -176,7 +176,7 @@ pub fn default_vr_buttons() -> Vec<VrButtonMapping> {
     .collect()
 }
 
-/// Saved input mapping (`<config dir>/f117/input.json`).
+/// Saved input mapping (`<config dir>/stealth-mission-89/input.json`).
 #[derive(Resource, Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(default)]
 pub struct InputConfig {
@@ -195,7 +195,7 @@ impl Default for InputConfig {
 
 impl InputConfig {
     pub fn path() -> Option<PathBuf> {
-        dirs::config_dir().map(|d| d.join("f117").join("input.json"))
+        dirs::config_dir().map(|d| d.join("stealth-mission-89").join("input.json"))
     }
 
     pub fn load() -> Self {

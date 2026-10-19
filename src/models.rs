@@ -475,7 +475,7 @@ impl ModelAssets<'_> {
             return (true, false);
         }
         let (lo, hi) = p.iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
-        let metres = (hi - lo) * (f117_formats::terrain::LEVEL_UNIT[(level as usize).min(4)] * crate::world::WU) as f32;
+        let metres = (hi - lo) * (stealth_formats::terrain::LEVEL_UNIT[(level as usize).min(4)] * crate::world::WU) as f32;
         (false, metres.x.max(metres.z) < WARM_MAX_SIZE && metres.y < WARM_MAX_HEIGHT)
     }
 }

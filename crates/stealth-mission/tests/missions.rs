@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use f117_mission::*;
+use stealth_mission::*;
 
 fn data() -> &'static GameData {
     static D: OnceLock<GameData> = OnceLock::new();
@@ -47,7 +47,7 @@ fn random_missions_do_not_panic() {
                 plane: if next() % 2 == 0 { Plane::MicroProse } else { Plane::Lockheed },
                 sorties: (next() % 100) as u16,
                 pilot: "Capt. Test".into(),
-                weather: if i % 3 == 0 { None } else { Some(f117_mission::Sky::Clear) },
+                weather: if i % 3 == 0 { None } else { Some(stealth_mission::Sky::Clear) },
                 cloud_cover: None,
             };
             let seed = if i % 2 == 0 { Seed::Srand(next() as u16) } else { Seed::Holdrand(next()) };

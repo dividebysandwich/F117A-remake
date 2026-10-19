@@ -1,12 +1,12 @@
 [package]
-name = "f117-sim"
+name = "stealth-sim"
 version.workspace = true
 edition.workspace = true
-description = "F-117A combat, radar and weapons simulation"
+description = "Stealth Mission 89 combat, radar and weapons simulation"
 
 [dependencies]
-f117-formats.workspace = true
-f117-mission = { path = "../f117-mission" }
+stealth-formats.workspace = true
+stealth-mission = { path = "../stealth-mission" }
 serde.workspace = true
 anyhow.workspace = true
 serde_json = "1"

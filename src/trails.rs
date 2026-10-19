@@ -18,7 +18,7 @@ use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, Speci
 use bevy::render::storage::ShaderBuffer;
 use bevy::asset::RenderAssetUsages;
 use bevy::shader::ShaderRef;
-use f117_sim::{N_PROJ, fflags};
+use stealth_sim::{N_PROJ, fflags};
 
 use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player};

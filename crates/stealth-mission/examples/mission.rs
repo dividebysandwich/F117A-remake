@@ -1,8 +1,8 @@
 //! Generate a mission from the JSON data (`assets/mission`) and print the briefing, the orders page and the hand-off block.
 //!
-//! `cargo run -p f117-mission --example mission -- MISSION_DIR THEATER ROE KIND OPP PLANE SRAND_HEX [SORTIES] [--json]`
+//! `cargo run -p stealth-mission --example mission -- MISSION_DIR THEATER ROE KIND OPP PLANE SRAND_HEX [SORTIES] [--json]`
 
-use f117_mission::*;
+use stealth_mission::*;
 
 fn main() -> anyhow::Result<()> {
     let a: Vec<String> = std::env::args().skip(1).collect();

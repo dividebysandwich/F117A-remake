@@ -8,7 +8,7 @@ pub mod world;
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use f117_formats::ALL_THEATERS;
+use stealth_formats::ALL_THEATERS;
 use serde::{Deserialize, Serialize};
 
 pub use rng::MscRand;

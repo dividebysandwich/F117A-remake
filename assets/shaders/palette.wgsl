@@ -346,7 +346,7 @@ fn perlin(p: vec3<f32>, period: i32) -> f32 {
 }
 
 // About -1..1; octaves finer than a few pixels fade out with distance.
-// --- Stratus coverage (same field as f117_mission::Weather::stratus_field) ------------------
+// --- Stratus coverage (same field as stealth_mission::Weather::stratus_field) ------------------
 
 fn value_hash(ix: i32, iy: i32, seed: u32) -> f32 {
     var h = (u32(ix) * 0x8DA6B343u) ^ (u32(iy) * 0xD8163841u) ^ (seed * 0xCB1AB31Fu);

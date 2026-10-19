@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use f117_formats::{THEATERS, terrain};
+use stealth_formats::{THEATERS, terrain};
 use serde::{Deserialize, Serialize};
 
 use crate::math::Trig;

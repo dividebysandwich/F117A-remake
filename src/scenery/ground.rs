@@ -10,7 +10,7 @@ use bevy::gltf::{Gltf, GltfMaterial, GltfNode};
 use bevy::math::DVec2;
 use bevy::mesh::{PrimitiveTopology, VertexAttributeValues};
 use bevy::prelude::*;
-use f117_formats::terrain::{GRID_DIM, LEVEL_UNIT};
+use stealth_formats::terrain::{GRID_DIM, LEVEL_UNIT};
 
 use crate::models::ModelAssets;
 use crate::palette::{VgaPalette, index_from_name};

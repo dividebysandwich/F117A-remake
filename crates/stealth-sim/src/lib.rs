@@ -16,7 +16,7 @@ pub use data::{AircraftType, MissileType, SimData, TheaterTiles, ThreatType, Wea
 pub use rng::Rng;
 pub use types::*;
 
-use f117_mission::Mission;
+use stealth_mission::Mission;
 use math::{s16, view_z};
 use serde::{Deserialize, Serialize};
 
@@ -205,7 +205,7 @@ pub struct Sim {
     pub(crate) ended: Option<MissionEnd>,
     /// Clouds (not in the original; clear = original behaviour).
     #[serde(default)]
-    pub(crate) weather: f117_mission::Weather,
+    pub(crate) weather: stealth_mission::Weather,
     pub(crate) log: Vec<LogEvent>,
 
     #[serde(skip)]
@@ -258,7 +258,7 @@ impl Sim {
                 mode: 0,
             })
             .collect();
-        let lockheed = s.plane == f117_mission::Plane::Lockheed;
+        let lockheed = s.plane == stealth_mission::Plane::Lockheed;
         let n_bays = if lockheed { 2 } else { 4 };
         let mut bays = [(0, 0); 4];
         for (k, b) in m.loadout.bays.iter().take(4).enumerate() {

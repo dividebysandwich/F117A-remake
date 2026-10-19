@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::mesh::MeshTag;
 use bevy::prelude::*;
-use f117_sim::{N_PROJ, Smoke, fflags};
+use stealth_sim::{N_PROJ, Smoke, fflags};
 
 use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player, bam};

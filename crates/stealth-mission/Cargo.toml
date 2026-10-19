@@ -1,11 +1,11 @@
 [package]
-name = "f117-mission"
+name = "stealth-mission"
 version.workspace = true
 edition.workspace = true
-description = "F-117A random mission generator"
+description = "Stealth Mission 89 random mission generator"
 
 [dependencies]
-f117-formats.workspace = true
+stealth-formats.workspace = true
 serde.workspace = true
 anyhow.workspace = true
 serde_json = "1"

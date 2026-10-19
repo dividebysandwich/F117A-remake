@@ -2715,55 +2715,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "f117"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bevy",
- "bevy_egui",
- "bevy_mod_openxr",
- "bevy_mod_xr",
- "dirs",
- "f117-formats",
- "f117-mission",
- "f117-sim",
- "gilrs",
- "openxr",
- "rand 0.9.5",
- "ron",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "f117-formats"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "f117-mission"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "f117-formats",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "f117-sim"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "f117-formats",
- "f117-mission",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5361,6 +5312,55 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "stealth-formats"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "stealth-mission"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "stealth-formats",
+]
+
+[[package]]
+name = "stealth-mission-89"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "bevy_egui",
+ "bevy_mod_openxr",
+ "bevy_mod_xr",
+ "dirs",
+ "gilrs",
+ "openxr",
+ "rand 0.9.5",
+ "ron",
+ "serde",
+ "serde_json",
+ "stealth-formats",
+ "stealth-mission",
+ "stealth-sim",
+]
+
+[[package]]
+name = "stealth-sim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "stealth-formats",
+ "stealth-mission",
+]
 
 [[package]]
 name = "strict-num"

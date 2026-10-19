@@ -21,7 +21,7 @@ use bevy::gltf::{Gltf, GltfMaterial, GltfMesh, GltfNode};
 use bevy::math::DVec2;
 use bevy::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
 use bevy::prelude::*;
-use f117_formats::terrain::{GRID_DIM, LEVEL_UNIT};
+use stealth_formats::terrain::{GRID_DIM, LEVEL_UNIT};
 
 use crate::canvas::Canvas;
 use crate::cockpit::CockpitArt;

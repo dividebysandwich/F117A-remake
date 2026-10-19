@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use f117_mission::*;
+use stealth_mission::*;
 
 fn data() -> GameData {
     GameData::load_json(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/mission")).expect("assets/mission")
@@ -12,7 +12,7 @@ fn data() -> GameData {
 #[test]
 fn ukraine_generates_missions() {
     let data = data();
-    let theater = f117_formats::ALL_THEATERS.iter().position(|t| *t == "UA").unwrap();
+    let theater = stealth_formats::ALL_THEATERS.iter().position(|t| *t == "UA").unwrap();
     let th = &data.theaters[theater];
     let mut kinds = std::collections::BTreeMap::<String, usize>::new();
     for kind in MissionKind::ALL {

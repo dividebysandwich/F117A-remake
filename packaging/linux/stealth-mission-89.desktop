@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=F-117A Nighthawk
+Name=Stealth Mission 89
 GenericName=Flight Simulator
-Comment=Remake of MicroProse's F-117A Nighthawk Stealth Fighter 2.0 (needs the original game's data)
-Exec=f117
-Icon=f117
+Comment=A remake of MicroProse's F-117A Nighthawk Stealth Fighter 2.0 (needs the original game's data)
+Exec=stealth-mission-89
+Icon=stealth-mission-89
 Terminal=false
 Categories=Game;Simulation;
 Keywords=flight;simulator;stealth;F-117;MicroProse;VR;
-StartupWMClass=f117
+StartupWMClass=stealth-mission-89

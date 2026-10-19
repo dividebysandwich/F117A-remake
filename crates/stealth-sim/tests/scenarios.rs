@@ -2,8 +2,8 @@
 
 use std::sync::OnceLock;
 
-use f117_mission::{GameData, Mission, MissionKind, MissionSettings, Seed, Weather};
-use f117_sim::*;
+use stealth_mission::{GameData, Mission, MissionKind, MissionSettings, Seed, Weather};
+use stealth_sim::*;
 
 struct Data {
     sim: SimData,
@@ -22,7 +22,7 @@ fn data() -> &'static Data {
 
 fn mission(d: &Data, theater: usize, seed: u16, opponents: u8) -> Mission {
     let s = MissionSettings { theater, roe: 2, opponents, kind: MissionKind::Strike, ..Default::default() };
-    f117_mission::generate(&d.gdata, &s, Seed::Srand(seed)).unwrap()
+    stealth_mission::generate(&d.gdata, &s, Seed::Srand(seed)).unwrap()
 }
 
 /// A clean sandbox: no radars, no aircraft, no friendly bases; returns a map cell centre with
@@ -420,7 +420,7 @@ fn ten_minute_missions_all_theaters() {
                 // Climb out and fly towards the primary, then the secondary.
                 let wp = m.waypoints[if f < 15 * 300 { 1 } else { 2 }];
                 let (tx, ty) = Sim::map_to_world(wp.x, wp.y);
-                let h = f117_sim::math::bearing(((tx as i64 - wx) >> 6) as i32, ((ty as i64 - wy) >> 6) as i32);
+                let h = stealth_sim::math::bearing(((tx as i64 - wx) >> 6) as i32, ((ty as i64 - wy) >> 6) as i32);
                 p.heading = h as u16;
                 alt = (alt + 20).min(if f < 15 * 400 { 3000 } else { 300 });
                 p.altitude = alt as u16;

@@ -1,4 +1,4 @@
-//! Weather (not in the original game): the mission's clouds (f117_mission::weather) as
+//! Weather (not in the original game): the mission's clouds (stealth_mission::weather) as
 //! flat-shaded geometry, the overcast sky, the whiteout inside clouds and storm effects.
 //!
 //! - Deck (overcast, storm): two huge planes at the deck's base and top following the
@@ -14,8 +14,8 @@ use std::collections::HashMap;
 use bevy::math::DVec3;
 use bevy::mesh::{MeshTag, VertexAttributeValues};
 use bevy::prelude::*;
-use f117_mission::weather::{CELL, Cloud, CloudKind, STORM_CELL};
-use f117_mission::{Sky, Weather};
+use stealth_mission::weather::{CELL, Cloud, CloudKind, STORM_CELL};
+use stealth_mission::{Sky, Weather};
 
 use crate::camera::EyeCamera;
 use crate::trackcam::TrackCamera;

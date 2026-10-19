@@ -1,5 +1,5 @@
 [package]
-name = "f117-formats"
+name = "stealth-formats"
 version.workspace = true
 edition.workspace = true
 

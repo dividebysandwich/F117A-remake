@@ -1,10 +1,10 @@
-//! Missions: the original START generator (crate f117-mission, byte-exact with the original)
+//! Missions: the original START generator (crate stealth-mission, byte-exact with the original)
 //! running on data exported from the original game (assets/mission/*.json).
 
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use f117_mission::{GameData, Mission, MissionKind, MissionSettings, Plane, Seed, Sky};
+use stealth_mission::{GameData, Mission, MissionKind, MissionSettings, Plane, Seed, Sky};
 
 use crate::settings::{MissionSetup, StartPose};
 
@@ -37,7 +37,7 @@ pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockh
 }
 
 pub fn generate(data: &MissionData, settings: &MissionSettings, seed: u16) -> anyhow::Result<Mission> {
-    f117_mission::generate(&data.0, settings, Seed::Srand(seed))
+    stealth_mission::generate(&data.0, settings, Seed::Srand(seed))
 }
 
 /// Strips START's text control bytes (colour switches >= 0x80, CR).
@@ -126,7 +126,7 @@ pub fn from_args(app: &mut App) {
 
 /// Theater index of a theater code ("ce" -> 3).
 pub fn theater_index(code: &str) -> Option<usize> {
-    f117_formats::ALL_THEATERS.iter().position(|t| t.eq_ignore_ascii_case(code))
+    stealth_formats::ALL_THEATERS.iter().position(|t| t.eq_ignore_ascii_case(code))
 }
 
 /// OnEnter(Flight): every flight flies a mission. Without one (`--fly`, `--theater`, `--script`)

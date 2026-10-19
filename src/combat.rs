@@ -1,4 +1,4 @@
-//! The combat simulation (crate f117-sim, the original game logic: radar and EMV, threats, AI,
+//! The combat simulation (crate stealth-sim, the original game logic: radar and EMV, threats, AI,
 //! missiles, weapons, damage, objectives) driving the flight.
 //!
 //! * On entering the flight a [`Sim`] is built from the active mission (`mission.rs` makes sure
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use bevy::ecs::system::SystemParam;
 use bevy::math::DVec3;
 use bevy::prelude::*;
-use f117_sim::{
+use stealth_sim::{
     Commands as SimCommands, FlightUnit, HudMode as SimHud, LandingMode, MissionEnd, N_PROJ, PlayerState, Projectile, Sim,
     SimData, SimEvent, SimOptions, dmg, fflags, oflags,
 };
@@ -243,7 +243,7 @@ fn start_combat(
         sim_waypoint: 0,
         end: None,
         flight_end_timer: 0.0,
-        lockheed: m.settings.plane == f117_mission::Plane::Lockheed,
+        lockheed: m.settings.plane == stealth_mission::Plane::Lockheed,
         names,
         log: std::env::args().any(|a| a == "--log-flight" || a == "--log-sim"),
     });

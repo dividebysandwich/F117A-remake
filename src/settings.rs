@@ -64,7 +64,7 @@ pub struct MissionSetup {
     /// Debug free camera instead of the aircraft.
     pub freecam: bool,
     /// Sky of the flight's mission (None: rolled from the mission seed).
-    pub weather: Option<f117_mission::Sky>,
+    pub weather: Option<stealth_mission::Sky>,
     /// Coverage of the weather's main cloud layer (None: rolled).
     pub cloud_cover: Option<u8>,
 }
@@ -79,8 +79,8 @@ pub struct StartPose {
 }
 
 /// `--weather random|clear|scattered|broken|overcast|storm` (default random).
-pub fn weather_arg(args: &[String]) -> Option<f117_mission::Sky> {
-    get(args, "--weather").and_then(|s| f117_mission::Sky::parse(&s))
+pub fn weather_arg(args: &[String]) -> Option<stealth_mission::Sky> {
+    get(args, "--weather").and_then(|s| stealth_mission::Sky::parse(&s))
 }
 
 /// `--cloud-cover <percent>`: coverage of the main cloud layer.

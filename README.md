@@ -1,4 +1,4 @@
-# Stealth Fighter
+# Stealth Mission 89
 
 A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations
 

@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext, egui};
 
-use f117_mission::{Mission, MissionKind, Sky};
+use stealth_mission::{Mission, MissionKind, Sky};
 
 use crate::mission::{ActiveMission, MissionData, clean_text};
 use crate::settings::{AppState, MissionSetup};
@@ -316,7 +316,7 @@ fn menu_ui(
     let screen = ctx.content_rect();
     let width = (screen.width() - 32.0).clamp(600.0, 1400.0);
     let before = (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover);
-    egui::Window::new("F-117A Nighthawk")
+    egui::Window::new("Stealth Mission 89")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .collapsible(false)
         .resizable(false)
@@ -329,7 +329,7 @@ fn menu_ui(
                 ui.disable();
             }
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("F-117A NIGHTHAWK STEALTH FIGHTER").heading().color(BRIGHT));
+                ui.label(egui::RichText::new("STEALTH MISSION 89").heading().color(BRIGHT));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(egui::RichText::new(format!("MISSION PLANNING SYSTEM  //  MSN {:05}", state.seed)).color(DIM));
                 });

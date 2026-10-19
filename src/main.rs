@@ -47,9 +47,9 @@ fn main() {
     let mut app = App::new();
     let plugins = DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "F-117A Nighthawk".into(),
-            // Wayland app id / X11 class, matching packaging/linux/f117.desktop.
-            name: Some("f117".into()),
+            title: "Stealth Mission 89".into(),
+            // Wayland app id / X11 class, matching packaging/linux/stealth-mission-89.desktop.
+            name: Some("stealth-mission-89".into()),
             // --novsync: uncapped frame rate (performance measurements).
             present_mode: if std::env::args().any(|a| a == "--novsync") {
                 bevy::window::PresentMode::AutoNoVsync

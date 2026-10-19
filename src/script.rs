@@ -200,7 +200,7 @@ fn run_script(
             }),
             Cond::AircraftBelow(km) => combat.as_ref().is_some_and(|c| {
                 c.sim.active_aircraft().iter().any(|(_, u, _)| {
-                    u.flags & f117_sim::fflags::AIRBORNE != 0
+                    u.flags & stealth_sim::fflags::AIRBORNE != 0
                         && (u.wx as f64 - e).hypot((0x100000 - u.wy) as f64 - n) * crate::world::WU / 1000.0 < km
                 })
             }),

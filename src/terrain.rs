@@ -18,7 +18,7 @@ use bevy::gltf::{Gltf, GltfMaterial, GltfMesh, GltfNode};
 use bevy::math::DVec2;
 use bevy::mesh::{PrimitiveTopology, VertexAttributeValues};
 use bevy::prelude::*;
-use f117_formats::terrain::LEVEL_UNIT;
+use stealth_formats::terrain::LEVEL_UNIT;
 
 use crate::models::ModelLibrary;
 use crate::palette::{Palette, REMAP_DETAIL_HIGH, VgaPalette, index_from_name};

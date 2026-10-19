@@ -43,8 +43,8 @@ pub struct PlaySound {
 pub const DIRECT: u8 = 255;
 
 /// Sound ids of the radar warning tones (above the original's ids).
-pub fn rwr_id(tone: f117_sim::RwrTone) -> u8 {
-    use f117_sim::RwrTone::*;
+pub fn rwr_id(tone: stealth_sim::RwrTone) -> u8 {
+    use stealth_sim::RwrTone::*;
     match tone {
         Track => 100,
         Scan => 101,
@@ -54,8 +54,8 @@ pub fn rwr_id(tone: f117_sim::RwrTone) -> u8 {
     }
 }
 
-const RWR_FILES: [(f117_sim::RwrTone, &str); 5] = {
-    use f117_sim::RwrTone::*;
+const RWR_FILES: [(stealth_sim::RwrTone, &str); 5] = {
+    use stealth_sim::RwrTone::*;
     [
         (Track, "Track.flac"),
         (Scan, "Scan.flac"),

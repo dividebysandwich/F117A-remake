@@ -120,6 +120,7 @@ fn update_sun(
     mut state: ResMut<LightingState>,
     mut sun: Query<&mut DirectionalLight, With<Sun>>,
     mut ambient: ResMut<GlobalAmbientLight>,
+    weather: Res<crate::weather::WeatherState>,
 ) {
     let Some(palette) = palette else { return };
     // Sky colour 0x8F (top band) as a daylight measure.
@@ -128,14 +129,15 @@ fn update_sun(
     let daylight = ((lum - 0.02) / 0.25).clamp(0.0, 1.0);
     state.daylight = daylight;
     // World shader: ambient + sun keeps sunlit faces near the original brightness and
-    // darkens shadowed ones.
-    let strength = 0.45 * daylight;
+    // darkens shadowed ones. Under an overcast the sun is hidden.
+    let overcast = weather.below_deck || weather.whiteout > 0.5;
+    let strength = 0.45 * daylight * if overcast { 0.15 } else { 1.0 };
     state.sun = sun_direction().extend(strength);
     let flags = (settings.shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);
     state.ambient = Vec4::new(1.0 - strength * 0.6, 1.0 - strength * 0.6, 1.0 - strength * 0.55, flags as f32);
     if let Ok(mut light) = sun.single_mut() {
         light.illuminance = LUX_PER_UNIT * (0.15 + 0.85 * daylight) * daylight.max(0.05);
-        light.shadow_maps_enabled = settings.shadows;
+        light.shadow_maps_enabled = settings.shadows && !overcast;
         light.color = Color::linear_rgb(1.0, 0.97, 0.9);
     }
     // Cockpit ambient: palette-independent, dim at night (the instrument lights take over).

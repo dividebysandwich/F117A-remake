@@ -123,6 +123,7 @@ impl Sim {
                 && self.alarm_timer > self.alarm_recent()
                 && abs16(s16(u.heading - brg)) < 0x400
                 && abs16(s16(u.pitch - pitch_cmd)) < 0x400
+                && self.sees((u.x, u.y, u.alt), (self.p.mx, self.p.my, self.p.view_z))
             {
                 self.fire_gun(&u);
             }

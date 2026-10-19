@@ -6,8 +6,8 @@ A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations
 ```sh
 cargo run --release
 ```
-Pick a theater, situation, mission type, opponents and aircraft in the menu. The briefing shows
-the generated mission.
+Pick a theater, situation, mission type, weather, opponents and aircraft in the menu. The briefing
+shows the generated mission.
 
 Command-line options:
 
@@ -15,12 +15,26 @@ Command-line options:
 |---|---|
 | `--mission <seed> [--theater-index N]` | fly a generated mission directly |
 | `--theater ce` / `--fly` | fly from the menu's defaults, skipping it |
+| `--weather random\|clear\|scattered\|broken\|overcast\|storm` | the mission's weather (default: rolled from the seed, odds by theater) |
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
 | `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons) |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |
 | `--vr` | OpenXR headset (without a runtime it runs on the desktop) |
 | `--viewer [--file stflt --model 24]` | browse the converted models |
 | `--freecam [--at Gutersloh\|primary] [--pos x,z]` | free debug camera |
+
+## Weather
+
+Not part of the original game. The original generator runs unchanged, and the weather is
+rolled from its own random stream. A clear sky behaves exactly like the original.
+- Scattered and broken cumulus, or an overcast deck. Storms add towering cells, rain,
+  lightning, turbulence and shorter visibility.
+- Clouds block optical lines of sight:
+  - IR and AIM-9 seekers, the Maverick and laser-guided bombs lose their target behind cloud.
+  - Ground targets under the deck can't be designated ("Target obscured").
+  - Enemy pilots can't visually ID you or use their guns through cloud.
+  - IR SAMs and IR air-to-air missiles aren't launched at what their launcher can't see.
+- Radar sees through cloud.
 
 ## Controls (original keyboard layout)
 

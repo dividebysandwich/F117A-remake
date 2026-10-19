@@ -29,6 +29,9 @@ pub struct Briefing {
     /// One weapon name per bay (2 bays on the Lockheed).
     pub armament: Vec<String>,
     pub fuel_line: String,
+    /// Not part of the original briefing (and not in `lines`).
+    #[serde(default)]
+    pub weather_line: String,
     /// All non-empty lines in display order.
     pub lines: Vec<String>,
 }
@@ -174,6 +177,7 @@ impl TextCtx<'_> {
             roe_text: x.roe_text[self.roe].clone(),
             armament: g.weapons[..nbays].iter().map(|&w| x.weapon_name(w as i16).to_string()).collect(),
             fuel_line: format!("Est. Fuel required: {} lbs.", g.fuel),
+            weather_line: String::new(),
             lines: Vec::new(),
         };
         let mut lines: Vec<String> = vec![

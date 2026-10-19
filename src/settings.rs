@@ -58,6 +58,8 @@ pub struct MissionSetup {
     pub start: Option<StartPose>,
     /// Debug free camera instead of the aircraft.
     pub freecam: bool,
+    /// Sky of the flight's mission (None: rolled from the mission seed).
+    pub weather: Option<f117_mission::Sky>,
 }
 
 /// Aircraft start position and heading (original world units, radians clockwise from north).
@@ -67,6 +69,11 @@ pub struct StartPose {
     pub north_wu: f64,
     pub heading: f32,
     pub carrier: bool,
+}
+
+/// `--weather random|clear|scattered|broken|overcast|storm` (default random).
+pub fn weather_arg(args: &[String]) -> Option<f117_mission::Sky> {
+    get(args, "--weather").and_then(|s| f117_mission::Sky::parse(&s))
 }
 
 fn args() -> Vec<String> {
@@ -110,6 +117,7 @@ impl MissionSetup {
             start_base: get(&a, "--base"),
             start: None,
             freecam: a.iter().any(|x| x == "--freecam"),
+            weather: weather_arg(&a),
         }
     }
 }

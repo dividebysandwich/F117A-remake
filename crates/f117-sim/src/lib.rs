@@ -10,6 +10,7 @@ mod radar;
 mod targeting;
 mod tiles;
 mod weapons;
+mod weather;
 
 pub use data::{AircraftType, MissileType, SimData, TheaterTiles, ThreatType, WeaponType};
 pub use rng::Rng;
@@ -198,6 +199,9 @@ pub struct Sim {
     pub(crate) chute: (i32, i32, i32),
     pub(crate) landing_type: u8,
     pub(crate) ended: Option<MissionEnd>,
+    /// Clouds (not in the original; clear = original behaviour).
+    #[serde(default)]
+    pub(crate) weather: f117_mission::Weather,
     pub(crate) log: Vec<LogEvent>,
 
     #[serde(skip)]
@@ -282,6 +286,7 @@ impl Sim {
             fs: 15,
             p: PlayerView::default(),
             pflags: if m.invulnerable { pflags::TRAINING } else { 0 },
+            weather: m.weather,
             emv: 0,
             damage: 0,
             hits: 2,

@@ -28,6 +28,7 @@ mod sim_render;
 mod trackcam;
 mod trails;
 mod viewer;
+mod weather;
 mod world;
 #[cfg(feature = "xr")]
 mod xr;
@@ -88,7 +89,7 @@ fn main() {
     ))
     .add_plugins((hud::HudPlugin, mfd::MfdPlugin, panel::PanelPlugin))
     .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin, trails::TrailsPlugin))
-    .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin));
+    .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin, weather::WeatherPlugin));
     mission::from_args(&mut app);
     if let Some(scale) = std::env::args()
         .collect::<Vec<_>>()

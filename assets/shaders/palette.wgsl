@@ -12,6 +12,9 @@
 const MAX_LOCAL_LIGHTS: u32 = 32u;
 const LIGHT_SHADOWS: u32 = 1u;
 const LIGHT_LOCAL: u32 = 2u;
+const FLAG_CLOUD: u32 = 8u;
+// Cloud colours: the grey ramp (its base entry is the horizon haze colour).
+const CLOUD_RAMP: u32 = 0xE0u;
 
 struct Globals {
     // Live palette (linear RGB).
@@ -32,6 +35,12 @@ struct Globals {
     dots: vec4<f32>,
     // Two entries per light: (position, range), (colour * intensity, unused).
     local_lights: array<vec4<f32>, 64>,
+    // Weather: deck base / top (metres, eye height frame), deck present (z), whiteout 0..1 (w).
+    clouds: vec4<f32>,
+    // x: haze distance scale, y: lightning flash 0..1, z: visibility under clouds (metres).
+    weather: vec4<f32>,
+    // Cloud texture: floating origin (x, z) modulo NOISE_PERIOD, seed (z).
+    noise: vec4<f32>,
 };
 
 struct PaletteMaterial {
@@ -119,7 +128,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     let origin = world_from_local[3].xyz;
     let forward = -view.world_from_view[2].xyz;
     let depth_m = max(dot(origin - view.world_position, forward), 0.0);
-    let depth_units = depth_m / (globals.params.y * level_unit(tag & 7u));
+    let depth_units = depth_m * max(globals.weather.x, 1.0) / (globals.params.y * level_unit(tag & 7u));
     let d = i32(depth_units / 512.0) - i32(size_class);
     var fog = u32(clamp(d, 0, 31)) >> 1u;
     var fog_f = clamp(depth_units / 512.0 - f32(size_class), 0.0, 31.0) / 2.0;
@@ -252,14 +261,120 @@ fn lit_surface(rgb: vec3<f32>, world: vec3<f32>, n: vec3<f32>, clip: vec4<f32>, 
     return rgb * light;
 }
 
+// Cloud texture: Perlin noise in world space. The lattice wraps every NOISE_PERIOD metres
+// horizontally (the floating origin is handed over modulo that), so the pattern stays put
+// when the origin moves.
+const NOISE_PERIOD: f32 = 81920.0;
+const NOISE_CELL: f32 = 1280.0;
+const NOISE_OCTAVES: u32 = 5u;
+
+fn noise_hash(p: vec3<i32>) -> u32 {
+    var h = (u32(p.x) * 0x8DA6B343u) ^ (u32(p.y) * 0xD8163841u) ^ (u32(p.z) * 0xCB1AB31Fu) ^ u32(globals.noise.z);
+    h ^= h >> 16u;
+    h *= 0x7FEB352Du;
+    h ^= h >> 15u;
+    h *= 0x846CA68Bu;
+    h ^= h >> 16u;
+    return h;
+}
+
+// Gradient at a lattice corner (Perlin's 12 cube-edge directions) dotted with the offset.
+fn noise_grad(h: u32, f: vec3<f32>) -> f32 {
+    let g = h % 12u;
+    let u = select(f.y, f.x, g < 8u);
+    let v = select(select(f.z, f.x, g == 12u || g == 14u), f.y, g < 4u);
+    return select(u, -u, (g & 1u) != 0u) + select(v, -v, (g & 2u) != 0u);
+}
+
+fn perlin(p: vec3<f32>, period: i32) -> f32 {
+    let i = vec3<i32>(floor(p));
+    let f = fract(p);
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    var c: array<f32, 8>;
+    for (var k = 0u; k < 8u; k++) {
+        let o = vec3<i32>(i32(k & 1u), i32((k >> 1u) & 1u), i32((k >> 2u) & 1u));
+        let q = i + o;
+        let w = vec3<i32>(((q.x % period) + period) % period, q.y, ((q.z % period) + period) % period);
+        c[k] = noise_grad(noise_hash(w), f - vec3<f32>(o));
+    }
+    let x0 = mix(mix(c[0], c[1], u.x), mix(c[2], c[3], u.x), u.y);
+    let x1 = mix(mix(c[4], c[5], u.x), mix(c[6], c[7], u.x), u.y);
+    return mix(x0, x1, u.z);
+}
+
+// About -1..1; octaves finer than a few pixels fade out with distance.
+fn cloud_noise(world: vec3<f32>, dist: f32) -> f32 {
+    let p = world + vec3<f32>(globals.noise.x, 0.0, globals.noise.y);
+    var sum = 0.0;
+    var amp = 0.6;
+    var cell = NOISE_CELL;
+    for (var o = 0u; o < NOISE_OCTAVES; o++) {
+        let fade = 1.0 - smoothstep(cell * 15.0, cell * 40.0, dist);
+        sum += amp * fade * perlin(p / cell, i32(NOISE_PERIOD / cell));
+        amp *= 0.5;
+        cell *= 0.5;
+    }
+    return sum;
+}
+
+// Cloud colour at `world` on a face with normal n (facing the viewer) seen `dist` metres
+// away: tops light, undersides dark, sun side lighter, textured by noise, hazing to the
+// horizon colour with distance.
+fn cloud_color(world: vec3<f32>, n: vec3<f32>, dist: f32, modern: bool) -> vec3<f32> {
+    let shading = (1.0 - n.y) * 4.0 + 4.0 - 3.0 * max(dot(n, globals.sun.xyz), 0.0);
+    let k = clamp(shading + 4.5 * cloud_noise(world, dist), 0.0, 14.0);
+    let fog = clamp(dist / max(globals.weather.z, 1.0) * 15.0, 0.0, 15.0);
+    let f = max(k - fog, 0.0);
+    if (modern) {
+        return mix(pal(CLOUD_RAMP + u32(floor(f))), pal(CLOUD_RAMP + u32(floor(f)) + 1u), fract(f));
+    }
+    return pal(CLOUD_RAMP + u32(round(f)));
+}
+
+// Inside a cloud: everything but the cockpit fades into it.
+fn whiteout(rgb: vec3<f32>, dist: f32) -> vec3<f32> {
+    let w = globals.clouds.w * smoothstep(3.0, 60.0, dist);
+    return mix(rgb, pal(CLOUD_RAMP + 2u), w);
+}
+
+// Lightning: a brief flash over the world.
+fn flash(rgb: vec3<f32>) -> vec3<f32> {
+    return rgb + vec3<f32>(0.55, 0.55, 0.65) * globals.weather.y;
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let dir = in.world_position - view.world_position;
     let modern = globals.params.w != 0.0;
+    if ((material.flags & FLAG_CLOUD) != 0u) {
+        var n = normalize(cross(dpdx(in.world_position), dpdy(in.world_position)));
+        if (dot(n, dir) > 0.0) { n = -n; }
+        let d = length(dir);
+        return vec4<f32>(flash(whiteout(cloud_color(in.world_position, n, d, modern), d)), 1.0);
+    }
     if ((material.flags & 1u) != 0u) {
         // Background: sky bands above the horizon, ground gradient below.
         if ((material.flags & 4u) != 0u) {
             return vec4<f32>(pal(select(0x7Cu, 0x88u, dir.y >= 0.0)), 1.0);
+        }
+        // Overcast: the deck's underside instead of the sky below it, its top instead of the
+        // ground above it, grey inside it.
+        let eye_y = view.world_position.y;
+        let nd = normalize(dir);
+        if (globals.clouds.z != 0.0) {
+            if (eye_y > globals.clouds.x && eye_y < globals.clouds.y) {
+                return vec4<f32>(flash(pal(CLOUD_RAMP + 2u)), 1.0);
+            }
+            if (eye_y <= globals.clouds.x && nd.y >= 0.0) {
+                let d = (globals.clouds.x - eye_y) / max(nd.y, 1e-4);
+                let hit = view.world_position + nd * d;
+                return vec4<f32>(flash(whiteout(cloud_color(hit, vec3<f32>(0.0, -1.0, 0.0), d, modern), d)), 1.0);
+            }
+            if (eye_y >= globals.clouds.y && nd.y < 0.0) {
+                let d = (eye_y - globals.clouds.y) / max(-nd.y, 1e-4);
+                let hit = view.world_position + nd * d;
+                return vec4<f32>(whiteout(cloud_color(hit, vec3<f32>(0.0, 1.0, 0.0), d, modern), d), 1.0);
+            }
         }
         var bg: vec3<f32>;
         if (modern) {
@@ -278,7 +393,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             let ground = eye + dir * (-eye.y / dir.y);
             bg = lit_surface(bg, ground, vec3<f32>(0.0, 1.0, 0.0), in.clip_position, flags);
         }
-        return vec4<f32>(bg, 1.0);
+        return vec4<f32>(flash(whiteout(bg, 1e4)), 1.0);
     }
 
     let word = material.word;
@@ -324,5 +439,5 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     } else if (modern && !is_line) {
         rgb = rgb * shade(in.world_position, dir);
     }
-    return vec4<f32>(rgb, 1.0);
+    return vec4<f32>(flash(whiteout(rgb, length(dir))), 1.0);
 }

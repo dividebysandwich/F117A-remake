@@ -3,7 +3,7 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext, egui};
 
-use f117_mission::{Mission, MissionKind};
+use f117_mission::{Mission, MissionKind, Sky};
 
 use crate::mission::{ActiveMission, MissionData, clean_text};
 use crate::settings::{AppState, MissionSetup};
@@ -45,6 +45,8 @@ pub struct MenuState {
     pub kind: MissionKind,
     pub opponents: u8,
     pub lockheed: bool,
+    /// None: rolled from the seed.
+    pub weather: Option<Sky>,
     pub seed: u16,
     pub mission: Option<Result<Mission, String>>,
     dirty: bool,
@@ -58,6 +60,7 @@ impl Default for MenuState {
             kind: MissionKind::Strike,
             opponents: 1,
             lockheed: false,
+            weather: None,
             seed: rand::random(),
             mission: None,
             dirty: true,
@@ -96,7 +99,8 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
     let mut cmd = std::process::Command::new(exe);
     cmd.args(["--vr", "--mission", &state.seed.to_string(), "--theater-index", &state.theater.to_string()])
         .args(["--roe", &state.roe.to_string(), "--kind", &(state.kind as u8).to_string()])
-        .args(["--opponents", &state.opponents.to_string()]);
+        .args(["--opponents", &state.opponents.to_string()])
+        .args(["--weather", state.weather.map_or("random", Sky::name)]);
     for (on, flag) in [
         (state.lockheed, "--lockheed"),
         (settings.modern_shading, "--modern"),
@@ -144,12 +148,12 @@ fn menu_ui(
     };
     if state.dirty {
         state.dirty = false;
-        let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.lockheed);
+        let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather);
         state.mission = Some(crate::mission::generate(&data, &settings, state.seed).map_err(|e| format!("{e:#}")));
     }
 
     let ctx = contexts.ctx_mut()?;
-    let before = (state.theater, state.roe, state.kind, state.opponents, state.lockheed);
+    let before = (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather);
     egui::Window::new("F-117A Nighthawk")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .collapsible(false)
@@ -173,6 +177,12 @@ fn menu_ui(
                 cols[1].radio_value(&mut state.kind, MissionKind::Air, "Air to air");
                 cols[1].radio_value(&mut state.kind, MissionKind::StrikeTraining, "Strike training");
                 cols[1].radio_value(&mut state.kind, MissionKind::AirTraining, "Air training");
+                cols[1].separator();
+                cols[1].label("Weather");
+                cols[1].radio_value(&mut state.weather, None, "Random");
+                for sky in Sky::ALL {
+                    cols[1].radio_value(&mut state.weather, Some(sky), sky.name());
+                }
                 cols[2].label("Opponents");
                 for (i, n) in ["Green", "Regular", "Veteran", "Elite"].iter().enumerate() {
                     cols[2].radio_value(&mut state.opponents, i as u8, *n);
@@ -207,6 +217,7 @@ fn menu_ui(
                         ui.label(clean_text(l));
                     }
                     ui.label(format!("{}  ·  fuel {} lbs", if m.night { "Night" } else { "Day" }, m.fuel_lbs));
+                    ui.label(&b.weather_line);
                     ui.label(b.armament.iter().map(|a| clean_text(a)).collect::<Vec<_>>().join(", "));
                     ui.collapsing("Intelligence", |ui| {
                         ui.label(clean_text(&b.primary_summary));
@@ -254,7 +265,7 @@ fn menu_ui(
                 }
             });
         });
-    if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed) {
+    if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather) {
         state.dirty = true;
     }
     Ok(())

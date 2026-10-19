@@ -16,6 +16,8 @@ pub const FLAG_BACKGROUND: u32 = 1;
 pub const FLAG_LINE: u32 = 2;
 /// Background drawn as the FLIR camera sees it: flat sky 0x88, flat ground 0x7C.
 pub const FLAG_FLIR: u32 = 4;
+/// Cloud surface: grey ramp by face orientation, hazed per pixel (weather.rs).
+pub const FLAG_CLOUD: u32 = 8;
 
 #[derive(Clone, Copy, Debug, Default, ShaderType)]
 pub struct PaletteParams {
@@ -100,6 +102,12 @@ pub struct Globals {
     pub dots: Vec4,
     /// Local lights, two entries each: (position, range), (linear colour * intensity, unused).
     pub local_lights: [Vec4; 2 * MAX_LOCAL_LIGHTS],
+    /// Deck base / top (metres), deck present (z), whiteout 0..1 (w).
+    pub clouds: Vec4,
+    /// x: haze distance scale, y: lightning flash 0..1, z: visibility under clouds (metres).
+    pub weather: Vec4,
+    /// Cloud texture: floating origin (x, z) modulo the noise period, seed (z).
+    pub noise: Vec4,
 }
 
 /// Lighting flags in `Globals.ambient.w`.
@@ -120,6 +128,9 @@ impl Default for Globals {
             light_info: Vec4::ZERO,
             dots: Vec4::ZERO,
             local_lights: [Vec4::ZERO; 2 * MAX_LOCAL_LIGHTS],
+            clouds: Vec4::ZERO,
+            weather: Vec4::new(1.0, 0.0, 20_000.0, 0.0),
+            noise: Vec4::ZERO,
         }
     }
 }

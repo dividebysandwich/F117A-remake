@@ -2,7 +2,7 @@
 
 use std::sync::OnceLock;
 
-use f117_mission::{GameData, Mission, MissionKind, MissionSettings, Seed};
+use f117_mission::{GameData, Mission, MissionKind, MissionSettings, Seed, Sky, Weather};
 use f117_sim::*;
 
 struct Data {
@@ -244,7 +244,54 @@ fn ir_jammer_vs_first_generation_ir() {
 #[test]
 fn aim9_kills_fighter() {
     let Some(d) = data() else { return };
-    let m = mission(d, 3, 0x1234, 1);
+    assert!(aim9_shot(d, Weather::default()));
+}
+
+/// An overcast deck: weather is not part of the original game.
+fn deck(base_ft: i32, top_ft: i32) -> Weather {
+    Weather { sky: Sky::Overcast, base_ft, top_ft, vis_km: 20, seed: 1 }
+}
+
+#[test]
+fn clouds_blind_the_sidewinder() {
+    let Some(d) = data() else { return };
+    // Shooter and target inside the deck: no IR lock. A deck below both does not matter.
+    assert!(!aim9_shot(d, deck(4000, 6000)));
+    assert!(aim9_shot(d, deck(1000, 3000)));
+}
+
+/// Whether a radar site's missile locks on the player (6000 ft) within five minutes.
+fn site_missile_locks(d: &Data, ty: i32, weather: Weather) -> bool {
+    let mut m = mission(d, 3, 0x1234, 1);
+    m.weather = weather;
+    let mut sim = Sim::new(&d.sim, &m);
+    let (mx, my) = sandbox(&mut sim, &m);
+    place_site(&mut sim, 3, ty, mx, my - 64 * 12);
+    let mut p = player_at(mx, my, 6000, 0x4000, 200);
+    p.cmd.toggle_bay = true;
+    for _ in 0..15 * 300 {
+        sim.step(&p, 15);
+        p.cmd = Commands::default();
+        if sim.projectiles().iter().any(|m| m.ttl > 0 && m.locked) {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+fn clouds_block_ir_but_not_radar_seekers() {
+    let Some(d) = data() else { return };
+    // SA-N-5 (IR) from the ground at a player above a 2000-4000 ft deck; SA-8B (radar) does lock.
+    assert!(site_missile_locks(d, 9, Weather::default()));
+    assert!(!site_missile_locks(d, 9, deck(2000, 4000)));
+    assert!(site_missile_locks(d, 3, deck(2000, 4000)));
+}
+
+/// Fires an AIM-9 at a slow transport 3 km ahead (both at 5000 ft); true if it is shot down.
+fn aim9_shot(d: &Data, weather: Weather) -> bool {
+    let mut m = mission(d, 3, 0x1234, 1);
+    m.weather = weather;
     let mut sim = Sim::new(&d.sim, &m);
     let (mx, my) = sandbox(&mut sim, &m);
     // A slow An-72 (no radar) 3 km ahead, flying north like the player.
@@ -276,9 +323,11 @@ fn aim9_kills_fighter() {
             }
         }
     }
-    assert!(killed, "{:?}", sim.flights()[1]);
-    assert!(sim.flights()[1].flags & 0x20 != 0);
-    assert!(sim.event_log().iter().any(|e| e.kind == 3 && e.arg == 9));
+    if killed {
+        assert!(sim.flights()[1].flags & 0x20 != 0);
+        assert!(sim.event_log().iter().any(|e| e.kind == 3 && e.arg == 9));
+    }
+    killed
 }
 
 /// Retarded bomb dropped straight onto the primary: kill iff compat << 6 / (diff + 2) > distance.

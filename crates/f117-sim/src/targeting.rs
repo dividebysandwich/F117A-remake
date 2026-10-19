@@ -107,6 +107,9 @@ impl Sim {
             if i == 0 && (o.x == 0 || o.y == 0 || o.shape == 0) {
                 continue;
             }
+            if !self.player_sees(o.x, o.y, 0) {
+                continue;
+            }
             best = i as i32;
             best_r = r;
         }
@@ -140,7 +143,14 @@ impl Sim {
             if r >= 0x12C0 || !(reselect || r < 0x100) {
                 continue;
             }
-            if r < best_r && r > prev_r && !self.external_view && u.flags & fflags::DESTROYED == 0 && u.speed != 0 && self.cam_off(b) < 0x2000 {
+            if r < best_r
+                && r > prev_r
+                && !self.external_view
+                && u.flags & fflags::DESTROYED == 0
+                && u.speed != 0
+                && self.cam_off(b) < 0x2000
+                && self.player_sees(u.x, u.y, u.alt)
+            {
                 best_r = r;
                 best = j as i32;
             }
@@ -163,6 +173,11 @@ impl Sim {
         let x = self.p.mx + self.trig.sin_mul(self.p.heading, d);
         let y = self.p.my - self.trig.cos_mul(self.p.heading, d);
         let o = self.find_object_at(x, y);
+        if o != -1 && !self.player_sees(self.obj(o).x, self.obj(o).y, 0) {
+            self.msg("Target obscured");
+            self.pflags &= !pflags::DESIGNATE;
+            return;
+        }
         if o != -1 && (self.hud_mode != HudMode::Nav || (self.obj(o).flags & 0x501) > 1) {
             self.gnd_lock = o;
             if self.smoke_src == 0 {

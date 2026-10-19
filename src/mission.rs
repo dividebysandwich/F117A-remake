@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use bevy::prelude::*;
-use f117_mission::{GameData, Mission, MissionKind, MissionSettings, Plane, Seed};
+use f117_mission::{GameData, Mission, MissionKind, MissionSettings, Plane, Seed, Sky};
 
 use crate::settings::{MissionSetup, StartPose};
 
@@ -23,13 +23,14 @@ impl MissionData {
 pub struct ActiveMission(pub Mission);
 
 /// Menu choices -> generator settings.
-pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockheed: bool) -> MissionSettings {
+pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockheed: bool, weather: Option<Sky>) -> MissionSettings {
     MissionSettings {
         theater,
         roe,
         kind,
         opponents,
         plane: if lockheed { Plane::Lockheed } else { Plane::MicroProse },
+        weather,
         ..default()
     }
 }
@@ -76,6 +77,7 @@ pub fn setup_from_mission(m: &Mission, start_dir: &[i16]) -> MissionSetup {
         start_base: Some(m.takeoff.name.clone()),
         start: Some(start_pose(m, start_dir)),
         freecam: false,
+        weather: Some(m.weather.sky),
     }
 }
 
@@ -93,11 +95,20 @@ pub fn from_args(app: &mut App) {
         .unwrap_or(MissionKind::Strike);
     let opponents = get("--opponents").and_then(|s| s.parse().ok()).unwrap_or(1);
     let lockheed = args.iter().any(|a| a == "--lockheed");
+    let weather = crate::settings::weather_arg(&args);
     let data = MissionData::load().expect("mission data");
-    let m = generate(&data, &settings(theater, roe, kind, opponents, lockheed), seed).expect("mission");
+    let m = generate(&data, &settings(theater, roe, kind, opponents, lockheed, weather), seed).expect("mission");
     let tables = crate::flight::SimTables::load();
     if args.iter().any(|a| a == "--print-mission") {
-        println!("{} -> {}: {} / {} night={}", m.takeoff.name, m.landing.name, m.orders.primary, m.orders.secondary, m.night);
+        println!(
+            "{} -> {}: {} / {} night={} {}",
+            m.takeoff.name,
+            m.landing.name,
+            m.orders.primary,
+            m.orders.secondary,
+            m.night,
+            m.weather.describe()
+        );
     }
     let mut setup = setup_from_mission(&m, &tables.start_dir);
     setup.freecam = args.iter().any(|a| a == "--freecam");
@@ -141,7 +152,7 @@ pub fn ensure_mission(
     let theater = theater_index(&setup.theater).unwrap_or(3);
     for _ in 0..16 {
         let seed: u16 = rand::random();
-        match generate(&data, &settings(theater, 1, MissionKind::Strike, 1, false), seed) {
+        match generate(&data, &settings(theater, 1, MissionKind::Strike, 1, false, setup.weather), seed) {
             Ok(m) => {
                 info!("generated mission {seed} for {}: {}", m.theater_code, m.orders.primary);
                 let freecam = setup.freecam;

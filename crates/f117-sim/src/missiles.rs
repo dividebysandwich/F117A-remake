@@ -1,10 +1,12 @@
 use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, sign};
 use crate::types::*;
+use crate::weather::optical_seeker;
 use crate::{N_PROJ, Sim};
 
 impl Sim {
-    /// `acquire(slot, tx, ty, cls)` (V:711F). Sets `acq_aim` always and `acq_range` on success.
-    fn acquire(&mut self, s: usize, tx: i32, ty: i32, cls: i32) -> bool {
+    /// `acquire(slot, tx, ty, talt, cls)` (V:711F). Sets `acq_aim` always and `acq_range` on
+    /// success. Optical seekers also need a line of sight through the clouds (`talt` viewZ).
+    fn acquire(&mut self, s: usize, tx: i32, ty: i32, talt: i32, cls: i32) -> bool {
         let m = self.proj[s];
         let dx = s16(tx - m.x);
         let dy = s16(ty - m.y);
@@ -19,6 +21,9 @@ impl Sim {
             return false;
         }
         if cls == 0 && abs16(s16(m.heading - self.p.heading)) > 0x2000 {
+            return false;
+        }
+        if optical_seeker(m.spec, cls) && !self.sees((m.x, m.y, m.alt), (tx, ty, talt)) {
             return false;
         }
         self.acq_range = r;
@@ -49,7 +54,7 @@ impl Sim {
             if s < 8 {
                 // ---- enemy missile ----
                 alt0 = self.p.view_z;
-                locked = self.acquire(s, tgx, tgy, cls);
+                locked = self.acquire(s, tgx, tgy, self.p.view_z, cls);
                 best = self.acq_range;
                 aim = self.acq_aim;
                 let jam = (self.ecm_on() && cls > 0) || (self.irj_on() && cls <= 0) || (self.alarm_recent() > self.alarm_timer && spec != 0x21);
@@ -67,7 +72,7 @@ impl Sim {
                             && (cls == 1
                                 || cls == 2
                                 || (cls == 3 && (hi8s(s16(aim - self.p.heading)).abs() - 0x40).abs() < 0x40 - 12 * self.diff)));
-                    if attract && self.acquire(s, c.x, c.y, cls) {
+                    if attract && self.acquire(s, c.x, c.y, self.p.view_z, cls) {
                         aim = 1;
                         locked = false;
                     }
@@ -93,7 +98,7 @@ impl Sim {
                         if u.flags & fflags::AIRBORNE == 0 || u.speed == 0 {
                             continue;
                         }
-                        if self.acquire(s, u.x, u.y, cls) && self.acq_range < best {
+                        if self.acquire(s, u.x, u.y, u.alt, cls) && self.acq_range < best {
                             aim = self.acq_aim;
                             best = self.acq_range;
                             hit = j as i32;
@@ -119,7 +124,7 @@ impl Sim {
                         }
                     }
                     let o = self.obj(t);
-                    if self.acquire(s, o.x, o.y, cls) {
+                    if self.acquire(s, o.x, o.y, 0, cls) {
                         aim = self.acq_aim;
                         best = self.acq_range;
                         hit = t;
@@ -130,7 +135,8 @@ impl Sim {
                 let gl = self.gnd_lock;
                 if spec == 28 && gl >= 0 && (gl as usize) < self.objects.len() {
                     let o = self.obj(gl);
-                    if self.acquire(s, o.x, o.y, 28) {
+                    // The laser spot needs the designator's line of sight too.
+                    if self.player_sees(o.x, o.y, 0) && self.acquire(s, o.x, o.y, 0, 28) {
                         aim = self.acq_aim;
                         best = self.acq_range;
                         hit = gl;

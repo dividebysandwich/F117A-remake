@@ -229,7 +229,10 @@ impl Sim {
                     self.log_event(7, i as i32);
                 } else {
                     let k = i & 7;
-                    if self.proj[k].ttl == 0 && self.missile(o.unit_type).lock_range as i32 > range {
+                    if self.proj[k].ttl == 0
+                        && self.missile(o.unit_type).lock_range as i32 > range
+                        && self.may_launch(o.unit_type, (o.x, o.y, 0))
+                    {
                         self.launch_sam(k, i, brg);
                     }
                 }
@@ -317,7 +320,10 @@ impl Sim {
                 self.tracking += 1;
                 self.flights[i].flags |= fflags::SAW_PLAYER;
                 self.alarm();
-                if self.flights[i].flags & fflags::VISUAL_ID == 0 && (8 >> self.night as i32) > range {
+                if self.flights[i].flags & fflags::VISUAL_ID == 0
+                    && (8 >> (self.night as i32 + self.visual_shift())) > range
+                    && self.sees((u.x, u.y, u.alt), (self.p.mx, self.p.my, self.p.view_z))
+                {
                     self.flights[i].flags |= fflags::VISUAL_ID;
                     self.visual_ids += 1;
                     let n = self.ac_type(u.spec).name.clone();
@@ -334,6 +340,7 @@ impl Sim {
                         && abs16(s16(brg - u.heading)) < 0x1800
                         && self.missile(w).lock_range as i32 > range
                         && 2 * (4 - self.diff) < range
+                        && self.may_launch(w, (u.x, u.y, u.alt))
                     {
                         self.launch_aam(k, i);
                     }

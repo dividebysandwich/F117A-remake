@@ -163,6 +163,7 @@ fn random_missions_do_not_panic() {
                 plane: if next() % 2 == 0 { Plane::MicroProse } else { Plane::Lockheed },
                 sorties: (next() % 100) as u16,
                 pilot: "Capt. Test".into(),
+                weather: if i % 3 == 0 { None } else { Some(f117_mission::Sky::Clear) },
             };
             let seed = if i % 2 == 0 { Seed::Srand(next() as u16) } else { Seed::Holdrand(next()) };
             let m = generate(&data, &s, seed).unwrap_or_else(|e| panic!("{s:?} {seed:?}: {e}"));

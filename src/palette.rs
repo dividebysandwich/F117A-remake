@@ -289,6 +289,8 @@ fn update_globals(
     viewpoint: Res<Viewpoint>,
     settings: Res<Settings>,
     lighting: Res<crate::lighting::LightingState>,
+    weather: Res<crate::weather::WeatherState>,
+    origin: Res<crate::world::FloatingOrigin>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     let Some(mut buf) = buffers.get_mut(&palette.globals) else { return };
@@ -315,6 +317,7 @@ fn update_globals(
         g.local_lights[2 * i] = *p;
         g.local_lights[2 * i + 1] = *c;
     }
+    (g.clouds, g.weather, g.noise) = weather.globals(origin.origin);
     buf.set_data(g);
 }
 

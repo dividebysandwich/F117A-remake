@@ -2,6 +2,7 @@ mod generator;
 pub mod rng;
 pub mod tables;
 mod text;
+pub mod weather;
 pub mod world;
 
 use std::path::Path;
@@ -13,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub use rng::MscRand;
 pub use tables::{MissionRow, PlaneInfo, StartTables};
 pub use text::{Briefing, Orders, OrdersLine};
+pub use weather::{Sky, Weather};
 pub use world::{FlightUnit, MissionWorld, NAMES_BYTES, TheaterData, WorldObject};
 
 pub const THEATER_NAMES: [&str; 9] =
@@ -71,11 +73,19 @@ pub struct MissionSettings {
     pub sorties: u16,
     /// Pilot name (with rank) for the briefing.
     pub pilot: String,
+    /// Sky to fly in; `None` rolls it from the seed. Not part of the original game, so the
+    /// default is clear (the original behaviour).
+    #[serde(default = "clear_sky")]
+    pub weather: Option<Sky>,
+}
+
+fn clear_sky() -> Option<Sky> {
+    Some(Sky::Clear)
 }
 
 impl Default for MissionSettings {
     fn default() -> Self {
-        Self { theater: 3, roe: 2, kind: MissionKind::Strike, opponents: 1, plane: Plane::MicroProse, sorties: 0, pilot: "Pilot".into() }
+        Self { theater: 3, roe: 2, kind: MissionKind::Strike, opponents: 1, plane: Plane::MicroProse, sorties: 0, pilot: "Pilot".into(), weather: clear_sky() }
     }
 }
 
@@ -295,6 +305,9 @@ pub struct Mission {
     /// The edited theater world handed to VGAME.
     pub world: MissionWorld,
     pub night: bool,
+    /// Not part of the original game (rolled from its own RNG stream).
+    #[serde(default)]
+    pub weather: Weather,
     pub time: MissionTime,
     pub fuel_lbs: i16,
     pub loadout: Loadout,
@@ -409,6 +422,9 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
     let primary = target(0);
     let secondary = target(1);
     let usable_bays = if lockheed { 2 } else { 4 };
+    let weather = Weather::roll(input.holdrand, s.theater, s.weather);
+    let mut briefing = ctx.briefing(s.sorties, &s.pilot);
+    briefing.weather_line = weather.describe();
     Ok(Mission {
         settings: s.clone(),
         theater_code: THEATERS[s.theater].into(),
@@ -435,6 +451,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
         special_aircraft,
         escort: g.escort as i16,
         night: g.night,
+        weather,
         fuel_lbs: g.fuel as i16,
         loadout: Loadout {
             bays: (0..4)
@@ -444,7 +461,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
         },
         hostile_concentrations: g.hostile_conc,
         invulnerable: s.kind.index() > 1,
-        briefing: ctx.briefing(s.sorties, &s.pilot),
+        briefing,
         orders: ctx.orders(),
         world: g.world.clone(),
     })

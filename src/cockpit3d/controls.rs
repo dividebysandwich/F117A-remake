@@ -107,8 +107,6 @@ pub(super) struct Control {
     travel: f32,
     /// Current push depth (metres), from the fingers or a click animation.
     depth: f32,
-    /// Per hand: the finger was in front of the face inside the footprint.
-    armed: [bool; 2],
     /// A VR fingertip touches it.
     touched: bool,
     /// Seconds left of a click/script press animation.
@@ -347,7 +345,7 @@ fn side_slot(s: f32, row: u8, col: u8) -> (Vec3, Quat) {
 
 impl Control {
     fn new(kind: Kind, effect: Effect, half: Vec2, height: f32, travel: f32) -> Self {
-        Self { kind, effect, half, height, travel, depth: 0.0, armed: [false; 2], touched: false, click: 0.0 }
+        Self { kind, effect, half, height, travel, depth: 0.0, touched: false, click: 0.0 }
     }
 }
 
@@ -479,37 +477,27 @@ pub(super) fn interact(
     }
 
     // VR fingertips: each hand touches the control whose face is nearest its fingertip (not
-    // while it holds the stick or throttle); the trigger fires it. Pushing a cap moves it but
-    // does not fire it.
+    // while it holds the stick or throttle); the trigger fires it and holds it pushed in.
     let mut touching: [Option<(f32, Entity)>; 2] = [None; 2];
     for (e, mut c, tf) in &mut controls {
         c.click = (c.click - dt).max(0.0);
-        let mut depth: f32 = 0.0;
         for (h, hand) in hands.hands.iter().enumerate() {
             // The ejection handle has to be grabbed and pulled (no accidental pokes).
             if !hand.active || !cockpit_view || c.kind == Kind::EjectHandle {
-                c.armed[h] = false;
                 continue;
             }
             let local = tf.rotation.inverse() * (hand.finger - tf.translation);
             let inside = local.x.abs() <= c.half.x + TOUCH_MARGIN && local.y.abs() <= c.half.y + TOUCH_MARGIN && local.z > -0.04;
             if !inside {
-                c.armed[h] = false;
                 continue;
             }
             let face = c.height + FINGER;
-            if local.z > face {
-                c.armed[h] = true;
-            }
-            if c.armed[h] {
-                depth = depth.max((face - local.z).clamp(0.0, c.travel));
-            }
             let gap = local.z - face;
             if hand.squeeze < 0.4 && gap < TOUCH_GAP && gap > -c.travel - TOUCH_GAP && touching[h].is_none_or(|(g, _)| gap.abs() < g) {
                 touching[h] = Some((gap.abs(), e));
             }
         }
-        c.depth = if c.click > 0.0 { c.travel } else { depth };
+        c.depth = if c.click > 0.0 { c.travel } else { 0.0 };
     }
     for (h, hand) in hands.hands.iter_mut().enumerate() {
         let touched = touching[h].map(|(_, e)| e);
@@ -518,13 +506,16 @@ pub(super) fn interact(
         }
         was_touching[h] = touched;
         if let Some(e) = touched
-            && hand.trigger_pulled()
             && let Ok((_, mut c, _)) = controls.get_mut(e)
         {
-            hand.haptic = hand.haptic.max(0.6);
-            c.click = CLICK_SECONDS;
-            c.depth = c.travel;
-            fire.fire(c.effect);
+            if hand.trigger_pulled() {
+                hand.haptic = hand.haptic.max(0.6);
+                c.click = CLICK_SECONDS;
+                fire.fire(c.effect);
+            }
+            if hand.trigger > 0.7 {
+                c.depth = c.travel;
+            }
         }
     }
     for (e, mut c, _) in &mut controls {

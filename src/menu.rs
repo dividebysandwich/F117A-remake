@@ -115,6 +115,8 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.shadows, "--shadows"),
         (settings.local_lights, "--local-lights"),
         (settings.classic_cockpit, "--classic-cockpit"),
+        (settings.classic_flight, "--classic-flight"),
+        (settings.no_crashes, "--no-crashes"),
     ] {
         if on {
             cmd.arg(flag);
@@ -243,6 +245,35 @@ fn section(ui: &mut egui::Ui, title: &str) {
     ui.label(egui::RichText::new(format!("[ {} ]", title.to_ascii_uppercase())).color(AMBER).size(14.0));
 }
 
+/// A labelled CLASSIC / MODERN slide switch; `modern` is the right position.
+fn slide_switch(ui: &mut egui::Ui, label: &str, modern: &mut bool) -> egui::Response {
+    let width = ui.available_width().min(200.0);
+    let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(width, 22.0), egui::Sense::click());
+    if resp.clicked() {
+        *modern = !*modern;
+        resp.mark_changed();
+    }
+    if ui.is_rect_visible(rect) {
+        let t = ui.ctx().animate_bool_responsive(resp.id, *modern);
+        let hovered = resp.hovered();
+        let p = ui.painter();
+        let font = egui::FontId::monospace(12.0);
+        p.text(rect.left_center(), egui::Align2::LEFT_CENTER, label.to_ascii_uppercase(), font.clone(), if hovered { BRIGHT } else { GREEN });
+        // The track: two halves, the knob slides over the selected one.
+        let track = egui::Rect::from_min_max(egui::pos2(rect.right() - 108.0, rect.top()), rect.right_bottom());
+        p.rect_filled(track, 0.0, FIELD);
+        p.rect_stroke(track, 0.0, egui::Stroke::new(1.0, if hovered { BRIGHT } else { DIM }), egui::StrokeKind::Inside);
+        let half = track.width() / 2.0;
+        let knob = egui::Rect::from_min_size(egui::pos2(track.left() + t * half, track.top()), egui::vec2(half, track.height())).shrink(2.0);
+        p.rect_filled(knob, 0.0, if *modern { DIM } else { AMBER.gamma_multiply(0.55) });
+        for (i, (text, on)) in [("CLASSIC", !*modern), ("MODERN", *modern)].into_iter().enumerate() {
+            let center = egui::pos2(track.left() + half * (i as f32 + 0.5), track.center().y);
+            p.text(center, egui::Align2::CENTER_CENTER, text, egui::FontId::monospace(11.0), if on { BRIGHT } else { DIM });
+        }
+    }
+    resp
+}
+
 fn big_button(text: &str) -> egui::Button<'static> {
     egui::Button::new(egui::RichText::new(text).size(22.0)).min_size(egui::vec2(170.0, 50.0))
 }
@@ -329,9 +360,18 @@ fn menu_ui(
                     }
                     section(ui, "Aircraft");
                     facts(
-                        ui.checkbox(&mut state.lockheed, "Lockheed F-117A"),
+                        ui.checkbox(&mut state.lockheed, "Realistic weapons"),
                         &["The real aircraft's limits", "2 weapon bays instead of 4", "No AIM-9 or AIM-120 missiles", "No carrier takeoffs or landings"],
                     );
+                    let s = settings.bypass_change_detection();
+                    if facts(
+                        ui.checkbox(&mut s.no_crashes, "Crash protection"),
+                        &["Pulls up automatically near the ground (gear up)", "Ground contact and collisions are not fatal", "Off: the ground can always be hit"],
+                    )
+                    .changed()
+                    {
+                        settings.set_changed();
+                    }
                 });
                 ui.vertical(|ui| {
                     ui.set_width(200.0);
@@ -352,22 +392,34 @@ fn menu_ui(
                     if let Some(c) = state.cloud_cover.as_mut() {
                         facts(ui.add(egui::Slider::new(c, 0..=100).suffix("%")), &["Share of the sky the main layer covers", "No effect on a clear sky"]);
                     }
-                    section(ui, "Graphics");
-                    // Only mark the settings changed when a box is toggled.
+                    section(ui, "Classic / Modern");
+                    // Only mark the settings changed when a switch is flipped.
                     let mut toggled = false;
                     let s = settings.bypass_change_detection();
-                    for (on, name, f) in [
-                        (&mut s.modern_shading, "Modern shading", &["MSAA anti-aliasing", "Subtle directional shading", "Smooth distance haze"][..]),
-                        (&mut s.shadows, "Shadows", &["Sun shadows in the cockpit and the world", "Costs GPU time"][..]),
-                        (&mut s.local_lights, "Local lighting", &["Cockpit flood and display lights", "Explosions, plumes and runway lights light the scene"][..]),
+                    let mut cockpit = !s.classic_cockpit;
+                    let mut flight = !s.classic_flight;
+                    for (modern, name, f) in [
+                        (&mut s.modern_shading, "Shaders", &["Modern: MSAA anti-aliasing, subtle directional shading, smooth distance haze", "Classic: the original's flat shading"][..]),
+                        (&mut s.shadows, "Shadows", &["Modern: sun shadows in the cockpit and the world (costs GPU time)", "Classic: no shadows"][..]),
+                        (&mut s.local_lights, "Lighting", &["Modern: cockpit flood and display lights; explosions, plumes and runway lights light the scene", "Classic: sun and sky light only"][..]),
                         (
-                            &mut s.classic_cockpit,
-                            "Classic cockpit",
-                            &["Original instrument panel layout", "Original 77x60 displays", "Off: modern panel, high-resolution displays with bezel buttons"][..],
+                            &mut cockpit,
+                            "Cockpit",
+                            &["Modern: high-resolution displays with bezel buttons", "Classic: the original instrument panel layout and 77x60 displays"][..],
+                        ),
+                        (
+                            &mut flight,
+                            "Flight model",
+                            &[
+                                "Modern: aerodynamic flight model with fly-by-wire: the stick commands g and roll rate, hands off holds the flight path",
+                                "Classic: the original game's flight model",
+                            ][..],
                         ),
                     ] {
-                        toggled |= facts(ui.checkbox(on, name), f).changed();
+                        toggled |= facts(slide_switch(ui, name, modern), f).changed();
                     }
+                    s.classic_cockpit = !cockpit;
+                    s.classic_flight = !flight;
                     if toggled {
                         settings.set_changed();
                     }

@@ -20,6 +20,9 @@ Command-line options:
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
 | `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons) |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |
+| `--classic-flight` | the original game's flight model instead of the modern one (aerodynamic model with fly-by-wire: the stick commands g and roll rate, hands off holds the flight path); `--script` runs default to it, `--modern-flight` overrides |
+| `--no-crashes` | crash protection: automatic pull-up near the ground with the gear up, ground contact and collisions are not fatal |
+| `--lockheed` | realistic weapons: the real aircraft's 2 bays, no air-to-air missiles, no carrier operations |
 | `--vr` | OpenXR headset (without a runtime it runs on the desktop) |
 | `--viewer [--file stflt --model 24]` | browse the converted models |
 | `--freecam [--at Gutersloh\|primary] [--pos x,z]` | free debug camera |
@@ -92,7 +95,8 @@ geography in `tools/theater_ua/geo.py`.
 | Training / resupply / quit | Alt T / Alt R / Alt Q |
 
 The full key list is in [docs/keys.md](docs/keys.md). A gamepad works as stick and throttle as
-well (right stick: rudder). The menu's Graphics column has the same toggles as the options above.
+well (right stick: rudder). The menu's Classic / Modern switches (shaders, shadows, lighting, cockpit, flight model) and
+its Aircraft options match the options above.
 
 **3D cockpit (desktop):** hold the right mouse button to look around, click the panel buttons
 (lit panel captions, the MFD bezel buttons, the labelled side buttons, gear lever, ejection

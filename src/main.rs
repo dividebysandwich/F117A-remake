@@ -25,6 +25,7 @@ mod palette;
 mod palette_material;
 mod panel;
 mod player;
+mod prefs;
 mod scenery;
 mod script;
 mod settings;
@@ -44,7 +45,12 @@ use bevy::prelude::*;
 use settings::{MissionSetup, Settings};
 
 fn main() {
-    let settings = Settings::from_args();
+    let mut settings = Settings::from_args();
+    // Started into the menu: the menu choices and switches from the last run.
+    let mut menu_state = menu::MenuState::default();
+    if settings.initial_state == settings::AppState::Menu && !settings.vr {
+        prefs::Prefs::load().apply(&mut menu_state, &mut settings);
+    }
     let mut app = App::new();
     let plugins = DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -78,6 +84,7 @@ fn main() {
     app.add_plugins(crash_log::CrashLogPlugin);
     app.insert_state(settings.initial_state)
     .insert_resource(settings.clone())
+    .insert_resource(menu_state)
     .insert_resource(MissionSetup::from_args())
     .insert_resource(flight::SimTables::load())
     .add_plugins(settings::configure)

@@ -206,6 +206,8 @@ pub fn default_vr_buttons() -> Vec<VrButtonMapping> {
     .collect()
 }
 
+const FILE: &str = "input.json";
+
 /// Saved input mapping (`<config dir>/stealth-mission-89/input.json`).
 #[derive(Resource, Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(default)]
@@ -226,28 +228,12 @@ impl Default for InputConfig {
 }
 
 impl InputConfig {
-    pub fn path() -> Option<PathBuf> {
-        dirs::config_dir().map(|d| d.join("stealth-mission-89").join("input.json"))
-    }
-
     pub fn load() -> Self {
-        let Some(path) = Self::path() else { return Self::default() };
-        match std::fs::read_to_string(&path) {
-            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-                warn!("{}: {e}; using the default input mapping", path.display());
-                Self::default()
-            }),
-            Err(_) => Self::default(),
-        }
+        crate::prefs::load_json(FILE).unwrap_or_default()
     }
 
     pub fn save(&self) -> anyhow::Result<PathBuf> {
-        let path = Self::path().ok_or_else(|| anyhow::anyhow!("no user config directory"))?;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        std::fs::write(&path, serde_json::to_string_pretty(self)?)?;
-        Ok(path)
+        crate::prefs::save_json(FILE, self)
     }
 
     pub fn button(&self, target: ButtonTarget) -> Option<&ButtonMapping> {

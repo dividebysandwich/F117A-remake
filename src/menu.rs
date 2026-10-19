@@ -295,6 +295,7 @@ fn menu_ui(
     mut input_config: ResMut<crate::hotas::InputConfig>,
     hotas: Res<crate::hotas::Hotas>,
     keys: Res<ButtonInput<KeyCode>>,
+    mut saved: Local<Option<crate::prefs::Prefs>>,
 ) -> Result {
     // Generator data is loaded on first use.
     let Some(data) = data else {
@@ -502,6 +503,7 @@ fn menu_ui(
     if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover) {
         state.dirty = true;
     }
+    crate::prefs::Prefs::save_if_changed(&state, &settings, &mut saved);
     Ok(())
 }
 

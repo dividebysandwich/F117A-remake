@@ -1,12 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-/// DGROUP offset in the unpacked START image.
-pub const DS_BASE: usize = 0xA950;
-
-/// Number of rows in the mission table (DS:11DA).
+/// Number of rows in the mission table.
 pub const MISSION_ROWS: usize = 82;
 
-/// One row of the mission table (spec §5.4).
+/// One row of the mission table: which target, mission type and flags a mission can use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionRow {
     /// Column 0: bit per theater.
@@ -23,7 +20,7 @@ pub struct MissionRow {
     pub special: i16,
 }
 
-/// Plane table entry (DS:1708, 32-byte records, spec §3).
+/// Plane table entry: performance data per aircraft type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlaneInfo {
     pub name: String,
@@ -32,40 +29,34 @@ pub struct PlaneInfo {
     pub range: i16,
 }
 
-/// All START.EXE tables used by the generator and the briefing.
+/// Mission generator tables (assets/mission/tables.json) used by the generator and the briefing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartTables {
     pub missions: Vec<MissionRow>,
-    /// Briefing paragraph per mission row (pointer table DS:1F24).
-    pub mission_text: Vec<String>,
-    /// Quantity per weapon type (DS:1EC6).
+    /// Quantity per weapon type.
     pub weapon_qty: Vec<u8>,
-    /// Threat (up, down) remap per unit type 0..15 (DS:1EE4).
+    /// Threat (up, down) remap per unit type 0..15.
     pub unit_remap: Vec<(i16, i16)>,
     pub planes: Vec<PlaneInfo>,
-    /// Weapon suitability `suit[weapon][class]` (DS:1D86, 16x16 signed bytes).
+    /// Weapon suitability `suit[weapon][class]` (16x16 signed bytes).
     pub suit: Vec<[i8; 16]>,
-    /// Weapon availability index map (DS:01C4).
+    /// Weapon availability index map.
     pub avail_map: [u8; 16],
-    /// Weapon names (pointer table DS:A409).
+    /// Weapon names.
     pub weapon_names: Vec<String>,
-    /// ROE paragraphs (pointer table DS:9781).
-    pub roe_text: Vec<String>,
-    /// Tile search neighbour directions (DS:105A / DS:106C).
+    /// Tile search neighbour directions (dx, dy).
     pub dir_dx: [i16; 9],
     pub dir_dy: [i16; 9],
-    /// Tile-relative offset for a direction of -1, 0, +1 (DS:1052).
+    /// Tile-relative offset for a direction of -1, 0, +1.
     pub dir_off: [i16; 3],
-    /// Grid size per LOD level (DS:107E).
+    /// Grid size per LOD level.
     pub grid_size: [i16; 5],
-    /// Briefing date tables (DS:0882 / 088C / 0896 / 08A8 / 08C2).
+    /// Briefing date tables (month names, days per month, start dates per theater).
     pub date_month: [u8; 9],
     pub date_day: [u8; 9],
     pub date_year: [u16; 9],
     pub month_names: Vec<String>,
     pub month_len: [u8; 14],
-    /// The "." appended to objectives (DS:0949).
-    pub dot: String,
 }
 
 impl StartTables {

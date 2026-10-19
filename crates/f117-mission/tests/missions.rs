@@ -30,7 +30,7 @@ fn central_europe_reference_briefing() {
 #[test]
 fn random_missions_do_not_panic() {
     let data = data();
-    // simple LCG for the settings; seeds via srand like a fresh START run
+    // simple LCG for the settings; seeds via srand like a fresh game start
     let mut st: u64 = 0x1234_5678_9ABC_DEF0;
     let mut next = || {
         st = st.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -60,4 +60,22 @@ fn random_missions_do_not_panic() {
         }
     }
     eprintln!("mission types seen (index = type): {types:?}");
+}
+
+/// The briefing wording is fixed by the seed and varies between seeds.
+#[test]
+fn briefing_wording_varies_by_seed() {
+    let data = data();
+    let s = MissionSettings { theater: 3, roe: 1, kind: MissionKind::Strike, opponents: 1, ..Default::default() };
+    let brief = |h: u32| generate(data, &s, Seed::Holdrand(h)).unwrap();
+    let a = brief(0x1234_5678);
+    assert_eq!(a.briefing, brief(0x1234_5678).briefing);
+    let mut summaries = std::collections::HashMap::<i16, std::collections::HashSet<String>>::new();
+    for h in 0..400u32 {
+        let m = brief(h.wrapping_mul(0x0101_0F0F));
+        assert!(!m.briefing.primary_summary.is_empty() && !m.briefing.primary_objective.is_empty());
+        assert!(!m.briefing.lines.iter().any(|l| l.contains('{')), "unfilled placeholder: {:?}", m.briefing.lines);
+        summaries.entry(m.primary.row).or_default().insert(m.briefing.primary_summary.clone());
+    }
+    assert!(summaries.values().any(|v| v.len() > 1), "no row showed more than one summary");
 }

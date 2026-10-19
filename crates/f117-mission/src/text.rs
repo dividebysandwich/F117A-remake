@@ -1,14 +1,76 @@
 use serde::{Deserialize, Serialize};
 
 use crate::generator::{GenResult, s16};
+use crate::rng::MscRand;
 use crate::tables::StartTables;
 
-pub const KIND_TITLES: [&str; 4] =
-    ["Air Combat Mission Orders", "Ground Strike Mission Orders", "Air Training Orders", "Ground Strike Training Orders"];
+/// Briefing wording (`assets/mission/briefings.json`): every entry is a list of variants, one
+/// of which is picked per mission. Templates use `{name}` placeholders.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BriefingTexts {
+    /// Intelligence paragraphs per mission table row.
+    pub summaries: Vec<Vec<String>>,
+    /// Rules of engagement per ROE level (0 clandestine, 1 limited, 2 full war).
+    pub roe: Vec<Vec<String>>,
+    pub headers: Vec<String>,
+    /// Titles per mission kind (air combat, ground strike, air training, ground training).
+    pub titles: Vec<Vec<String>>,
+    pub labels: BriefingLabels,
+    /// `{pilot}`.
+    pub pilot: Vec<String>,
+    /// `{base}`, `{time}`.
+    pub depart: Vec<String>,
+    /// `{base}`.
+    pub land: Vec<String>,
+    /// `{fuel}`.
+    pub fuel: Vec<String>,
+    pub objectives: ObjectiveTexts,
+}
 
-/// The briefing as START prints it (paragraph layout is not reproduced). Strings are the raw
-/// START texts decoded as latin-1, so the paragraphs keep START's in-text control bytes
-/// (e.g. 0x8C / 0x80 around highlighted words, trailing CR).
+/// Section headings of the briefing.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BriefingLabels {
+    pub primary: String,
+    pub secondary: String,
+    pub objective: String,
+    pub flight_plan: String,
+    pub roe: String,
+    pub armament: String,
+}
+
+/// Objective templates by mission type.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ObjectiveTexts {
+    /// Photo / strike: `{what}` (and `{place}` for the `_at` forms), completed by a suffix.
+    pub photo_at: Vec<String>,
+    pub photo: Vec<String>,
+    pub destroy_at: Vec<String>,
+    pub destroy: Vec<String>,
+    /// `{deadline}`.
+    pub suffix_deadline: Vec<String>,
+    /// `{deadline}`, the cargo is destroyed with the target while it is being unloaded.
+    pub suffix_unloading: Vec<String>,
+    pub suffix_none: Vec<String>,
+    /// Supply drop: `{coord}`, `{deadline}`.
+    pub drop: Vec<String>,
+    /// Secret airstrip: `{coord}`, `{deadline}`.
+    pub airstrip: Vec<String>,
+    /// Transport on a known route: `{origin}`, `{depart}`, `{place}`, `{deadline}`.
+    pub route: Vec<String>,
+    /// Transport leaving a base: `{place}`, `{depart}`.
+    pub leaving: Vec<String>,
+    /// Transport last seen at a grid reference: `{coord}`, `{depart}`, `{place}`, `{deadline}`.
+    pub last_seen: Vec<String>,
+    /// Aircraft at a grid reference: `{target}`, `{coord}`.
+    pub patrol: Vec<String>,
+}
+
+/// Fills `{key}` placeholders.
+fn fill(template: &str, vars: &[(&str, &str)]) -> String {
+    vars.iter().fold(template.to_string(), |s, (k, v)| s.replace(&format!("{{{k}}}"), v))
+}
+
+/// The pre-flight briefing (paragraph layout is not reproduced).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Briefing {
     pub header: String,
@@ -18,7 +80,7 @@ pub struct Briefing {
     pub date: String,
     /// `"<takeoff base> - <date>"`.
     pub base_date_line: String,
-    /// PRIMARY TARGET INTELLIGENCE SUMMARY paragraph (mission row text, DS:1F24).
+    /// PRIMARY TARGET INTELLIGENCE SUMMARY paragraph (mission row text).
     pub primary_summary: String,
     pub primary_objective: String,
     pub secondary_summary: String,
@@ -40,14 +102,14 @@ pub struct Briefing {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrdersLine {
     pub text: String,
-    /// Palette colour index used by VGAME.
+    /// Palette colour index of the line.
     pub color: u8,
 }
 
-/// The in-flight orders MFD page (V:97A4) at mission start (no objective completed yet).
+/// The in-flight orders MFD page at mission start (no objective completed yet).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Orders {
-    /// The lines exactly as VGAME builds them (mixed case strings from VGAME.EXE).
+    /// The lines as the orders page shows them (mixed case).
     pub lines: Vec<OrdersLine>,
     /// Primary order as one upper-case line, e.g. "DESTROY ENEMY SS MISSILE AT LIBEREC".
     pub primary: String,
@@ -59,9 +121,12 @@ pub struct Orders {
 /// Context for the text builders.
 pub(crate) struct TextCtx<'a> {
     pub x: &'a StartTables,
+    pub texts: &'a BriefingTexts,
+    /// Seed of the wording choice (the generator's entry `holdrand`).
+    pub seed: u32,
     pub g: &'a GenResult,
     pub theater: usize,
-    /// Start date (month, day, year) replacing the START table's.
+    /// Start date (month, day, year) replacing the theater's default from the tables.
     pub date: Option<(u8, u8, u16)>,
     pub kind: usize,
     pub roe: usize,
@@ -87,62 +152,83 @@ impl TextCtx<'_> {
         b.iter().map(|&c| c as char).collect()
     }
 
-    /// Objective text by mission type (jump table 1A18:284E).
+    /// One of `variants`, the same for every call with this mission and `salt` (own random
+    /// stream, so the generator's sequence is untouched).
+    fn pick<'v>(&self, variants: &'v [String], salt: u32) -> &'v str {
+        if variants.is_empty() {
+            return "";
+        }
+        let mut r = MscRand::new(self.seed ^ 0x4252_4946 ^ salt.wrapping_mul(0x9E37_79B9));
+        r.rand();
+        variants[r.rand() as usize % variants.len()].as_str()
+    }
+
+    /// Intelligence paragraph of a target slot.
+    pub fn summary(&self, slot: usize) -> String {
+        let row = self.g.targets[slot].num as usize;
+        self.texts.summaries.get(row).map_or(String::new(), |v| self.pick(v, 0x100 + slot as u32).to_string())
+    }
+
+    /// Objective text by mission type.
     pub fn objective(&self, slot: usize) -> String {
-        let (g, x) = (self.g, self.x);
+        let (g, x, o_t) = (self.g, self.x, &self.texts.objectives);
         let t = &g.targets[slot];
         let o = self.obj(t.idx);
         let place = if o.name != 0 { self.name(o.name as i32) } else { "" };
         let m = x.missions[t.num as usize];
         let coord = Self::onc(&t.coord);
+        let salt = 0x200 + slot as u32;
+        let pick = |v: &[String]| self.pick(v, salt).to_string();
+        let (deadline, depart) = (g.deadline.as_str(), g.depart.as_str());
         match m.mission_type {
             1 | 2 => {
-                let verb = if m.mission_type == 1 { "Photograph" } else { "Destroy" };
                 let what = self.name((o.object_idx & 0xFF) as i32);
-                let mut s =
-                    if o.name != 0 { format!("{verb} the {what} at {place}") } else { format!("{verb} the {what}") };
-                if m.code & 0x20 != 0 {
-                    s += &format!(" before {} hours, while the cargo is still being unloaded.", g.deadline);
+                let photo = m.mission_type == 1;
+                let forms = match (photo, o.name != 0) {
+                    (true, true) => &o_t.photo_at,
+                    (true, false) => &o_t.photo,
+                    (false, true) => &o_t.destroy_at,
+                    (false, false) => &o_t.destroy,
+                };
+                let mut s = fill(&pick(forms), &[("what", what), ("place", place)]);
+                let suffix = if m.code & 0x20 != 0 {
+                    &o_t.suffix_unloading
                 } else if m.code & 2 != 0 {
-                    s += &format!(" before {} hours.", g.deadline);
+                    &o_t.suffix_deadline
                 } else {
                     if s.ends_with(',') {
                         s.pop();
                     }
-                    s += &x.dot;
-                }
-                s
+                    &o_t.suffix_none
+                };
+                s + &fill(&pick(suffix), &[("deadline", deadline)])
             }
-            3 => format!(
-                "Reach the beacon at ONC {coord} and drop the supplies before {} hours. The beacon will be on ONLY during this period.",
-                g.deadline
+            3 => fill(&pick(&o_t.drop), &[("coord", &coord), ("deadline", deadline)]),
+            4 => fill(&pick(&o_t.airstrip), &[("coord", &coord), ("deadline", deadline)]),
+            5 => fill(
+                &pick(&o_t.route),
+                &[("origin", self.name(self.obj(g.special_start).name as i32)), ("depart", depart), ("place", place), ("deadline", deadline)],
             ),
-            4 => format!(
-                "Reach the secret airstrip at ONC {coord} before {} hours. The airstrip will be lighted ONLY during this period.",
-                g.deadline
-            ),
-            5 => format!(
-                "Destroy the AN-72 Coaler leaving {} airbase at {} hours and arriving at {place} airbase at {} hours.",
-                self.name(self.obj(g.special_start).name as i32),
-                g.depart,
-                g.deadline
-            ),
-            6 => format!("Intercept and destroy the AN-72 Coaler leaving {place} airbase, at {} hours.  Destination unknown.", g.depart),
-            7 => format!(
-                "Intercept and destroy the Tu-95, last seen at ONC {} at {} hours. It is probably heading for {place} airbase, and will arrive at {} hours.",
-                g.intercept_ref.as_ref().map(Self::onc).unwrap_or_default(),
-                g.depart,
-                g.deadline
+            6 => fill(&pick(&o_t.leaving), &[("place", place), ("depart", depart)]),
+            7 => fill(
+                &pick(&o_t.last_seen),
+                &[
+                    ("coord", &g.intercept_ref.as_ref().map(Self::onc).unwrap_or_default()),
+                    ("depart", depart),
+                    ("place", place),
+                    ("deadline", deadline),
+                ],
             ),
             8 => {
                 let suf = if m.special == -2 { " fighter patrol" } else { "" };
-                format!("Intercept and destroy the {}{suf} at ONC {coord}.", x.plane(g.world.flights[0].plane_type).name)
+                let target = format!("{}{suf}", x.plane(g.world.flights[0].plane_type).name);
+                fill(&pick(&o_t.patrol), &[("target", &target), ("coord", &coord)])
             }
             _ => String::new(),
         }
     }
 
-    /// Briefing date (1A18:25D9).
+    /// Briefing date: the theater's start date advanced by the missions flown.
     pub fn date(&self, sorties: u16) -> String {
         let x = self.x;
         let (m, d, y) = self.date.unwrap_or((x.date_month[self.theater], x.date_day[self.theater], x.date_year[self.theater]));
@@ -161,47 +247,50 @@ impl TextCtx<'_> {
     }
 
     pub fn briefing(&self, sorties: u16, pilot: &str) -> Briefing {
-        let (g, x) = (self.g, self.x);
+        let (g, x, tx) = (self.g, self.x, self.texts);
         let t = &g.targets;
         let date = self.date(sorties);
         let nbays = if self.lockheed { 2 } else { 4 };
+        let takeoff = self.base_name(t[0].base);
+        let fuel = g.fuel.to_string();
         let b = Briefing {
-            header: "416th Tactical Fighter Squadron".into(),
-            title: KIND_TITLES[self.kind].into(),
-            pilot_line: format!("Pilot: {pilot}."),
-            base_date_line: format!("{} - {date}", self.base_name(t[0].base)),
+            header: self.pick(&tx.headers, 1).into(),
+            title: tx.titles.get(self.kind).map_or("", |v| self.pick(v, 2)).into(),
+            pilot_line: fill(self.pick(&tx.pilot, 3), &[("pilot", pilot)]),
+            base_date_line: format!("{takeoff} - {date}"),
             date,
-            primary_summary: x.mission_text[t[0].num as usize].clone(),
+            primary_summary: self.summary(0),
             primary_objective: self.objective(0),
-            secondary_summary: x.mission_text[t[1].num as usize].clone(),
+            secondary_summary: self.summary(1),
             secondary_objective: self.objective(1),
-            depart_line: format!("Depart from {} at {} hours.", self.base_name(t[0].base), g.depart),
-            land_line: format!("Land at {}.", self.base_name(t[1].base)),
-            roe_text: x.roe_text[self.roe].clone(),
+            depart_line: fill(self.pick(&tx.depart, 4), &[("base", &takeoff), ("time", &g.depart)]),
+            land_line: fill(self.pick(&tx.land, 5), &[("base", &self.base_name(t[1].base))]),
+            roe_text: tx.roe.get(self.roe).map_or("", |v| self.pick(v, 6)).into(),
             armament: g.weapons[..nbays].iter().map(|&w| x.weapon_name(w as i16).to_string()).collect(),
-            fuel_line: format!("Est. Fuel required: {} lbs.", g.fuel),
+            fuel_line: fill(self.pick(&tx.fuel, 7), &[("fuel", &fuel)]),
             weather_line: String::new(),
             lines: Vec::new(),
         };
+        let l = &tx.labels;
         let mut lines: Vec<String> = vec![
             b.header.clone(),
             b.title.clone(),
             b.pilot_line.clone(),
             b.base_date_line.clone(),
-            "PRIMARY TARGET INTELLIGENCE SUMMARY:".into(),
+            l.primary.clone(),
             b.primary_summary.clone(),
-            "OBJECTIVE:".into(),
+            l.objective.clone(),
             b.primary_objective.clone(),
-            "SECONDARY TARGET INTELLIGENCE SUMMARY:".into(),
+            l.secondary.clone(),
             b.secondary_summary.clone(),
-            "OBJECTIVE:".into(),
+            l.objective.clone(),
             b.secondary_objective.clone(),
-            "FLIGHT PLAN:".into(),
+            l.flight_plan.clone(),
             b.depart_line.clone(),
             b.land_line.clone(),
-            "RULES OF ENGAGEMENT:".into(),
+            l.roe.clone(),
             b.roe_text.clone(),
-            "SUGGESTED ARMAMENT:".into(),
+            l.armament.clone(),
         ];
         lines.extend(b.armament.iter().cloned());
         lines.push(b.fuel_line.clone());
@@ -209,9 +298,9 @@ impl TextCtx<'_> {
         Briefing { lines, ..b }
     }
 
-    // --- VGAME orders page ------------------------------------------------------------------
+    // --- in-flight orders page --------------------------------------------------------------
 
-    /// VGAME `objName` (V:4A73): place name, or the shape name if unnamed; longer than 18
+    /// Object display name: place name, or the shape name if unnamed; longer than 18
     /// characters is cut to 18 + ".".
     fn vgame_obj_name(&self, i: i32) -> String {
         let o = self.obj(i);
@@ -223,7 +312,7 @@ impl TextCtx<'_> {
         s
     }
 
-    /// VGAME clock formatter (V:95C4): `t + tod` as "HH:MM:SS" from 06:00 / 18:00.
+    /// Mission clock: `t + tod` as "HH:MM:SS" from 06:00 / 18:00.
     pub fn vgame_time(&self, t: i32) -> String {
         fn two(buf: &mut Vec<u8>, v: i32) {
             let r = s16(v) % 60;
@@ -251,7 +340,7 @@ impl TextCtx<'_> {
         buf.into_iter().map(|c| c as char).collect()
     }
 
-    /// Orders MFD page (V:97A4).
+    /// Orders MFD page.
     pub fn orders(&self) -> Orders {
         const VERBS: [&str; 8] = [
             "Photograph enemy",

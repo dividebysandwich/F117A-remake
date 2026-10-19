@@ -1,0 +1,549 @@
+{
+  "summaries": [
+    [
+      "Friendly operatives have seized enemy hardware that Washington rates as vital to national security. You will set down at a covert airstrip and take it aboard. One weapons bay is reserved for the package; load the other as normal.",
+      "The material waiting at the strip is a rare intelligence windfall, and it cannot leave by any other route. Land, load it into the reserved bay and get out. Remaining bay space is available for standard ordnance.",
+      "Recovery flight. A field team is holding captured enemy equipment at a hidden landing site and needs it lifted out before the enemy closes in. Expect a short, dark runway and keep one bay empty for the cargo."
+    ],
+    [
+      "Resistance fighters are short of Stinger missiles for an offensive now in preparation. You will deliver a load of them by landing at a clandestine strip. Arm the remaining bays as you see fit.",
+      "Without fresh Stingers, the partisans cannot challenge enemy helicopters in the coming weeks. Your aircraft will carry the missiles in and land on an unmarked field to hand them over. Ordnance in the other bays is your call.",
+      "Delivery run to a guerilla airstrip deep in hostile country. One bay holds a Stinger consignment for local freedom fighters; the rest is yours to load. A stealth aircraft on the ground is vulnerable, so keep the stop SHORT."
+    ],
+    [
+      "A covert team working a hostage rescue has lost its weapons and gear. Unless replacements arrive, the operation collapses. Drop a resupply container on their ground beacon.",
+      "Lives depend on this drop. The rescue team on the ground is unarmed after losing its equipment, and only an airdrop can rearm them in time. Locate their radio beacon and release the load directly over it.",
+      "Expect a small, quiet drop zone marked only by a radio beacon. The agents there are mid-operation and cannot move far to recover a stray container. Accuracy MUST be high and your presence unnoticed."
+    ],
+    [
+      "A partisan unit is planning a decisive attack on an enemy headquarters but lacks arms and demolition charges. You will fly the supplies to their hideout. Release them over the group's radio beacon.",
+      "Arms and explosives for a guerilla strike force are loaded in your bay. Their target is a major enemy HQ, and the attack hinges on this delivery. Home on the beacon and drop.",
+      "The resistance cannot hit the enemy command post without your cargo. Their camp is hidden and its beacon transmits only briefly. Arrive on time, drop cleanly, and leave no trace of the visit."
+    ],
+    [
+      "The enemy is fitting a new search and tracking radar at one of its SAM sites. Some reports claim the system is already live. Low-level, high-detail photography is wanted at once.",
+      "Analysts cannot assess the new radar without close imagery. If it is operational, it changes how every strike package in the area must be planned. Bring back clear photos taken from low altitude.",
+      "You will be photographing the very radar built to find aircraft like yours. Assume it is switched on. Approach low, keep your profile small, and get the pictures on the first pass."
+    ],
+    [
+      "A coming offensive needs a safe lane through the enemy air defense belt. Your task is to knock out the search and tracking radar of one key SAM battery. Without its eyes, the battery is blind.",
+      "One radar anchors this sector of the enemy defense network. Take it down and the corridor opens for the strike packages that follow you. Fail, and they fly into a fully alert SAM belt.",
+      "Target is the acquisition and tracking radar at a SAM site guarding the planned route. The launchers themselves are secondary. Kill the radar and the gap in their coverage is yours."
+    ],
+    [
+      "Mobile SAM vehicles have cost us too many aircraft in recent strikes. Close air support for our ground forces is suspended until they are gone. You will hunt them down and destroy them.",
+      "These launchers move often and hit hard. Our tactical squadrons cannot operate while they remain in the field. Destroy the battery before it relocates again.",
+      "Ground commanders are waiting on air support that cannot fly while the enemy mobile SAMs survive. Intelligence has a current fix on the vehicles. Strike them while the position is still valid."
+    ],
+    [
+      "A Soviet over-the-horizon radar is close to completion. Launch delays have left no KH-11 pass available, so the photos must come from you. Overfly the installation and return with detailed coverage.",
+      "Washington needs to know how far the new OTH radar has progressed. Satellites cannot help this time. A low, close photo run is the only option.",
+      "No satellite imagery exists of the new Soviet long-range radar site. Your camera is the sole source. Expect heavy security around a facility of this importance."
+    ],
+    [
+      "The Soviet over-the-horizon radar must be put out of action now. While it operates, the enemy sees our naval and air movements long before they arrive. Eliminate it.",
+      "Every allied ship and aircraft in the theater is being tracked at extreme range by this radar. Destroying it blinds the enemy early-warning net. There is no time for further planning.",
+      "Target is the newly completed OTH radar complex. Its loss will cost the enemy hours of warning on all our operations. Hit the antenna arrays and control buildings hard."
+    ],
+    [
+      "A new Soviet phased array radar for the ABM network may breach existing treaties. Close photography is needed to confirm what satellites suggest. Negotiators are about to sit down.",
+      "Arms control talks open shortly, and Washington wants proof in hand. Satellite data hints that the new large phased array radar violates agreements. Bring back close-range photos.",
+      "Politically sensitive reconnaissance. The radar under suspicion forms part of the Soviet anti-ballistic missile system. An incident now would wreck the talks, so you MUST remain undetected."
+    ],
+    [
+      "Washington has decided to send an unmistakable message. Destroying a large phased array radar in the Soviet ABM network should make the enemy more serious at the table. You will deliver that message.",
+      "This strike is political as much as military. Removing an LPAR from the ABM system will show that we can reach their most valued assets. Hit it hard and leave.",
+      "The target is a key phased array radar supporting the enemy missile defense. Its destruction is intended to force concessions in negotiations. Expect it to be well protected."
+    ],
+    [
+      "Strategic planners at the Pentagon need fresh information on an enemy refinery complex. Our ground agents are tied up elsewhere. You will overfly the site and bring back photographs.",
+      "Current imagery of the enemy refinery is out of date. Planners cannot target it properly without new pictures. No other collection asset is free, so the job falls to you.",
+      "A photo run over a major oil refinery. Expect air defenses around one of the enemy's most valuable industrial assets. Get complete coverage of the processing units."
+    ],
+    [
+      "We plan to hit the enemy's fuel production before he can organize it for war. Losing these facilities could cripple his economy for years. Your strike opens the campaign.",
+      "The refinery is the heart of the enemy fuel supply. Strike it now, before he hardens and disperses production. The economic damage will last long after the war.",
+      "Fuel is what keeps the enemy army moving. Destroy the refinery and both his military and his economy suffer. Concentrate on the cracking towers and control buildings."
+    ],
+    [
+      "A raid on a large oil storage depot is being prepared. Current photography is needed to plan it correctly. Infrared and structural analysis will reveal which tanks are full.",
+      "Planners need to know the state of the enemy tank farm before committing aircraft. Your photos will be studied in infrared to see how much fuel is stored. Cover the whole facility.",
+      "This overflight sets up a later strike. Without fresh pictures, the attack force may waste bombs on empty tanks. Get clear images of every storage tank."
+    ],
+    [
+      "High command wants a major enemy oil depot destroyed. Its loss will cut his exports and starve his army of fuel. It may even push him toward negotiations.",
+      "The enemy relies on this storage facility to supply his forces and to earn foreign currency. Destroy it and both are disrupted for months. Political pressure should follow.",
+      "Your target is a large tank farm. A good hit will set off fires visible for miles and cripple fuel resupply to the front. Strike the full tanks first."
+    ],
+    [
+      "A key oil storage site has been marked for destruction by high command. Exports will fall and resupply to enemy forces will falter. The pressure could bring him to talks.",
+      "This depot feeds both the enemy war machine and his export trade. Knocking it out hurts him twice. Expect the site to be defended accordingly.",
+      "Fuel tanks burn well, but only if you hit them. Concentrate your weapons on the largest tanks. The goal is to leave the depot useless for months."
+    ],
+    [
+      "New reports claim Soviet stealth bombers have moved into this region. Your reconnaissance flight will confirm or deny it. If they are present, photograph them.",
+      "Washington is alarmed by reports of Soviet stealth technology appearing in theater. Hard evidence is required. Find the aircraft and bring back pictures.",
+      "If the reports are true, the enemy has his own low-observable bomber. Detailed photos would be invaluable to our engineers. Expect the airfield to be tightly guarded."
+    ],
+    [
+      "The new Russian stealth bomber is now based at forward airfields nearby. It must be destroyed before it can strike our forces. You will catch it on the ground.",
+      "Our air defenses may not be able to see this new bomber in flight. The only sure way to stop it is on the ground. Hit it at its forward base.",
+      "One stealth aircraft hunting another. The enemy bomber threatens our forward units with crippling attacks. Destroy it before it flies."
+    ],
+    [
+      "Intelligence reports a new squadron of enemy aircraft arriving in the region. Washington needs immediate photographs of the base and the aircraft. Do not delay.",
+      "A fresh enemy squadron has deployed nearby, type and strength unknown. Photos of the airfield will tell us what we face. Get them now.",
+      "An unidentified unit has moved onto a forward airfield. Our planners need to know what it is before the next operation. Overfly the base and photograph the parked aircraft."
+    ],
+    [
+      "A bombing raid is coming, and an enemy fighter squadron stands in its way. Our agents report the MiGs are on the ground right now. Strike the base before they can scramble.",
+      "If these MiGs get airborne, the coming raid will suffer badly. Hitting them on the ground is the safest way to protect the bombers. Time is critical.",
+      "The window is short. Agents in place confirm the enemy fighters are parked and vulnerable. Destroy them before the raid begins."
+    ],
+    [
+      "A Soviet An-72 carrying secret cargo is reported entering the area. Washington wants photos of the aircraft and its load before it departs. Act quickly.",
+      "The cargo aboard this An-72 is a mystery that Washington wants solved. Photograph the transport on the ground while it is still being handled. It will not stay long.",
+      "Our only chance to identify the cargo is while the transport sits on the ramp. Photograph the aircraft and anything being loaded or unloaded. Move fast."
+    ],
+    [
+      "A Soviet An-72 with a nuclear device aboard slipped through our interceptors three hours ago. You will correct that mistake. Destroy the cargo while it is still being unloaded.",
+      "The interception failed and the nuclear device is now on the ground. It MUST be destroyed before it disappears into storage. Strike the transport and its cargo on the ramp.",
+      "Time is short. Unloading of the nuclear weapon is underway, and once it is moved we may never find it again. Hit the An-72 and its cargo now."
+    ],
+    [
+      "Agents report that a fresh terrorist training facility has opened in the region. The KH-11 cannot help: it is out of position and has developed faults. A manned photo pass is the only way to confirm the report.",
+      "Before any action can be taken against the camp, Washington wants hard evidence that it exists. Your film will be that evidence. Cover the barracks, firing ranges and vehicle parks.",
+      "Defenses around the site are thought to be light, but the camp may sit close to regular army units. Approach from an unexpected direction. One clean run should be enough."
+    ],
+    [
+      "The leadership of a terrorist network is meeting at one of its training camps. Hitting them together will throw their plans into disarray and discourage further attacks. Opportunities like this rarely repeat.",
+      "Timing decides this mission. The planners will only be assembled for a short while, and they will scatter at the first warning. Arrive unseen and strike the meeting buildings first.",
+      "Retaliation for recent attacks has been authorized. Intelligence is confident the camp holds most of the senior command tonight. A precise blow here could save many lives later."
+    ],
+    [
+      "A Soviet nuclear-powered aircraft carrier is operating in our area. Its presence could signal offensive intentions. Washington wants close-range photographs of the ship.",
+      "Analysts want details of the carrier's deck, sensors and embarked aircraft. Pictures from a distance will not do. You will have to get close.",
+      "A carrier battle group is among the most heavily defended targets afloat. Her escorts carry long-range SAMs and her CAP may be airborne. Stay low and minimize your time in their radar coverage."
+    ],
+    [
+      "A Soviet carrier task force has put to sea from Murmansk, apparently bound for a strike into the Norwegian Sea. You will attack the carrier herself. Sinking her is not expected; wrecking her flight deck and weapons is.",
+      "Several solid hits will leave the ship afloat but unable to fight. A carrier without a working deck is simply a target. Concentrate your weapons on the flight deck and island.",
+      "Expect the strongest naval air defenses in the world around this ship. Escort cruisers and destroyers will screen her on all sides. Your stealth is the only reason this attack has any chance."
+    ],
+    [
+      "Reports are coming in that enemy naval forces are preparing a surprise attack on our units. Washington needs to know if they are true. An immediate reconnaissance flight has been ordered.",
+      "Your photos will decide whether we strike first or stand down. Cover the anchorage and identify every major warship present. Speed matters more than perfection.",
+      "Warships in harbor still carry their air defenses. Assume their radars are active and their crews alert. Make your run quickly and exit before they react."
+    ],
+    [
+      "US Special Forces go in late tonight, and enemy missile patrol boats cover the landing area. Those boats MUST be gone before the insertion and stay gone through the extraction. This is a combined operation.",
+      "The raiders cannot fight boats armed with missiles and cannons from rubber craft. Your strike clears the water for them. Coordinate precisely with the published timetable.",
+      "Arrive early and you alert the coast; arrive late and the commandos are exposed. Hit the patrol boats inside your time window. Every unit in this operation depends on your timing."
+    ],
+    [
+      "A Special Forces team will be landed tonight and recovered before dawn. Enemy patrol boats armed with missiles threaten both phases. Your mission is to remove them.",
+      "This raid has been planned as a combined arms operation, and your strike is the first move. If the boats survive, the operation is cancelled. Do NOT be late.",
+      "Intelligence places the missile boats in their usual patrol station off the coast. Expect them to react quickly once one is hit. Engage them in rapid succession."
+    ],
+    [
+      "Missile boats now at sea have opened fire on friendly shipping. Command wants a swift response. Find them and sink them before they strike again.",
+      "Every hour these boats remain afloat puts more of our ships at risk. A fast counterstrike is the only answer. You are the closest available asset.",
+      "Small, fast and hard to track, missile boats can disappear among coastal islands. Use the latest position report and search quickly. Do not let them reach shelter."
+    ],
+    [
+      "Satellite pictures hint at new enemy surface-to-surface missile deployments. The imagery is not conclusive. Washington needs photographs it can rely on.",
+      "If these SSMs are real, several of our installations are within their range. Your photos will tell planners what kind of missile and how many. Fly to the site and get them.",
+      "Missile sites are often ringed by point defenses. Plan an approach that keeps terrain between you and the launch area until the last moment. Then make one clean camera pass."
+    ],
+    [
+      "The enemy has deployed a large surface-to-surface missile battery within range of key allied ground facilities. It cannot be allowed to remain. Destroy it as fast as possible.",
+      "Once these missiles are fueled and ready, our bases are under the gun. A pre-emptive strike is the only safe course. Target the launchers first, then the support vehicles.",
+      "Intelligence has a firm location on the SSM battery. That location may not hold for long. Strike now while it is still valid."
+    ],
+    [
+      "Satellites have picked up what appear to be new enemy surface-to-air missiles. Washington needs photos that confirm or rule out the deployment. The job is yours.",
+      "New SAMs would change the way we plan every air operation in the region. Analysts need to know the type and the radar it uses. Get detailed pictures.",
+      "You will be photographing a weapon designed to shoot you down. Treat the site as active. Approach low and leave quickly."
+    ],
+    [
+      "A large enemy SAM battery now covers several important allied air bases. It must be eliminated quickly. Our flight operations are constrained until it is.",
+      "These missiles can reach our aircraft on takeoff and landing. Removing them will restore freedom of action over the area. Hit the radar and launchers together.",
+      "Expect the battery to be fully alert. The first bomb must be on target. Leave the site unable to engage anything."
+    ],
+    [
+      "An offshore oil rig has been turned into an enemy military outpost. Washington wants detailed photography from low altitude. The enemy MUST NOT learn that the platform is being watched.",
+      "We know little about what is stationed on the platform: troops, radar, perhaps missiles. Your pictures will fill that gap. Fly low over the water and make a single pass.",
+      "Detection would compromise future operations against the platform. Stay below their radar horizon on the way in. If you are seen, the mission has failed regardless of the photos."
+    ],
+    [
+      "Speedboat raids against friendly shipping are being launched from an offshore oil platform. You will put an end to it. One quick, surgical strike must eliminate the base and its garrison.",
+      "The platform is a floating fortress for fanatics who attack ships without warning. Destroy it and the raids stop. Precision is essential at sea; there is nowhere to hide.",
+      "Expect some air defense weapons on the platform itself and patrol craft nearby. Approach low over the water. Release, turn away and do not linger."
+    ],
+    [
+      "In breach of international treaties, a European consortium is helping the enemy build a plutonium breeder reactor. The site requires continuous monitoring. Bad weather has blinded our satellites.",
+      "A breeder reactor produces weapons-grade plutonium. If construction is ahead of schedule, Washington needs to know now. Your photographs will fill the gap left by the satellites.",
+      "The reactor site is a national priority for the enemy and will be well defended. Get beneath the cloud deck and photograph the main buildings. Avoid detection."
+    ],
+    [
+      "The enemy is about to start up a new nuclear power plant. Officially it is civilian, but it could easily produce material for weapons. You will destroy it before it goes critical.",
+      "Once the reactor is running, an attack becomes far more dangerous. That is why the strike must happen now. Target the reactor building and control center.",
+      "Washington will not allow the enemy to acquire a path to nuclear weapons. Diplomacy has failed. Your bombs are the last option."
+    ],
+    [
+      "Construction of a new Soviet submarine base was completed this week. Washington wants a complete assessment of the facility, and you have been chosen to collect it. Northern Fleet warships are operating off the coast.",
+      "Analysts need to know how many submarine pens the base has and how it is defended. Only close-range photos can tell them. Cover the docks, pens and support buildings.",
+      "The coast is guarded by naval air defenses as well as land-based SAMs. Plan your route to avoid the ships offshore. Good luck."
+    ],
+    [
+      "The new submarine base on the Kola coast is a major refueling and repair center for the Red Banner Northern Fleet. Destroying it will seriously reduce the fleet's ability to operate. Washington is counting on you.",
+      "Defenses around Kola are far too heavy for a conventional raid. A single stealth aircraft may succeed where a large force would be massacred. Strike the pens and fuel facilities.",
+      "This is one of the most heavily protected regions of the Soviet Union. Expect fighters, SAMs and naval units. Fly precisely and keep your radar signature low."
+    ],
+    [
+      "A Soviet merchant vessel has docked carrying a cargo that local sources call extremely secret. Washington suspects it is a new type of nuclear weapon. Photos of the ship and her cargo are of the highest priority.",
+      "The cargo is carried on deck, so it should be visible from the air. Clear, close pictures will let analysts identify it. Take them before it is unloaded.",
+      "If the cargo is what Washington fears, this mission could prevent a crisis. The port will be under guard. Approach quietly and photograph the ship from close range."
+    ],
+    [
+      "A terrorist faction has taken control of a merchant ship with a large nuclear device in its hold. Washington believes the weapon will be used to extort concessions or to attack a city. Sink the vessel, or at least destroy the device, before it comes ashore.",
+      "Unloading is already underway at the quay. Once the device is off the ship and onto a truck, our chances of finding it drop to almost nothing. You have a narrow window.",
+      "The ship sits in a working harbor, and the terrorists will not have proper air defenses. The risk lies elsewhere: local forces may be sympathetic to them. Strike the hull and deck cranes, then clear the area FAST."
+    ],
+    [
+      "Imagery from orbit shows a new Typhoon-class missile submarine damaged and forced to stay surfaced. Such a chance may not come again for years. Get in close and expose as much film as possible.",
+      "The Typhoon is the largest submarine ever built, and we have very few good pictures of one. Analysts want hull detail, sail sensors and missile hatch layout. Every frame counts.",
+      "A crippled submarine will not be left alone for long. Surface escorts and air cover will gather around her quickly. Arrive early, keep your passes short and stay clear of the warships."
+    ],
+    [
+      "A Typhoon-class ballistic missile submarine is at a naval port taking on stores and reloading missiles in a hurry. Her haste suggests a deployment is imminent. Destroy her alongside the pier.",
+      "At sea, a Typhoon is almost impossible to find; in port, she is a stationary target. Each missile she carries holds multiple warheads. Removing her takes a large share of the enemy deterrent out of play.",
+      "The port complex will be ringed by SAM sites and naval guns. You will need to come in low over the water and release accurately. Hits on the missile compartment are the priority."
+    ],
+    [
+      "There are signs of unusual activity at a hostile army depot. Washington worries this could be the build-up for a surprise attack. Photograph the depot without delay.",
+      "Stockpiles of fuel, ammunition and vehicles grow before an offensive. Your photos will show whether that is happening here. Cover the storage areas and the rail sidings.",
+      "Depots of this size usually have SAMs and AAA nearby. Plan a direct, low route and do not circle. A single good pass is enough."
+    ],
+    [
+      "The enemy's preparations for a surprise offensive are now confirmed. His supplies and ammunition are concentrated at one main military depot. Destroy it and the attack cannot proceed.",
+      "Armies run on ammunition and fuel. Wreck the depot and the enemy offensive stalls before it starts. Aim for the ammunition bunkers to trigger secondary explosions.",
+      "The depot is heavily guarded because it is so important. Expect alert defenses and possibly fighter cover. Stay low, hit the bunkers, and leave by a different route."
+    ],
+    [
+      "A strike against an enemy headquarters is being prepared. The raid force needs the latest possible information on the target area. You will fly a last-minute photo mission over the HQ.",
+      "Old imagery is useless if the enemy has moved his air defenses or added new buildings. Your photographs will be studied hours before the raid. Get complete coverage.",
+      "If you are spotted, the enemy will expect the raid and reinforce. Stay undetected at all costs. Photograph and exit quietly."
+    ],
+    [
+      "Warnings and a previous air raid have not stopped the enemy from supporting international terrorism. Washington has decided the time has come to act against the regime directly. You will strike the dictator's headquarters.",
+      "The air defenses around his HQ are among the densest anywhere. A conventional force would suffer heavy losses. Your stealth aircraft is the one weapon that can get through.",
+      "Expect SAMs, radar-guided AAA and possibly fighters near the compound. Approach low and keep your radar signature small. Hit the command buildings first."
+    ],
+    [
+      "The regime still sponsors terror, despite every warning and an earlier bombing. Washington now wants to strike at the very top. Your target is the dictator's own headquarters.",
+      "Only a stealth fighter can reach this target without heavy losses. That is why you have been chosen. Precision is essential.",
+      "This will be a high-profile strike watched by the whole world. A miss would be an embarrassment; detection could be fatal. Plan your route carefully and strike decisively."
+    ],
+    [
+      "Allied ground forces are about to open a new offensive. A timed strike on an enemy headquarters complex will cripple his command and control. Without orders, his combat units cannot respond.",
+      "Armies need communications to react. Destroying the HQ at the right moment will leave enemy units confused and isolated. Your strike must coincide with the start of the ground attack.",
+      "The headquarters is likely buried and well protected. Concentrate on the communications buildings and antennas. Expect strong air defenses."
+    ],
+    [
+      "A large raid to drop a bridge is being planned. The commander of the F-111 squadron has requested fresh photographs of the target area. You will provide them.",
+      "The F-111 crews need to see the bridge and its defenses as they are today. Your photos will decide their approach routes and weapon choice. Get detailed coverage.",
+      "Bridges attract dense AAA and SAM coverage. Approach low along the river valley and make a single pass. Return quickly."
+    ],
+    [
+      "Several large raids have already failed to bring down this bridge. It is strongly built and well defended. Headquarters now believes only a stealth attack can succeed.",
+      "Conventional bombers have taken heavy losses here. A single stealth aircraft can get close without alerting the defenses. Your strike is the last resort.",
+      "The bridge supports a critical supply route for the enemy. Drop it and his forces are cut off. Aim for the main spans and supports."
+    ],
+    [
+      "The commander responsible for the enemy's recent successes is flying with his staff to a new headquarters. His value is equal to ten thousand troops. Ambush the transport and shoot it down.",
+      "We know his route and schedule. That gives you the chance to set up an interception along the way. Do not let him reach his destination.",
+      "Expect a fighter escort for a passenger of this importance. Approach from behind and below, and strike quickly. One kill here could change the course of the war."
+    ],
+    [
+      "The planner behind the latest wave of terrorist attacks is airborne in a light transport. Washington has ruled that his flight MUST end before it reaches its destination. You are the only interceptor in position.",
+      "We have his departure field, his arrival field and his timetable. Pick a point along the route, wait in the dark and let him come to you. Speed of reaction matters more than firepower.",
+      "To avoid attention, the aircraft will probably fly unescorted and low on the regular civil airways. Confirm the identity before firing. Once you commit, make CERTAIN it goes down."
+    ],
+    [
+      "SPETSNAZ commandos are on the move for a strike against an allied target. Their transport flies with a strong fighter escort. Cut through the escort and destroy the transport before the troops are delivered.",
+      "Only the transport matters. The escorting fighters are a screen to be evaded or broken, not the objective. Every minute spent dogfighting brings the commandos closer to their target.",
+      "Expect a hard fight. The escort will be alert and in numbers, and their radars may pick you up once you open fire. Strike the transport first, then disengage at low level."
+    ],
+    [
+      "Agents report that a party of known international terrorists has boarded a transport aircraft for an unknown destination. Washington wants the aircraft located and shot down. Their next attack must not happen.",
+      "All we have is a last known position and a time. The aircraft could be heading for any of several friendly airfields. Search intelligently and expect to hunt.",
+      "This is a target that cannot be allowed to land. Once it touches down, the passengers will disappear into a crowd. Find it while it is still in the air."
+    ],
+    [
+      "Terrorists intend to crash an An-72 loaded with explosives into an airport in a friendly country. The aircraft is already airborne. Intercept this flying bomb before it reaches the border.",
+      "The transport was last reported at a known grid position heading for its target. Thousands of civilians are at the destination. You MUST bring it down over empty terrain.",
+      "No escort is expected; the hijackers rely on surprise. That gives you an advantage. Close in quickly and destroy the aircraft with missiles or cannon."
+    ],
+    [
+      "By pure chance, a Soviet Tu-95D Bear reconnaissance aircraft overflew one of our most sensitive operations. It must not return to base with what it saw. Destroy it without leaving any evidence of US involvement.",
+      "The Bear has just left its base on a new sortie, destination unknown. If it reports in, the secret is lost and an international crisis begins. Track it down and shoot it down quietly.",
+      "Nobody may know an American aircraft was involved. Avoid visual identification and do not engage anything else. One clean kill, then go home."
+    ],
+    [
+      "The Soviets have raised the stakes by putting Tu-95H cruise missile bombers on airborne alert far behind their lines. These aircraft are a direct nuclear threat. They must be destroyed.",
+      "Conventional fighters would be seen and engaged long before reaching the orbit. A stealth fighter can sneak in close enough to fire. That is why this mission is yours.",
+      "Each Bear carries several long-range nuclear cruise missiles. Removing even one reduces the danger significantly. Expect fighter cover. Good luck."
+    ],
+    [
+      "Soviet Il-76 Mainstay AWACS aircraft have been watching our movements and vectoring fighters onto our formations. Washington wants one of them brought down. Your stealth fighter can surprise it where others cannot.",
+      "The Mainstay is the enemy's eye in the sky. Blind it, and their interceptors lose direction. Good hunting.",
+      "AWACS aircraft orbit behind their front line with fighters nearby. Approach quietly and fire quickly. Do not give it time to call for help."
+    ],
+    [
+      "A coming raid needs a clear corridor through enemy defenses. An enemy fighter patrol sits squarely across that corridor. Your job is to remove it.",
+      "The bombers that follow cannot fight their way past enemy fighters. Clearing the patrol is the precondition for the entire raid. Expect several aircraft on station.",
+      "The patrol is airborne and alert, so surprise will be short-lived. Use your stealth to get the first shots in. Then finish the job quickly."
+    ],
+    [
+      "CENTCOM is weighing a direct strike against Saddam Hussein's presidential palace. Before any decision, planners want current photographs of the compound. Your overflight MUST go unnoticed.",
+      "The palace grounds have changed since our last good imagery: new bunkers, new gun positions, perhaps new SAMs. Your film will show planners exactly what is there now. Cover every building.",
+      "Baghdad has the densest air defenses in the theater. Detection would alert the regime that the palace is being watched. Fly a tight, low, quiet route and do not loiter."
+    ],
+    [
+      "CENTCOM has ordered a strike on Saddam Hussein's presidential palace and the Baath party leadership. This is a blow at the heart of the regime. Put your bombs on the main buildings.",
+      "The palace is ringed by AAA and SAM sites, but they rely on radar your aircraft is built to defeat. If you stay on profile, the defenses should not trouble you. Precision is what counts.",
+      "Striking the palace sends a message to every Iraqi commander: nowhere is safe. Expect the sky to light up with tracer once the first bomb falls. Release and leave without delay."
+    ],
+    [
+      "If the conflict in the Gulf widens, CENTCOM intends to wipe out Iraq's entire chemical weapons industry in one campaign. That plan rests on accurate target folders. Fresh photographs of this facility are needed for them.",
+      "From the air, a nerve gas plant can look like a fertilizer works. Only close imagery of the stacks, bunkers and decontamination areas reveals the difference. Your film will settle it.",
+      "Iraq protects its chemical sites as jealously as its palaces. Expect SAM coverage and alert AAA crews. Plan a single straight pass at low level and do not return for a second look."
+    ],
+    [
+      "CENTCOM has ordered the destruction of a factory turning out mustard gas and phosgene. Knocking it out will badly set back Saddam Hussein's ability to arm his forces with chemical weapons. The production halls are your aim points.",
+      "Allied troops are training in protective suits because of plants like this one. Remove it, and the threat to our soldiers shrinks. Coalition planners rank this target near the top of their list.",
+      "Accuracy matters doubly here: a poor hit may release agent without stopping production. Use laser-guided weapons on the main buildings. Approach from upwind and leave the area at once."
+    ],
+    [
+      "Several mobile Scud launchers have been located by intelligence. Before we commit to attacking them, analysts must know whether they are combat-ready. Bring back photographs of each vehicle.",
+      "A transporter-erector parked in the open tells one story; one hidden under a bridge with fuel trucks nearby tells another. Your pictures will show which. Speed matters, as these units move often.",
+      "Scud crews are experts at camouflage. Look for tracks, revetments and support vehicles as well as the launchers themselves. Stay undetected so the crews do not relocate."
+    ],
+    [
+      "Intelligence has a fix on several mobile Scud launchers. They are a terror weapon aimed at Israel and our Arab allies, and they must be destroyed. Hit them before they leave the area.",
+      "Each missile that lands in Tel Aviv or Riyadh strains the coalition. Washington wants these launchers gone tonight. Your strike is as much political as military.",
+      "Mobile launchers can be gone within an hour of a sighting. Fly directly to the coordinates and do not waste time. Target the launch vehicles before the support trucks."
+    ],
+    [
+      "Enemy aircraft capable of delivering chemical or biological weapons are believed to be housed in hardened concrete bunkers. Planners need photographs to select weapons that can penetrate them. Overfly the base.",
+      "Not every bomb can break a hardened aircraft shelter. Your imagery will reveal the construction type, door design and roof thickness. That decides what we use to destroy them.",
+      "Air bases defend themselves well, especially those housing strategic aircraft. Expect SAMs and AAA on alert. Fly straight, photograph, and leave."
+    ],
+    [
+      "CENTCOM has ordered the destruction of the hardened shelters sheltering Iraq's strike aircraft. Some of these planes may be able to deliver chemical or biological weapons. A direct hit is the only way to kill them.",
+      "These bunkers were built to survive near misses. Your laser-guided bombs must strike the roof squarely. Line up carefully before release.",
+      "If the aircraft inside survive, they could be used against Allied troops or cities. Your precision is the only thing standing in the way. Expect a fierce defense of the base."
+    ],
+    [
+      "CENTCOM has information that Iraq is operating a new plant for biological or chemical weapons. Photographs are needed to confirm that non-conventional munitions are being produced. You will obtain them.",
+      "Washington will not order a strike without proof. Your pictures may become that proof, shown to the world. Make them good ones.",
+      "Weapons plants are often disguised as civilian factories or dairies. Look for security fences, unusual ventilation and guarded bunkers. Photograph everything that looks out of place."
+    ],
+    [
+      "CENTCOM has ordered the destruction of a facility producing biological weapons. A successful attack will greatly reduce Iraq's capacity in this field. You are to strike the production buildings.",
+      "Few weapons frighten Allied commanders as much as anthrax or botulinum toxin. This plant is a major source of both. Destroying it protects soldiers and civilians alike.",
+      "Expect a well-protected target, with point defenses and possibly fighters overhead. Approach from an unexpected direction. Release precisely and depart immediately."
+    ],
+    [
+      "OSA-II guided missile boats of Soviet manufacture have been sighted in the Persian Gulf. They pose a serious threat to U.S. and Allied naval operations. CENTCOM has ordered their destruction.",
+      "Each OSA-II carries four Styx anti-ship missiles, enough to cripple a frigate. Taking them out reduces the danger to the entire Allied fleet. Find them and attack.",
+      "Small, fast boats are difficult targets. Use the latest position report and strike before they move. Expect light SAM and gun defenses aboard."
+    ],
+    [
+      "Iraqi forces have sabotaged a Kuwaiti offshore oil pumping station. Crude oil is pouring into the Persian Gulf, causing enormous environmental damage. Saudi engineers believe a direct hit on the pumping manifold will stop the flow.",
+      "The spill grows by thousands of barrels every hour. A precise strike on the manifold is the fastest way to end it. Hit the wrong part, and the flow may get worse.",
+      "This mission is unusual: you are bombing to save rather than destroy. Accuracy is critical. Aim for the manifold and nothing else."
+    ],
+    [
+      "CENTCOM has located a group of fixed Scud launch sites in the region. They can fire conventional or chemical warheads at Israel and our Arab allies. Destroy them before Saddam Hussein uses them.",
+      "Fixed sites are easier to find than mobile launchers, but they are better protected. Expect bunkers, SAMs and AAA. Hit the launch pads and control buildings.",
+      "The threat of chemical Scud attacks is keeping the coalition on edge. Destroying these sites eases that pressure. Strike decisively and do not miss."
+    ],
+    [
+      "With tension rising in the Gulf, CENTCOM is preparing for offensive operations. The first priority will be air superiority. Current photos of the Iraqi Air Defense Command Center are essential.",
+      "The command center links Iraq's radars, SAMs and fighters into one network. Destroy it and the network falls apart. Your photos will make that strike possible.",
+      "This is among the most heavily defended targets in Iraq. Expect dense SAM and AAA coverage. Keep to your planned route and do not linger."
+    ],
+    [
+      "CENTCOM has ordered the destruction of the Iraqi Air Defense Command Center. Its loss will help Allied air forces destroy the Iraqi Air Force and win control of the sky. Your strike opens the air campaign.",
+      "Without central control, Iraqi radars and SAMs will fight blind and alone. That is what your bombs must achieve. Hit the main operations building.",
+      "Expect the heaviest air defenses you have faced. Stealth is your shield. Stay on profile, release on target, and leave immediately."
+    ],
+    [
+      "Cuban surveillance boats have been working inside U.S. territorial waters. With tensions at their current level, Washington has authorized a retaliatory demonstration. You will destroy one boat as an example.",
+      "The aim is a message, not a war. One boat sunk will show Havana that intrusions have a price. Do not attack any other target.",
+      "The boats are lightly armed, but Cuban fighters may be nearby. Approach low over the sea and strike quickly. Then return home without delay."
+    ],
+    [
+      "Cuba has fitted fishing trawlers with sophisticated electronic surveillance equipment and is using them against U.S. forces. Analysts need photographs of one to assess the threat. You will get them.",
+      "From a distance these look like ordinary fishing boats. Up close, the antennas tell another story. Your photos will reveal what they carry.",
+      "The trawler may have friends nearby. Make a single low pass and leave before anyone can react. Stay undetected."
+    ],
+    [
+      "A Cuban supply and replenishment center is about to ship Soviet missiles and launchers to communist guerillas in Central America. Washington wants to send a strong warning. You will destroy the depot at once.",
+      "This depot is a key link in the pipeline of weapons flowing into Central America. Destroy it, and the guerillas lose their supply. Hit the warehouses.",
+      "Expect moderate air defenses around the depot. Strike quickly and leave. Do not attack civilian targets."
+    ],
+    [
+      "A new shipment of Soviet shoulder-launched SAMs has reportedly arrived at a supply center, likely bound for guerilla groups in Central America. Experts need clear photographs to confirm the report. You will take them.",
+      "If the report is true, our aircraft in Central America will soon face a new threat. Your photos will tell us. Get clean, detailed images.",
+      "The supply center is probably lightly defended, but alert guards may spot you. Make a single low pass. Then return home."
+    ],
+    [
+      "Intelligence places large Republican Guard formations close to the Kuwaiti border. Before the ground war, commanders need to know their strength and the air defenses they carry. Your camera will tell them.",
+      "The Guard is Saddam's best-equipped force, with modern tanks and mobile SAMs. Photos of their dispositions will shape the Allied ground plan. Cover the main concentrations.",
+      "Mobile air defenses travel with these units. Assume they are alert. Make your pass at low level and leave quickly."
+    ],
+    [
+      "Saddam's elite Republican Guard is the greatest danger to Allied ground forces once the land campaign begins. CENTCOM has ordered air attacks on these units to start now. You will strike them.",
+      "Every Guard tank destroyed from the air is one less our soldiers must face. Hit armor and artillery positions hard. Expect strong mobile air defenses.",
+      "The Guard must be worn down before our troops advance. Strike decisively. Leave the targeted unit unable to fight."
+    ]
+  ],
+  "roe": [
+    [
+      "This is a covert operation. Do NOT allow yourself to be detected, and above all avoid being sighted by enemy military aircraft. Weapons may be used only against designated targets, against forces that fire on you, and against military aircraft or installations that have detected you.",
+      "Officially, this flight never took place. You may engage the assigned targets and any enemy aircraft or ground site that detects or attacks you. All other targets are OFF LIMITS, and visual identification by enemy aircraft MUST be avoided.",
+      "Clandestine rules apply. Stay unseen, especially by enemy fighters. Fire only on authorized targets, on anyone who attacks you, or on military aircraft and installations that detect you."
+    ],
+    [
+      "Military targets may be engaged at will. Once your objectives are complete, inflict as much damage as possible on enemy aircraft and ground installations. Avoid detection where you can. Civilian lives and property MUST be spared at all costs; this is a LIMITED war.",
+      "This is a LIMITED war. Any military target is fair game, and after completing your objectives you should cause maximum damage to enemy air and ground forces. Stay undetected if possible. Under NO circumstances may civilians or civilian property be harmed.",
+      "Limited war conditions. You may attack military targets freely and are expected to wreck as many enemy aircraft and installations as you can once your objectives are met. Avoid detection where practical. Civilian personnel and property MUST NOT be hit."
+    ],
+    [
+      "A state of full war is in effect. Every target inside enemy territory may be attacked. After completing your objectives, engage anything of military value, with priority on enemy combat forces such as aircraft and missile sites.",
+      "Full wartime rules apply. All targets in hostile territory are cleared for attack. Once objectives are met, strike targets of military value; enemy aircraft and missile sites do the most for the war effort.",
+      "We are at war. Any target on enemy soil may be engaged. When your objectives are done, go after military targets, giving priority to enemy combat units, aircraft and missile sites."
+    ]
+  ],
+  "headers": [
+    "416th Tactical Fighter Squadron",
+    "416th TFS - Tonopah Test Range",
+    "37th Tactical Fighter Wing - 416th TFS"
+  ],
+  "titles": [
+    [
+      "AIR COMBAT ORDERS",
+      "AIR INTERCEPT TASKING",
+      "AIR-TO-AIR MISSION ORDERS"
+    ],
+    [
+      "GROUND STRIKE ORDERS",
+      "STRIKE TASKING ORDER",
+      "SURFACE ATTACK ORDERS"
+    ],
+    [
+      "AIR COMBAT TRAINING",
+      "AIR INTERCEPT TRAINING SORTIE",
+      "AIR-TO-AIR TRAINING EXERCISE"
+    ],
+    [
+      "GROUND STRIKE TRAINING",
+      "STRIKE TRAINING SORTIE",
+      "SURFACE ATTACK TRAINING EXERCISE"
+    ]
+  ],
+  "labels": {
+    "primary": "PRIMARY TARGET:",
+    "secondary": "SECONDARY TARGET:",
+    "objective": "MISSION OBJECTIVE:",
+    "flight_plan": "FLIGHT PLAN:",
+    "roe": "RULES OF ENGAGEMENT:",
+    "armament": "ORDNANCE LOAD:"
+  },
+  "pilot": [
+    "Pilot: {pilot}.",
+    "Assigned pilot: {pilot}."
+  ],
+  "depart": [
+    "Take off from {base} at {time} hours.",
+    "Depart {base} at {time} hours.",
+    "Launch from {base} at {time} hours."
+  ],
+  "land": [
+    "Return and land at {base}.",
+    "Recover at {base}.",
+    "Land at {base} on completion."
+  ],
+  "fuel": [
+    "Fuel load: {fuel} lbs.",
+    "Internal fuel: {fuel} lbs."
+  ],
+  "objectives": {
+    "photo_at": [
+      "Photograph the {what} at {place}",
+      "Obtain photos of the {what} at {place}",
+      "Fly a photo pass over the {what} at {place}"
+    ],
+    "photo": [
+      "Photograph the {what}",
+      "Obtain photos of the {what}",
+      "Bring back photos of the {what}"
+    ],
+    "destroy_at": [
+      "Destroy the {what} at {place}",
+      "Eliminate the {what} at {place}",
+      "Strike and destroy the {what} at {place}"
+    ],
+    "destroy": [
+      "Destroy the {what}",
+      "Eliminate the {what}",
+      "Strike and destroy the {what}"
+    ],
+    "suffix_deadline": [
+      " before {deadline} hours.",
+      " no later than {deadline} hours.",
+      " by {deadline} hours."
+    ],
+    "suffix_unloading": [
+      " before {deadline} hours, while the cargo is still being unloaded.",
+      " by {deadline} hours, before unloading of the cargo is complete.",
+      " no later than {deadline} hours, while the cargo is still on the dock."
+    ],
+    "suffix_none": [
+      "."
+    ],
+    "drop": [
+      "Fly to the radio beacon at ONC {coord} and drop the supplies before {deadline} hours. The beacon transmits ONLY until then.",
+      "Locate the radio beacon at ONC {coord} and release the supply container by {deadline} hours. After that time the beacon goes silent.",
+      "Airdrop the supplies on the radio beacon at ONC {coord} no later than {deadline} hours. The beacon is active ONLY until that time."
+    ],
+    "airstrip": [
+      "Land at the secret airstrip at ONC {coord} before {deadline} hours. The runway lights stay on ONLY until then.",
+      "Reach the hidden airstrip at ONC {coord} by {deadline} hours. After that time the strip will be dark.",
+      "Set down at the covert airstrip at ONC {coord} no later than {deadline} hours. It is lit ONLY until that time."
+    ],
+    "route": [
+      "Destroy the AN-72 Coaler departing {origin} airbase at {depart} hours, due at {place} airbase at {deadline} hours.",
+      "Intercept and destroy the AN-72 Coaler that leaves {origin} airbase at {depart} hours and arrives at {place} airbase at {deadline} hours.",
+      "Shoot down the AN-72 Coaler flying from {origin} airbase (departs {depart} hours) to {place} airbase (arrives {deadline} hours)."
+    ],
+    "leaving": [
+      "Intercept the AN-72 Coaler departing {place} airbase at {depart} hours. Its destination is unknown.",
+      "Destroy the AN-72 Coaler that takes off from {place} airbase at {depart} hours, destination unknown.",
+      "An AN-72 Coaler leaves {place} airbase at {depart} hours for an unknown destination. Intercept and destroy it."
+    ],
+    "last_seen": [
+      "A Tu-95 was last seen at ONC {coord} at {depart} hours, probably bound for {place} airbase with arrival at {deadline} hours. Intercept and destroy it.",
+      "Destroy the Tu-95 last reported at ONC {coord} at {depart} hours. It is likely heading for {place} airbase, arriving {deadline} hours.",
+      "Intercept the Tu-95 sighted at ONC {coord} at {depart} hours. Expected destination: {place} airbase at {deadline} hours."
+    ],
+    "patrol": [
+      "Intercept and destroy the {target} at ONC {coord}.",
+      "Locate and shoot down the {target} operating at ONC {coord}.",
+      "Engage and destroy the {target} on station at ONC {coord}."
+    ]
+  }
+}

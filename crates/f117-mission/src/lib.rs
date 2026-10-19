@@ -22,7 +22,7 @@ pub const THEATER_NAMES: [&str; 10] =
 pub const ROE_NAMES: [&str; 3] = ["Cold War", "Limited War", "Conventional War"];
 pub const OPPONENT_NAMES: [&str; 4] = ["Green", "Regular", "Veteran", "Elite"];
 
-/// Mission kind (game+0x3C, §1). Bit 0 = strike, bit 1 = training.
+/// Mission kind. Bit 0 = strike, bit 1 = training.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum MissionKind {
     Air = 0,
@@ -48,7 +48,7 @@ impl MissionKind {
     }
 }
 
-/// F-117A realism option (game+0x42, §1).
+/// F-117A realism option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Plane {
     /// 4 bays, carriers allowed.
@@ -58,7 +58,7 @@ pub enum Plane {
     Lockheed = 1,
 }
 
-/// Player choices that feed the generator (§1).
+/// Player choices that feed the generator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionSettings {
     /// Index into [`ALL_THEATERS`] / [`THEATER_NAMES`].
@@ -69,7 +69,7 @@ pub struct MissionSettings {
     /// Opponent quality 0 Green .. 3 Elite (`diff`).
     pub opponents: u8,
     pub plane: Plane,
-    /// Missions flown (game+0x36); only used for the briefing date.
+    /// Missions flown; only used for the briefing date.
     pub sorties: u16,
     /// Pilot name (with rank) for the briefing.
     pub pilot: String,
@@ -92,35 +92,35 @@ impl Default for MissionSettings {
     }
 }
 
-/// How the RNG is seeded (§2).
+/// How the RNG is seeded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Seed {
-    /// `holdrand` at `missionGenerate` entry; no weapon is marked unavailable
-    /// (like `mission_gen.py --seed` without `--avail`).
+    /// `holdrand` at generator entry; no weapon is marked unavailable.
     Holdrand(u32),
-    /// `srand(s)`, then the weapon availability roll (1A18:0E23), then generate, like a fresh
-    /// START run (`mission_gen.py --srand`).
+    /// `srand(s)`, then the weapon availability roll, then generate, like a fresh game start.
     Srand(u16),
 }
 
-/// Exact generator inputs, for reproducing an emulator state bit for bit.
+/// Exact generator inputs, for reproducing a generator state bit for bit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenInput {
-    /// `holdrand` (DS:AE8C) at `missionGenerate` entry.
+    /// `holdrand` at generator entry.
     pub holdrand: u32,
-    /// DS:D878[20]: 1 = weapon out of stock.
+    /// Per weapon: 1 = out of stock.
     pub weapon_unavailable: [u8; 20],
-    /// DS:CBDC: stale "special aircraft start" global left by a previous mission (0 at start).
+    /// Stale "special aircraft start" value left by a previous mission (0 at start).
     pub stale_special_start: i16,
 }
 
-/// START.EXE tables plus the theaters, loaded once from the game directory (the original nine)
+/// Mission generator tables plus the theaters, loaded once from the game directory (the original nine)
 /// and shipped as JSON in `assets/mission` (`tables.json`, `theaters/<code>.json`, with the
 /// remake's own theaters after the original ones).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameData {
     pub tables: StartTables,
     pub theaters: Vec<TheaterData>,
+    /// Briefing wording (`briefings.json`).
+    pub briefings: text::BriefingTexts,
 }
 
 impl GameData {
@@ -136,13 +136,15 @@ impl GameData {
                 TheaterData::from_json(&read(name.clone())?).context(name)
             })
             .collect::<Result<_>>()?;
-        Ok(Self { tables, theaters })
+        let briefings = serde_json::from_slice(&read("briefings.json".into())?).context("briefings.json")?;
+        Ok(Self { tables, theaters, briefings })
     }
 
     /// Write `tables.json` and `theaters/<code>.json` under `dir`.
     pub fn write_json(&self, dir: &Path) -> Result<()> {
         std::fs::create_dir_all(dir.join("theaters"))?;
         std::fs::write(dir.join("tables.json"), serde_json::to_string_pretty(&self.tables)?)?;
+        std::fs::write(dir.join("briefings.json"), serde_json::to_string_pretty(&self.briefings)?)?;
         for (t, code) in self.theaters.iter().zip(ALL_THEATERS) {
             std::fs::write(dir.join(format!("theaters/{}.json", code.to_ascii_lowercase())), serde_json::to_string(t)?)?;
         }
@@ -164,16 +166,16 @@ pub struct WorldPoint {
     pub y: i32,
 }
 
-/// Primary or secondary target (`targets[k]`, §5 / §5.4 / §5.6).
+/// Primary or secondary target (`targets[k]`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Target {
     /// 1 photo recon, 2 destroy, 3 airdrop at beacon, 4 land at secret airstrip,
     /// 5 An-72 known route, 6 An-72 leaving, 7 Tu-95 heading home, 8 aircraft / fighter patrol.
     pub mission_type: i16,
     pub type_name: String,
-    /// Mission table row (DS:11DA).
+    /// Mission table row.
     pub row: i16,
-    /// Code word: low byte = row flags, high byte = special model id (§5.4).
+    /// Code word: low byte = row flags, high byte = special model id.
     pub code: i16,
     /// code & 0x02.
     pub has_deadline: bool,
@@ -181,7 +183,7 @@ pub struct Target {
     pub area_target: bool,
     /// code & 0x20: turns to rubble at the deadline ("cargo unloaded").
     pub rubble_at_deadline: bool,
-    /// Extra 3D model VGAME loads for this target (code >> 8), e.g. 0x23 = SS missile.
+    /// Extra 3D model the flight loads for this target (code >> 8), e.g. 0x23 = SS missile.
     pub special_model: Option<u8>,
     /// Object index in [`MissionWorld::objects`] (0..2 are generator scratch slots).
     pub object_index: i16,
@@ -221,7 +223,7 @@ pub struct Base {
     pub distance: i16,
 }
 
-/// The mission's special aircraft (flight unit 0, types 5..=8, §5.5).
+/// The mission's special aircraft (flight unit 0, types 5..=8).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpecialAircraft {
     pub flight_unit: usize,
@@ -232,30 +234,29 @@ pub struct SpecialAircraft {
     pub start_name: String,
     pub destination_object: i16,
     pub destination_name: String,
-    /// DS:0D8E ONC reference used by the briefing (types 5..7).
+    /// ONC reference used by the briefing (types 5..7).
     pub reference_onc: Option<String>,
     pub flight: FlightUnit,
 }
 
-/// Mission clock (§5.9). 1 tick = 2 s; the clock starts at 06:00 by day, 18:00 by night.
+/// Mission clock. 1 tick = 2 s; the clock starts at 06:00 by day, 18:00 by night.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionTime {
-    /// Ticks after the 06:00 / 18:00 base at mission start (DS:9870 in VGAME).
+    /// Ticks after the 06:00 / 18:00 base at mission start.
     pub tod_ticks: i32,
     /// 6 or 18.
     pub base_hour: u8,
-    /// START strings (rounded down to 5 min): departure DS:0D88, deadline DS:0D7C,
-    /// deadline + 15 min DS:0D82.
+    /// Briefing time strings (rounded down to 5 min): departure, deadline, deadline + 15 min.
     pub depart: String,
     pub deadline: String,
     pub deadline_plus_15: String,
-    /// mtime (DS:D876): deadline in ticks after mission start, as handed to VGAME.
+    /// mtime: deadline in ticks after mission start, as handed to the flight.
     pub deadline_ticks: i16,
     /// Whether any target uses the deadline (code & 2) or a special aircraft schedule.
     pub has_deadline: bool,
 }
 
-/// One weapon bay (COMM+0x38 / +0x40).
+/// One weapon bay: weapon type and round count.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Bay {
     pub weapon: i16,
@@ -265,7 +266,7 @@ pub struct Bay {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Loadout {
-    /// All 4 bay words as START writes them.
+    /// All 4 bay words as the generator writes them.
     pub bays: Vec<Bay>,
     /// Usable bays: 4 MicroProse, 2 Lockheed.
     pub usable_bays: usize,
@@ -279,8 +280,8 @@ pub struct RngInfo {
     pub rand_calls: u32,
 }
 
-/// A fully generated mission: the decoded hand-off block plus everything START shows or
-/// writes to COMM.
+/// A fully generated mission: the decoded hand-off block plus everything the briefing shows
+/// and the flight receives.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Mission {
     pub settings: MissionSettings,
@@ -292,16 +293,16 @@ pub struct Mission {
     pub secondary: Target,
     pub takeoff: Base,
     pub landing: Base,
-    /// Route length estimate in "km" (dist >> 6 sums, §5.3).
+    /// Route length estimate in "km" (dist >> 6 sums).
     pub route_length: i16,
     /// 0 midpoint, 1 primary (snapped if area target), 2 secondary, 3 landing base.
     pub waypoints: [MapPoint; 4],
-    /// Player start (baseXP/baseYP as START computes them, §5.6).
+    /// Player start (computed from the takeoff base).
     pub start_position: WorldPoint,
     pub special_aircraft: Option<SpecialAircraft>,
-    /// DS:CABC: flight unit index of the special aircraft, -1 none.
+    /// Flight unit index of the special aircraft, -1 none.
     pub escort: i16,
-    /// The edited theater world handed to VGAME.
+    /// The edited theater world handed to the flight.
     pub world: MissionWorld,
     pub night: bool,
     /// Not part of the original game (rolled from its own RNG stream).
@@ -310,17 +311,17 @@ pub struct Mission {
     pub time: MissionTime,
     pub fuel_lbs: i16,
     pub loadout: Loadout,
-    /// Some grid cell still has "hostile forces concentration" (DS:D33A).
+    /// Some grid cell still has "hostile forces concentration".
     pub hostile_concentrations: bool,
-    /// COMM+0x30 = kind > 1 (training).
+    /// kind > 1 (training).
     pub invulnerable: bool,
-    /// START exit code: 0x0D carrier takeoff, 0x0C land base.
+    /// Generator exit code: 0x0D carrier takeoff, 0x0C land base.
     pub exit_code: u8,
     pub briefing: Briefing,
     pub orders: Orders,
 }
 
-/// Roll the weapon availability flags after `srand` (1A18:0E23, §2).
+/// Roll the weapon availability flags after `srand`.
 pub fn weapon_availability(rng: &mut MscRand, tables: &StartTables, plane: Plane) -> [u8; 20] {
     generator::weapon_availability(rng, tables, plane == Plane::Lockheed)
 }
@@ -338,7 +339,7 @@ pub fn generate(data: &GameData, settings: &MissionSettings, seed: Seed) -> Resu
     generate_exact(data, settings, &input)
 }
 
-/// Generate from exact emulator inputs.
+/// Generate from exact generator inputs.
 pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) -> Result<Mission> {
     ensure!(s.theater < data.theaters.len(), "theater {} out of range", s.theater);
     ensure!(s.roe <= 2, "roe {} out of range", s.roe);
@@ -351,7 +352,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
     let mut avail = input.weapon_unavailable;
     avail[0] = lockheed as u8;
     avail[1] = lockheed as u8;
-    let ctx = text::TextCtx { x, g: &g, theater: th.index, date: th.date, kind: s.kind.index() as usize, roe: s.roe as usize, lockheed };
+    let ctx = text::TextCtx { x, texts: &data.briefings, seed: input.holdrand, g: &g, theater: th.index, date: th.date, kind: s.kind.index() as usize, roe: s.roe as usize, lockheed };
     let w = &g.world;
     let obj = |i: i32| w.objects[i.rem_euclid(w.objects.len() as i32) as usize];
 
@@ -382,7 +383,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
             onc: t.coord.iter().map(|&c| c as char).collect(),
             onc_bytes: t.coord,
             dist: t.dist as i16,
-            intelligence: x.mission_text[t.num as usize].clone(),
+            intelligence: ctx.summary(k),
             objective: ctx.objective(k),
         }
     };
@@ -475,7 +476,7 @@ fn type_name(t: i32) -> &'static str {
     }
 }
 
-/// The START -> VGAME hand-off block (`exportWorld` 1A18:5625, copied to COMM+0x7A; §7).
+/// The generator -> flight hand-off block: the edited world, waypoints, targets and deadline.
 pub fn handoff_block(m: &Mission) -> Vec<u8> {
     let w = &m.world;
     let mut out = Vec::with_capacity(0x2000);
@@ -523,8 +524,8 @@ pub fn handoff_block(m: &Mission) -> Vec<u8> {
     out
 }
 
-/// Byte offset of the name block inside [`handoff_block`] (bytes past the WLD file's end are
-/// stale memory in the original and are not compared).
+/// Byte offset of the name block inside [`handoff_block`] (bytes past the end of the theater's
+/// name data are stale memory in the original and are not compared).
 pub fn handoff_names_offset(m: &Mission) -> usize {
     8 + 16 * m.world.objects.len() + 2 + 36 * m.world.flights.len() + 256
 }

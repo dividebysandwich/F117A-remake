@@ -99,11 +99,21 @@ missions follow Central Europe's rules (`--theater ua`).
 
 The full key list is in [docs/keys.md](docs/keys.md). A gamepad works as stick and throttle as
 well (right stick: rudder). The menu's Classic / Modern switches (shaders, shadows, lighting, cockpit, flight model) and
-its Aircraft options match the options above.
+its Aircraft options match the options above. Shaders, shadows, lighting, cockpit and HUD can
+also be switched in flight (Esc).
 
 ## 3D cockpit (desktop)
 * Fully clickable cockpit
 * Hold right mouse button to look around
+* Esc opens the in-flight settings menu (also in VR: the MENU button on the left side panel)
+
+### Editing the cockpits
+The cockpits are Blender models: `assets-src/blend/cockpit_modern.blend` and
+`cockpit_classic.blend` are the sources, `tools/models/export.sh cockpit_modern cockpit_classic`
+writes `assets/models/cockpit_*.glb`, which the game loads. The game finds its parts by
+material name (live displays, HUD glass, instrument atlas faces, palette-coloured solids) and by
+object custom properties (buttons, levers, lamps); the conventions are listed in
+`src/cockpit3d/model.rs`. A new cockpit starts as a copy of one of the files.
 
 ## VR support
 * Tested on Steam Frame
@@ -115,6 +125,7 @@ its Aircraft options match the options above.
 ## Classic modes
 * Classic flight model
 * Classic cockpit
+* Classic HUD
 * Classic rendering
 
 <img width="1681" height="1342" alt="image" src="https://github.com/user-attachments/assets/1d783e0c-12fa-4f75-93a8-327b0d952782" />

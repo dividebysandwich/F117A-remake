@@ -10,17 +10,15 @@
 //! The ejection handle is pulled up with either hand.
 //! Without VR both animate from the keyboard/gamepad controls.
 
-use bevy::camera::visibility::NoFrustumCulling;
 use bevy::prelude::*;
 
 use super::{
-    BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT, BUTTON_STICK_UP, BUTTON_THUMB, CockpitMaterials, Hands,
+    BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT, BUTTON_STICK_UP, BUTTON_THUMB, Hands,
 };
 use crate::flight::{Aircraft, Player};
 use crate::hotas::{ButtonTarget, InputConfig, VrHand, VrInput};
 use crate::input::{Action, ActionEvent, FlightControls};
 
-const STICK_PIVOT: Vec3 = Vec3::new(0.40, -0.48, -0.22);
 /// Grip centre above the pivot.
 const GRIP_HEIGHT: f32 = 0.11;
 /// Full deflection (radians).
@@ -31,11 +29,39 @@ const TWIST_DEADZONE: f32 = 0.15;
 /// Re-entering needs this much less twist, so hand jitter at the edge doesn't buzz.
 const TWIST_HYSTERESIS: f32 = 0.03;
 
-/// Throttle rail on the left console: idle and full positions of the handle.
-const THROTTLE_IDLE: Vec3 = Vec3::new(-0.40, -0.40, -0.12);
-const THROTTLE_FULL: Vec3 = Vec3::new(-0.40, -0.40, -0.30);
-/// Console top under the throttle rail.
-const THROTTLE_RAIL_Y: f32 = -0.4805;
+/// Positions in the cockpit frame taken from the cockpit model: the stick pivot (`stick`
+/// object), the throttle handle at idle (`throttle` object) and at full thrust (the
+/// `throttle_full` anchor), and the ejection handle (the `eject` control).
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct CockpitAnchors {
+    pub stick_pivot: Vec3,
+    pub throttle_idle: Vec3,
+    pub throttle_full: Vec3,
+    pub eject: Vec3,
+}
+
+impl Default for CockpitAnchors {
+    fn default() -> Self {
+        Self {
+            stick_pivot: Vec3::new(0.40, -0.48, -0.22),
+            throttle_idle: Vec3::new(-0.40, -0.40, -0.12),
+            throttle_full: Vec3::new(-0.40, -0.40, -0.30),
+            eject: Vec3::new(0.0, -0.74, -0.20),
+        }
+    }
+}
+
+impl CockpitAnchors {
+    fn throttle_handle(&self, t: f32) -> Vec3 {
+        self.throttle_idle.lerp(self.throttle_full, t.clamp(0.0, 1.0))
+    }
+
+    /// Throttle setting change for a hand movement (along the rail).
+    fn throttle_travel(&self, d: Vec3) -> f32 {
+        let rail = self.throttle_full - self.throttle_idle;
+        d.dot(rail) / rail.length_squared().max(1e-6)
+    }
+}
 
 /// Reach for grabbing (metres from the grip centre).
 const GRAB_REACH: f32 = 0.10;
@@ -60,7 +86,8 @@ struct StickGrab {
 }
 
 struct ThrottleGrab {
-    z0: f32,
+    /// Hand position when grabbed.
+    p0: Vec3,
     t0: f32,
     /// Last 10 % detent passed (for the haptic ticks).
     notch: i32,
@@ -68,127 +95,6 @@ struct ThrottleGrab {
 
 /// Throttle detents per full travel (one haptic tick each).
 const THROTTLE_NOTCHES: f32 = 10.0;
-
-pub(super) fn spawn_levers(commands: &mut Commands, root: Entity, mats: &CockpitMaterials, meshes: &mut Assets<Mesh>) {
-    // Stick: boot, shaft and grip under a pivot entity rotated by the deflection.
-    let boot = commands
-        .spawn((
-            Mesh3d(meshes.add(Cylinder::new(0.035, 0.02))),
-            MeshMaterial3d(mats.rubber.clone()),
-            Transform::from_translation(STICK_PIVOT + Vec3::new(0.0, -0.005, 0.0)),
-            NoFrustumCulling,
-        ))
-        .id();
-    commands.entity(root).add_child(boot);
-    let shaft = commands
-        .spawn((
-            Mesh3d(meshes.add(Cylinder::new(0.008, 0.07))),
-            MeshMaterial3d(mats.metal.clone()),
-            Transform::from_xyz(0.0, 0.035, 0.0),
-            NoFrustumCulling,
-        ))
-        .id();
-    let grip = commands
-        .spawn((
-            Mesh3d(meshes.add(Capsule3d::new(0.017, 0.07))),
-            MeshMaterial3d(mats.rubber.clone()),
-            Transform::from_xyz(0.0, GRIP_HEIGHT, 0.0).with_rotation(Quat::from_rotation_x(-0.15)),
-            NoFrustumCulling,
-        ))
-        .id();
-    let trigger = commands
-        .spawn((
-            Mesh3d(mats.unit_cube.clone()),
-            MeshMaterial3d(mats.metal.clone()),
-            Transform::from_xyz(0.0, GRIP_HEIGHT + 0.02, -0.02).with_scale(Vec3::new(0.008, 0.02, 0.008)),
-            NoFrustumCulling,
-        ))
-        .id();
-    let hat = commands
-        .spawn((
-            Mesh3d(meshes.add(Sphere::new(0.006))),
-            MeshMaterial3d(mats.metal.clone()),
-            Transform::from_xyz(0.0, GRIP_HEIGHT + 0.055, -0.005),
-            NoFrustumCulling,
-        ))
-        .id();
-    let stick = commands
-        .spawn((Stick, Transform::from_translation(STICK_PIVOT), Visibility::default()))
-        .add_children(&[shaft, grip, trigger, hat])
-        .id();
-    commands.entity(root).add_child(stick);
-
-    // Throttle: slot plate between two guide rails; a carriage slides along them carrying a
-    // straight stem and the handle.
-    let slot_len = THROTTLE_IDLE.z - THROTTLE_FULL.z + 0.05;
-    let slot_z = (THROTTLE_IDLE.z + THROTTLE_FULL.z) / 2.0;
-    let slot = commands
-        .spawn((
-            Mesh3d(mats.unit_cube.clone()),
-            MeshMaterial3d(mats.black.clone()),
-            Transform::from_xyz(THROTTLE_IDLE.x, THROTTLE_RAIL_Y, slot_z).with_scale(Vec3::new(0.02, 0.002, slot_len)),
-            NoFrustumCulling,
-        ))
-        .id();
-    commands.entity(root).add_child(slot);
-    for side in [-1.0, 1.0] {
-        let rail = commands
-            .spawn((
-                Mesh3d(mats.unit_cube.clone()),
-                MeshMaterial3d(mats.metal.clone()),
-                Transform::from_xyz(THROTTLE_IDLE.x + side * 0.014, THROTTLE_RAIL_Y + 0.003, slot_z)
-                    .with_scale(Vec3::new(0.005, 0.006, slot_len)),
-                NoFrustumCulling,
-            ))
-            .id();
-        commands.entity(root).add_child(rail);
-    }
-    // Heights relative to the handle centre.
-    let rail_top = THROTTLE_RAIL_Y + 0.006 - THROTTLE_IDLE.y;
-    let carriage = commands
-        .spawn((
-            Mesh3d(mats.unit_cube.clone()),
-            MeshMaterial3d(mats.metal.clone()),
-            Transform::from_xyz(0.0, rail_top + 0.004, 0.0).with_scale(Vec3::new(0.036, 0.008, 0.035)),
-            NoFrustumCulling,
-        ))
-        .id();
-    let stem_bottom = rail_top + 0.008;
-    let stem_top = -0.025;
-    let arm = commands
-        .spawn((
-            Mesh3d(mats.unit_cube.clone()),
-            MeshMaterial3d(mats.metal.clone()),
-            Transform::from_xyz(0.0, (stem_bottom + stem_top) / 2.0, 0.0).with_scale(Vec3::new(0.014, stem_top - stem_bottom, 0.014)),
-            NoFrustumCulling,
-        ))
-        .id();
-    let handle = commands
-        .spawn((
-            Mesh3d(meshes.add(Cuboid::new(0.045, 0.05, 0.06))),
-            MeshMaterial3d(mats.panel_grey.clone()),
-            Transform::from_xyz(-0.005, 0.0, 0.0),
-            NoFrustumCulling,
-        ))
-        .id();
-    let buttons = commands
-        .spawn((
-            Mesh3d(mats.unit_cube.clone()),
-            MeshMaterial3d(mats.rubber.clone()),
-            Transform::from_xyz(0.018, 0.02, -0.01).with_scale(Vec3::new(0.012, 0.012, 0.03)),
-            NoFrustumCulling,
-        ))
-        .id();
-    let lever = commands
-        .spawn((ThrottleLever, Transform::from_translation(THROTTLE_IDLE), Visibility::default()))
-        .add_children(&[carriage, arm, handle, buttons])
-        .id();
-    commands.entity(root).add_child(lever);
-}
-
-fn throttle_handle(t: f32) -> Vec3 {
-    THROTTLE_IDLE.lerp(THROTTLE_FULL, t.clamp(0.0, 1.0))
-}
 
 /// Twist of a rotation about an axis (swing-twist decomposition), radians.
 fn twist_about(q: Quat, axis: Vec3) -> f32 {
@@ -229,6 +135,7 @@ fn vr_bit(input: VrInput) -> u8 {
 
 /// VR grabbing: writes `FlightControls` (after the keyboard/gamepad) and the mapped controller
 /// buttons.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn grab_levers(
     mut hands: ResMut<Hands>,
     config: Res<InputConfig>,
@@ -237,12 +144,13 @@ pub(super) fn grab_levers(
     mut actions: MessageWriter<ActionEvent>,
     aircraft: Query<&Aircraft, With<Player>>,
     block: Res<crate::input::InputBlock>,
+    anchors: Res<CockpitAnchors>,
 ) {
     let set_thrust = aircraft.single().map_or(0.0, |a| a.set_thrust / 100.0);
     let [left, right] = &mut hands.hands;
 
     // --- stick (right hand)
-    let grip_centre = STICK_PIVOT + Vec3::Y * GRIP_HEIGHT;
+    let grip_centre = anchors.stick_pivot + Vec3::Y * GRIP_HEIGHT;
     if !right.active || right.squeeze < 0.4 {
         if grabs.stick.take().is_some() {
             right.haptic = right.haptic.max(0.2);
@@ -273,18 +181,18 @@ pub(super) fn grab_levers(
     }
 
     // --- throttle (left hand)
-    let handle = throttle_handle(set_thrust);
+    let handle = anchors.throttle_handle(set_thrust);
     if !left.active || left.squeeze < 0.4 {
         if grabs.throttle.take().is_some() {
             left.haptic = left.haptic.max(0.2);
         }
     } else if grabs.throttle.is_none() && left.squeeze > 0.6 && left.grip.translation.distance(handle) < GRAB_REACH {
         let notch = (set_thrust * THROTTLE_NOTCHES).floor() as i32;
-        grabs.throttle = Some(ThrottleGrab { z0: left.grip.translation.z, t0: set_thrust, notch });
+        grabs.throttle = Some(ThrottleGrab { p0: left.grip.translation, t0: set_thrust, notch });
         left.haptic = left.haptic.max(0.4);
     }
     if let Some(g) = &mut grabs.throttle {
-        let t = (g.t0 + (g.z0 - left.grip.translation.z) / (THROTTLE_IDLE.z - THROTTLE_FULL.z)).clamp(0.0, 1.0);
+        let t = (g.t0 + anchors.throttle_travel(left.grip.translation - g.p0)).clamp(0.0, 1.0);
         // A light tick at each detent, a firm one at the idle and full stops.
         let before = set_thrust;
         if (t >= 1.0 && before < 1.0) || (t <= 0.0 && before > 0.0) {
@@ -322,7 +230,7 @@ pub(super) fn grab_levers(
     }
 
     // --- ejection handle: grab with either hand and pull up 6 cm
-    let handle = super::controls::EJECT_HANDLE;
+    let handle = anchors.eject;
     for (i, h) in [&mut *left, &mut *right].into_iter().enumerate() {
         let is_grabbing_other = (i == 1 && grabs.stick.is_some()) || (i == 0 && grabs.throttle.is_some());
         match grabs.eject {
@@ -350,6 +258,7 @@ pub(super) fn animate_levers(
     aircraft: Query<&Aircraft, With<Player>>,
     mut stick: Query<&mut Transform, (With<Stick>, Without<ThrottleLever>)>,
     mut throttle: Query<&mut Transform, With<ThrottleLever>>,
+    anchors: Res<CockpitAnchors>,
 ) {
     if let Ok(mut tf) = stick.single_mut() {
         tf.rotation = Quat::from_rotation_x(controls.pitch * STICK_TILT)
@@ -358,6 +267,6 @@ pub(super) fn animate_levers(
     }
     if let (Ok(mut tf), Ok(a)) = (throttle.single_mut(), aircraft.single()) {
         let t = controls.throttle.unwrap_or(a.set_thrust / 100.0);
-        tf.translation = throttle_handle(t);
+        tf.translation = anchors.throttle_handle(t);
     }
 }

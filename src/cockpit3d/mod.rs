@@ -1,13 +1,13 @@
 //! The modelled 3D cockpit (desktop and VR).
 //!
-//! The instrument panel is modelled on a tilted plane laid out in the original screen's pixels
-//! (`geometry`), from one of two layouts (`layout`): the original arrangement (classic) or a
-//! modern one with high-resolution MFDs and bezel buttons. Lamps, readouts and labels are faces
-//! of a live instrument atlas; the MFD screens are recessed into the panel.
-//! Around it: glare shield, HUD combiner (the HUD is a separate canvas shown through the
-//! combiner glass collimated to infinity, at the original 256 px/rad, so it overlays the
-//! world correctly from any head position), canopy frame,
-//! consoles, seat with ejection handle, side stick (right) and throttle (left).
+//! The cockpit is a Blender model (`model`: `assets-src/blend/cockpit_modern.blend` and
+//! `cockpit_classic.blend`, exported to `assets/models/cockpit_*.glb`): the original panel
+//! arrangement (classic) or a modern one with high-resolution MFDs and bezel buttons. Lamps,
+//! readouts and labels are faces of a live instrument atlas whose contents come from the panel
+//! layouts (`layout`); the MFD screens, the attitude ball and the HUD are live canvases.
+//! The HUD is shown through the combiner glass collimated to infinity, so it overlays the
+//! world correctly from any head position. Around it: glare shield, canopy frame, consoles,
+//! seat with ejection handle, side stick (right) and throttle (left).
 //!
 //! The panel's lit buttons are physical caps showing their lamp face, so their state comes
 //! from the panel drawing code (`controls`). Controls are touched by VR fingertips (which
@@ -18,6 +18,7 @@
 
 mod controls;
 mod displays;
+mod model;
 pub mod geometry;
 mod hud_glass;
 pub mod layout;
@@ -41,8 +42,9 @@ impl Plugin for Cockpit3dPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<hud_glass::HudGlassMaterial>::default())
             .init_resource::<Hands>()
+            .init_resource::<levers::CockpitAnchors>()
             .add_message::<PressControl>()
-            .add_systems(Startup, (setup_materials, initial_look))
+            .add_systems(Startup, (setup_materials, initial_look, model::load_models))
             .add_systems(
                 Update,
                 (respawn_on_style_change, spawn_cockpit, sync_materials, cockpit_visibility).chain().run_if(in_state(AppState::Flight)),
@@ -148,10 +150,9 @@ pub struct CockpitMaterials {
     pub flash: Handle<StandardMaterial>,
     /// Frame around the control a VR fingertip touches.
     pub highlight: Handle<StandardMaterial>,
-    pub unit_cube: Handle<Mesh>,
 }
 
-fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>, mut meshes: ResMut<Assets<Mesh>>) {
+fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     // Structure materials are always lit; the panel picture and labels follow the options.
     let mut m = |c: Color, rough: f32, metal: f32| {
         materials.add(StandardMaterial {
@@ -200,7 +201,6 @@ fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<Standard
         hand,
         flash,
         highlight,
-        unit_cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
     });
 }
 
@@ -228,13 +228,6 @@ fn sync_materials(
             m.unlit = !lit;
         }
     }
-}
-
-/// Spawns a box between two points, or with a transform, under the cockpit root.
-pub(crate) fn spawn_box(commands: &mut Commands, root: Entity, mats: &CockpitMaterials, material: &Handle<StandardMaterial>, tf: Transform) -> Entity {
-    let e = commands.spawn((Mesh3d(mats.unit_cube.clone()), MeshMaterial3d(material.clone()), tf, NoFrustumCulling)).id();
-    commands.entity(root).add_child(e);
-    e
 }
 
 #[derive(Component)]
@@ -281,23 +274,41 @@ fn spawn_cockpit(
     fonts: Res<crate::font::Fonts>,
     tc_image: Option<Res<crate::trackcam::TrackCamImage>>,
     settings: Res<Settings>,
+    models: Res<model::CockpitModels>,
+    server: Res<AssetServer>,
+    assets: model::ModelAssets,
+    mut anchors: ResMut<levers::CockpitAnchors>,
 ) {
     if !existing.is_empty() {
         return;
     }
     let (Ok(aircraft), Ok(head)) = (player.single(), head.single()) else { return };
+    let file = if settings.classic_cockpit { &models.classic } else { &models.modern };
+    if !server.is_loaded_with_dependencies(file) {
+        return;
+    }
     let layout = layout::PanelLayout::for_classic(settings.classic_cockpit);
     let root = commands
         .spawn((CockpitRoot(layout.style, settings.local_lights), Transform::from_translation(crate::camera::EYE_OFFSET), Visibility::default()))
         .id();
     commands.entity(aircraft).add_child(root);
 
-    let faces = displays::spawn_panel(&mut commands, root, &layout, &mats, &mut meshes, &mut materials, &mut images, tc_image.as_deref());
-    displays::spawn_hud(&mut commands, root, &mut meshes, &mut hud_materials, &mut images, settings.classic_hud);
-    displays::spawn_approach_indexer(&mut commands, root, &mut meshes, &mut materials, &mut images);
-    displays::spawn_structure(&mut commands, root, &mats, &mut meshes);
-    controls::spawn_controls(&mut commands, root, &layout, &faces, &mats, &mut meshes, &mut materials, &mut images, &fonts);
-    levers::spawn_levers(&mut commands, root, &mats, &mut meshes);
+    let panel = displays::panel_materials(&mut commands, root, &layout, &mut materials, &mut images);
+    let mut spawner = model::Spawner::new(
+        &mats,
+        &panel,
+        &layout,
+        &fonts,
+        tc_image.as_deref(),
+        settings.classic_hud,
+        settings.local_lights,
+        &mut meshes,
+        &mut materials,
+        &mut hud_materials,
+        &mut images,
+    );
+    spawner.spawn(&mut commands, &assets, file, root);
+    *anchors = spawner.anchors;
 
     for i in 0..2 {
         let palm = commands
@@ -323,24 +334,6 @@ fn spawn_cockpit(
             ))
             .id();
         commands.entity(root).add_children(&[palm, finger]);
-    }
-    // Flood lamps: two red side lamps on the canopy sills and a white one under the glare
-    // shield lighting the panel. Only with the local lighting option (see `lighting::spawn_sun`:
-    // point lights hang the Steam Frame's GPU).
-    let lamps: &[(Vec3, Color)] = if settings.local_lights {
-        &[
-            (Vec3::new(-0.45, -0.18, 0.05), Color::srgb(1.0, 0.35, 0.25)),
-            (Vec3::new(0.45, -0.18, 0.05), Color::srgb(1.0, 0.35, 0.25)),
-            (Vec3::new(0.0, -0.17, -0.55), Color::srgb(1.0, 0.92, 0.8)),
-        ]
-    } else {
-        &[]
-    };
-    for &(pos, color) in lamps {
-        let lamp = commands
-            .spawn((CockpitLamp, PointLight { intensity: 0.0, range: 1.6, color, shadow_maps_enabled: false, ..default() }, Transform::from_translation(pos)))
-            .id();
-        commands.entity(root).add_child(lamp);
     }
     let flash = commands
         .spawn((

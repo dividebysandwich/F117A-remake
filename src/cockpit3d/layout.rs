@@ -1,10 +1,11 @@
-//! Instrument panel layouts: what sits where on the panel, in the panel's pixel frame (the
-//! original 320x200 screen projected onto the panel plane, `geometry::panel_point`).
+//! Instrument panel layouts: the faces drawn into the instrument atlas (lamps, readouts,
+//! labels, bezel buttons), which of them are buttons, and the displays, in the panel's pixel
+//! frame (the original 320x200 screen projected onto the panel plane, `geometry::panel_point`).
 //!
-//! Both layouts are built by the same code (`displays`, `controls`):
-//! - `classic`: the original 256PIT arrangement (lights at their table positions, the 77x60
-//!   MFDs with their decorative bezel squares, knobs and screws, the ADI housing and the hazard
-//!   plate), modelled instead of painted.
+//! The cockpit model (`model`, the Blender files) places the faces; their rectangles here set
+//! each face's size in the atlas, so a face modelled at its rectangle's size shows its texels
+//! square. The rectangles are where the faces were when the models were made:
+//! - `classic`: the original 256PIT arrangement, with the 77x60 MFDs.
 //! - `modern`: larger high-resolution MFDs with labelled bezel buttons, lamp blocks either side.
 
 use crate::input::Action;
@@ -31,14 +32,6 @@ pub const fn rect(x: f32, y: f32, w: f32, h: f32) -> PxRect {
 }
 
 impl PxRect {
-    pub fn centre(&self) -> (f32, f32) {
-        (self.x + self.w / 2.0, self.y + self.h / 2.0)
-    }
-
-    pub fn contains(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
-    }
-
     #[cfg(test)]
     fn overlaps(&self, o: &PxRect) -> bool {
         self.x < o.x + o.w && o.x < self.x + self.w && self.y < o.y + o.h && o.y < self.y + self.h
@@ -84,25 +77,6 @@ pub struct Placed {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Shape {
-    Box,
-    /// Round knob (diameter = rect width).
-    Knob,
-}
-
-/// A solid part on the panel, in a palette colour, standing `height` metres above whatever
-/// is below its centre (the face or earlier blocks).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Block {
-    pub rect: PxRect,
-    pub height: f32,
-    pub colour: u8,
-    pub shape: Shape,
-    /// Computed: height of the surface it stands on.
-    pub base: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MfdUnit {
     pub side: MfdSide,
     pub screen: PxRect,
@@ -112,29 +86,10 @@ pub struct MfdUnit {
 
 pub struct PanelLayout {
     pub style: PanelStyle,
-    /// Colour of the panel face.
-    pub face: u8,
-    pub blocks: Vec<Block>,
     pub items: Vec<Placed>,
     /// Attitude ball (square around the disc).
     pub adi: PxRect,
     pub mfds: [MfdUnit; 2],
-}
-
-/// Panel outline: the original's top edge (row 91 between x 32 and 288, falling one row per two
-/// pixels to row 107 at the sides) and the bottom of the screen.
-pub const OUTLINE: [(f32, f32); 6] = [(0.0, 107.0), (32.0, 91.0), (288.0, 91.0), (320.0, 107.0), (320.0, 200.0), (0.0, 200.0)];
-
-/// Highest allowed row at column x (the outline's top edge).
-#[cfg(test)]
-fn top_edge(x: f32) -> f32 {
-    if x < 32.0 {
-        107.0 - x / 2.0
-    } else if x > 288.0 {
-        91.0 + (x - 288.0) / 2.0
-    } else {
-        91.0
-    }
 }
 
 /// Bezel button cap size (panel pixels).
@@ -144,11 +99,6 @@ const OSB_H: f32 = 8.0;
 impl PanelLayout {
     pub fn for_classic(classic: bool) -> Self {
         if classic { Self::classic() } else { Self::modern() }
-    }
-
-    /// Height of the surface at a panel pixel (top of the highest box there, 0 = face).
-    pub fn surface(&self, x: f32, y: f32) -> f32 {
-        self.blocks.iter().filter(|b| b.shape == Shape::Box && b.rect.contains(x, y)).map(|b| b.base + b.height).fold(0.0, f32::max)
     }
 
     /// Bezel buttons of an MFD: (slot, cap rectangle); 0..5 above the screen, 5..10 below.
@@ -165,20 +115,6 @@ impl PanelLayout {
                 (slot, rect(cx - OSB_W / 2.0, y, OSB_W, OSB_H))
             })
             .collect()
-    }
-
-    /// Stacks the blocks (each on the surface below its centre) and returns the layout.
-    fn finish(mut self) -> Self {
-        for i in 0..self.blocks.len() {
-            let (cx, cy) = self.blocks[i].rect.centre();
-            let base = self.blocks[..i]
-                .iter()
-                .filter(|b| b.shape == Shape::Box && b.rect.contains(cx, cy))
-                .map(|b| b.base + b.height)
-                .fold(0.0, f32::max);
-            self.blocks[i].base = base;
-        }
-        self
     }
 
     /// The original arrangement (256PIT).
@@ -273,76 +209,23 @@ impl PanelLayout {
         ];
         items.extend(fixed.into_iter().map(|(elem, rect)| Placed { elem, rect, cap: None }));
 
-        let mut blocks = Vec::new();
-        let mut bx = |r: PxRect, height: f32, colour: u8| blocks.push(Block { rect: r, height, colour, shape: Shape::Box, base: 0.0 });
-        // Strip under the glare shield with the HUD mode lights, the lower strip, the ADI housing.
-        bx(rect(98.0, 91.5, 124.0, 12.5), 0.003, 34);
-        bx(rect(64.0, 185.0, 192.0, 15.0), 0.002, 33);
-        bx(rect(257.0, 134.0, 49.0, 42.0), 0.004, 32);
-        // MFD housings around the screens, the screen frames and the decorative bezel squares.
         let screens = [rect(74.0, 110.0, 77.0, 60.0), rect(169.0, 110.0, 77.0, 60.0)];
-        for (s, outer, colour) in [(screens[0], rect(64.0, 103.0, 96.0, 82.0), 32), (screens[1], rect(160.0, 103.0, 96.0, 82.0), 31)] {
-            for r in frame(outer, s) {
-                bx(r, 0.004, colour);
-            }
-            for r in frame(rect(s.x - 2.0, s.y - 2.0, s.w + 4.0, s.h + 4.0), s) {
-                bx(r, 0.002, 63);
-            }
-        }
         // The top two squares outside each screen are buttons (not in the original): map zoom
         // on the left MFD, waypoint selection on the right one.
-        let square_caps = [
+        for (x, y, label, action) in [
             (65.0, 110.0, "+", Action::MapZoomIn),
             (65.0, 123.0, "-", Action::MapZoomOut),
             (249.0, 112.0, "+", Action::NextWaypoint),
             (249.0, 123.0, "-", Action::LastWaypoint),
-        ];
-        for (x, ys) in [
-            (65.0, [110.0, 123.0, 135.0, 146.0, 159.0]),
-            (153.0, [110.0, 123.0, 135.0, 146.0, 159.0]),
-            (161.5, [112.0, 123.0, 134.0, 147.0, 158.0]),
-            (249.0, [112.0, 123.0, 134.0, 147.0, 158.0]),
         ] {
-            for y in ys {
-                match square_caps.iter().find(|c| c.0 == x && c.1 == y) {
-                    Some(&(_, _, label, action)) => {
-                        items.push(Placed { elem: Elem::Label(label, 47, 22), rect: rect(x, y, 6.0, 6.0), cap: Some(E::Action(action)) })
-                    }
-                    None => bx(rect(x, y, 6.0, 6.0), 0.003, 22),
-                }
-            }
+            items.push(Placed { elem: Elem::Label(label, 47, 22), rect: rect(x, y, 6.0, 6.0), cap: Some(E::Action(action)) });
         }
-        for (x, y, d) in [
-            (105.0, 98.0, 6.0),
-            (214.0, 97.0, 6.0),
-            (132.0, 177.0, 6.0),
-            (141.0, 177.0, 6.0),
-            (164.0, 171.0, 5.0),
-            (184.0, 175.0, 5.0),
-            (251.0, 171.0, 5.0),
-            (68.0, 119.5, 3.0),
-            (68.0, 155.5, 3.0),
-            (68.0, 169.5, 3.0),
-            (156.0, 119.5, 3.0),
-            (156.0, 155.5, 3.0),
-            (156.0, 169.5, 3.0),
-            (261.0, 138.0, 3.0),
-            (301.0, 138.0, 3.0),
-            (261.0, 171.0, 3.0),
-            (301.0, 171.0, 3.0),
-        ] {
-            blocks.push(Block { rect: rect(x - d / 2.0, y - d / 2.0, d, d), height: d * 0.0012, colour: 21, shape: Shape::Knob, base: 0.0 });
-        }
-
         Self {
             style: PanelStyle::Classic,
-            face: 38,
-            blocks,
             items,
             adi: rect(265.0, 139.0, 32.0, 32.0),
             mfds: [MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: false }, MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: false }],
         }
-        .finish()
     }
 
     /// The modern arrangement: two large MFDs with bezel buttons in the middle, warning and
@@ -410,48 +293,13 @@ impl PanelLayout {
         // Shaped like the HIRES canvas on the panel (panel pixels are not square), so the
         // screen's pixels are.
         let screens = [rect(61.5, 116.0, 94.0, 60.0), rect(166.5, 116.0, 94.0, 60.0)];
-        let mut blocks = Vec::new();
-        let mut bx = |r: PxRect, height: f32, colour: u8| blocks.push(Block { rect: r, height, colour, shape: Shape::Box, base: 0.0 });
-        bx(rect(115.0, 92.0, 95.0, 10.0), 0.003, 35);
-        bx(rect(1.0, 108.0, 54.0, 91.0), 0.003, 35);
-        bx(rect(266.0, 108.0, 53.0, 91.0), 0.003, 35);
-        bx(rect(56.0, 189.5, 210.0, 10.5), 0.003, 35);
-        // MFD housings (deep enough for the bezel buttons) with a frame around each screen.
-        for (s, outer) in [(screens[0], rect(56.0, 103.0, 105.0, 86.0)), (screens[1], rect(161.0, 103.0, 105.0, 86.0))] {
-            for r in frame(outer, s) {
-                bx(r, 0.004, 38);
-            }
-            for r in frame(rect(s.x - 1.5, s.y - 1.5, s.w + 3.0, s.h + 3.0), s) {
-                bx(r, 0.001, 63);
-            }
-        }
-        // Attitude ball housing.
-        bx(rect(270.0, 110.0, 46.0, 46.0), 0.004, 38);
-        for (x, y) in [(273.0, 113.0), (313.0, 113.0), (273.0, 153.0), (313.0, 153.0)] {
-            blocks.push(Block { rect: rect(x - 1.5, y - 1.5, 3.0, 3.0), height: 0.0035, colour: 21, shape: Shape::Knob, base: 0.0 });
-        }
-
         Self {
             style: PanelStyle::Modern,
-            face: 32,
-            blocks,
             items,
             adi: rect(273.0, 113.0, 40.0, 40.0),
             mfds: [MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: true }, MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: true }],
         }
-        .finish()
     }
-}
-
-/// The four bars of a frame between an outer and an inner rectangle.
-fn frame(outer: PxRect, inner: PxRect) -> [PxRect; 4] {
-    let (ox1, oy1, ix1, iy1) = (outer.x + outer.w, outer.y + outer.h, inner.x + inner.w, inner.y + inner.h);
-    [
-        rect(outer.x, outer.y, outer.w, inner.y - outer.y),
-        rect(outer.x, iy1, outer.w, oy1 - iy1),
-        rect(outer.x, inner.y, inner.x - outer.x, inner.h),
-        rect(ix1, inner.y, ox1 - ix1, inner.h),
-    ]
 }
 
 #[cfg(test)]
@@ -461,25 +309,6 @@ mod tests {
 
     fn all() -> [PanelLayout; 2] {
         [PanelLayout::classic(), PanelLayout::modern()]
-    }
-
-    /// Everything is on the panel, below its top edge (glare shield, HUD and side view clear).
-    #[test]
-    fn inside_outline() {
-        for l in all() {
-            let mut rects: Vec<PxRect> = l.items.iter().map(|p| p.rect).chain(l.blocks.iter().map(|b| b.rect)).collect();
-            rects.push(l.adi);
-            for m in &l.mfds {
-                rects.push(m.screen);
-                rects.extend(l.osbs(m).into_iter().map(|(_, r)| r));
-            }
-            for r in rects {
-                assert!(r.x >= 0.0 && r.x + r.w <= 320.0 && r.y + r.h <= 200.0, "{:?} {r:?}", l.style);
-                for x in [r.x, r.x + r.w] {
-                    assert!(r.y >= top_edge(x) - 1.0, "{:?} {r:?} above the panel edge", l.style);
-                }
-            }
-        }
     }
 
     /// Faces and caps do not overlap each other or the screens.

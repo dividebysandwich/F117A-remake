@@ -299,6 +299,7 @@ pub(super) fn interact(
     }
     for (h, hand) in hands.hands.iter_mut().enumerate() {
         let touched = touching[h].map(|(_, e)| e);
+        hand.touching = touched.is_some();
         if touched.is_some() && touched != was_touching[h] {
             hand.haptic = hand.haptic.max(0.1);
         }

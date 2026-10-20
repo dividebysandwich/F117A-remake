@@ -114,6 +114,8 @@ pub struct Hand {
     pub prev_trigger: f32,
     /// Haptic pulse request 0..1 (consumed by the XR module).
     pub haptic: f32,
+    /// The fingertip touches a cockpit control (its trigger presses that control).
+    pub touching: bool,
 }
 
 impl Hand {

@@ -218,15 +218,17 @@ pub(super) fn grab_levers(
     }
 
     // --- mapped buttons; a trigger only while its hand holds the throttle / stick (otherwise it
-    // presses the cockpit control under the fingertip)
+    // presses the cockpit control under the fingertip), but for the brakes
     let mut brakes_held = false;
     for (side, hand, holding) in [(VrHand::Left, &*left, grabs.throttle.is_some()), (VrHand::Right, &*right, grabs.stick.is_some())] {
         if !hand.active {
             continue;
         }
         for m in config.vr_buttons.iter().filter(|m| m.hand == side) {
+            // The brakes also on the trigger of a free hand that touches no control.
+            let brakes = m.target == ButtonTarget::Action(Action::Brakes) && (!hand.touching || grabs.brakes);
             let (held, pressed) = match m.input {
-                VrInput::Trigger if !holding => continue,
+                VrInput::Trigger if !holding && !brakes => continue,
                 VrInput::Trigger => (hand.trigger > 0.7, hand.trigger_pulled()),
                 input => (hand.held(vr_bit(input)), hand.just_pressed(vr_bit(input))),
             };

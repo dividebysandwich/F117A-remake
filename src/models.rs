@@ -238,8 +238,13 @@ const NEAR_LOD_RANGE: f32 = 4.0;
 #[derive(Component, Clone, Copy)]
 pub struct LodRange(pub f32);
 
+/// On a model root: all its detail levels are drawn this many times further (ships, which
+/// stand out on the open sea).
+#[derive(Component, Clone, Copy)]
+pub struct LodBias(pub f32);
+
 fn apply_model_state(
-    roots: Query<(&ModelState, &CameraDistance, Option<&LodRange>)>,
+    roots: Query<(&ModelState, &CameraDistance, Option<&LodRange>, Option<&LodBias>)>,
     mut lods: Query<(&LodLevel, &mut LodShown, &mut Visibility), (Without<CondNode>, Without<ArticulatedPart>)>,
     mut conds: Query<(&CondNode, &mut Visibility), Without<LodLevel>>,
     mut parts: Query<(&ArticulatedPart, &mut Transform)>,
@@ -250,7 +255,8 @@ fn apply_model_state(
 ) {
     let reduce = detail.map_or(1.0, |d| d.lod_range());
     for (lod, mut shown, mut vis) in &mut lods {
-        let Ok((_, dist, range)) = roots.get(lod.root) else { continue };
+        let Ok((_, dist, range, bias)) = roots.get(lod.root) else { continue };
+        let reduce = reduce * bias.map_or(1.0, |b| b.0);
         // The chosen level is the first whose max_dist covers the distance.
         let prev = all_lods
             .iter()
@@ -281,12 +287,12 @@ fn apply_model_state(
         }
     }
     for (c, mut vis) in &mut conds {
-        let Ok((state, _, _)) = roots.get(c.root) else { continue };
+        let Ok((state, ..)) = roots.get(c.root) else { continue };
         let show = c.conds.iter().all(|&(s, v)| state.0.get(s) == Some(&v));
         vis.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     }
     for (p, mut tf) in &mut parts {
-        let Ok((state, _, _)) = roots.get(p.root) else { continue };
+        let Ok((state, ..)) = roots.get(p.root) else { continue };
         let value = state.0[p.slot].wrapping_add(globals.angle(p.slot));
         let angle = -(value as u16 as f32) / 65536.0 * std::f32::consts::TAU;
         let r = match p.axis {

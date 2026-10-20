@@ -687,6 +687,9 @@ determines radar and missile:
 
 ### 8.3 Ships
 
+Ships stand out on the open sea: they are drawn from about 25 km away and keep their detailed
+models further out than other objects.
+
 | | Ship | Description |
 |---|---|---|
 | <img src="images/units/ship_missileboat.png" width="200"> | **Missile boat / Patrol boat** | Armed with ship-based SAMs. Missile boat: SA-N-4 (Doppler 200 km, semi-active radar, 30 km), SA-N-5 (pulse 150 km, IR, 30 km) in LB, CU, KO; SA-N-6 (Doppler 320 km, active radar, 125 km) in KO; Seacat (pulse 200 km, radar command, 30 km) in PG. Patrol boat: SA-N-5, SA-N-7 (pulse 200 km, semi-active radar, 100 km) in CE, UA. |

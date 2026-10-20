@@ -79,7 +79,7 @@ impl ShapeHandles {
 }
 
 fn unload_theater(mut commands: Commands, mut streamed: ResMut<StreamedCells>) {
-    for (_, entities) in streamed.cells.drain() {
+    for (_, (_, entities)) in streamed.cells.drain() {
         for e in entities {
             commands.entity(e).try_despawn();
         }
@@ -111,6 +111,11 @@ pub const WU: f64 = 512_000.0 / 1_048_576.0;
 const LAYER_STEP_M: f64 = 0.02;
 /// Cells streamed around the camera per LOD (index = LOD), as a radius in cells.
 const CELL_RADIUS: [i32; 5] = [0, 2, 2, 1, 2];
+/// Ships (on the open sea, seen from far away) are streamed out to about this range (metres)
+/// from the finer levels' cells, which otherwise end a few kilometres out.
+const SHIP_RANGE_M: f64 = 25_000.0;
+/// Ships' detail levels are drawn this many times further than other models'.
+const SHIP_LOD_BIAS: f32 = 4.0;
 
 pub struct WorldPlugin;
 
@@ -210,6 +215,11 @@ impl Theater {
         stealth_sim::TheaterTiles { grid: self.grid.clone(), objects: [level(1), level(2)], model_attr: self.model_attr.clone() }
     }
 
+    /// A ship's model (the world's object category 12 or 13, as the simulation's ship test).
+    pub fn is_ship_shape(&self, shape: u8) -> bool {
+        self.world.table7.get((shape & 0x7F) as usize).is_some_and(|&b| matches!(b & 0xF, 12 | 13))
+    }
+
     /// Number of theater models (shapes beyond this index are appended specials).
     pub fn model_count(&self) -> usize {
         self.model_count
@@ -247,7 +257,8 @@ impl Theater {
 
 #[derive(Resource, Default)]
 struct StreamedCells {
-    cells: HashMap<(usize, i32, i32), Vec<Entity>>,
+    /// (lod, col, row) -> (only the ships spawned, the entities).
+    cells: HashMap<(usize, i32, i32), (bool, Vec<Entity>)>,
     pending: bool,
 }
 
@@ -290,23 +301,25 @@ fn stream_tiles(
         return; // models still loading or being refined (terrain.rs)
     }
     let (east, north, _) = bevy_to_wu(anchor.0);
-    let mut wanted = Vec::new();
+    // Cells wanted: (lod, col, row) -> ships only (beyond the level's own radius).
+    let mut wanted: HashMap<(usize, i32, i32), bool> = HashMap::new();
     for lod in 1..=4usize {
         let cell = 4096.0 * LEVEL_UNIT[lod];
         let (cx, cy) = ((east / cell).floor() as i32, (north / cell).floor() as i32);
         let lo = if lod == 4 { -2 } else { 0 };
         let r = CELL_RADIUS[lod];
-        for row in cy - r..=cy + r {
-            for col in cx - r..=cx + r {
+        let far = if lod <= 2 { ((SHIP_RANGE_M / (cell * WU)).ceil() as i32).max(r) } else { r };
+        for row in cy - far..=cy + far {
+            for col in cx - far..=cx + far {
                 if col >= lo && row >= lo && col < GRID_DIM[lod] + lo && row < GRID_DIM[lod] + lo {
-                    wanted.push((lod, col, row));
+                    wanted.insert((lod, col, row), (col - cx).abs() > r || (row - cy).abs() > r);
                 }
             }
         }
     }
     let dirty = std::mem::take(&mut overrides.dirty);
-    streamed.cells.retain(|key, entities| {
-        let keep = wanted.contains(key) && !dirty.contains(key);
+    streamed.cells.retain(|key, (ships_only, entities)| {
+        let keep = wanted.get(key) == Some(ships_only) && !dirty.contains(key);
         if !keep {
             for &e in entities.iter() {
                 commands.entity(e).despawn();
@@ -314,7 +327,7 @@ fn stream_tiles(
         }
         keep
     });
-    for key @ (lod, col, row) in wanted {
+    for (key @ (lod, col, row), ships_only) in wanted {
         if streamed.cells.contains_key(&key) {
             continue;
         }
@@ -322,8 +335,12 @@ fn stream_tiles(
         let objects = theater.tiles.tiles.get(lod).and_then(|t| t.get(tile_type)).cloned().unwrap_or_default();
         let unit = LEVEL_UNIT[lod];
         let centre = |c: i32| (c as f64 * 4096.0 + 2048.0) * unit;
-        let mut entities = Vec::with_capacity(objects.len());
+        let mut entities = Vec::new();
         for (k, o) in objects.iter().enumerate() {
+            let ship = theater.is_ship_shape(o.shape);
+            if ships_only && !ship {
+                continue;
+            }
             // Destroyed tile objects: the same model in its wreck state, or a rubble model.
             let (shape, wrecked) = match overrides.shapes.get(&(lod, col, row, k as u16)) {
                 Some(&s) if (s & 0xFF) as u8 == o.shape && s & 0x100 != 0 => (o.shape, true),
@@ -353,9 +370,12 @@ fn stream_tiles(
                 Transform::from_scale(Vec3::splat(crate::models::tile_model_scale(&name, unit))),
                 TileObject { lod: lod as u8, order: k as u16, destroyed: shape != o.shape || wrecked },
             ));
+            if ship {
+                commands.entity(e).insert(crate::models::LodBias(SHIP_LOD_BIAS));
+            }
             entities.push(e);
         }
-        streamed.cells.insert(key, entities);
+        streamed.cells.insert(key, (ships_only, entities));
         streamed.pending = true;
     }
 }

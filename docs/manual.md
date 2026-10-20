@@ -96,7 +96,7 @@ trigger only counts while that hand holds the throttle (left) or the stick (righ
 ![Modern cockpit](images/cockpit.png)
 
 The view shows the head-up display (HUD) at the top and the instrument panel below it. Hold the
-**right mouse button** to look around. **Click** a button on the panel to press it. Every button
+**right mouse button** to look around; turn the **mouse wheel** while holding it to zoom in. **Click** a button on the panel to press it. Every button
 has a keyboard equivalent (chapter 7).
 
 For comparison, the **classic cockpit** (menu: *Cockpit: Classic*) uses the original panel with
@@ -574,6 +574,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | | Slot / chase / side / missile / tactical / inverse tactical | Shift F1 … Shift F6 |
 | | Zoom / unzoom / wide angle | Z / X / C |
 | | Look around (cockpit) / orbit (external views) | Right mouse button |
+| | Zoom in and out (cockpit: up to 6x; external views: the camera distance) | Mouse wheel with the right mouse button held |
 | **Time** | Time acceleration / normal | Shift Z / Shift X |
 | **Game** | Settings menu (pauses) / detail / sound level | Esc, Pause, Alt P, gamepad Start / Alt D / Alt V |
 | | Training / resupply / quit | Alt T / Alt R / Alt Q |

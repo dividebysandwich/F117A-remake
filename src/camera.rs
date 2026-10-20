@@ -47,11 +47,33 @@ pub enum View {
     Pilot,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct ViewState {
     pub view: View,
     pub zoom: i32,
     pub wide: bool,
+    /// Mouse wheel zoom (right button held): the cockpit's magnification (1 = none) and the
+    /// external views' extra zoom steps (each halves the distance like `zoom`).
+    pub magnify: f32,
+    pub wheel_zoom: f32,
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        Self { view: View::default(), zoom: 0, wide: false, magnify: 1.0, wheel_zoom: 0.0 }
+    }
+}
+
+impl ViewState {
+    /// Zoom steps of the external views (keys and mouse wheel).
+    pub fn external_zoom(&self) -> f32 {
+        self.zoom as f32 + self.wheel_zoom
+    }
+
+    /// The cockpit views (and the pilot's own eyes after ejecting): zoom narrows the view.
+    pub fn first_person(&self) -> bool {
+        matches!(self.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear | View::Pilot)
+    }
 }
 
 #[derive(Component)]
@@ -248,12 +270,12 @@ fn update_rig(
         }
         View::Chase => {
             // Behind and above, looking along the flight direction (camera stays in the aircraft frame).
-            let d = 40.0 * 2f32.powi(-state.zoom);
+            let d = 40.0 * 2f32.powf(-state.external_zoom());
             *head = Transform::IDENTITY;
             *cam_tf = orbited(Vec3::new(0.0, d * 0.25, d), Vec3::new(0.0, 0.0, -20.0), &orbit, a.orientation, floor);
         }
         View::Side => {
-            let d = 40.0 * 2f32.powi(-state.zoom);
+            let d = 40.0 * 2f32.powf(-state.external_zoom());
             *head = Transform::IDENTITY;
             *cam_tf = orbited(Vec3::new(d, 2.0, 0.0), Vec3::ZERO, &orbit, a.orientation, floor);
         }
@@ -278,7 +300,7 @@ fn update_rig(
         }
         View::Tactical => {
             // Above and behind in world-up terms: undo the aircraft's roll and pitch.
-            let d = 120.0 * 2f32.powi(-state.zoom);
+            let d = 120.0 * 2f32.powf(-state.external_zoom());
             let (h, _, _) = a.euler();
             let world_rot = Quat::from_rotation_y(-h);
             let local = a.orientation.inverse() * world_rot;

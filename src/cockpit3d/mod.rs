@@ -420,13 +420,18 @@ fn set_projection(settings: Res<Settings>, state: Res<ViewState>, mut cams: Quer
             camera.sub_camera_view = None;
         }
         if let Projection::Perspective(p) = projection.as_mut() {
-            let fov = if state.wide { 85f32 } else { 65f32 }.to_radians();
+            let base = if state.wide { 85f32 } else { 65f32 }.to_radians();
+            let magnify = if state.first_person() { state.magnify } else { 1.0 };
+            let fov = 2.0 * ((base / 2.0).tan() / magnify).atan();
             if p.fov != fov {
                 p.fov = fov;
             }
         }
     }
 }
+
+/// Strongest mouse wheel magnification in the cockpit.
+const MAX_MAGNIFY: f32 = 6.0;
 
 /// Desktop mouse look: hold the right button and move the mouse. The look-view keys turn the
 /// head to that side (and reset the free look). In the external views the mouse orbits the
@@ -439,15 +444,18 @@ fn mouse_look(
     mut look: ResMut<HeadLook>,
     mut orbit: ResMut<Orbit>,
     mut actions: MessageReader<ActionEvent>,
-    state: Res<ViewState>,
+    mut state: ResMut<ViewState>,
     mut cursor: Query<&mut CursorOptions>,
+    scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
 ) {
     for ActionEvent(a) in actions.read() {
         if matches!(a, Action::ViewCockpit | Action::LookAhead | Action::LookLeft | Action::LookRight | Action::LookRear) {
             *look = HeadLook::default();
+            state.magnify = 1.0;
         }
         if matches!(a, Action::ViewChase | Action::ViewSlot | Action::ViewSide | Action::ViewTactical | Action::ViewInverseTactical) {
             *orbit = Orbit::default();
+            state.wheel_zoom = 0.0;
         }
     }
     if settings.vr {
@@ -465,13 +473,30 @@ fn mouse_look(
     if !held {
         return;
     }
+    // The wheel zooms while the button is held: in the cockpit (and under the parachute) it
+    // narrows the view, outside it moves the camera in and out.
+    let notches = match scroll.unit {
+        bevy::input::mouse::MouseScrollUnit::Line => scroll.delta.y,
+        bevy::input::mouse::MouseScrollUnit::Pixel => scroll.delta.y / 50.0,
+    };
+    if notches != 0.0 {
+        if state.first_person() {
+            state.magnify = (state.magnify * 1.2f32.powf(notches)).clamp(1.0, MAX_MAGNIFY);
+        } else {
+            state.wheel_zoom = (state.wheel_zoom + notches * 0.25).clamp(-3.0 - state.zoom as f32, 4.0 - state.zoom as f32);
+        }
+    }
     if cockpit {
-        look.yaw = (look.yaw - motion.delta.x * 0.004).clamp(-2.6, 2.6);
-        look.pitch = (look.pitch - motion.delta.y * 0.004).clamp(-1.2, 1.3);
+        // Slower when zoomed in, so the view moves as far on the screen per mouse move.
+        let k = 0.004 / state.magnify;
+        look.yaw = (look.yaw - motion.delta.x * k).clamp(-2.6, 2.6);
+        look.pitch = (look.pitch - motion.delta.y * k).clamp(-1.2, 1.3);
     } else {
-        // External views: orbit the camera around the aircraft.
-        orbit.yaw -= motion.delta.x * 0.006;
-        orbit.pitch = (orbit.pitch + motion.delta.y * 0.006).clamp(-1.5, 1.5);
+        // External views: orbit the camera around the aircraft (under the parachute: look
+        // around, slower when zoomed in).
+        let k = if state.first_person() { 0.006 / state.magnify } else { 0.006 };
+        orbit.yaw -= motion.delta.x * k;
+        orbit.pitch = (orbit.pitch + motion.delta.y * k).clamp(-1.5, 1.5);
     }
 }
 

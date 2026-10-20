@@ -21,6 +21,7 @@ mod freecam;
 mod hotas;
 mod hud;
 mod input;
+mod keyboard_layout;
 mod input_dialog;
 mod lighting;
 mod lightning;
@@ -124,6 +125,7 @@ fn main() {
         world::WorldPlugin,
         freecam::FreeCamPlugin,
         input::InputPlugin,
+        keyboard_layout::KeyboardLayoutPlugin,
         cockpit::CockpitPlugin,
         flight::FlightPlugin,
         camera::CameraPlugin,

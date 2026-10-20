@@ -123,10 +123,13 @@ pub fn action_by_name(name: &str) -> Option<Action> {
     BINDINGS.iter().map(|b| b.2).find(|a| format!("{a:?}").eq_ignore_ascii_case(name))
 }
 
-/// A key with the modifier held with it, as text: "Shift+Equal", "F1", "1".
+/// A key with the modifier held with it, as text: "Shift+F1", "Z". Character keys are named as
+/// the keyboard layout prints them (bindings are by position).
 pub fn key_label(mods: Mods, key: KeyCode) -> String {
-    let name = format!("{key:?}");
-    let name = name.strip_prefix("Key").or_else(|| name.strip_prefix("Digit")).unwrap_or(&name).to_string();
+    let name = crate::keyboard_layout::key_name(key).unwrap_or_else(|| {
+        let name = format!("{key:?}");
+        name.strip_prefix("Key").or_else(|| name.strip_prefix("Digit")).unwrap_or(&name).to_string()
+    });
     match mods {
         Mods::None => name,
         Mods::Shift => format!("Shift+{name}"),

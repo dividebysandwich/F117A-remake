@@ -101,7 +101,7 @@ fn despawn_camera(mut commands: Commands, q: Query<Entity, With<TrackCamera>>) {
 }
 
 #[allow(clippy::type_complexity)]
-fn update_camera(
+pub(crate) fn update_camera(
     combat: Option<Res<Combat>>,
     mfd: Res<MfdState>,
     view: Res<ViewState>,
@@ -147,6 +147,22 @@ fn update_camera(
             None => info.name = ["ILS".into(), "NO APPROACH".into()],
         }
     }
+    // Modern avionics: the targeting pod in area or point track.
+    if mfd.modern
+        && let Some(dir) = crate::avionics::pod_direction(&mfd.av.tgp, a.orientation, eye)
+    {
+        let range_m = mfd.av.tgp.los_ground.map(|g| (g - eye).length() as f32);
+        let zoom = mfd.av.tgp.zoom.unwrap_or_else(|| range_m.map_or(0, |r| crate::combat::camera_zoom((r / (32.0 * crate::world::WU as f32)) as i32)));
+        *info = TrackCam {
+            live: true,
+            name: [if matches!(mfd.av.tgp.mode, crate::avionics::TgpMode::Point(_)) { "POINT" } else { "AREA" }.into(), String::new()],
+            range_km: range_m.map(|r| r / 1000.0),
+            bearing: None,
+            zoom: zoom + 1,
+        };
+        aim(&mut tf, &mut pos, &mut proj, dir, eye, zoom);
+        return;
+    }
     let sim = &combat.sim;
     let t = sim.targeting();
     let target = if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
@@ -173,14 +189,24 @@ fn update_camera(
             Vec3::new(yaw.sin() * p.cos(), p.sin(), -yaw.cos() * p.cos())
         }
     };
+    // A manual pod zoom (modern avionics) also when slaved.
+    if mfd.modern
+        && let Some(z) = mfd.av.tgp.zoom
+    {
+        info.zoom = z + 1;
+    }
+    aim(&mut tf, &mut pos, &mut proj, dir, eye, info.zoom.saturating_sub(1));
+}
+
+/// Points the camera from `eye` along `dir` with zoom shift `z`.
+fn aim(tf: &mut Transform, pos: &mut WorldPos, proj: &mut Projection, dir: Vec3, eye: bevy::math::DVec3, z: u8) {
     let up = if dir.y.abs() > 0.99 { Vec3::NEG_Z } else { Vec3::Y };
     tf.rotation = Transform::IDENTITY.looking_to(dir, up).rotation;
     if pos.0 != eye {
         pos.0 = eye;
     }
-    let z = info.zoom.saturating_sub(1);
     let want_proj = projection(z);
-    if let Projection::Perspective(p) = proj.as_mut()
+    if let Projection::Perspective(p) = proj
         && (p.fov - want_proj.fov).abs() > 1e-6
     {
         *p = want_proj;

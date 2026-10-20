@@ -284,11 +284,15 @@ fn stop_combat(
 fn collect_commands(
     mut actions: MessageReader<ActionEvent>,
     mut locks: MessageReader<crate::avionics::LockRequest>,
+    mut pods: MessageReader<crate::avionics::PodDesignate>,
     mut combat: ResMut<Combat>,
     mut accel: ResMut<TimeAccel>,
 ) {
     let combat = &mut *combat;
     let c = &mut combat.pending;
+    for crate::avionics::PodDesignate(x, y) in pods.read() {
+        c.designate_at = Some((*x, *y));
+    }
     for crate::avionics::LockRequest(target) in locks.read() {
         match *target {
             ContactRef::Unit(i) => c.lock_unit = u16::try_from(i).ok(),

@@ -333,11 +333,11 @@ and HARM; F5 / F10 bring up SMS, F6 and the camera keys the TGP, F7 the waypoint
 |---|---|---|
 | HSD | DEP / CEN, RNG-, range, RNG+, SOI | Horizontal situation display, heading up: range rings (the range in km is the outer ring), the route with the current steerpoint ringed, SAM sites with their missile's reach as red threat rings, hostile (red) and friendly (green) aircraft, missiles, the mission targets (cyan diamonds); the locked target is boxed. |
 | HARM | ALL / SAM / AIR, SOI | The radars painting the aircraft, like the RWR: at their bearing, the most dangerous nearest the centre (chapter 3.7). |
-| TGP | FLIR, AHD, RGT, REAR, LFT | The tracking camera. |
+| TGP | FLIR, zoom (AUTO, 1X..8X), CZ, mode (SLV / AREA / PNT), SOI | The targeting pod (tracking camera), see below. |
 | MAP | NUP / HUP, ZM-, ZM+, WAY | The moving map in muted colours; WAY switches to the waypoint table (WP-, WP+, RST). |
 | SMS | WPN, ORD, SEL | Stores (WPN) and mission orders (ORD). |
 
-**Sensor of interest (SOI).** The HSD or the HARM display is the SOI (white frame; the top right
+**Sensor of interest (SOI).** The HSD, the HARM display or the TGP is the SOI (white frame; the top right
 SOI button, or Alt S to move it to the other MFD). Its cursor, two short vertical lines, moves with
 the **sensor/cursor slew** controls: the keypad (8 / 2 / 4 / 6 and diagonals), the left VR
 thumbstick, or two joystick axes bound in the CONTROLS dialog ("Sensor/cursor slew X/Y"). **Lock
@@ -345,6 +345,13 @@ cursor target** (keypad Enter, left thumbstick click, or a bound button) locks w
 cursor: an aircraft on the HSD (the HUD goes to A-A), a ground object or SAM site (A-G), or a
 radar on the HARM display. The lock holds until the next target key (B, T, N, Shift B or the
 camera keys). Z / X change the HSD range while it is the SOI.
+
+**Targeting pod.** The TGP follows the locked target (SLV); without one it looks ahead and down,
+or where the camera keys turn it. Made the SOI, the slew controls turn the pod itself (AREA, slower
+when zoomed in); a moment after the slew stops it holds the ground point it looks at (PNT), wherever
+the aircraft flies. **Lock cursor target** then locks what is at that point (the ground itself if
+nothing is there) and the pod follows the lock again. CZ returns it to SLV. The HSD shows where
+the pod looks: a green diamond on its ground point with a dashed line from the aircraft.
 
 ## 5. Targeting and weapons
 

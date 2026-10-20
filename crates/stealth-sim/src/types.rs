@@ -304,6 +304,10 @@ pub struct Commands {
     /// Lock this flight unit (airborne).
     #[serde(default)]
     pub lock_unit: Option<u16>,
+    /// Lock what is at this map point (the targeting pod's point track, not in the original):
+    /// the object there, or the plain ground as object 0.
+    #[serde(default)]
+    pub designate_at: Option<(i32, i32)>,
 }
 
 /// What the flight model / game reports about the player this frame.

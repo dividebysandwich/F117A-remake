@@ -8,11 +8,14 @@
 //!   shows swaps the two. The top buttons are the format's own, the top right one makes the
 //!   format the sensor of interest (SOI). The buttons' functions are drawn on the display next
 //!   to them, like the real ones.
-//! - SOI: HSD, HARM (and the targeting pod) can be the sensor of interest: the "sensor/cursor
+//! - SOI: HSD, HARM and the targeting pod can be the sensor of interest: the "sensor/cursor
 //!   slew" controls move its cursor, "lock cursor target" locks what is under it (an aircraft or
 //!   a ground object on the HSD, a radar on the HARM display).
+//! - Targeting pod (TGP): slaved to the locked target. As the SOI, slewing turns the pod itself
+//!   (area track); once the slew stops it holds the ground point it looks at (point track), and
+//!   "lock cursor target" locks what is there. The HSD shows where the pod looks.
 
-use bevy::math::DVec2;
+use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
 
 use crate::canvas::Canvas;
@@ -29,14 +32,23 @@ pub struct AvionicsPlugin;
 
 impl Plugin for AvionicsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<LockRequest>().add_systems(
-            Update,
-            slew_and_lock
-                .after(crate::input::InputSystemsSet)
-                .after(crate::flight::FlightSystems)
-                .before(crate::combat::CombatSystems)
-                .run_if(in_state(crate::settings::AppState::Flight)),
-        );
+        app.add_message::<LockRequest>()
+            .add_message::<PodDesignate>()
+            .add_systems(
+                Update,
+                slew_and_lock
+                    .after(crate::input::InputSystemsSet)
+                    .after(crate::flight::FlightSystems)
+                    .before(crate::combat::CombatSystems)
+                    .run_if(in_state(crate::settings::AppState::Flight)),
+            )
+            .add_systems(
+                Update,
+                update_pod
+                    .after(crate::combat::CombatSystems)
+                    .before(crate::trackcam::update_camera)
+                    .run_if(in_state(crate::settings::AppState::Flight)),
+            );
     }
 }
 
@@ -66,7 +78,7 @@ impl Format {
 
     /// Formats with a cursor (or a pod) the slew controls move.
     pub fn soi_capable(self) -> bool {
-        matches!(self, Format::Hsd | Format::Harm)
+        matches!(self, Format::Hsd | Format::Harm | Format::Tgp)
     }
 
     /// The key that brings the format up (script `press=` lookups).
@@ -119,6 +131,114 @@ pub struct AvionicsState {
     pub sms_ord: bool,
     /// Right format before ILS was switched on.
     pub before_ils: Option<Format>,
+    pub tgp: TgpState,
+}
+
+/// Where the targeting pod looks.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum TgpMode {
+    /// At the locked target (else ahead and down, or the camera key's direction).
+    #[default]
+    Slaved,
+    /// Turned by the slew controls: azimuth (right) and elevation (up) from the nose, radians.
+    Area { az: f32, el: f32 },
+    /// Holding a ground point (Bevy world position).
+    Point(DVec3),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TgpState {
+    pub mode: TgpMode,
+    /// Zoom step (0 = 1X .. 3 = 8X); None: by range.
+    pub zoom: Option<u8>,
+    /// Seconds since the last slew in area track.
+    idle: f32,
+    /// The ground point on the pod's line of sight (Bevy world position), when it is up.
+    pub los_ground: Option<DVec3>,
+}
+
+impl TgpMode {
+    fn label(self) -> &'static str {
+        match self {
+            TgpMode::Slaved => "SLV",
+            TgpMode::Area { .. } => "AREA",
+            TgpMode::Point(_) => "PNT",
+        }
+    }
+}
+
+/// Pod turn rate at full slew and 1X (rad/s); halved per zoom step.
+const POD_RATE: f32 = 0.5;
+/// Seconds without slewing before an area track becomes a point track.
+const POD_SETTLE: f32 = 0.15;
+/// Farthest ground point the pod tracks (m).
+const POD_RANGE: f64 = 40_000.0;
+const POD_AZ_LIMIT: f32 = 2.97;
+const POD_EL_LIMITS: (f32, f32) = (-1.75, 0.5);
+
+/// Direction from the nose (aircraft frame, -Z forward) by azimuth and elevation.
+pub fn pod_dir(az: f32, el: f32) -> Vec3 {
+    Vec3::new(az.sin() * el.cos(), el.sin(), -az.cos() * el.cos())
+}
+
+/// Azimuth and elevation of a direction in the aircraft frame.
+pub fn pod_angles(d: Vec3) -> (f32, f32) {
+    let d = d.normalize_or(Vec3::NEG_Z);
+    (d.x.atan2(-d.z), d.y.clamp(-1.0, 1.0).asin())
+}
+
+/// Where a line of sight meets the ground (the plane at height `ground_y`), within the pod's
+/// range.
+pub fn ground_hit(origin: DVec3, dir: Vec3, ground_y: f64) -> Option<DVec3> {
+    let d = dir.as_dvec3().normalize_or_zero();
+    if d.y > -1e-4 {
+        return None;
+    }
+    let t = (ground_y - origin.y) / d.y;
+    (t > 0.0 && t <= POD_RANGE).then(|| origin + d * t)
+}
+
+/// One step of the pod: slewing (`slew`, with the pod the SOI) turns it from where it looks
+/// (`looking`, world direction) in area track; `POD_SETTLE` seconds after the slew stops it holds
+/// the ground point it looks at. Returns the ground point on its line of sight.
+#[allow(clippy::too_many_arguments)]
+pub fn pod_step(tgp: &mut TgpState, slew: Vec2, dt: f32, zoom: u8, orientation: Quat, origin: DVec3, looking: Option<Vec3>, ground_y: f64) -> Option<DVec3> {
+    let to_world = |az: f32, el: f32| orientation * pod_dir(az, el);
+    if slew.length() > 0.05 {
+        let (az, el) = match tgp.mode {
+            TgpMode::Area { az, el } => (az, el),
+            TgpMode::Point(p) => pod_angles(orientation.inverse() * (p - origin).as_vec3()),
+            TgpMode::Slaved => looking.map_or((0.0, -0.15), |d| pod_angles(orientation.inverse() * d)),
+        };
+        let rate = POD_RATE / (1u32 << zoom.min(6)) as f32 * dt;
+        tgp.mode = TgpMode::Area {
+            az: (az + slew.x * rate).clamp(-POD_AZ_LIMIT, POD_AZ_LIMIT),
+            el: (el + slew.y * rate).clamp(POD_EL_LIMITS.0, POD_EL_LIMITS.1),
+        };
+        tgp.idle = 0.0;
+    } else if let TgpMode::Area { az, el } = tgp.mode {
+        tgp.idle += dt;
+        if tgp.idle >= POD_SETTLE
+            && let Some(p) = ground_hit(origin, to_world(az, el), ground_y)
+        {
+            tgp.mode = TgpMode::Point(p);
+        }
+    }
+    match tgp.mode {
+        TgpMode::Point(p) => Some(p),
+        TgpMode::Area { az, el } => ground_hit(origin, to_world(az, el), ground_y),
+        TgpMode::Slaved => looking.and_then(|d| ground_hit(origin, d, ground_y)),
+    }
+}
+
+/// The pod's line of sight in area or point track (None: slaved, the tracking camera's own
+/// rule), from `origin`.
+pub fn pod_direction(tgp: &TgpState, orientation: Quat, origin: DVec3) -> Option<Vec3> {
+    match tgp.mode {
+        TgpMode::Slaved => None,
+        TgpMode::Area { az, el } => Some(orientation * pod_dir(az, el)),
+        TgpMode::Point(p) => (p - origin).as_vec3().try_normalize(),
+    }
 }
 
 impl Default for AvionicsState {
@@ -135,6 +255,7 @@ impl Default for AvionicsState {
             map_way: false,
             sms_ord: true,
             before_ils: None,
+            tgp: default(),
         }
     }
 }
@@ -255,8 +376,17 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
         }
         MfdCmd::Cam(d) => {
             state.cam_dir = d;
+            av.tgp.mode = TgpMode::Slaved;
             av.show(Format::Tgp);
         }
+        MfdCmd::TgpZoom => {
+            av.tgp.zoom = match av.tgp.zoom {
+                None => Some(0),
+                Some(z) if z < 3 => Some(z + 1),
+                _ => None,
+            }
+        }
+        MfdCmd::TgpCz => av.tgp.mode = TgpMode::Slaved,
         MfdCmd::Ils => {
             state.ils = !state.ils;
             if state.ils {
@@ -313,13 +443,11 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
             Cmd(MfdCmd::HarmFilter),
             false,
         ),
-        (Format::Hsd | Format::Harm, 4) => soi,
+        (Format::Hsd | Format::Harm | Format::Tgp, 4) => soi,
         (Format::Tgp, 0) => ("FLIR", Cmd(MfdCmd::Flir), s.flir),
-        (Format::Tgp, 1..=4) => {
-            use crate::mfd::CamDir;
-            let (label, dir) = [("AHD", CamDir::Ahead), ("RGT", CamDir::Right), ("REAR", CamDir::Rear), ("LFT", CamDir::Left)][slot as usize - 1];
-            (label, Cmd(MfdCmd::Cam(dir)), s.cam_dir == dir)
-        }
+        (Format::Tgp, 1) => (["1X", "2X", "4X", "8X"].get(av.tgp.zoom.unwrap_or(9) as usize).copied().unwrap_or("AUTO"), Cmd(MfdCmd::TgpZoom), false),
+        (Format::Tgp, 2) => ("CZ", Cmd(MfdCmd::TgpCz), false),
+        (Format::Tgp, 3) => (av.tgp.mode.label(), Readout, av.tgp.mode != TgpMode::Slaved),
         (Format::Map, 0) if av.map_way => ("WP-", Action(A::LastWaypoint), false),
         (Format::Map, 1) if av.map_way => ("WP+", Action(A::NextWaypoint), false),
         (Format::Map, 2) if av.map_way => ("RST", Action(A::ResetWaypoint), false),
@@ -372,6 +500,14 @@ pub fn draw(p: &MfdParams, side: MfdSide, c: &mut Canvas, art: &CockpitArt, font
             // See-through around the pod picture, black elsewhere.
             c.clear(if f == Format::Tgp && p.cam.live { 0 } else { BLACK });
             c.copy_rect(&page, 0, 0, page.w as i32, page.h as i32, 0, BAND);
+            if f == Format::Tgp {
+                // Crosshair over the picture's centre.
+                let col = p.camera_text_colour();
+                let o = Vec2::new(c.w as f32 / 2.0, c.h as f32 / 2.0);
+                for d in [Vec2::X, Vec2::NEG_X, Vec2::Y, Vec2::NEG_Y] {
+                    c.stroke(o + d * 6.0, o + d * 22.0, 1.3, col);
+                }
+            }
         }
     }
     draw_labels(c, fonts, side, s);
@@ -545,6 +681,13 @@ fn draw_hsd(p: &MfdParams, c: &mut Canvas, ac: Option<(&Aircraft, &WorldPos)>, s
             c.frame(q - Vec2::splat(8.0), q + Vec2::splat(8.0), 1.3, WHITE);
         }
     }
+    // Where the targeting pod looks: a diamond on its ground point, a dashed line to it.
+    if let Some(g) = av.tgp.los_ground.filter(|_| av.shown(Format::Tgp).is_some()) {
+        let (e, n, _) = bevy_to_wu(g);
+        let q = view.to_screen(e, n);
+        c.dashed(o, q, 4.0, 3.0, 1.0, GREEN);
+        c.polyline(&[q + Vec2::new(0.0, -6.0), q + Vec2::new(6.0, 0.0), q + Vec2::new(0.0, 6.0), q + Vec2::new(-6.0, 0.0), q + Vec2::new(0.0, -6.0)], 1.5, GREEN);
+    }
     // Own aircraft.
     c.stroke(o + Vec2::new(0.0, -6.0), o + Vec2::new(0.0, 6.0), 1.6, CYAN);
     c.stroke(o + Vec2::new(-6.0, -1.0), o + Vec2::new(6.0, -1.0), 1.6, CYAN);
@@ -602,6 +745,51 @@ fn emitter_source(r: ContactRef) -> stealth_sim::EmitterSource {
 /// A lock on a simulation object picked on a display (`combat` passes it to the simulation).
 #[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LockRequest(pub ContactRef);
+
+/// The targeting pod locks what is at this map point (`combat` passes it to the simulation).
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PodDesignate(pub i32, pub i32);
+
+/// The targeting pod: slewed as the SOI, tracking; "lock cursor target" locks the ground point
+/// it holds (then it follows the lock).
+#[allow(clippy::too_many_arguments)]
+fn update_pod(
+    time: Res<Time>,
+    controls: Res<FlightControls>,
+    mut actions: MessageReader<ActionEvent>,
+    mut state: ResMut<MfdState>,
+    info: Res<crate::mfd::TrackCam>,
+    mut hud: ResMut<HudState>,
+    aircraft: Query<(&Aircraft, &WorldPos), With<Player>>,
+    camera: Query<&Transform, With<crate::trackcam::TrackCamera>>,
+    mut designate: MessageWriter<PodDesignate>,
+) {
+    let lock = actions.read().any(|a| a.0 == Action::LockCursor);
+    if !state.modern {
+        return;
+    }
+    let Ok((a, pos)) = aircraft.single() else { return };
+    let shown = state.camera_shown();
+    let soi = state.av.soi_format() == Some(Format::Tgp);
+    let looking = camera.single().ok().filter(|_| shown && info.live).map(|t| t.forward().as_vec3());
+    let ground_y = crate::world::wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
+    let zoom = state.av.tgp.zoom.unwrap_or(info.zoom.saturating_sub(1));
+    let slew = if soi && shown { controls.slew } else { Vec2::ZERO };
+    let tgp = &mut state.av.tgp;
+    let los = pod_step(tgp, slew, time.delta_secs(), zoom, a.orientation, pos.0, looking, ground_y);
+    tgp.los_ground = los.filter(|_| shown);
+    if lock && soi && tgp.mode != TgpMode::Slaved {
+        match los {
+            Some(p) => {
+                let (e, n, _) = bevy_to_wu(p);
+                designate.write(PodDesignate((e / 32.0).round() as i32, (0x8000 as f64 - n / 32.0).round() as i32));
+                hud.mode = HudMode::Gnd;
+                tgp.mode = TgpMode::Slaved;
+            }
+            None => tgp.mode = TgpMode::Slaved,
+        }
+    }
+}
 
 /// Cursor speed at full slew (display pixels per second).
 const SLEW_SPEED: f32 = 110.0;
@@ -699,6 +887,8 @@ mod tests {
         av.select(MfdSide::Right, Format::Map);
         assert_eq!(av.soi_format(), Some(Format::Harm), "SOI moves to the remaining capable format");
         av.select(MfdSide::Left, Format::Tgp);
+        assert_eq!(av.soi_format(), Some(Format::Tgp));
+        av.select(MfdSide::Left, Format::Sms);
         assert_eq!(av.soi_format(), None);
     }
 
@@ -733,6 +923,41 @@ mod tests {
                 assert!(osb(MfdSide::Left, 5, &s).is_some());
             }
         }
+    }
+
+    #[test]
+    fn pod_area_then_point_track() {
+        let origin = DVec3::new(0.0, 1000.0, 0.0);
+        let mut tgp = TgpState::default();
+        let ahead_down = Vec3::new(0.0, -0.5, -1.0).normalize();
+        // Slewing right from where the slaved pod looks.
+        let p0 = pod_step(&mut tgp, Vec2::X, 0.5, 0, Quat::IDENTITY, origin, Some(ahead_down), 0.0);
+        let TgpMode::Area { az, el } = tgp.mode else { panic!("{:?}", tgp.mode) };
+        assert!((az - 0.25).abs() < 1e-4 && (el - ahead_down.y.asin()).abs() < 1e-4, "{az} {el}");
+        assert!(p0.is_some_and(|p| p.x > 0.0 && p.y.abs() < 1e-6));
+        // Zoomed in, slower.
+        let mut z = tgp.clone();
+        pod_step(&mut z, Vec2::X, 0.5, 2, Quat::IDENTITY, origin, None, 0.0);
+        let TgpMode::Area { az: az2, .. } = z.mode else { panic!() };
+        assert!((az2 - az - 0.0625).abs() < 1e-4, "{az2}");
+        // Released: point track on the ground point after a moment.
+        pod_step(&mut tgp, Vec2::ZERO, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
+        assert!(matches!(tgp.mode, TgpMode::Area { .. }));
+        let p = pod_step(&mut tgp, Vec2::ZERO, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
+        let TgpMode::Point(q) = tgp.mode else { panic!("{:?}", tgp.mode) };
+        assert_eq!(p, Some(q));
+        // It stays on that point as the aircraft moves.
+        assert!(pod_direction(&tgp, Quat::IDENTITY, origin + DVec3::Z * 500.0).unwrap().z < -0.0);
+    }
+
+    #[test]
+    fn ground_hits() {
+        let o = DVec3::new(10.0, 100.0, 0.0);
+        assert_eq!(ground_hit(o, Vec3::NEG_Y, 0.0), Some(DVec3::new(10.0, 0.0, 0.0)));
+        assert_eq!(ground_hit(o, Vec3::Y, 0.0), None);
+        assert_eq!(ground_hit(o, Vec3::new(1.0, -1e-5, 0.0), 0.0), None);
+        let (az, el) = pod_angles(pod_dir(0.7, -0.3));
+        assert!((az - 0.7).abs() < 1e-5 && (el + 0.3).abs() < 1e-5);
     }
 
     #[test]

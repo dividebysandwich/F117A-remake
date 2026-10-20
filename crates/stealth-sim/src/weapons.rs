@@ -92,6 +92,23 @@ impl Sim {
                 self.msg("No target");
             }
         }
+        if let Some((x, y)) = c.designate_at {
+            let o = self.find_object_at(x, y);
+            if o < 0 {
+                self.msg("No target");
+            } else if !self.player_sees(self.obj(o).x, self.obj(o).y, 0) {
+                self.msg("Target obscured");
+            } else {
+                self.gnd_lock = o;
+                self.target_hold = true;
+                self.nearest_req = 0;
+                self.targeting.target_killed = false;
+                self.pflags &= !pflags::DESIGNATE;
+                if self.smoke_src == 0 {
+                    self.smoke_src = -1;
+                }
+            }
+        }
         if let Some(u) = c.lock_unit.map(usize::from) {
             if self.flights.get(u).is_some_and(|f| f.flags & fflags::AIRBORNE != 0 && f.flags & fflags::DESTROYED == 0) {
                 self.air_lock = u as i32;

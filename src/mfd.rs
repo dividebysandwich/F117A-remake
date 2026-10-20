@@ -184,6 +184,9 @@ pub enum MfdCmd {
     /// SMS page: the ORD (true) or WPN page.
     Sms(bool),
     HarmFilter,
+    /// Targeting pod: next zoom (auto, 1X..8X), back to slaved.
+    TgpZoom,
+    TgpCz,
 }
 
 /// Sent by the cockpit's bezel buttons.
@@ -258,6 +261,7 @@ pub fn cmd_action(cmd: MfdCmd) -> Action {
             }
         }
         MfdCmd::HsdCentre | MfdCmd::HarmFilter => Action::Maps,
+        MfdCmd::TgpZoom | MfdCmd::TgpCz => Action::CamAhead,
         MfdCmd::MapWay => Action::SelectWaypoint,
         MfdCmd::Sms(true) => Action::MissionOrders,
         MfdCmd::Sms(false) => Action::Ordnance,
@@ -1159,7 +1163,7 @@ impl MfdParams<'_, '_> {
     }
 
     /// Black text with FLIR (colour 5: black in every flight palette, 0 is see-through).
-    fn camera_text_colour(&self) -> u8 {
+    pub(crate) fn camera_text_colour(&self) -> u8 {
         if self.state.flir { 5 } else { crate::hud::HUD_COLOURS.0 }
     }
 

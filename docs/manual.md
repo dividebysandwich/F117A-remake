@@ -375,7 +375,7 @@ and HARM; F5 / F10 bring up SMS, F6 and the camera keys the TGP, F7 the waypoint
 
 | Format | Top row buttons | Shows |
 |---|---|---|
-| HSD | DEP / CEN, RNG-, range, RNG+, SOI | Horizontal situation display, heading up: range rings (the range in km is the outer ring), the route with the current steerpoint ringed, SAM sites with their missile's reach as red threat rings, hostile (red) and friendly (green) aircraft, missiles, the mission targets (cyan diamonds); the locked target is boxed. |
+| HSD | DEP / CEN, RNG-, range, RNG+, SOI | Horizontal situation display, heading up: range rings (the range in km is the outer ring), the route with the current steerpoint ringed, SAM sites with their missile's reach as red threat rings, hostile (red) and friendly (green) aircraft, ships (hull symbols, red or green; armed ones with their threat ring), missiles, the mission targets (cyan diamonds); the locked target is boxed. |
 | HARM | ALL / SAM / AIR, SOI | The radars painting the aircraft, like the RWR: at their bearing, the most dangerous nearest the centre (chapter 3.7). |
 | TGP | FLIR, ZM-, ZM+, CZ, SOI | The targeting pod (tracking camera), see below. The pod's mode (SLV / AREA / PNT) is shown bottom left, the zoom bottom right (AUTO: by range). |
 | MAP | NUP / HUP, ZM-, ZM+, WAY | The moving map in muted colours; WAY switches to the waypoint table (WP-, WP+, RST). |
@@ -386,7 +386,7 @@ SOI button, or Alt S to move it to the other MFD). Its cursor, two short vertica
 the **sensor/cursor slew** controls: the keypad (8 / 2 / 4 / 6 and diagonals), the left VR
 thumbstick, or two joystick axes bound in the CONTROLS dialog ("Sensor/cursor slew X/Y"). **Lock
 cursor target** (keypad Enter, left thumbstick click, or a bound button) locks what is under the
-cursor: an aircraft on the HSD (the HUD goes to A-A), a ground object or SAM site (A-G), or a
+cursor: an aircraft on the HSD (the HUD goes to A-A), a ground object, ship or SAM site (A-G), or a
 radar on the HARM display. Held down on the HSD or HARM display, it opens a window magnified four
 times around the cursor, in the corner away from it, and the cursor slews four times slower; letting
 go locks what is right under the cursor in the window. The lock holds until the next target key (B, T, N, Shift B or the
@@ -688,7 +688,7 @@ determines radar and missile:
 ### 8.3 Ships
 
 Ships stand out on the open sea: they are drawn from about 25 km away and keep their detailed
-models further out than other objects.
+models further out than other objects. Every ship shows on the HSD, where the cursor can lock it.
 
 | | Ship | Description |
 |---|---|---|

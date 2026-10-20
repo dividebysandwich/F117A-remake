@@ -428,6 +428,8 @@ pub enum ContactKind {
     Drone,
     Missile,
     GroundRadar,
+    /// A ship (armed ones with their threat ring); friendly ones cannot be locked.
+    Ship,
     Target,
 }
 
@@ -455,6 +457,9 @@ pub enum ContactRef {
     Unit(usize),
     /// World object index.
     Object(usize),
+    /// What is at this map point (a ship among the theater's tile objects): the simulation
+    /// locks the tile object there.
+    Point(i32, i32),
 }
 
 /// Mission clock for the WAY page ("TIME hh:mm:ss"): seconds of the day at take-off (from the
@@ -1048,6 +1053,7 @@ impl MfdParams<'_, '_> {
                 ContactKind::Drone => c.fill_rect(x, y, 2, 1, 13),
                 ContactKind::Missile => c.set(x, y, 17),
                 ContactKind::GroundRadar => c.fill_rect(x, y, 2, 2, 0),
+                ContactKind::Ship => c.fill_rect(x, y, 3, 1, if k.friendly { 9 } else { 13 }),
                 ContactKind::Target if blink => c.fill_rect(x - 1, y - 1, 3, 3, 15),
                 ContactKind::Target => {}
             }
@@ -1183,6 +1189,11 @@ impl MfdParams<'_, '_> {
                     c.line(x, y, x + (rel.sin() * len) as i32, y - (rel.cos() * len) as i32, 41);
                 }
                 ContactKind::GroundRadar => tac_icon(c, TacIcon::Radar, x, y, k > 1),
+                ContactKind::Ship => {
+                    let colour = if ct.friendly { 9 } else { 41 };
+                    c.hline(x - 2 * k, x + 2 * k, y, colour);
+                    c.hline(x - k, x + k, y - 1, colour);
+                }
                 ContactKind::Target => icon(c, AIRBASE_ICON, x, y),
             }
         }
@@ -1382,6 +1393,11 @@ impl MfdParams<'_, '_> {
                 }
                 ContactKind::Missile => c.fill_rect(x - 1, y - 1, 2, 2, 17),
                 ContactKind::GroundRadar => c.fill_rect(x - 2, y - 2, 4, 4, 0),
+                ContactKind::Ship => {
+                    let colour = if k.friendly { 9 } else { 13 };
+                    c.fill_rect(x - 4, y, 9, 2, colour);
+                    c.fill_rect(x - 2, y - 2, 5, 2, colour);
+                }
                 ContactKind::Target if blink => c.rect(x - 4, y - 4, 9, 9, 15),
                 ContactKind::Target => {}
             }

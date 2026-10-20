@@ -737,6 +737,11 @@ impl Sim {
         &self.display_shape
     }
 
+    /// World object `i` is a ship.
+    pub fn object_is_ship(&self, i: usize) -> bool {
+        self.is_ship(i as i32)
+    }
+
     /// Number of radar/SAM ground units (objects 0..n processed by the site loop).
     pub fn ground_unit_count(&self) -> usize {
         self.ground_units

@@ -307,6 +307,7 @@ fn collect_commands(
         match *target {
             ContactRef::Unit(i) => c.lock_unit = u16::try_from(i).ok(),
             ContactRef::Object(i) => c.lock_object = u16::try_from(i).ok(),
+            ContactRef::Point(x, y) => c.designate_at = Some((x, y)),
         }
     }
     for ActionEvent(a) in actions.read() {
@@ -645,6 +646,8 @@ struct Outputs<'w, 's> {
     accel: Res<'w, TimeAccel>,
     settings: Res<'w, crate::settings::Settings>,
     emitters: ResMut<'w, crate::rwr::Emitters>,
+    ships: Option<Res<'w, crate::world::Ships>>,
+    tiles: Res<'w, TileOverrides>,
 }
 
 /// Map units -> world units (east, north).
@@ -705,7 +708,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     let waypoint_changed = o.waypoint != combat.sim_waypoint;
     combat.sim_waypoint = o.waypoint;
     let combat = &*combat;
-    let Outputs { mut player, mut stores, mut wps, mut msgs, mut clock, mut emv, mut warnings, mut cm, mut contacts, mut cam, mut cues, hud, view, accel, settings, mut emitters } = out;
+    let Outputs { mut player, mut stores, mut wps, mut msgs, mut clock, mut emv, mut warnings, mut cm, mut contacts, mut cam, mut cues, hud, view, accel, settings, mut emitters, ships, tiles } = out;
     let eye = settings.aircraft.spec().eye;
     let sim = &combat.sim;
     let data = &combat.data;
@@ -825,7 +828,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     }
     let objects = sim.objects();
     for (i, ob) in objects.iter().enumerate().take(sim.ground_unit_count()).skip(3) {
-        if ob.unit_type > 0 && ob.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) == 0 && i < objects.len() {
+        if ob.unit_type > 0 && ob.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) == 0 && i < objects.len() && !sim.object_is_ship(i) {
             let (east, north) = map_wu(ob.x, ob.y);
             let label = crate::rwr::rwr_label(sim.threat_name(ob.unit_type), false);
             let mut sym = [0u8; 3];
@@ -836,6 +839,31 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             let threat = Some((ring_km, sym));
             contacts.list.push(Contact { kind: ContactKind::GroundRadar, east, north, alt: 0.0, heading: 0, friendly: false, target: Some(ContactRef::Object(i)), threat });
         }
+    }
+    // Ships (on the datalink): the world's ship objects (armed ones with their threat ring)
+    // and the theater's ships among the tile objects, lockable unless friendly.
+    let mut ship_at = Vec::new();
+    for (i, ob) in objects.iter().enumerate().skip(3) {
+        if ob.flags & oflags::DESTROYED != 0 || !sim.object_is_ship(i) || (ob.x, ob.y) == (0, 0) {
+            continue;
+        }
+        let (east, north) = map_wu(ob.x, ob.y);
+        let friendly = ob.flags & (oflags::FRIENDLY | oflags::NEUTRAL) != 0;
+        let armed = ob.unit_type > 0 && i < sim.ground_unit_count() && !friendly;
+        let threat = armed.then(|| (crate::rwr::km(sim.site_lock_range(ob.unit_type)), [0u8; 3]));
+        let target = (!friendly).then_some(ContactRef::Object(i));
+        contacts.list.push(Contact { kind: ContactKind::Ship, east, north, alt: 0.0, heading: 0, friendly, target, threat });
+        ship_at.push((ob.x, ob.y));
+    }
+    for s in ships.iter().flat_map(|s| s.0.iter()) {
+        let (x, y) = s.map_xy();
+        if ship_at.iter().any(|&(ox, oy)| (ox - x).abs() < 2 && (oy - y).abs() < 2) || tiles.shapes.get(&s.key).is_some_and(|&sh| sh != s.shape as i32) {
+            continue;
+        }
+        // Friendly where the world has a friendly or neutral object (a carrier).
+        let friendly = objects.iter().any(|o| (o.x - x).abs() < 2 && (o.y - y).abs() < 2 && o.flags & (oflags::FRIENDLY | oflags::NEUTRAL) != 0);
+        let target = (!friendly).then_some(ContactRef::Point(x, y));
+        contacts.list.push(Contact { kind: ContactKind::Ship, east: s.east, north: s.north, alt: 0.0, heading: 0, friendly, target, threat: None });
     }
     let heading_bam = to_bam(a.euler().0);
     emitters.list = sim
@@ -863,7 +891,12 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         }
     }
     let locks = sim.targeting();
-    contacts.locked = locks.air.map(ContactRef::Unit).or(locks.ground.map(ContactRef::Object));
+    contacts.locked = locks.air.map(ContactRef::Unit).or(locks.ground.map(|g| {
+        // A ship tile object locked by its point: the lock box goes on its symbol.
+        let o = objects.get(g).copied().unwrap_or_default();
+        let near = |k: &Contact| matches!(k.target, Some(ContactRef::Point(x, y)) if (x - o.x).abs() <= 1 && (y - o.y).abs() <= 1);
+        contacts.list.iter().find(|k| near(k)).and_then(|k| k.target).unwrap_or(ContactRef::Object(g))
+    }));
 
     // Tracking camera data and HUD cues.
     let t = sim.targeting();

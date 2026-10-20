@@ -693,6 +693,15 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
                     c.fill_rect(q.x as i32 - 2, q.y as i32 - 2, 4, 4, RED);
                 }
             }
+            ContactKind::Ship => {
+                // A hull with its superstructure.
+                let colour = if k.friendly { GREEN } else { RED };
+                c.polyline(&[q + Vec2::new(-7.0, -1.0), q + Vec2::new(7.0, -1.0), q + Vec2::new(4.0, 3.0), q + Vec2::new(-4.0, 3.0), q + Vec2::new(-7.0, -1.0)], 1.3, colour);
+                c.polyline(&[q + Vec2::new(-2.0, -1.0), q + Vec2::new(-2.0, -4.0), q + Vec2::new(2.0, -4.0), q + Vec2::new(2.0, -1.0)], 1.3, colour);
+                if let Some((km, _)) = k.threat {
+                    c.ring(q, km * px_per_km, 1.0, RED);
+                }
+            }
             ContactKind::Target => {
                 c.polyline(&[q + Vec2::new(0.0, -5.0), q + Vec2::new(5.0, 0.0), q + Vec2::new(0.0, 5.0), q + Vec2::new(-5.0, 0.0), q + Vec2::new(0.0, -5.0)], 1.3, CYAN);
             }
@@ -765,7 +774,7 @@ fn harm_picture(p: &MfdParams, c: &mut Canvas, centre: Vec2, r: f32) {
     }
     c.stroke(centre - Vec2::X * 4.0, centre + Vec2::X * 4.0, 1.0, GREY);
     c.stroke(centre - Vec2::Y * 4.0, centre + Vec2::Y * 4.0, 1.0, GREY);
-    let locked = p.contacts.locked.map(emitter_source);
+    let locked = p.contacts.locked.and_then(emitter_source);
     let filter = av.harm_filter;
     crate::rwr::draw_symbols(c, &p.emitters.list, centre, r, crate::hud::blink(&p.time), locked, |e| harm_shows(filter, e));
 }
@@ -799,10 +808,11 @@ fn harm_shows(filter: HarmFilter, e: &EmitterView) -> bool {
     }
 }
 
-fn emitter_source(r: ContactRef) -> stealth_sim::EmitterSource {
+fn emitter_source(r: ContactRef) -> Option<stealth_sim::EmitterSource> {
     match r {
-        ContactRef::Unit(i) => stealth_sim::EmitterSource::Aircraft(i),
-        ContactRef::Object(i) => stealth_sim::EmitterSource::Site(i),
+        ContactRef::Unit(i) => Some(stealth_sim::EmitterSource::Aircraft(i)),
+        ContactRef::Object(i) => Some(stealth_sim::EmitterSource::Site(i)),
+        ContactRef::Point(..) => None,
     }
 }
 
@@ -930,7 +940,7 @@ fn slew_and_lock(
     if let Some(target) = picked {
         hud.mode = match target {
             ContactRef::Unit(_) => HudMode::Air,
-            ContactRef::Object(_) => HudMode::Gnd,
+            ContactRef::Object(_) | ContactRef::Point(..) => HudMode::Gnd,
         };
         locks.write(LockRequest(target));
     }

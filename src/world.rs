@@ -35,6 +35,7 @@ fn load_theater(
     *overrides = TileOverrides::default();
     let handles = ShapeHandles::new(&theater, mission.as_deref().map(|m| &m.0), &mut overrides);
     commands.insert_resource(handles);
+    commands.insert_resource(Ships(theater.ships()));
     commands.insert_resource(theater);
 }
 
@@ -86,6 +87,28 @@ fn unload_theater(mut commands: Commands, mut streamed: ResMut<StreamedCells>) {
     }
     commands.remove_resource::<Theater>();
 }
+
+/// A ship among the theater's tile objects.
+#[derive(Debug, Clone, Copy)]
+pub struct ShipSite {
+    /// (LOD level, cell column, cell row, index in the cell's list), as `TileOverrides`.
+    pub key: (usize, i32, i32, u16),
+    pub shape: u8,
+    /// World units east, north.
+    pub east: f64,
+    pub north: f64,
+}
+
+impl ShipSite {
+    /// Map units (y south).
+    pub fn map_xy(&self) -> (i32, i32) {
+        ((self.east / 32.0).round() as i32, 0x8000 - (self.north / 32.0).round() as i32)
+    }
+}
+
+/// The theater's ships (tile objects), for the displays.
+#[derive(Resource, Default)]
+pub struct Ships(pub Vec<ShipSite>);
 
 /// Tile objects whose shape was changed by the combat simulation (destroyed buildings, rubble),
 /// keyed by (LOD level, cell column, cell row, index in the cell's object list). The value is
@@ -213,6 +236,30 @@ impl Theater {
             self.tiles.tiles.get(l).map(|v| v.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect()).unwrap_or_default()
         };
         stealth_sim::TheaterTiles { grid: self.grid.clone(), objects: [level(1), level(2)], model_attr: self.model_attr.clone() }
+    }
+
+    /// The ships among the tile objects of the finer levels (where the theaters place them).
+    pub fn ships(&self) -> Vec<ShipSite> {
+        let mut out = Vec::new();
+        for lod in 1..=2usize {
+            let unit = LEVEL_UNIT[lod];
+            for row in 0..GRID_DIM[lod] {
+                for col in 0..GRID_DIM[lod] {
+                    let t = self.grid.tile(lod, col, row) as usize;
+                    let Some(objs) = self.tiles.tiles.get(lod).and_then(|l| l.get(t)) else { continue };
+                    for (k, o) in objs.iter().enumerate().filter(|(_, o)| self.is_ship_shape(o.shape)) {
+                        let centre = |c: i32| (c as f64 * 4096.0 + 2048.0) * unit;
+                        out.push(ShipSite {
+                            key: (lod, col, row, k as u16),
+                            shape: o.shape,
+                            east: centre(col) + o.x as f64 * unit,
+                            north: centre(row) + o.y as f64 * unit,
+                        });
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// A ship's model (the world's object category 12 or 13, as the simulation's ship test).

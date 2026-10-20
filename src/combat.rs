@@ -508,8 +508,10 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     combat.alpha = (combat.accum / dt).clamp(0.0, 1.0);
     // The flight model can end the flight on its own (its ground and runway model differs in
     // detail); if the simulation does not follow within 3 s, end the mission anyway.
+    // After an ejection the pilotless aircraft may crash: the parachute and the rescue go on.
     if let Some(end) = a.ended
         && combat.end.is_none()
+        && combat.sim.chute().is_none()
     {
         combat.flight_end_timer += time.delta_secs();
         if combat.flight_end_timer > 3.0 {

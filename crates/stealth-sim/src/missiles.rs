@@ -1,4 +1,5 @@
-use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, sign};
+use crate::ballistics;
+use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, sign, view_z_f};
 use crate::types::*;
 use crate::weather::optical_seeker;
 use crate::{N_PROJ, Sim};
@@ -41,6 +42,10 @@ impl Sim {
         let fs = self.fs;
         for s in 0..N_PROJ {
             if self.proj[s].ttl == 0 {
+                continue;
+            }
+            if self.proj[s].fall.is_some() {
+                self.fall_bomb(s);
                 continue;
             }
             let spec = self.proj[s].spec;
@@ -266,6 +271,43 @@ impl Sim {
         }
         if let (Some(o), Some(s)) = (self.objects.first_mut(), saved0) {
             *o = s;
+        }
+    }
+
+    /// A ballistic bomb's frame: it moves along its path ([`ballistics`]) and lands where the
+    /// path meets the ground.
+    fn fall_bomb(&mut self, s: usize) {
+        let m = self.proj[s];
+        let Some(f) = m.fall else { return };
+        let k = ballistics::drag(m.spec, self.opts.fix_original_bugs).unwrap_or(ballistics::SLICK_DRAG);
+        let fine = ROUND_FINE as f64;
+        let v = [f.vx as f64 / fine, f.vy as f64 / fine, f.vz as f64 / fine];
+        let h = f.alt as f64 / fine;
+        let frame = 1.0 / self.fs as f64;
+        let landing = if h <= 0.0 { Some(0.0) } else { ballistics::fall_time(v[2], k, h).filter(|&t| t <= frame) };
+        let dt = landing.unwrap_or(frame);
+        let d = ballistics::offset(v, k, dt);
+        let nv = ballistics::velocity(v, k, dt);
+        let q = |a: f64| (a * fine).round() as i32;
+        let nf = BombFall {
+            x: f.x + q(d[0]),
+            y: f.y + q(d[1]),
+            alt: if landing.is_some() { 0 } else { f.alt + q(d[2]) },
+            vx: q(nv[0]),
+            vy: q(nv[1]),
+            vz: q(nv[2]),
+        };
+        let bam = 65536.0 / std::f64::consts::TAU;
+        let pm = &mut self.proj[s];
+        pm.fall = Some(nf);
+        pm.x = (nf.x / (32 * ROUND_FINE)) & 0xFFFF;
+        pm.y = (nf.y / (32 * ROUND_FINE)) & 0xFFFF;
+        pm.alt = if landing.is_some() { -1 } else { view_z_f(nf.alt as f64 / fine) as i32 };
+        pm.heading = s16((nv[0].atan2(-nv[1]) * bam) as i32);
+        pm.pitch = s16((nv[2].atan2(nv[0].hypot(nv[1])) * bam) as i32);
+        pm.ttl -= 1;
+        if landing.is_some() {
+            self.ground_impact(s);
         }
     }
 

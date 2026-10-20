@@ -441,6 +441,14 @@ Ground targets under cloud cannot be designated (*Target obscured*). IR and opti
 | 135 mm camera | Reconnaissance photos of the target | – |
 | Extra fuel | 1900 lbs, transferred on release | – |
 
+**Unguided bombs** leave with the aircraft's speed and direction and fall under gravity and
+air drag. Free-fall bombs keep most of their speed and land far ahead of the release point
+(about 4,000 ft ahead from 500 ft at 450 knots). Retarded and cluster bombs open fins or a chute:
+they lose their speed within seconds and fall on a short, steep arc, landing about half as far
+ahead and well behind the aircraft, which is clear of the blast by then. Throwing a bomb in a
+climb (loft) makes it fly farther. The CCIP pipper always shows where the selected bomb would
+land if released now.
+
 ## 6. Radar, detection and evasion
 
 ### 6.1 How detection works

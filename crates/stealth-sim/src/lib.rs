@@ -1,3 +1,4 @@
+pub mod ballistics;
 pub mod data;
 pub mod math;
 pub mod rng;
@@ -45,6 +46,9 @@ pub struct PlayerView {
     /// knots * 27 and knots.
     pub velocity: i32,
     pub knots: i32,
+    /// Climb rate (ft/s).
+    #[serde(default)]
+    pub climb: i32,
 }
 
 /// The complete simulation state.
@@ -615,6 +619,7 @@ impl Sim {
             roll: ps.roll as i32,
             velocity: ps.velocity as i32,
             knots: ps.velocity as i32 / 27,
+            climb: ps.climb_rate,
         };
         let keep = pflags::BAY_OPEN | pflags::ECM | pflags::IRJ | pflags::DESIGNATE | pflags::CAMERA_VIEW | pflags::TRAINING | pflags::PRIMARY_DONE | pflags::SECONDARY_DONE;
         let mut f = self.pflags & keep;

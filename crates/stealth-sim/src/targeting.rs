@@ -1,4 +1,4 @@
-use crate::Sim;
+use crate::{Sim, ballistics};
 use crate::math::{abs16, approx, bearing, cdiv, s16};
 use crate::types::*;
 
@@ -340,7 +340,18 @@ impl Sim {
         self.lights.lock = oval && (red || self.frame & 1 != 0);
     }
 
-    /// Bombsights: CCIP and ranging bar for free-fall / retarded bombs.
+    /// Where the selected bomb would land if released now (map units with fractions; None
+    /// without a ballistic bomb selected or on the ground).
+    pub(crate) fn bomb_impact(&self) -> Option<(f64, f64)> {
+        let k = ballistics::drag(self.selected_spec(), self.opts.fix_original_bugs)?;
+        let v = ballistics::release_velocity(self.p.heading, self.p.velocity, self.p.climb);
+        let (d, _) = ballistics::impact(v, k, self.p.alt as f64 - ballistics::RELEASE_DROP)?;
+        Some(((self.p.wx as f64 + d[0]) / 32.0, ((0x100000 - self.p.wy) as f64 + d[1]) / 32.0))
+    }
+
+    /// Bombsights: CCIP and ranging bar for free-fall / retarded bombs. The original estimated
+    /// the impact point from the release altitude and pitch; it is where the bomb's path
+    /// meets the ground ([`ballistics`]).
     fn bombsight(&mut self) {
         self.targeting.ccip = None;
         self.targeting.ranging_bar = None;
@@ -348,23 +359,14 @@ impl Sim {
             return;
         }
         let spec = self.selected_spec();
-        if spec != 29 && spec != 30 {
-            return;
-        }
-        let (h, vz) = (self.p.heading, self.p.view_z);
-        let loft = self.loft_angle();
-        let d = cdiv(self.trig.cos_mul(loft, vz), self.trig.sin_mul(s16(-loft), 32) + 1);
-        let p = (self.p.mx + self.trig.sin_mul(h, d), self.p.my - self.trig.cos_mul(h, d));
-        if spec == 30 && abs16(self.p.roll) < 0x2000 {
-            self.targeting.ccip = Some(p);
-        }
+        let Some((ix, iy)) = self.bomb_impact() else { return };
+        let p = (ix as i32, iy as i32);
+        self.targeting.ccip = Some(p);
         if let Some(g) = self.valid_gnd() {
             let o = self.objects[g];
-            let (bar, flash) = if spec == 30 {
-                ((approx(p.0 - o.x, p.1 - o.y) >> 3).clamp(0, 0x40), 2 * (1500 - self.p.knots) > vz)
-            } else {
-                ((self.range_bearing(o.x, o.y).0 >> 3).clamp(0, 0x40), self.p.knots > vz)
-            };
+            let vz = self.p.view_z;
+            let bar = (approx(p.0 - o.x, p.1 - o.y) >> 3).clamp(0, 0x40);
+            let flash = if spec == 30 { 2 * (1500 - self.p.knots) > vz } else { self.p.knots > vz };
             self.targeting.ranging_bar = Some((bar, flash));
         }
     }

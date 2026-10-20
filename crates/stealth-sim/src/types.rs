@@ -145,6 +145,37 @@ pub struct Projectile {
     pub tgt_y: i32,
     /// Locked on its target this frame (not in the original record).
     pub locked: bool,
+    /// Ballistic bombs (not in the original record): their exact flight.
+    #[serde(default)]
+    pub fall: Option<BombFall>,
+}
+
+impl Projectile {
+    /// Map position (x, y) and altitude (viewZ) with fractions: a ballistic bomb's exact point,
+    /// else the record's (+ 0.5 for the middle of the map unit).
+    pub fn map_pos(&self) -> (f64, f64, f64) {
+        match self.fall {
+            Some(f) => {
+                let fine = ROUND_FINE as f64;
+                let alt = f.alt as f64 / fine;
+                (f.x as f64 / (32.0 * fine), f.y as f64 / (32.0 * fine), crate::math::view_z_f(alt))
+            }
+            None => (self.x as f64 + 0.5, self.y as f64 + 0.5, self.alt as f64),
+        }
+    }
+}
+
+/// A falling bomb's position (fine units, [`ROUND_FINE`] per world unit: x east, y south like
+/// the map, and true altitude in feet) and velocity (fine units per second: east, south, up);
+/// see [`crate::ballistics`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct BombFall {
+    pub x: i32,
+    pub y: i32,
+    pub alt: i32,
+    pub vx: i32,
+    pub vy: i32,
+    pub vz: i32,
 }
 
 /// What emits a radar signal.

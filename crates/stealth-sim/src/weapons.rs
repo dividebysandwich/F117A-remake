@@ -1,4 +1,4 @@
-use crate::Sim;
+use crate::{Sim, ballistics};
 use crate::math::{abs16, approx, cdiv, clamp_v, s16};
 use crate::types::*;
 
@@ -226,13 +226,6 @@ impl Sim {
         }
     }
 
-    /// Bomb loft angle (BAM) from the player's pitch and altitude.
-    pub(crate) fn loft_angle(&self) -> i32 {
-        let num = (0x4000 - abs16(self.p.pitch)) << 12;
-        let den = (self.p.view_z + 0x1000) & 0xFFFF;
-        s16(cdiv(num, den) - 0x4000)
-    }
-
     /// Release the selected store.
     fn fire_missile(&mut self) {
         if abs16(self.p.roll) > 0x3000 {
@@ -295,15 +288,13 @@ impl Sim {
             tgt_x: -1,
             tgt_y: -1,
             locked: false,
+            fall: None,
         };
         if spec == 27 {
             self.maverick_view = true;
         }
         if matches!(spec, 28 | 29 | 30 | 38) {
             pr.speed >>= 1;
-        }
-        if spec == 30 {
-            pr.launcher = s16(self.loft_angle() - 0x400);
         }
         let gl = self.gnd_lock;
         if gl >= 0 && (gl as usize) < self.objects.len() {
@@ -318,10 +309,23 @@ impl Sim {
                 pr.target = -1;
             }
         }
-        if spec == 29 || (spec == 38 && self.opts.fix_original_bugs) {
-            // Retarded bombs (and, fixed, supply pods) go straight down at speed 1.
-            pr.pitch = s16(0xC000);
-            pr.speed = 1;
+        if ballistics::drag(spec, self.opts.fix_original_bugs).is_some() {
+            // Free-fall and retarded bombs (and, fixed, supply pods) fall ballistically. The
+            // original flew free-fall bombs at half speed, turning down to a floor set by the
+            // release altitude, and dropped retarded ones straight down at speed 1.
+            let f = ROUND_FINE as f64;
+            let v = ballistics::release_velocity(self.p.heading, self.p.velocity, self.p.climb);
+            let fall = BombFall {
+                x: self.p.wx * ROUND_FINE,
+                y: (0x100000 - self.p.wy) * ROUND_FINE,
+                alt: ((self.p.alt as f64 - ballistics::RELEASE_DROP) * f) as i32,
+                vx: (v[0] * f).round() as i32,
+                vy: (v[1] * f).round() as i32,
+                vz: (v[2] * f).round() as i32,
+            };
+            pr.fall = Some(fall);
+            // Falls for as long as it takes (from high up, retarded bombs take minutes).
+            pr.ttl = 0x7FFF;
         }
         self.proj[slot] = pr;
         self.last_missile_slot = slot as i32;

@@ -132,6 +132,17 @@ pub fn view_z(alt: u16) -> i32 {
     }
 }
 
+/// [`view_z`] of a fractional altitude (negative below the ground).
+pub fn view_z_f(alt: f64) -> f64 {
+    if alt < 8192.0 {
+        alt
+    } else if alt < 16384.0 {
+        8192.0 + (alt - 8192.0) / 2.0
+    } else {
+        12288.0 + (alt - 16384.0) / 4.0
+    }
+}
+
 /// Sine table (Q15, 256 steps per turn + 1 guard entry) with the original's
 /// interpolating lookup and fixed-point `x·sin` / `x·cos` products.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

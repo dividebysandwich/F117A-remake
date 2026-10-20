@@ -269,6 +269,7 @@ impl Sim {
             tgt_x: 0,
             tgt_y: 0,
             locked: false,
+            fall: None,
         };
         let n = self.place_name(i);
         let sam = self.missile(spec).name.clone();
@@ -382,6 +383,7 @@ impl Sim {
             tgt_x: 0,
             tgt_y: 0,
             locked: false,
+            fall: None,
         };
         let ty = self.ac_type(u.spec).name.clone();
         self.msg(format!("{} fired by {ty}", t.name));

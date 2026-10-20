@@ -135,14 +135,16 @@ pub fn projectile_pose(combat: &Combat, s: usize) -> Option<(bevy::math::DVec3, 
         return None;
     }
     let p = combat.prev_proj[s];
-    let (mut x, mut y, mut z) = (m.x as f64, m.y as f64, m.alt as f64);
+    // Ballistic bombs at their exact point, the others at their map unit.
+    let (mut x, mut y, mut z) = m.map_pos();
     if p.ttl != 0 && p.spec == m.spec && (p.x - m.x).abs() < 0x400 && (p.y - m.y).abs() < 0x400 {
         let t = combat.alpha as f64;
-        x = p.x as f64 + (x - p.x as f64) * t;
-        y = p.y as f64 + (y - p.y as f64) * t;
-        z = p.alt as f64 + (z - p.alt as f64) * t;
+        let (px, py, pz) = p.map_pos();
+        x = px + (x - px) * t;
+        y = py + (y - py) * t;
+        z = pz + (z - pz) * t;
     }
-    Some((map_point(x + 0.5, y + 0.5, z), attitude(m.heading, m.pitch, m.roll)))
+    Some((map_point(x, y, z), attitude(m.heading, m.pitch, m.roll)))
 }
 
 pub fn attitude(heading: i32, pitch: i32, roll: i32) -> Quat {

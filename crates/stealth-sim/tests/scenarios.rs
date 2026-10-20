@@ -873,3 +873,43 @@ fn gun_rounds_fly_ballistic() {
     assert!((ahead - want).abs() < want * 0.01, "{ahead} m ahead, want {want}");
     assert!((drop - 0.5 * GUN_GRAVITY * 4.0).abs() < 2.0, "{drop} m drop");
 }
+
+/// Bombs released in level flight at 500 ft and 450 knots land on the CCIP point predicted at
+/// release: a slick bomb far ahead, a retarded one on a shorter arc (not straight down).
+#[test]
+fn bombs_land_on_the_ccip_point() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let mut ahead = Vec::new();
+    for w in [9, 10] {
+        let mut sim = Sim::new(&d.sim, &m);
+        let (mx, my) = sandbox(&mut sim, &m);
+        sim.set_training(true);
+        sim.set_loadout(&[(w, 2)]);
+        let mut p = player_at(mx, my, 500, 0, 450);
+        p.hud_mode = HudMode::Gnd;
+        p.cmd.toggle_bay = true;
+        for _ in 0..4 {
+            sim.step(&p, 15);
+            p.cmd = Commands::default();
+        }
+        let ccip = sim.targeting().ccip.expect("CCIP point");
+        p.cmd.fire = true;
+        sim.step(&p, 15);
+        p.cmd = Commands::default();
+        let slot = (8..12).find(|&s| sim.projectiles()[s].ttl != 0).expect("bomb released");
+        let mut frames = 0;
+        while sim.projectiles()[slot].ttl != 0 && frames < 15 * 30 {
+            sim.step(&p, 15);
+            frames += 1;
+        }
+        let (x, y, alt) = sim.projectiles()[slot].map_pos();
+        assert!(alt.abs() < 1e-6, "weapon {w}: landed at {alt}");
+        let (x, y) = (x as i32, y as i32);
+        assert!((x - ccip.0).abs() <= 1 && (y - ccip.1).abs() <= 1, "weapon {w}: impact {x},{y} ccip {ccip:?}");
+        assert!((x - mx).abs() <= 1);
+        ahead.push(my - y);
+    }
+    // 1 map unit is 32 ft: the slick bomb flies about 4,000 ft, the retarded one under 3,000.
+    assert!(ahead[0] > 100 && ahead[1] > 40 && ahead[1] < ahead[0] * 3 / 4, "{ahead:?}");
+}

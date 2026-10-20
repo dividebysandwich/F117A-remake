@@ -62,7 +62,8 @@ impl Hardpoint {
 }
 
 pub struct Layout {
-    /// Right half of the outline seen from above (metres, from the nose round to the tail).
+    /// The exterior model's outline seen from above (metres: x right of the centreline, y aft
+    /// of the nose).
     pub outline: &'static [(f32, f32)],
     pub half_span: f32,
     pub length: f32,
@@ -72,23 +73,22 @@ pub struct Layout {
 const ALL: [u8; 19] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
 const NO_AIR_TO_AIR: [u8; 17] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
 
-const F117_OUTLINE: &[(f32, f32)] =
-    &[(0.0, 0.0), (1.3, 4.5), (6.6, 13.2), (6.3, 14.0), (3.2, 12.9), (2.0, 17.5), (2.9, 20.0), (1.6, 20.0), (1.0, 18.8), (0.0, 18.4)];
+// tools/models/planform.py
+/// stflt_024 seen from above: half span 4.86 m, length 15.62 m.
+const F117_OUTLINE: &[(f32, f32)] = &[
+    (0.00, 0.00), (0.02, 0.32), (0.18, 0.34), (0.22, 0.88), (0.42, 0.90), (0.46, 1.48), (0.96, 2.58), (4.86, 12.34), (4.86, 12.86),
+    (4.38, 13.32), (2.08, 10.86), (1.88, 10.86), (1.82, 11.38), (0.66, 12.62), (0.66, 12.90), (1.08, 14.52), (1.08, 15.62), (0.12, 13.58),
+    (0.00, 13.56), (-0.12, 13.58), (-1.08, 15.62), (-1.08, 14.52), (-0.66, 12.90), (-0.66, 12.62), (-1.82, 11.38), (-1.88, 10.86),
+    (-2.08, 10.86), (-4.38, 13.32), (-4.86, 12.86), (-4.86, 12.34), (-0.96, 2.58), (-0.46, 1.48), (-0.42, 0.90), (-0.22, 0.88),
+    (-0.18, 0.34), (-0.02, 0.32),
+];
+/// stflt_023 seen from above: half span 5.12 m, length 17.12 m.
 const F16_OUTLINE: &[(f32, f32)] = &[
-    (0.0, 0.0),
-    (0.45, 2.0),
-    (0.55, 4.0),
-    (0.6, 5.0),
-    (1.6, 8.0),
-    (4.7, 10.6),
-    (4.7, 11.6),
-    (1.0, 11.8),
-    (1.0, 12.4),
-    (2.8, 14.3),
-    (2.8, 14.8),
-    (0.9, 14.6),
-    (0.5, 15.0),
-    (0.0, 15.0),
+    (0.00, 0.00), (0.32, 0.88), (0.64, 3.76), (1.26, 7.22), (4.80, 10.32), (5.02, 10.30), (5.02, 8.86), (5.06, 8.56), (5.12, 8.94),
+    (5.12, 12.12), (5.02, 12.12), (5.00, 11.70), (0.76, 11.72), (0.74, 12.54), (3.04, 14.24), (3.04, 15.28), (0.54, 14.98), (0.48, 15.60),
+    (0.30, 15.66), (0.00, 17.12), (-0.30, 15.66), (-0.48, 15.60), (-0.54, 14.98), (-3.04, 15.28), (-3.04, 14.24), (-0.74, 12.54),
+    (-0.76, 11.72), (-5.00, 11.70), (-5.02, 12.12), (-5.12, 12.12), (-5.12, 8.94), (-5.06, 8.56), (-5.02, 8.86), (-5.02, 10.30),
+    (-4.80, 10.32), (-1.26, 7.22), (-0.64, 3.76), (-0.32, 0.88),
 ];
 
 const fn bay(name: &'static str, label: &'static str, x: f32, y: f32, fantasy: bool, mirror: usize, loads: &'static [u8]) -> Hardpoint {
@@ -101,13 +101,13 @@ const fn pylon(name: &'static str, label: &'static str, x: f32, y: f32, mirror: 
 
 /// The real F-117A: two bays, no air-to-air missiles.
 static F117_REAL: [Hardpoint; 2] =
-    [bay("Left bay", "L", -0.6, 10.0, false, 1, &NO_AIR_TO_AIR), bay("Right bay", "R", 0.6, 10.0, false, 0, &NO_AIR_TO_AIR)];
+    [bay("Left bay", "L", -0.5, 8.0, false, 1, &NO_AIR_TO_AIR), bay("Right bay", "R", 0.5, 8.0, false, 0, &NO_AIR_TO_AIR)];
 /// The original's F-117A: two more bays, inside the wing roots.
 static F117_FANTASY: [Hardpoint; 4] = [
-    bay("Left bay", "L", -0.6, 10.0, false, 1, &ALL),
-    bay("Right bay", "R", 0.6, 10.0, false, 0, &ALL),
-    bay("Left wing bay", "LW", -2.6, 11.4, true, 3, &ALL),
-    bay("Right wing bay", "RW", 2.6, 11.4, true, 2, &ALL),
+    bay("Left bay", "L", -0.5, 8.0, false, 1, &ALL),
+    bay("Right bay", "R", 0.5, 8.0, false, 0, &ALL),
+    bay("Left wing bay", "LW", -2.3, 9.0, true, 3, &ALL),
+    bay("Right wing bay", "RW", 2.3, 9.0, true, 2, &ALL),
 ];
 const TIP: [u8; 2] = [0, 1];
 const WING_MID: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -115,20 +115,20 @@ const WING_INNER: [u8; 13] = [2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17];
 const CENTRE: [u8; 3] = [16, 17, 18];
 /// The F-16's stations 1 (left wingtip) to 9 (right wingtip).
 static F16_STATIONS: [Hardpoint; 9] = [
-    pylon("Station 1, left wingtip", "1", -4.95, 11.1, Some(8), &TIP),
-    pylon("Station 2, left outer wing", "2", -3.85, 10.85, Some(7), &TIP),
-    pylon("Station 3, left wing", "3", -2.85, 10.3, Some(6), &WING_MID),
-    pylon("Station 4, left inner wing", "4", -1.9, 9.9, Some(5), &WING_INNER),
-    pylon("Station 5, centreline", "5", 0.0, 9.0, None, &CENTRE),
-    pylon("Station 6, right inner wing", "6", 1.9, 9.9, Some(3), &WING_INNER),
-    pylon("Station 7, right wing", "7", 2.85, 10.3, Some(2), &WING_MID),
-    pylon("Station 8, right outer wing", "8", 3.85, 10.85, Some(1), &TIP),
-    pylon("Station 9, right wingtip", "9", 4.95, 11.1, Some(0), &TIP),
+    pylon("Station 1, left wingtip", "1", -5.06, 10.6, Some(8), &TIP),
+    pylon("Station 2, left outer wing", "2", -4.1, 10.7, Some(7), &TIP),
+    pylon("Station 3, left wing", "3", -3.1, 10.3, Some(6), &WING_MID),
+    pylon("Station 4, left inner wing", "4", -2.0, 9.9, Some(5), &WING_INNER),
+    pylon("Station 5, centreline", "5", 0.0, 9.5, None, &CENTRE),
+    pylon("Station 6, right inner wing", "6", 2.0, 9.9, Some(3), &WING_INNER),
+    pylon("Station 7, right wing", "7", 3.1, 10.3, Some(2), &WING_MID),
+    pylon("Station 8, right outer wing", "8", 4.1, 10.7, Some(1), &TIP),
+    pylon("Station 9, right wingtip", "9", 5.06, 10.6, Some(0), &TIP),
 ];
 
-static F117_REAL_LAYOUT: Layout = Layout { outline: F117_OUTLINE, half_span: 6.6, length: 20.1, hardpoints: &F117_REAL };
-static F117_FANTASY_LAYOUT: Layout = Layout { outline: F117_OUTLINE, half_span: 6.6, length: 20.1, hardpoints: &F117_FANTASY };
-static F16_LAYOUT: Layout = Layout { outline: F16_OUTLINE, half_span: 4.95, length: 15.0, hardpoints: &F16_STATIONS };
+static F117_REAL_LAYOUT: Layout = Layout { outline: F117_OUTLINE, half_span: 4.86, length: 15.62, hardpoints: &F117_REAL };
+static F117_FANTASY_LAYOUT: Layout = Layout { outline: F117_OUTLINE, half_span: 4.86, length: 15.62, hardpoints: &F117_FANTASY };
+static F16_LAYOUT: Layout = Layout { outline: F16_OUTLINE, half_span: 5.12, length: 17.12, hardpoints: &F16_STATIONS };
 
 /// The hardpoints of an aircraft (`realistic`: the F-117A's real two bays).
 pub fn layout(aircraft: AircraftKind, realistic: bool) -> &'static Layout {
@@ -348,13 +348,12 @@ fn diagram(ui: &mut egui::Ui, lay: &Layout, stores: &[Option<u8>], selected: usi
     let origin = egui::pos2(rect.center().x, rect.center().y - lay.length * s / 2.0);
     let at = |x: f32, y: f32| origin + egui::vec2(x * s, y * s);
     let p = ui.painter_at(rect);
-    let mut outline: Vec<egui::Pos2> = lay.outline.iter().map(|&(x, y)| at(x, y)).collect();
-    outline.extend(lay.outline.iter().rev().map(|&(x, y)| at(-x, y)));
+    let outline: Vec<egui::Pos2> = lay.outline.iter().map(|&(x, y)| at(x, y)).collect();
     p.add(egui::Shape::closed_line(outline, egui::Stroke::new(1.5, DIM)));
     let mut clicked = None;
     for (i, hp) in lay.hardpoints.iter().enumerate() {
         let c = at(hp.pos.0, hp.pos.1);
-        let r = if hp.bay { egui::Rect::from_center_size(c, egui::vec2(1.0 * s, 4.0 * s)) } else { egui::Rect::from_center_size(c, egui::vec2(16.0, 16.0)) };
+        let r = if hp.bay { egui::Rect::from_center_size(c, egui::vec2(0.8 * s, 3.4 * s)) } else { egui::Rect::from_center_size(c, egui::vec2(16.0, 16.0)) };
         let resp = ui.interact(r.expand(4.0), ui.id().with(("hardpoint", i)), egui::Sense::click());
         if resp.clicked() {
             clicked = Some(i);

@@ -3,12 +3,13 @@
 Overlay labels like `<`, `>`
 refer to the unshifted keys `,` and `.` on a US keyboard ("Shift >" = Shift + `.`).
 To be cross-checked against VGAME's keyboard dispatch table (M2).
-These are the defaults: the menu's CONTROLS dialog rebinds every key except the stick keys.
+These are the defaults: the menu's CONTROLS dialog rebinds every key, the stick keys included.
 
 | Group | Action | Key |
 |---|---|---|
 | Stick | pitch down / up | Up / Down arrow |
 | | roll left / right | Left / Right arrow |
+| | yaw (rudder) left / right (remake) | unbound (bind them in the CONTROLS dialog) |
 | | stick sensitivity (tiny/small/medium) | Ins |
 | | max stick movement | fast double-press of a direction |
 | Throttle | max power / no power | Shift + `=` (`+`) / Shift + `-` |

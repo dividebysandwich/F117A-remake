@@ -113,14 +113,41 @@ pub enum Action {
     /// Tracking camera / targeting pod zoom (not in the original: it zoomed by range).
     CameraZoomIn,
     CameraZoomOut,
+    /// Keyboard stick (held, not a discrete action): the original's arrow keys.
+    PitchDown,
+    PitchUp,
+    RollLeft,
+    RollRight,
+    /// Rudder keys (not in the original; unbound by default).
+    YawLeft,
+    YawRight,
 }
+
+impl Action {
+    /// The (roll, pitch, yaw) direction of a held stick action; None for the others. Up is nose
+    /// down, as for the stick.
+    pub fn stick_direction(self) -> Option<(f32, f32, f32)> {
+        match self {
+            Action::PitchDown => Some((0.0, -1.0, 0.0)),
+            Action::PitchUp => Some((0.0, 1.0, 0.0)),
+            Action::RollLeft => Some((-1.0, 0.0, 0.0)),
+            Action::RollRight => Some((1.0, 0.0, 0.0)),
+            Action::YawLeft => Some((0.0, 0.0, -1.0)),
+            Action::YawRight => Some((0.0, 0.0, 1.0)),
+            _ => None,
+        }
+    }
+}
+
+/// Stick deflection of a held key or button: 0x5A of 0x7F, as in the original.
+pub const KEY_DEFLECTION: f32 = 0x5A as f32 / 0x7F as f32;
 
 #[derive(Message, Debug, Clone, Copy)]
 pub struct ActionEvent(pub Action);
 
 /// Looks up an action by its name (e.g. "ThrottleMax"), for scripts and config files.
 pub fn action_by_name(name: &str) -> Option<Action> {
-    BINDINGS.iter().map(|b| b.2).find(|a| format!("{a:?}").eq_ignore_ascii_case(name))
+    all_actions().into_iter().find(|a| format!("{a:?}").eq_ignore_ascii_case(name))
 }
 
 /// A key with the modifier held with it, as text: "Shift+Equal", "F1", "1".
@@ -146,6 +173,10 @@ pub fn all_actions() -> Vec<Action> {
     for &(_, _, a) in BINDINGS {
         if !out.contains(&a) {
             out.push(a);
+            // The actions without a default key follow the one they belong with.
+            if a == UNBOUND_BY_DEFAULT.0 {
+                out.extend(UNBOUND_BY_DEFAULT.1);
+            }
         }
     }
     out
@@ -190,6 +221,10 @@ pub enum Mods {
     Alt,
 }
 
+/// Actions without a default key, still listed in the input mapping right after the given one
+/// (the rudder keys after the roll keys).
+const UNBOUND_BY_DEFAULT: (Action, [Action; 2]) = (Action::RollRight, [Action::YawLeft, Action::YawRight]);
+
 /// Default bindings, from the manual's key summary (IBM version); the input mapping can change
 /// them.
 const BINDINGS: &[(Mods, KeyCode, Action)] = {
@@ -197,6 +232,10 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
     use KeyCode as K;
     use Mods::*;
     &[
+        (None, K::ArrowUp, PitchDown),
+        (None, K::ArrowDown, PitchUp),
+        (None, K::ArrowLeft, RollLeft),
+        (None, K::ArrowRight, RollRight),
         (None, K::Equal, ThrottleUp),
         (None, K::NumpadAdd, ThrottleUp),
         (None, K::Minus, ThrottleDown),
@@ -293,15 +332,7 @@ impl Default for VirtualStick {
 /// Double-tap window: 5 BIOS ticks.
 const DOUBLE_TAP_S: f64 = 5.0 / 18.2;
 
-const STICK_KEYS: &[(KeyCode, f32, f32)] = &[
-    // (key, roll, pitch); up = nose down.
-    (KeyCode::ArrowUp, 0.0, -1.0),
-    (KeyCode::ArrowDown, 0.0, 1.0),
-    (KeyCode::ArrowLeft, -1.0, 0.0),
-    (KeyCode::ArrowRight, 1.0, 0.0),
-];
-
-/// Keyboard sensor/cursor slew (fixed like the stick keys): the numeric keypad.
+/// Keyboard sensor/cursor slew (fixed): the numeric keypad.
 const SLEW_KEYS: &[(KeyCode, f32, f32)] = &[
     // (key, x, y); up = cursor up.
     (KeyCode::Numpad8, 0.0, 1.0),
@@ -328,7 +359,8 @@ fn read_keyboard(
     let mods = if alt { Mods::Alt } else if shift { Mods::Shift } else { Mods::None };
     for m in &config.keys {
         let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
-        if block.0 && action != Action::Menu {
+        // The stick keys are held, read below.
+        if (block.0 && action != Action::Menu) || action.stick_direction().is_some() {
             continue;
         }
         if m.mods == mods && keys.just_pressed(m.key) {
@@ -351,24 +383,29 @@ fn read_keyboard(
         controls.slew = Vec2::ZERO;
         return;
     }
-    // Virtual stick (unmodified direction keys only; Shift+arrows move waypoints).
+    // Virtual stick: the keys bound to the stick actions, with the modifier they were bound with
+    // (the arrows have none, so Shift+arrows still move waypoints).
     let now = time.elapsed_secs_f64();
-    let (mut roll, mut pitch) = (0.0, 0.0);
+    let (mut roll, mut pitch, mut yaw) = (0.0, 0.0, 0.0);
     let mut held = false;
-    if mods == Mods::None {
-        for &(key, r, p) in STICK_KEYS {
-            if keys.just_pressed(key) {
-                stick.full = matches!(stick.last_key, Some((k, t)) if k == key && now - t < DOUBLE_TAP_S);
-                stick.last_key = Some((key, now));
-            }
-            if keys.pressed(key) {
-                roll += r;
-                pitch += p;
-                held = true;
-            }
+    for m in &config.keys {
+        let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
+        let Some((r, p, y)) = action.stick_direction() else { continue };
+        if m.mods != mods {
+            continue;
+        }
+        if keys.just_pressed(m.key) {
+            stick.full = matches!(stick.last_key, Some((k, t)) if k == m.key && now - t < DOUBLE_TAP_S);
+            stick.last_key = Some((m.key, now));
+        }
+        if keys.pressed(m.key) {
+            roll += r;
+            pitch += p;
+            yaw += y;
+            held = true;
         }
     }
-    let deflection = if stick.full { 1.0 } else { 0x5A as f32 / 0x7F as f32 };
+    let deflection = if stick.full { 1.0 } else { KEY_DEFLECTION };
     // Sensitivity scales the deflection like the original: (sens+1)/3.
     let scale = deflection * (stick.sensitivity as f32 + 1.0) / 3.0;
     controls.roll = (roll as f32).clamp(-1.0, 1.0) * scale;
@@ -386,7 +423,7 @@ fn read_keyboard(
     };
     controls.fire = held(Action::FireWeapon);
     controls.mark = held(Action::LockCursor);
-    controls.yaw = 0.0;
+    controls.yaw = (yaw as f32).clamp(-1.0, 1.0) * scale;
     controls.throttle = None;
     let mut slew = Vec2::ZERO;
     if mods == Mods::None {
@@ -477,5 +514,59 @@ mod tests {
         assert_eq!(stronger(-0.71, 0.06), -0.71);
         assert_eq!(stronger(-0.71, 0.9), 0.9);
         assert_eq!(stronger(0.0, 0.06), 0.06);
+    }
+
+    /// The rudder keys are listed with the other stick keys, not at the end.
+    #[test]
+    fn yaw_actions_follow_roll() {
+        let all = all_actions();
+        let i = all.iter().position(|a| *a == Action::RollRight).unwrap();
+        assert_eq!(all[i + 1..i + 3], [Action::YawLeft, Action::YawRight]);
+        assert_eq!(all.iter().filter(|a| **a == Action::YawLeft).count(), 1);
+    }
+
+    /// Stick keys moved to the positions of ZQSD and AE on an AZERTY keyboard (KeyW, KeyA, KeyS,
+    /// KeyD, KeyQ, KeyE) steer, and the arrows no longer do.
+    #[test]
+    fn rebound_stick_keys_steer() {
+        use crate::hotas::{ButtonTarget, InputConfig};
+        let mut config = InputConfig::default();
+        for (action, key) in [
+            (Action::PitchDown, KeyCode::KeyW),
+            (Action::PitchUp, KeyCode::KeyS),
+            (Action::RollLeft, KeyCode::KeyA),
+            (Action::RollRight, KeyCode::KeyD),
+            (Action::YawLeft, KeyCode::KeyQ),
+            (Action::YawRight, KeyCode::KeyE),
+        ] {
+            config.keys.retain(|m| m.target != ButtonTarget::Action(action));
+            config.bind_key(ButtonTarget::Action(action), Mods::None, key);
+        }
+        let mut app = App::new();
+        app.init_resource::<FlightControls>()
+            .init_resource::<VirtualStick>()
+            .init_resource::<InputBlock>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<Time<Real>>()
+            .insert_resource(config)
+            .add_message::<ActionEvent>()
+            .add_systems(Update, read_keyboard);
+        for (key, roll, pitch, yaw) in [
+            (KeyCode::KeyA, -1.0, 0.0, 0.0),
+            (KeyCode::KeyD, 1.0, 0.0, 0.0),
+            (KeyCode::KeyW, 0.0, -1.0, 0.0),
+            (KeyCode::KeyS, 0.0, 1.0, 0.0),
+            (KeyCode::KeyQ, 0.0, 0.0, -1.0),
+            (KeyCode::KeyE, 0.0, 0.0, 1.0),
+            (KeyCode::ArrowLeft, 0.0, 0.0, 0.0),
+        ] {
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
+            app.update();
+            let c = app.world().resource::<FlightControls>().clone();
+            let sign = |v: f32| if v == 0.0 { 0.0 } else { v.signum() };
+            assert_eq!((sign(c.roll), sign(c.pitch), sign(c.yaw)), (roll, pitch, yaw), "{key:?}: {c:?}");
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(key);
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+        }
     }
 }

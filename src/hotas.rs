@@ -225,7 +225,7 @@ pub struct InputConfig {
     pub axes: Vec<AxisMapping>,
     pub buttons: Vec<ButtonMapping>,
     pub vr_buttons: Vec<VrButtonMapping>,
-    /// Keyboard keys for the gun and actions (the keyboard stick keys are fixed).
+    /// Keyboard keys for the gun, the actions and the keyboard stick.
     pub keys: Vec<KeyMapping>,
     /// Mapping version (`migrate`); files from before the versions read 0.
     #[serde(default)]
@@ -234,8 +234,8 @@ pub struct InputConfig {
 
 /// 1: the cursor lock (NumpadEnter, left thumbstick click) and SOI keys. 2: camera zoom keys.
 /// 3: the left VR trigger holds the brakes, the bay doors move to the right thumbstick left;
-/// the bombsight mode key.
-const VERSION: u32 = 3;
+/// the bombsight mode key. 4: the stick keys (the arrows) became bindable.
+const VERSION: u32 = 4;
 
 impl Default for InputConfig {
     fn default() -> Self {
@@ -497,6 +497,15 @@ pub fn read_hotas(
         match m.target {
             ButtonTarget::Gun => controls.gun |= now,
             ButtonTarget::Action(a) => {
+                if let Some((r, p, y)) = a.stick_direction() {
+                    if now {
+                        let d = crate::input::KEY_DEFLECTION;
+                        controls.roll = crate::input::stronger(controls.roll, r * d);
+                        controls.pitch = crate::input::stronger(controls.pitch, p * d);
+                        controls.yaw = crate::input::stronger(controls.yaw, y * d);
+                    }
+                    continue;
+                }
                 controls.fire |= now && a == Action::FireWeapon;
                 controls.mark |= now && a == Action::LockCursor;
                 if now && !hotas.active(&m.device, m.source, true) {
@@ -552,6 +561,26 @@ mod tests {
         assert_eq!(vr(VrHand::Left, VrInput::ThumbClick), Some(ButtonTarget::Action(Action::LockCursor)));
         assert_eq!(vr(VrHand::Right, VrInput::ThumbUp), Some(ButtonTarget::Action(Action::Decoy)));
         assert!(!c.migrate());
+    }
+
+    /// A mapping saved while the stick keys were fixed gets the arrows back as bindings, and
+    /// keeps a key the player already moved them to.
+    #[test]
+    fn stick_keys_migrate() {
+        use crate::input::Mods;
+        let mut c = InputConfig { version: 3, ..InputConfig::default() };
+        c.keys.retain(|k| !matches!(k.target, ButtonTarget::Action(Action::PitchUp | Action::PitchDown | Action::RollLeft | Action::RollRight)));
+        assert!(c.migrate());
+        let key = |c: &InputConfig, t| c.keys_for(ButtonTarget::Action(t)).map(|k| (k.mods, k.key)).collect::<Vec<_>>();
+        assert_eq!(key(&c, Action::PitchUp), vec![(Mods::None, KeyCode::ArrowDown)]);
+        assert_eq!(key(&c, Action::RollLeft), vec![(Mods::None, KeyCode::ArrowLeft)]);
+        assert!(key(&c, Action::YawLeft).is_empty(), "no rudder key by default");
+
+        let mut c = InputConfig { version: 3, ..InputConfig::default() };
+        c.keys.retain(|k| !matches!(k.target, ButtonTarget::Action(Action::PitchUp | Action::PitchDown | Action::RollLeft | Action::RollRight)));
+        c.bind_key(ButtonTarget::Action(Action::RollLeft), Mods::None, KeyCode::KeyA);
+        c.migrate();
+        assert_eq!(key(&c, Action::RollLeft), vec![(Mods::None, KeyCode::KeyA)]);
     }
 
     #[test]

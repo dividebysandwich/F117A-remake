@@ -36,7 +36,8 @@ CONSOLE_X = (0.20, 0.36)
 # The consoles end here; sloped panels rise from their ends to the main panel's lower edge
 # (layout x <= -600 left, centred on -700; x >= 1100 right, centred on 1200; y down the slope).
 CONSOLE_END = 0.42
-SLOPE_TOP = (0.60, -0.40)  # (y, z)
+# They meet the wings' lower edge (WING_BOTTOM), under the MFDs' bottom bezel buttons.
+SLOPE_TOP = (0.6175, -0.4175)  # (y, z)
 SLOPE_X = (0.17, 0.37)
 # Their outer edges come in this much (mm) at the top.
 SLOPE_BEVEL = 40.0
@@ -55,7 +56,7 @@ CENTRE_DEPTH = 0.0
 # The wings' upper outer corners are bevelled (layout mm along the top and down the side).
 BEVEL = 55.0
 # The MFDs sit back in wells: their bezels this far behind the panel surface (m).
-MFD_WELL = 0.022
+MFD_WELL = 0.010
 # Advisory light panel on the right console ahead of the stick (layout x >= CONSOLE_U, its
 # middle at x 700, y 0), tilted towards the pilot.
 CONSOLE_U = 600.0
@@ -501,10 +502,12 @@ for v in (30.0, 56.0, 82.0):
     toggle(-288.0, v, 0.0, up=(v == 56.0))
 knob(-300.0, 108.0, 0.007, 0.012)
 # MFDs in their wells, the bezel's face MFD_WELL behind the panel surface, with fixed side
-# bezel buttons (the game uses the top and bottom rows).
+# bezel buttons (the game uses the top and bottom rows). The bezel plate overlaps the well's
+# walls, so nothing shows through round it.
 for key in ("left", "right"):
     x, y, w, h = scr[key]
-    panel_box("dark", "dark", (x - 16.0, y - 22.0, w + 32.0, h + 44.0), 0.008, 0.0, -0.03)
+    wx, wy, ww, wh = wells[key]
+    panel_box("dark", "dark", (wx - 2.0, wy - 2.0, ww + 4.0, wh + 4.0), 0.008, 0.0, -MFD_WELL - 0.008)
     for k in range(5):
         for bx in (x - 9.0, x + w + 9.0):
             by = y + h * (k + 0.5) / 5

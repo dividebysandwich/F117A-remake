@@ -75,9 +75,11 @@ TIP_LE, TIP_CHORD = -19, 10
 
 def airframe(nose=LENGTH_NOSE):
     g = Geo()
-    # Nose and the low spine over the wing (the same height as the wing root behind the apex).
-    g.add(loft([(nose, 0, 0.6, 0.6), (nose - 3, 0, 3.0, 3.0), (nose - 9, 0, 4.2, 4.2), (APEX + 4, 0, 4.2, 3.8),
-                (APEX - 6, 0, 3.2, 2.8), (-12, 0, 2.6, 2.4), (TAIL + 2, 0, 2.2, 2.0), (TAIL, 0, 1.6, 1.4)], BODY, n=8))
+    # Nose: a tube of constant diameter with a rounded tip, running straight into the hull;
+    # behind the wing apex it flattens into the low spine (as thick as the wing root).
+    r = 4.2
+    cap = [(nose - r * (1 - math.cos(a)), 0, max(r * math.sin(a), 0.5), max(r * math.sin(a), 0.5)) for a in (0.0, 0.5, 0.95, 1.3, math.pi / 2)]
+    g.add(loft(cap + [(APEX - 2, 0, r, r), (APEX - 12, 0, 3.6, 2.9), (-12, 0, 2.8, 2.5), (TAIL + 2, 0, 2.2, 2.0), (TAIL, 0, 1.6, 1.4)], BODY, n=10))
     g.add(delta_wing(SPAN, APEX, APEX - TAIL, TIP_LE, TIP_CHORD, 0, t=0.1))
     g.add(tip_fins(SPAN, TIP_LE, TIP_CHORD, 8, 4.5, 0))
     g.line((-SPAN / 2, TIP_LE - TIP_CHORD, 0), (-SPAN / 2, TIP_LE, 0), RED)

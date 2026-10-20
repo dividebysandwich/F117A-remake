@@ -331,9 +331,9 @@ fn sync_objects(
             tf.rotation = rot;
             if let Some(mut s) = state {
                 // Slots 12 (nav lights), 13 (airborne, gear up), 14 (STFLT 1/10/15) and
-                // 18-20 (anti-collision lights, with the nav lights).
+                // 18-20 (anti-collision lights, with the nav lights near home airfields).
                 let special = matches!(model, 1 | 10 | 15);
-                let nav = u.flags & 3 != 0;
+                let nav = sim.aircraft_lights(i);
                 let [s18, s19, s20] = anticollision(time.elapsed_secs(), (i as f32 * 0.618).fract(), nav);
                 let v = [
                     (10, lights as i16),

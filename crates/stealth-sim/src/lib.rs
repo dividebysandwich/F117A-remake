@@ -7,6 +7,7 @@ pub mod types;
 mod ai;
 pub mod csar;
 pub mod drones;
+pub mod lights;
 mod missiles;
 mod objectives;
 mod radar;

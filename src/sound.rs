@@ -10,7 +10,8 @@
 //!   requested id with no sample stays silent, so speech can be added later by dropping files in.
 //! - Radar warning tones come from `sounds/rwr/` instead of the original sounds 8 and 9.
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
-//!   ejection, explosions and flares.
+//!   ejection, explosions and flares, and on the ground the emergency beacon (`beacon.flac`, two
+//!   chirps every 3 s at half volume) until the rescue ends.
 
 use std::collections::HashMap;
 
@@ -30,7 +31,7 @@ impl Plugin for SoundPlugin {
             .add_systems(Startup, load_bank)
             .add_systems(
                 Update,
-                (flight_sounds, play_sounds, engine_drone).chain().run_if(in_state(AppState::Flight)),
+                (flight_sounds, play_sounds, engine_drone, beacon).chain().run_if(in_state(AppState::Flight)),
             )
             .add_systems(OnExit(AppState::Flight), stop_all);
     }
@@ -85,17 +86,25 @@ const ENGINE_VOLUME: f32 = 0.8;
 /// The sounds still heard after ejecting: impact, explosion, the ejection, signal flare.
 const EJECTED_SOUNDS: [u8; 4] = [4, 5, 0x14, 0x1C];
 
+/// Emergency beacon interval (real seconds) and volume.
+const BEACON_INTERVAL: f32 = 3.0;
+const BEACON_VOLUME: f32 = 0.5;
+
 #[derive(Resource, Default)]
 struct SoundBank {
     /// Sound id -> variants (speech 43 has two).
     sfx: HashMap<u8, Vec<Handle<AudioSource>>>,
     /// Engine loops by recorded airspeed.
     engine: Vec<(f32, Handle<AudioSource>)>,
+    beacon: Option<Handle<AudioSource>>,
 }
 
 /// A playing one-shot sound (one instance per id at a time, like the single-voice driver).
 #[derive(Component)]
 struct OneShot(u8);
+
+#[derive(Component)]
+struct Beacon;
 
 #[derive(Component)]
 struct EngineDrone {
@@ -126,6 +135,9 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
         if crate::asset_path::asset(&format!("sounds/rwr/{file}")).exists() {
             bank.sfx.entry(rwr_id(tone)).or_default().push(server.load(format!("sounds/rwr/{file}")));
         }
+    }
+    if crate::asset_path::asset("sounds/beacon.flac").exists() {
+        bank.beacon = Some(server.load("sounds/beacon.flac"));
     }
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));
     commands.insert_resource(bank);
@@ -303,7 +315,36 @@ fn spawn_drone(commands: &mut Commands, handle: Handle<AudioSource>, sample_knot
     ));
 }
 
-fn stop_all(mut commands: Commands, q: Query<Entity, Or<(With<OneShot>, With<EngineDrone>)>>) {
+/// The emergency beacon of the pilot on the ground waiting for the rescue: the first chirps on
+/// landing, then every `BEACON_INTERVAL` (real time, held while the flight is paused).
+fn beacon(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    combat: Option<Res<crate::combat::Combat>>,
+    real: Res<Time<Real>>,
+    virt: Res<Time<Virtual>>,
+    mut wait: Local<f32>,
+) {
+    let Some(handle) = bank.as_ref().and_then(|b| b.beacon.clone()) else { return };
+    let waiting = combat.is_some_and(|c| c.sim.csar().is_some() && c.end.is_none());
+    if !waiting {
+        *wait = 0.0;
+        return;
+    }
+    if virt.is_paused() {
+        return;
+    }
+    *wait -= real.delta_secs();
+    if *wait <= 0.0 {
+        *wait = BEACON_INTERVAL;
+        if level.0 > 0 {
+            commands.spawn((AudioPlayer(handle), PlaybackSettings::DESPAWN.with_volume(Volume::Linear(BEACON_VOLUME)), Beacon));
+        }
+    }
+}
+
+fn stop_all(mut commands: Commands, q: Query<Entity, Or<(With<OneShot>, With<EngineDrone>, With<Beacon>)>>) {
     for e in &q {
         commands.entity(e).despawn();
     }

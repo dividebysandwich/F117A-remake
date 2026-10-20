@@ -345,7 +345,7 @@ impl Sim {
     pub(crate) fn bomb_impact(&self) -> Option<(f64, f64)> {
         let k = ballistics::drag(self.selected_spec(), self.opts.fix_original_bugs)?;
         let v = ballistics::release_velocity(self.p.heading, self.p.velocity, self.p.climb);
-        let (d, _) = ballistics::impact(v, k, self.p.alt as f64 - ballistics::RELEASE_DROP)?;
+        let (d, _) = ballistics::impact(v, k, self.p.alt as f64 - ballistics::RELEASE_DROP, 1.0 / self.fs as f64)?;
         Some(((self.p.wx as f64 + d[0]) / 32.0, ((0x100000 - self.p.wy) as f64 + d[1]) / 32.0))
     }
 

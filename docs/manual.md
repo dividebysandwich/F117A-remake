@@ -443,9 +443,10 @@ Ground targets under cloud cannot be designated (*Target obscured*). IR and opti
 
 **Unguided bombs** leave with the aircraft's speed and direction and fall under gravity and
 air drag. Free-fall bombs keep most of their speed and land far ahead of the release point
-(about 4,000 ft ahead from 500 ft at 450 knots). Retarded and cluster bombs open fins or a chute:
-they lose their speed within seconds and fall on a short, steep arc, landing about half as far
-ahead and well behind the aircraft, which is clear of the blast by then. Throwing a bomb in a
+(about 4,000 ft ahead from 500 ft at 450 knots, 6 seconds later). Retarded and cluster bombs
+open fins or a chute: they lose their speed within seconds and fall on a short, steep arc
+(about 2,500 ft ahead, 7 seconds), landing well behind the aircraft, which is clear of the
+blast by then. Throwing a bomb in a
 climb (loft) makes it fly farther. The CCIP pipper always shows where the selected bomb would
 land if released now.
 

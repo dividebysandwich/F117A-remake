@@ -279,34 +279,29 @@ impl Sim {
     fn fall_bomb(&mut self, s: usize) {
         let m = self.proj[s];
         let Some(f) = m.fall else { return };
-        let k = ballistics::drag(m.spec, self.opts.fix_original_bugs).unwrap_or(ballistics::SLICK_DRAG);
+        let Some(k) = ballistics::drag(m.spec, self.opts.fix_original_bugs) else { return };
         let fine = ROUND_FINE as f64;
-        let v = [f.vx as f64 / fine, f.vy as f64 / fine, f.vz as f64 / fine];
-        let h = f.alt as f64 / fine;
-        let frame = 1.0 / self.fs as f64;
-        let landing = if h <= 0.0 { Some(0.0) } else { ballistics::fall_time(v[2], k, h).filter(|&t| t <= frame) };
-        let dt = landing.unwrap_or(frame);
-        let d = ballistics::offset(v, k, dt);
-        let nv = ballistics::velocity(v, k, dt);
+        let before = [f.x as f64 / fine, f.y as f64 / fine, f.alt as f64 / fine];
+        let (mut p, mut v) = (before, [f.vx as f64 / fine, f.vy as f64 / fine, f.vz as f64 / fine]);
+        ballistics::step(&mut p, &mut v, k, 1.0 / self.fs as f64);
+        let landed = p[2] <= 0.0;
+        if landed {
+            // Where the step crossed the ground.
+            let t = if before[2] > 0.0 { before[2] / (before[2] - p[2]) } else { 0.0 };
+            p = [before[0] + (p[0] - before[0]) * t, before[1] + (p[1] - before[1]) * t, 0.0];
+        }
         let q = |a: f64| (a * fine).round() as i32;
-        let nf = BombFall {
-            x: f.x + q(d[0]),
-            y: f.y + q(d[1]),
-            alt: if landing.is_some() { 0 } else { f.alt + q(d[2]) },
-            vx: q(nv[0]),
-            vy: q(nv[1]),
-            vz: q(nv[2]),
-        };
+        let nf = BombFall { x: q(p[0]), y: q(p[1]), alt: q(p[2]), vx: q(v[0]), vy: q(v[1]), vz: q(v[2]) };
         let bam = 65536.0 / std::f64::consts::TAU;
         let pm = &mut self.proj[s];
         pm.fall = Some(nf);
         pm.x = (nf.x / (32 * ROUND_FINE)) & 0xFFFF;
         pm.y = (nf.y / (32 * ROUND_FINE)) & 0xFFFF;
-        pm.alt = if landing.is_some() { -1 } else { view_z_f(nf.alt as f64 / fine) as i32 };
-        pm.heading = s16((nv[0].atan2(-nv[1]) * bam) as i32);
-        pm.pitch = s16((nv[2].atan2(nv[0].hypot(nv[1])) * bam) as i32);
+        pm.alt = if landed { -1 } else { view_z_f(p[2]) as i32 };
+        pm.heading = s16((v[0].atan2(-v[1]) * bam) as i32);
+        pm.pitch = s16((v[2].atan2(v[0].hypot(v[1])) * bam) as i32);
         pm.ttl -= 1;
-        if landing.is_some() {
+        if landed {
             self.ground_impact(s);
         }
     }

@@ -88,17 +88,6 @@ fn main() {
         }),
         ..default()
     })
-    // Mesh instance data is built on the CPU in VR: on the Steam Frame's GPU (Adreno, Turnip)
-    // GPU preprocessing and its indirect draws took 23 of 27 ms per frame. `SM89_GPU_PREPROCESS=on|off`
-    // overrides.
-    .set(bevy::pbr::PbrPlugin {
-        use_gpu_instance_buffer_builder: match std::env::var("SM89_GPU_PREPROCESS").as_deref() {
-            Ok("on") => true,
-            Ok("off") => false,
-            _ => !settings.vr,
-        },
-        ..default()
-    })
     .set(bevy::log::LogPlugin {
         filter: format!("{}{}", bevy::log::DEFAULT_FILTER, profile::log_filter()),
         custom_layer: profile::log_layer,

@@ -340,6 +340,9 @@ fn update_globals(
     g.light_info.x = lighting.lights.len() as f32;
     g.light_info.y = lighting.daylight;
     g.light_info.z = hud.is_some_and(|h| h.nvg) as u32 as f32;
+    // `SM89_FLAT_SHADER=<bits>`: flat colours (measuring the fragment shader's cost): 1 all,
+    // 2 the background sphere, 4 objects, 8 clouds and smoke.
+    g.light_info.w = std::env::var("SM89_FLAT_SHADER").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) as f32;
     g.dots.x = if settings.vr { crate::dots::XR_ANGLE } else { 0.0 };
     g.dots.y = time.elapsed_secs_wrapped() % 3600.0;
     if let Some(img) = trackcam.and_then(|t| images.get(&t.0)) {

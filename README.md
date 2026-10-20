@@ -151,6 +151,7 @@ over ssh (host `frame` in `~/.ssh/config`) and starts a VR flight there; Ctrl-C 
 copies the log back. See the script for its options and setup. Environment variables for
 measuring: `SM89_PROFILE=1` logs frame, GPU pass and per-system CPU times every 10 seconds,
 `SM89_MSAA=off|2|4|8` overrides anti-aliasing, `SM89_XR_PIPELINED=1` turns on pipelined
-rendering in VR and `SM89_GPU_PREPROCESS=on|off` overrides GPU mesh preprocessing (off in VR).
+rendering in VR, `SM89_NO_INDIRECT=1` draws without indirect draws and `SM89_FLAT_SHADER=<bits>`
+flattens parts of the palette shader (1 all, 2 background, 4 objects, 8 clouds and smoke).
 On the Frame, SteamVR's per-app GPU time (printed at the end of each run) is the reliable GPU
 measurement.

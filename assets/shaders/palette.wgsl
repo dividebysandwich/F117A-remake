@@ -36,7 +36,8 @@ struct Globals {
     sun: vec4<f32>,
     // Ambient (rgb), lighting flags (w).
     ambient: vec4<f32>,
-    // x: local light count, y: daylight 0 (night) .. 1 (day), z: night vision goggles.
+    // x: local light count, y: daylight 0 (night) .. 1 (day), z: night vision goggles,
+    // w: flat colours (SM89_FLAT_SHADER bits: 1 all, 2 background, 4 objects, 8 clouds and smoke).
     light_info: vec4<f32>,
     // x: XR dot angular size in radians (0 = flat screen), y: animation clock (seconds,
     // wraps every hour), zw: tracking camera picture size (pixels).
@@ -650,6 +651,9 @@ fn flir(rgb: vec3<f32>, warm: u32, fog_f: f32) -> vec3<f32> {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    if ((u32(globals.light_info.w) & 1u) != 0u) {
+        return vec4<f32>(pal(material.word & 0xFFu), 1.0);
+    }
     if (flir_view()) {
         // Background: cold sky, cool ground.
         if ((material.flags & 4u) != 0u) {
@@ -667,6 +671,9 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
     let dir = in.world_position - view.world_position;
     let modern = globals.params.w != 0.0;
     if ((material.flags & FLAG_CLOUD) != 0u) {
+        if ((u32(globals.light_info.w) & 8u) != 0u) {
+            return vec4<f32>(pal(CLOUD_RAMP + 4u), 1.0);
+        }
         let d = length(dir);
         if (in.puff_eye.w > 0.0) {
             return smoke_volume(in, dir, modern);
@@ -689,6 +696,9 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
         return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d), in.world_position), cover);
     }
     if ((material.flags & 1u) != 0u) {
+        if ((u32(globals.light_info.w) & 2u) != 0u) {
+            return vec4<f32>(pal(select(0x7Cu, 0x88u, dir.y >= 0.0)), 1.0);
+        }
         // Background: sky bands above the horizon, ground gradient below.
         if ((material.flags & 4u) != 0u) {
             return vec4<f32>(pal(select(0x7Cu, 0x88u, dir.y >= 0.0)), 1.0);
@@ -747,6 +757,9 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
 #ifdef DOT_COLOUR
     lo = in.dot_colour;
 #endif
+    if ((u32(globals.light_info.w) & 4u) != 0u) {
+        return vec4<f32>(pal(haze(lo, in.fog)), 1.0);
+    }
     let px = vec2<u32>(in.clip_position.xy);
     let is_line = (material.flags & 2u) != 0u;
     var rgb: vec3<f32>;

@@ -131,6 +131,12 @@ pub fn spawn_background(
     sphere
 }
 
+/// `SM89_NO_INDIRECT=1`: the eye cameras draw without indirect draws (GPU preprocessing still
+/// builds the instance data; measuring the indirect draws' cost on the Steam Frame).
+pub fn no_indirect() -> bool {
+    std::env::var("SM89_NO_INDIRECT").is_ok_and(|v| v == "1")
+}
+
 /// Spawns the rig under the given aircraft entity, the head at the pilot's eye point (`eye`,
 /// aircraft frame, metres). `xr_root`: the XR tracking root, used as
 /// the eye camera (its headset cameras get the render layers from the XR module).
@@ -162,6 +168,9 @@ pub fn spawn_rig(
         .id();
     spawn_background(commands, cam, meshes, palette, MAIN_BACKGROUND_LAYER);
     commands.entity(cam).insert(bevy::camera::visibility::RenderLayers::from_layers(&[0, MAIN_BACKGROUND_LAYER, MAIN_LOD_LAYER]));
+    if no_indirect() {
+        commands.entity(cam).insert(bevy::render::view::NoIndirectDrawing);
+    }
     commands.entity(head).add_child(cam);
     commands.entity(aircraft).add_child(head).insert(WorldAnchor);
 }

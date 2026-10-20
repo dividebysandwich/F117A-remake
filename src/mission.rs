@@ -207,6 +207,13 @@ pub fn from_args(app: &mut App) {
     {
         app.insert_resource(route);
     }
+    // `--loadout <file>`: the stores chosen in the menu.
+    if let Some(lo) = get("--loadout")
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<crate::loadout::PlannedLoadout>(&t).ok())
+    {
+        app.insert_resource(lo);
+    }
     let mut setup = setup_from_mission(&m, &tables.start_dir);
     setup.freecam = args.iter().any(|a| a == "--freecam");
     app.insert_resource(setup)

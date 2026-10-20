@@ -1491,8 +1491,9 @@ impl MfdParams<'_, '_> {
     pub(crate) fn draw_wpn_hires(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
         c.clear(0);
         let (w, ht) = (c.w as i32, c.h as i32);
-        let row = ht / 4;
-        for (i, bay) in self.stores.bays.iter().enumerate().take(4) {
+        let rows = self.stores.bays.len().clamp(4, 6);
+        let row = ht / rows as i32;
+        for (i, bay) in self.stores.bays.iter().enumerate().take(rows) {
             let y = row * i as i32;
             if i == self.stores.selected {
                 c.fill_rect(1, y + 1, w - 2, row - 1, 8);
@@ -1505,7 +1506,7 @@ impl MfdParams<'_, '_> {
             text2(c, fonts, 6, y + 22, &format!("X{}", bay.count), 47);
         }
         c.rect(0, 0, w, ht, 47);
-        for i in 1..4 {
+        for i in 1..rows as i32 {
             c.hline(0, w - 1, row * i, 47);
         }
     }

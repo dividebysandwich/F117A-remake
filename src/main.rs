@@ -24,6 +24,7 @@ mod input;
 mod input_dialog;
 mod lighting;
 mod lightning;
+mod loadout;
 mod mfd;
 mod menu;
 mod mission;

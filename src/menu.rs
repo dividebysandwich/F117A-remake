@@ -19,6 +19,8 @@ impl Plugin for MenuPlugin {
             .insert_resource(EguiGlobalSettings { auto_create_primary_context: false, ..default() })
             .init_resource::<MenuState>()
             .init_resource::<crate::input_dialog::InputDialog>()
+            // `--open-loadout`: start in the loadout editor (screenshots).
+            .insert_resource(crate::loadout::LoadoutWindow::opened(std::env::args().any(|a| a == "--open-loadout")))
             .insert_resource(VrAvailable(vr_available()))
             .add_systems(OnEnter(AppState::Menu), spawn_menu_camera)
             .add_systems(OnExit(AppState::Menu), despawn_menu_camera)
@@ -63,6 +65,8 @@ pub struct MenuState {
     pub mission: Option<Result<Mission, String>>,
     /// The route to fly (mission planner); reset with every new mission.
     pub route: Option<crate::mission::PlannedRoute>,
+    /// The stores to carry (loadout editor); reset with every new mission and aircraft.
+    pub loadout: Option<crate::loadout::PlannedLoadout>,
     /// Career mode: the pilot (file key) whose tour sortie this is.
     pub career: Option<String>,
     dirty: bool,
@@ -103,6 +107,7 @@ impl Default for MenuState {
             seed: rand::random(),
             mission: None,
             route: None,
+            loadout: None,
             career: None,
             dirty: true,
         }
@@ -170,6 +175,14 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
     cmd.args(["--aircraft", settings.aircraft.id()]);
     if let Some(key) = &state.career {
         cmd.args(["--career", key]);
+    }
+    if let Some(lo) = &state.loadout {
+        match crate::prefs::save_json(crate::loadout::LOADOUT_FILE, lo) {
+            Ok(path) => {
+                cmd.arg("--loadout").arg(path);
+            }
+            Err(e) => warn!("saving the loadout: {e}"),
+        }
     }
     if let Some(route) = &state.route {
         match crate::prefs::save_json(crate::mission::ROUTE_FILE, route) {
@@ -384,9 +397,9 @@ fn menu_ui(
     hotas: Res<crate::hotas::Hotas>,
     keys: Res<ButtonInput<KeyCode>>,
     mut saved: Local<Option<crate::prefs::Prefs>>,
-    windows: (ResMut<crate::planner::Planner>, ResMut<crate::career::CareerWindow>),
+    windows: (ResMut<crate::planner::Planner>, ResMut<crate::career::CareerWindow>, ResMut<crate::loadout::LoadoutWindow>),
 ) -> Result {
-    let (mut planner, mut career) = windows;
+    let (mut planner, mut career, mut loadout) = windows;
     // Generator data is loaded on first use.
     let Some(data) = data else {
         match MissionData::load() {
@@ -415,6 +428,12 @@ fn menu_ui(
         }
         state.route = state.mission.as_ref().and_then(|m| m.as_ref().ok()).map(crate::mission::PlannedRoute::of);
     }
+    // The briefed stores, on the aircraft flown.
+    if let Some(Ok(m)) = &state.mission
+        && !state.loadout.as_ref().is_some_and(|l| l.fits(m, settings.aircraft))
+    {
+        state.loadout = Some(crate::loadout::PlannedLoadout::of(m, settings.aircraft));
+    }
 
     let ctx = contexts.ctx_mut()?;
     apply_ui_zoom(ctx);
@@ -435,7 +454,7 @@ fn menu_ui(
         .max_width(width)
         .frame(egui::Frame::window(&ctx.global_style()).inner_margin(16.0))
         .show(ctx, |ui| {
-            if dialog.open || planner.open || career.open {
+            if dialog.open || planner.open || career.open || loadout.open {
                 ui.disable();
             }
             ui.horizontal(|ui| {
@@ -592,10 +611,16 @@ fn menu_ui(
                             Some(Ok(m)) => {
                                 mission_summary(ui, &state, m);
                                 ui.add_space(6.0);
-                                let plan = ui.button(egui::RichText::new("PLAN ROUTE").size(16.0));
-                                if facts(plan, &["The theater map with the enemy radar and SAM coverage", "Add, move and remove navigation points", "Targets and the landing base stay fixed"]).clicked() {
-                                    planner.open = true;
-                                }
+                                ui.horizontal(|ui| {
+                                    let plan = ui.button(egui::RichText::new("PLAN ROUTE").size(16.0));
+                                    if facts(plan, &["The theater map with the enemy radar and SAM coverage", "Add, move and remove navigation points", "Targets and the landing base stay fixed"]).clicked() {
+                                        planner.open = true;
+                                    }
+                                    let arm = ui.button(egui::RichText::new("LOADOUT").size(16.0));
+                                    if facts(arm, &["Choose the stores on each bay or pylon", "Starts with the briefed weapons"]).clicked() {
+                                        loadout.open = true;
+                                    }
+                                });
                             }
                             Some(Err(e)) => {
                                 ui.colored_label(AMBER, e);
@@ -634,6 +659,7 @@ fn menu_ui(
                         *setup = crate::mission::setup_from_mission(m, &tables.start_dir);
                         commands.insert_resource(ActiveMission(m.clone()));
                         commands.insert_resource(state.route.clone().unwrap_or_else(|| crate::mission::PlannedRoute::of(m)));
+                        commands.insert_resource(state.loadout.clone().unwrap_or_else(|| crate::loadout::PlannedLoadout::of(m, settings.aircraft)));
                         match &state.career {
                             Some(key) => commands.insert_resource(crate::career::CareerFlight(key.clone())),
                             None => commands.remove_resource::<crate::career::CareerFlight>(),
@@ -659,6 +685,7 @@ fn menu_ui(
         });
     crate::input_dialog::show(ctx, &mut dialog, input_config.bypass_change_detection(), &hotas, &keys);
     crate::planner::planner_ui(ctx, &mut planner, &mut state);
+    crate::loadout::loadout_ui(ctx, &mut loadout, &mut state, settings.aircraft);
     if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover) {
         // Changing the mission's options leaves career mode.
         state.dirty = true;
@@ -704,7 +731,10 @@ fn mission_summary(ui: &mut egui::Ui, state: &MenuState, m: &Mission) {
         for l in [&b.primary_objective, &b.secondary_objective, &b.depart_line, &b.land_line, &b.weather_line] {
             small(ui, l);
         }
-        small(ui, &format!("Armament: {}", b.armament.iter().map(|a| clean_text(a)).collect::<Vec<_>>().join(", ")));
+        match &state.loadout {
+            Some(lo) => small(ui, &format!("Armament: {}", lo.summary())),
+            None => small(ui, &format!("Armament: {}", b.armament.iter().map(|a| clean_text(a)).collect::<Vec<_>>().join(", "))),
+        }
         ui.add_space(4.0);
         ui.label(egui::RichText::new("INTELLIGENCE").small().color(AMBER));
         for l in [&b.primary_summary, &b.secondary_summary, &b.roe_text] {

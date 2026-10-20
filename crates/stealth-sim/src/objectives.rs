@@ -164,7 +164,11 @@ impl Sim {
                     let t = self.targets[k];
                     if t.object == self.nearest_base && t.mission_type == 4 && self.mission_tick < self.deadline && self.mark_target_reached(k) {
                         self.msg("Cargo delivered");
-                        self.bays[k].1 = 0;
+                        // The original empties bay k (the generator loads the target's
+                        // equipment there).
+                        if let Some(b) = self.bays.iter_mut().find(|b| b.0 == SPECIAL_EQUIPMENT && b.1 != 0) {
+                            b.1 = 0;
+                        }
                     }
                 }
                 if b.flags & 0x500 != 0 && self.armed_landing != 0 && b.flags & oflags::DISABLED == 0 {

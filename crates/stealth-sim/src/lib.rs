@@ -89,9 +89,9 @@ pub struct Sim {
     pub(crate) irj_heat: i32,
     pub(crate) door_anim: i32,
     pub(crate) bay_req: bool,
-    /// Bays (type, count).
-    pub(crate) bays: [(i32, i32); 4],
-    pub(crate) n_bays: usize,
+    /// Bays or pylon stations (weapon type, count; type -1 empty).
+    pub(crate) bays: Vec<(i32, i32)>,
+    /// Selected station: the first one carrying the selected weapon.
     pub(crate) cur_bay: usize,
     /// Countermeasure stores ([1] flare, [2] chaff, [3] decoy).
     pub(crate) stores: [i32; 4],
@@ -281,10 +281,7 @@ impl Sim {
             .collect();
         let lockheed = s.plane == stealth_mission::Plane::Lockheed;
         let n_bays = if lockheed { 2 } else { 4 };
-        let mut bays = [(0, 0); 4];
-        for (k, b) in m.loadout.bays.iter().take(4).enumerate() {
-            bays[k] = (b.weapon as i32, b.count as i32);
-        }
+        let bays = m.loadout.bays.iter().take(n_bays).map(|b| (b.weapon as i32, b.count as i32)).collect();
         let display_shape = objects.iter().map(|o| o.shape).collect();
         let theater = s.theater;
         let seed = opts.seed.unwrap_or(m.rng.holdrand_exit);
@@ -320,7 +317,6 @@ impl Sim {
             door_anim: 0,
             bay_req: false,
             bays,
-            n_bays,
             cur_bay: 0,
             stores: [data.stores_init[0] as i32, data.stores_init[1] as i32, data.stores_init[2] as i32, data.stores_init[3] as i32],
             gun_ammo: data.gun_ammo_init as i32,
@@ -798,9 +794,38 @@ impl Sim {
         self.gun_firing
     }
 
-    /// Bays (weapon index, count) and the selected bay.
+    /// Bays or stations (weapon index, count; -1 empty) and the selected one.
     pub fn bays(&self) -> (&[(i32, i32)], usize) {
-        (&self.bays[..self.n_bays], self.cur_bay)
+        (&self.bays, self.cur_bay)
+    }
+
+    /// The weapons carried (weapon index, rounds on all stations), in station order, and the
+    /// selected one's index in this list (None: nothing carried).
+    pub fn weapon_groups(&self) -> (Vec<(i32, i32)>, Option<usize>) {
+        let mut groups: Vec<(i32, i32)> = Vec::new();
+        let mut selected = None;
+        for (i, &(w, n)) in self.bays.iter().enumerate() {
+            if w < 0 {
+                continue;
+            }
+            match groups.iter().position(|g| g.0 == w) {
+                Some(k) => groups[k].1 += n,
+                None => {
+                    if i == self.cur_bay {
+                        selected = Some(groups.len());
+                    }
+                    groups.push((w, n));
+                }
+            }
+        }
+        (groups, selected)
+    }
+
+    /// Replaces the mission's bays with these stations (weapon index, count; -1 empty), e.g.
+    /// the player's loadout or an aircraft's pylons.
+    pub fn set_loadout(&mut self, stations: &[(i32, i32)]) {
+        self.bays = stations.iter().map(|&(w, n)| if w < 0 { (-1, 0) } else { (w, n.max(0)) }).collect();
+        self.cur_bay = self.bays.iter().position(|b| b.0 >= 0).unwrap_or(0);
     }
 
     pub fn weapon_types(&self) -> &[WeaponType] {
@@ -964,14 +989,14 @@ impl Sim {
 
     /// Test / tool hook: load a bay.
     pub fn set_bay(&mut self, bay: usize, weapon: i32, count: i32) {
-        if bay < 4 {
+        if bay < self.bays.len() {
             self.bays[bay] = (weapon, count);
         }
     }
 
     /// Test / tool hook: select the current bay.
     pub fn select_bay(&mut self, bay: usize) {
-        self.cur_bay = bay.min(self.n_bays - 1);
+        self.cur_bay = bay.min(self.bays.len().saturating_sub(1));
     }
 
     /// Test / tool hook: set the ground lock.

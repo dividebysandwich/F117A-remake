@@ -175,6 +175,7 @@ fn start_combat(
     mut wps: ResMut<Waypoints>,
     mut accel: ResMut<TimeAccel>,
     route: Option<Res<crate::mission::PlannedRoute>>,
+    loadout: Option<Res<crate::loadout::PlannedLoadout>>,
     career: Option<Res<crate::career::CareerFlight>>,
     settings: Res<crate::settings::Settings>,
 ) {
@@ -218,7 +219,11 @@ fn start_combat(
     let prior_damage = career.and_then(|c| crate::career::Pilot::load(&c.0)).and_then(|p| p.tour).map(|t| t.damage);
     let prior_tiles = prior_damage.as_ref().map(|d| d.tiles.clone()).unwrap_or_default();
     let external_stores = !settings.aircraft.spec().bomb_bay;
-    let sim = Sim::with_options(&data, m, SimOptions { landing, prior_damage, external_stores, ..default() });
+    let mut sim = Sim::with_options(&data, m, SimOptions { landing, prior_damage, external_stores, ..default() });
+    // The stores chosen in the menu, else the briefed ones on this aircraft.
+    let loadout = loadout.filter(|l| l.fits(m, settings.aircraft)).map(|l| l.clone()).unwrap_or_else(|| crate::loadout::PlannedLoadout::of(m, settings.aircraft));
+    sim.set_loadout(&loadout.stations());
+    sim.select_bay(loadout.first_choice(m));
     // The player starts at the sim's start state (the same formula as `mission::start_pose`).
     let st = sim.start_state();
     setup.start = Some(StartPose {
@@ -711,9 +716,10 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         a.damage = damage;
     }
 
-    // Stores and gun.
-    let (bays, cur) = sim.bays();
-    let new_bays: Vec<Bay> = bays
+    // Stores (one entry per weapon carried) and gun.
+    let (groups, cur) = sim.weapon_groups();
+    let cur = cur.unwrap_or(0);
+    let new_bays: Vec<Bay> = groups
         .iter()
         .map(|&(w, count)| {
             let wt = &data.weapons[(w.max(0) as usize).min(data.weapons.len() - 1)];
@@ -854,8 +860,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     let mut info = TrackCam { live: cam.live, ..default() };
     let mut new_cues = HudCues::default();
     let cockpit = view.view == View::Cockpit;
-    let (w, _) = bays.get(cur).copied().unwrap_or((0, 0));
-    let spec = data.weapons[(w.max(0) as usize).min(data.weapons.len() - 1)].spec as i32;
+    let spec = groups.get(cur).map_or(0, |&(w, _)| data.weapons[(w.max(0) as usize).min(data.weapons.len() - 1)].spec as i32);
     if let Some(g) = t.ground.filter(|&g| g < objects.len()) {
         let ob = objects[g];
         let place = sim.place_name(g);

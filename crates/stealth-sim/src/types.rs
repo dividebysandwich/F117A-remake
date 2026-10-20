@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+/// Weapon index of the special equipment (supplies, cargo).
+pub const SPECIAL_EQUIPMENT: i32 = 18;
+
 /// World-object flags.
 pub mod oflags {
     pub const AIRFIELD: i32 = 0x0001;

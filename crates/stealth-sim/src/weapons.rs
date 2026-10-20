@@ -41,7 +41,7 @@ impl Sim {
             self.sound(0x1F, 1);
         }
         if c.next_bay {
-            self.cur_bay = if self.lockheed { self.cur_bay ^ 1 } else { (self.cur_bay + 1) & 3 };
+            self.next_weapon();
         }
         if c.designate {
             self.target_hold = false;
@@ -117,6 +117,34 @@ impl Sim {
             } else {
                 self.msg("No target");
             }
+        }
+    }
+
+    /// Space: the next weapon carried (stations with the selected weapon are skipped; the
+    /// original steps through its 2 or 4 bays, the same with a different weapon in each).
+    fn next_weapon(&mut self) {
+        let n = self.bays.len();
+        let first_of = |b: &[(i32, i32)], i: usize| b[i].0 >= 0 && !b[..i].iter().any(|o| o.0 == b[i].0);
+        let cur = self.bays.get(self.cur_bay).map_or(-1, |b| b.0);
+        if let Some(i) = (1..=n).map(|k| (self.cur_bay + k) % n).find(|&i| first_of(&self.bays, i) && self.bays[i].0 != cur) {
+            self.cur_bay = i;
+        }
+    }
+
+    /// The selected weapon (-1 none) and its rounds on all stations.
+    pub(crate) fn selected_weapon(&self) -> (i32, i32) {
+        let w = self.bays.get(self.cur_bay).map_or(-1, |b| b.0);
+        if w < 0 {
+            return (-1, 0);
+        }
+        (w, self.bays.iter().filter(|b| b.0 == w).map(|b| b.1).sum())
+    }
+
+    /// Missile table index of the selected weapon (0: none or guns).
+    pub(crate) fn selected_spec(&self) -> i32 {
+        match self.selected_weapon().0 {
+            w if w < 0 => 0,
+            w => self.weapon_types[(w as usize).min(19)].spec as i32,
         }
     }
 
@@ -197,11 +225,17 @@ impl Sim {
         if abs16(self.p.roll) > 0x3000 {
             return;
         }
-        let bay = self.cur_bay;
-        if self.bays[bay].1 == 0 {
+        let (w, count) = self.selected_weapon();
+        if count <= 0 {
             return;
         }
-        let w = self.bays[bay].0;
+        // From the station with the most left (pairs of pylons release in turn).
+        let mut bay = self.cur_bay;
+        for (i, b) in self.bays.iter().enumerate() {
+            if b.0 == w && b.1 > self.bays[bay].1 {
+                bay = i;
+            }
+        }
         let wt = self.weapon_types[(w.max(0) as usize).min(19)].clone();
         let spec = wt.spec as i32;
         if spec == 0 || spec == -1 {

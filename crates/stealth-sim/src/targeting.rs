@@ -175,8 +175,7 @@ impl Sim {
             return;
         }
         self.nearest_req -= 1;
-        let (w, _) = self.bays[self.cur_bay];
-        let spec = self.weapon_types[(w.max(0) as usize).min(19)].spec as i32;
+        let spec = self.selected_spec();
         let air = spec > 0 && self.missile(spec).class == 7;
         let want = if air { HudMode::Air } else { HudMode::Gnd };
         if self.hud_mode != want || self.external_view {
@@ -266,8 +265,9 @@ impl Sim {
         t.screen = None;
         t.box_colour = 0;
         t.box_size = 0;
-        let (w, count) = self.bays[self.cur_bay];
-        let spec = self.weapon_types[(w.max(0) as usize).min(19)].spec as i32;
+        let (w, count) = self.selected_weapon();
+        let w = w.max(0);
+        let spec = self.selected_spec();
         let (cls, lock) = if spec > 0 {
             let m = self.missile(spec);
             (m.class as i32, m.lock_range as i32)
@@ -346,7 +346,7 @@ impl Sim {
         if self.hud_mode != HudMode::Gnd {
             return;
         }
-        let spec = self.weapon_types[(self.bays[self.cur_bay].0.max(0) as usize).min(19)].spec as i32;
+        let spec = self.selected_spec();
         if spec != 29 && spec != 30 {
             return;
         }
@@ -373,7 +373,7 @@ impl Sim {
         if self.photo_timer > 0 {
             self.photo_timer -= 1;
         }
-        let spec = self.weapon_types[(self.bays[self.cur_bay].0.max(0) as usize).min(19)].spec;
+        let spec = self.selected_spec();
         if !(spec == -1 && self.pflags & pflags::BAY_OPEN != 0 && self.camera_mfd && self.gnd_lock != -1) {
             self.pflags &= !pflags::CAMERA_VIEW;
             return;
@@ -429,7 +429,7 @@ impl Sim {
             if r < 0xC80 {
                 let b = bearing(s16(o.x - self.p.mx), s16(self.p.my - o.y)) / 0xB6;
                 self.msg(format!("Radio beacon bearing {b}"));
-                if r < 0x100 && self.bays[0].1 != 0 {
+                if r < 0x100 && self.bays.iter().any(|b| b.0 == SPECIAL_EQUIPMENT && b.1 != 0) {
                     self.msg("Drop supplies now");
                 }
             }

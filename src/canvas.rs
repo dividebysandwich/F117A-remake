@@ -316,6 +316,9 @@ pub struct CanvasTexture {
     /// Optional per-pixel mask: index 0 is only transparent where the mask is true.
     pub mask: Option<Vec<bool>>,
     pub dirty: bool,
+    /// The pixels and transparency last uploaded: a redraw that changed nothing (most frames
+    /// for the instrument atlas) skips the conversion and the texture upload.
+    shown: Option<(Vec<u8>, bool)>,
 }
 
 impl CanvasTexture {
@@ -328,31 +331,53 @@ impl CanvasTexture {
             RenderAssetUsages::default(),
         );
         image.sampler = ImageSampler::nearest();
-        Self { canvas, image: images.add(image), transparent, mask: None, dirty: true }
+        Self { canvas, image: images.add(image), transparent, mask: None, dirty: true, shown: None }
     }
 }
 
 fn upload_canvases(palette: Res<Palette>, mut images: ResMut<Assets<Image>>, mut q: Query<&mut CanvasTexture>) {
     let all = palette.is_changed();
-    // Palette as 8-bit sRGB.
-    let lut: Vec<[u8; 4]> = (0..=255u8)
-        .map(|i| {
-            let c = palette.color(i).to_srgba();
-            [(c.red * 255.0) as u8, (c.green * 255.0) as u8, (c.blue * 255.0) as u8, 255]
-        })
-        .collect();
+    // Palette as 8-bit sRGB RGBA (in memory order), and with index 0 see-through.
+    let mut lut = [0u32; 256];
+    for (i, v) in lut.iter_mut().enumerate() {
+        let c = palette.color(i as u8).to_srgba();
+        *v = u32::from_le_bytes([(c.red * 255.0) as u8, (c.green * 255.0) as u8, (c.blue * 255.0) as u8, 255]);
+    }
+    let mut see_lut = lut;
+    see_lut[TRANSPARENT as usize] = 0;
     for mut ct in &mut q {
         if !(ct.dirty || all) {
             continue;
         }
+        let ct = ct.bypass_change_detection();
         ct.dirty = false;
-        let ct = ct.into_inner();
+        let unchanged = ct.shown.as_ref().is_some_and(|(px, t)| *t == ct.transparent && *px == ct.canvas.px);
+        if !all && ct.mask.is_none() && unchanged {
+            continue;
+        }
         let Some(mut img) = images.get_mut(&ct.image) else { continue };
         let Some(data) = img.data.as_mut() else { continue };
-        for (i, &c) in ct.canvas.px.iter().enumerate() {
-            let see = ct.transparent && c == TRANSPARENT && ct.mask.as_ref().is_none_or(|m| m[i]);
-            let rgba = if see { [0, 0, 0, 0] } else { lut[c as usize] };
-            data[i * 4..i * 4 + 4].copy_from_slice(&rgba);
+        let out = data.as_chunks_mut::<4>().0.iter_mut().zip(&ct.canvas.px);
+        match (&ct.mask, ct.transparent) {
+            (Some(mask), true) => {
+                for (i, (o, &c)) in out.enumerate() {
+                    let l = if mask[i] { &see_lut } else { &lut };
+                    *o = l[c as usize].to_le_bytes();
+                }
+            }
+            (_, t) => {
+                let l = if t { &see_lut } else { &lut };
+                for (o, &c) in out {
+                    *o = l[c as usize].to_le_bytes();
+                }
+            }
+        }
+        match &mut ct.shown {
+            Some((px, t)) => {
+                px.clone_from(&ct.canvas.px);
+                *t = ct.transparent;
+            }
+            None => ct.shown = Some((ct.canvas.px.clone(), ct.transparent)),
         }
     }
 }

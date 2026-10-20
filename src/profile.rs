@@ -2,9 +2,13 @@
 //! on hardware without a profiler (the Steam Frame).
 //!
 //! - Frames: average, 99th percentile and worst frame time.
-//! - GPU: each render pass that records timestamps (Bevy's render diagnostics), summed over
-//!   the views (both eyes in VR), with the CPU time spent encoding it and, where the GPU has
-//!   pipeline statistics, its vertex and fragment shader invocations.
+//! - GPU: each 3D view's whole frame (`view`) and the render passes in it that record
+//!   timestamps (Bevy's render diagnostics), summed over the views (both eyes in VR), with the
+//!   CPU time spent encoding them and, where the GPU has pipeline statistics, the vertex and
+//!   fragment shader invocations. Not on the Steam Frame: Turnip writes the timestamps without
+//!   waiting for the work before them, so they read near zero. There, SteamVR's own
+//!   measurement is reliable: `ApplicationTime CPU / GPU` in
+//!   `~/.local/share/Steam/logs/vrcompositor.txt`, logged when the game exits.
 //! - CPU: every system, schedule and render node (Bevy's trace spans, timed by a tracing
 //!   layer). Spans nest (a schedule contains its systems) and systems on worker threads run in
 //!   parallel, so these don't add up to the frame time.
@@ -75,10 +79,40 @@ impl Plugin for ProfilePlugin {
         let c = self.0;
         info!("profiling: report every {} s, GPU timestamps {}", c.interval, if c.gpu { "on" } else { "off" });
         if c.gpu {
+            use bevy::core_pipeline::{Core3d, Core3dSystems, upscaling::upscaling};
             app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin);
+            // Each 3D view's whole frame, timed between passes.
+            if let Some(render) = app.get_sub_app_mut(bevy::render::RenderApp) {
+                render.add_systems(Core3d, (view_span_begin.before(Core3dSystems::Prepass), view_span_end.after(upscaling)));
+            }
         }
         app.insert_resource(Report::new(c)).add_systems(Last, report);
     }
+}
+
+// Exclusive systems: they run on the thread running the view's schedule, and the recorder
+// closes a span on the thread that opened it. Their command buffers are queued in order with
+// the other systems' (which are applied before an exclusive system runs).
+fn view_span_begin(world: &mut World) {
+    view_span(world, true);
+}
+
+fn view_span_end(world: &mut World) {
+    view_span(world, false);
+}
+
+fn view_span(world: &mut World, begin: bool) {
+    use bevy::render::diagnostic::{DiagnosticsRecorder, RecordDiagnostics};
+    use bevy::render::renderer::{PendingCommandBuffers, RenderDevice};
+    let (Some(d), Some(device)) = (world.get_resource::<DiagnosticsRecorder>(), world.get_resource::<RenderDevice>()) else { return };
+    let mut encoder = device.create_command_encoder(&Default::default());
+    if begin {
+        d.begin_time_span(&mut encoder, "view".into());
+    } else {
+        d.end_time_span(&mut encoder);
+    }
+    let buffer = encoder.finish();
+    world.resource_mut::<PendingCommandBuffers>().push([buffer]);
 }
 
 // --- CPU: span timing --------------------------------------------------------------------------
@@ -287,7 +321,11 @@ fn report(
             if let Some((sum, _)) = f("elapsed_cpu") {
                 let _ = write!(line, " / cpu {:.2} ms", sum * per_frame);
             }
-            if let (Some((v, _)), Some((fr, _))) = (f("vertex_shader_invocations"), f("fragment_shader_invocations")) {
+            // (Turnip returns garbage pipeline statistics for some passes.)
+            if let (Some((v, _)), Some((fr, _))) = (f("vertex_shader_invocations"), f("fragment_shader_invocations"))
+                && v * per_frame < 1e10
+                && fr * per_frame < 1e10
+            {
                 let _ = write!(line, " / {:.2} M vs, {:.2} M fs", v * per_frame / 1e6, fr * per_frame / 1e6);
             }
             let _ = writeln!(out, "{line}");
@@ -299,7 +337,7 @@ fn report(
     let mut cpu: Vec<_> = std::mem::take(&mut *CPU.lock().unwrap_or_else(|e| e.into_inner())).into_iter().collect();
     cpu.sort_by_key(|(_, s)| std::cmp::Reverse(s.total));
     let _ = writeln!(out, "  CPU per frame, top spans (ms avg / worst call / calls per frame):");
-    for (label, s) in cpu.iter().take(40) {
+    for (label, s) in cpu.iter().take(100).filter(|(_, s)| s.total.as_secs_f64() * 1000.0 * per_frame >= 0.02) {
         let mut l: String = label.chars().take(110).collect();
         if label.chars().count() > 110 {
             l.push('~');

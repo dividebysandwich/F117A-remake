@@ -56,6 +56,7 @@ pub fn key_name(key: KeyCode) -> Option<String> {
 
 #[cfg(windows)]
 fn layout_label(scancode: u32) -> Option<String> {
+    #[link(name = "user32")]
     unsafe extern "system" {
         fn MapVirtualKeyW(code: u32, map_type: u32) -> u32;
     }

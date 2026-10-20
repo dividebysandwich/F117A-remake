@@ -93,6 +93,10 @@ pub struct Sim {
     pub(crate) bays: Vec<(i32, i32)>,
     /// Selected station: the first one carrying the selected weapon.
     pub(crate) cur_bay: usize,
+    /// The cannon is the selected weapon (not in the original: Space steps to it after the
+    /// stores, and the fire button fires it).
+    #[serde(default)]
+    pub(crate) gun_selected: bool,
     /// Countermeasure stores ([1] flare, [2] chaff, [3] decoy).
     pub(crate) stores: [i32; 4],
     pub(crate) gun_ammo: i32,
@@ -318,6 +322,7 @@ impl Sim {
             bay_req: false,
             bays,
             cur_bay: 0,
+            gun_selected: false,
             stores: [data.stores_init[0] as i32, data.stores_init[1] as i32, data.stores_init[2] as i32, data.stores_init[3] as i32],
             gun_ammo: data.gun_ammo_init as i32,
             gun_firing: false,
@@ -794,6 +799,16 @@ impl Sim {
         self.gun_firing
     }
 
+    /// The aircraft has a cannon (the real F-117A has none).
+    pub fn has_gun(&self) -> bool {
+        !self.lockheed
+    }
+
+    /// The cannon is the selected weapon.
+    pub fn gun_selected(&self) -> bool {
+        self.gun_selected
+    }
+
     /// Bays or stations (weapon index, count; -1 empty) and the selected one.
     pub fn bays(&self) -> (&[(i32, i32)], usize) {
         (&self.bays, self.cur_bay)
@@ -811,7 +826,7 @@ impl Sim {
             match groups.iter().position(|g| g.0 == w) {
                 Some(k) => groups[k].1 += n,
                 None => {
-                    if i == self.cur_bay {
+                    if i == self.cur_bay && !self.gun_selected {
                         selected = Some(groups.len());
                     }
                     groups.push((w, n));
@@ -826,6 +841,7 @@ impl Sim {
     pub fn set_loadout(&mut self, stations: &[(i32, i32)]) {
         self.bays = stations.iter().map(|&(w, n)| if w < 0 { (-1, 0) } else { (w, n.max(0)) }).collect();
         self.cur_bay = self.bays.iter().position(|b| b.0 >= 0).unwrap_or(0);
+        self.gun_selected = self.has_gun() && !self.bays.iter().any(|b| b.0 >= 0);
     }
 
     pub fn weapon_types(&self) -> &[WeaponType] {
@@ -997,6 +1013,7 @@ impl Sim {
     /// Test / tool hook: select the current bay.
     pub fn select_bay(&mut self, bay: usize) {
         self.cur_bay = bay.min(self.bays.len().saturating_sub(1));
+        self.gun_selected = false;
     }
 
     /// Test / tool hook: set the ground lock.

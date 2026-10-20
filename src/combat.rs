@@ -353,6 +353,7 @@ fn player_state(
     a: &Aircraft,
     pos: &WorldPos,
     gun: bool,
+    trigger: bool,
     collided: bool,
     hud: &HudState,
     mfd: &MfdState,
@@ -381,7 +382,7 @@ fn player_state(
         camera_mfd: mfd.camera_shown(),
         external_view: !is_cockpit_view(view.view),
         hud_visible: view.view == View::Cockpit,
-        cmd: SimCommands { gun, ..cmd },
+        cmd: SimCommands { gun, trigger, ..cmd },
     }
 }
 
@@ -459,7 +460,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         combat.accum -= dt;
         combat.steps += 1;
         let cmd = std::mem::take(&mut combat.pending);
-        let ps = player_state(&a, pos, controls.gun, collision.0, &hud, &mfd, &view, cmd);
+        let ps = player_state(&a, pos, controls.gun, controls.fire, collision.0, &hud, &mfd, &view, cmd);
         combat.prev_flights.clear();
         combat.prev_flights.extend_from_slice(combat.sim.flights());
         combat.prev_proj = *combat.sim.projectiles();
@@ -733,7 +734,9 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         })
         .collect();
     let gun = (!combat.lockheed).then(|| sim.gun_ammo().max(0) as u32);
+    let gun_selected = sim.gun_selected();
     if stores.selected != cur
+        || stores.gun_selected != gun_selected
         || stores.gun_rounds != gun
         || stores.bays.len() != new_bays.len()
         || stores.bays.iter().zip(&new_bays).any(|(a, b)| a.count != b.count || a.name != b.name)
@@ -741,6 +744,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         stores.bays = new_bays;
         stores.selected = cur;
         stores.gun_rounds = gun;
+        stores.gun_selected = gun_selected;
     }
 
     // Waypoints: the mission logic switches to the next one when an objective is done.
@@ -921,9 +925,63 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         new_cues.ranging_bar = t.ranging_bar;
         new_cues.lock = t.lock_valid;
         new_cues.in_range = t.in_range;
+        if sim.gun_selected() {
+            // The locked aircraft (position and velocity over the last sim frame) or ground
+            // object, else a target 1000 m ahead flying along with the aircraft.
+            let target = if let Some(i) = t.air.filter(|&i| i < sim.flights().len()) {
+                let u = sim.flights()[i];
+                let (e, n, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
+                let v = combat.prev_flights.get(i).map_or(DVec3::ZERO, |p| {
+                    let (e0, n0, alt0) = unit_position(None, p, 0.0);
+                    let (e1, n1, alt1) = unit_position(None, &u, 0.0);
+                    (wu_to_bevy(e1, n1, alt1) - wu_to_bevy(e0, n0, alt0)) * FS as f64
+                });
+                Some((wu_to_bevy(e, n, alt), v))
+            } else {
+                t.ground.and_then(|g| objects.get(g)).map(|ob| {
+                    let (e, n) = map_wu(ob.x, ob.y);
+                    (wu_to_bevy(e, n, 0.0), DVec3::ZERO)
+                })
+            };
+            new_cues.gun = Some(gun_cue(&a, pos, eye, target));
+        }
     }
     *cam = info;
     *cues = new_cues;
+}
+
+/// Gun pipper: the direction in which the target (position, velocity; Bevy frame) has to be
+/// for the rounds fired now to hit it. A round leaves along the nose at the muzzle speed plus
+/// the aircraft's speed and falls (`stealth_sim` gun), so with the target at range R the
+/// pipper is D(t) = (u - v) t + g t^2 / 2 with |D(t)| = R.
+fn gun_cue(a: &Aircraft, pos: &WorldPos, eye: Vec3, target: Option<(DVec3, DVec3)>) -> crate::hud::GunCue {
+    const DEFAULT_RANGE: f64 = 1000.0;
+    /// Range the rounds are effective to (m).
+    const GUN_RANGE: f64 = 2000.0;
+    let from = pos.0 + (a.orientation * eye).as_dvec3();
+    let nose = (a.orientation * Vec3::NEG_Z).as_dvec3();
+    let speed = a.knots() as f64 * 0.514_444;
+    let u = nose * (stealth_sim::GUN_MUZZLE_SPEED + speed);
+    let g = DVec3::new(0.0, -stealth_sim::GUN_GRAVITY, 0.0);
+    let (range, v) = match target {
+        Some((p, v)) => ((p - from).length(), v),
+        None => (DEFAULT_RANGE, a.path_dir().as_dvec3() * speed),
+    };
+    let rel = u - v;
+    let mut t = range / rel.length().max(1.0);
+    let mut d = rel * t + g * (0.5 * t * t);
+    for _ in 0..4 {
+        t *= range / d.length().max(1e-6);
+        d = rel * t + g * (0.5 * t * t);
+    }
+    let dir = a.orientation.inverse() * d.normalize_or_zero().as_vec3();
+    let (e, n, alt) = bevy_to_wu(from + d.normalize_or_zero() * range);
+    crate::hud::GunCue {
+        dir,
+        screen: project_cockpit(a, pos, eye, e, n, alt),
+        range_m: target.map(|_| range as f32),
+        in_range: target.is_some() && range < GUN_RANGE,
+    }
 }
 
 /// The end-of-mission overlay.
@@ -999,5 +1057,51 @@ fn end_overlay(
                     });
                 });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn level(knots: f32) -> (Aircraft, WorldPos) {
+        let mut a = Aircraft::new_on_runway(5000.0);
+        a.velocity = knots * 27.0;
+        (a, WorldPos(DVec3::new(0.0, 1000.0, 0.0)))
+    }
+
+    /// Mils of a direction off the boresight: (right, up).
+    fn mils(d: Vec3) -> (f32, f32) {
+        ((d.x / -d.z).atan() * 1000.0, (d.y / -d.z).atan() * 1000.0)
+    }
+
+    #[test]
+    fn pipper_drops_with_range() {
+        let (a, pos) = level(400.0);
+        let v = DVec3::new(0.0, 0.0, -400.0 * 0.514_444);
+        let at = |m: f64| gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -m), v)));
+        let (near, far) = (mils(at(500.0).dir), mils(at(1500.0).dir));
+        // A target flying along: the rounds' drop only (g t / 2 v at 1050 m/s).
+        let want = |m: f32| 0.5 * 9.81 * (m / 1050.0) / 1050.0 * 1000.0;
+        assert!(near.0.abs() < 0.01 && (near.1 + want(500.0)).abs() < 0.2, "{near:?}");
+        assert!((far.1 + want(1500.0)).abs() < 0.3, "{far:?}");
+        assert!(at(1500.0).in_range && !at(2500.0).in_range);
+        assert_eq!(at(1500.0).range_m.map(|r| r.round()), Some(1500.0));
+    }
+
+    #[test]
+    fn pipper_leads_a_crossing_target() {
+        let (a, pos) = level(400.0);
+        // 1000 m ahead crossing left to right at 200 m/s: the target has to be left of where
+        // the rounds go, by its travel during their flight.
+        let cue = gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -1000.0), DVec3::new(200.0, 0.0, 0.0))));
+        let (right, _) = mils(cue.dir);
+        let t = 1000.0 / (1050.0 + 400.0 * 0.514_444);
+        let want = -(200.0f32 * t / 1000.0).atan() * 1000.0;
+        assert!((right - want).abs() < 3.0, "{right} mils, want {want}");
+        // No target: a target 1000 m ahead flying along.
+        let free = gun_cue(&a, &pos, Vec3::ZERO, None);
+        assert!(free.range_m.is_none() && !free.in_range);
+        assert!(mils(free.dir).0.abs() < 0.01 && mils(free.dir).1 < 0.0);
     }
 }

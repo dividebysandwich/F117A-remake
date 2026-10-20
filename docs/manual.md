@@ -130,10 +130,16 @@ The modes add their own symbols:
 * **NAV:** a diamond on the steerpoint on the ground.
 * **AA:** the target designator box with the missile diamond once locked, the range below it;
   with an air-to-air missile selected the steering circle and dot, *SHOOT* in range, and the
-  launch zone scale (maximum and minimum range, target range caret); otherwise the gun pipper.
+  launch zone scale (maximum and minimum range, target range caret).
 * **AG:** the target designator box (*IN RNG* in range); for bombs the CCIP pipper with the bomb
   fall line, and for guided release the azimuth steering line with the release cue that slides
   down to the flight path marker.
+* **Gun** selected (in every mode): the gun pipper, where the target has to be for the rounds
+  fired now to hit it. It allows for the rounds' time of flight to the locked target's range,
+  the target's motion relative to the rounds and their drop; without a lock it is set for a
+  target 1000 m ahead flying along with you. With a lock, an arc around it unwinds with the
+  range (a full circle is 12,000 ft), the range in km is under it and *SHOOT* flashes within
+  2 km.
 
 The **classic HUD** (menu: *HUD: Classic*) is the original's low-resolution HUD, as in the
 classic cockpit picture above.
@@ -159,7 +165,7 @@ F2 cycles through the modes; V declutters the HUD.
 | DESG | N | Designate a new target. |
 | NEXT | B | Select the next target. |
 | NONE | Shift B | Clear the target. No automatic acquisition until the next target or camera key. |
-| WPN | Space | Select the next weapon bay. |
+| WPN | Space | Select the next weapon, after the last one the gun. |
 | MENU | Esc | Open or close the in-flight settings menu (chapter 3.8). |
 
 The selected weapon is released with Enter, the gamepad's A button or the right VR trigger while
@@ -315,8 +321,8 @@ each waypoint; fuel bar at the bottom. WP- / WP+ (PgUp / PgDn) select the waypoi
 </tr>
 <tr>
 <td><img src="images/mfd_wpn.png" alt="WPN"><br>
-<b>WPN</b> – Weapon bays with their load and count; the selected bay is highlighted.
-SEL (Space) selects the next bay.</td>
+<b>WPN</b> – The weapons carried and how many are left; the selected one is highlighted.
+SEL (Space) selects the next weapon, after the last one the gun.</td>
 <td><img src="images/mfd_ord.png" alt="ORD"><br>
 <b>ORD</b> – Mission orders: primary objective (yellow), secondary objective (red), landing
 base (green).</td>
@@ -380,7 +386,11 @@ shows the target (here *Gutersloh Airbase*, 0.9 km), and the GND lamp is lit.
    with a bank angle above about 67°, or on the ground (*Insufficient Altitude*).
 5. Close the bay doors. Open doors increase the radar signature (chapter 6.1).
 
-The gun (Backspace) fires along the nose.
+**Gun:** select it with **WPN** (Space) after the last weapon (the HUD shows *GUN* and the
+rounds left) and hold the fire button (Enter, gamepad A, VR: right trigger): put the target in
+the gun pipper. Backspace fires the gun whatever is selected. The rounds leave along the nose
+at 1050 m/s plus your airspeed and drop under gravity. The real F-117A has no gun: with
+*Realistic weapons* there is none.
 
 Ground targets under cloud cannot be designated (*Target obscured*). IR and optical seekers
 (AIM-9, Maverick, laser-guided bombs) need a clear line of sight.
@@ -688,7 +698,7 @@ Single missions from the menu do not count for any pilot.
 Russian Geran attack drones are on their way to a Ukrainian city or the South Ukraine nuclear power
 plant. They start already in the air and arrive one after another, about 9 to 25 minutes after
 take-off. You take off from the nearest airfield with air-to-air missiles, the gun and two
-Paveways (with *Realistic weapons*: the gun, the Paveways and extra fuel).
+Paveways (with *Realistic weapons*: the Paveways and extra fuel).
 
 - The **primary objective** is met when every drone is down or through and no more than the
   briefed number got through. A drone that hits the nuclear power plant fails the mission.

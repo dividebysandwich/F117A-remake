@@ -181,7 +181,11 @@ pub struct Emitter {
     pub priority: i32,
 }
 
-/// Gun round; x == 0 is a free slot.
+/// Fine units of a gun round's position and velocity per world unit (1/256 wu).
+pub const ROUND_FINE: i32 = 256;
+
+/// Gun round, in fine units ([`ROUND_FINE`] per world unit, x east and y south like the map,
+/// velocities per frame); x == 0 is a free slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Bullet {
     pub x: i32,
@@ -191,6 +195,28 @@ pub struct Bullet {
     pub vy: i32,
     pub vz: i32,
 }
+
+impl Bullet {
+    /// Map position (x, y) and altitude.
+    pub fn map_pos(&self) -> (f64, f64, f64) {
+        let f = ROUND_FINE as f64;
+        (self.x as f64 / (32.0 * f), self.y as f64 / (32.0 * f), self.alt as f64 / f)
+    }
+
+    /// Map units (x, y).
+    pub(crate) fn map_xy(&self) -> (i32, i32) {
+        (self.x / (32 * ROUND_FINE), self.y / (32 * ROUND_FINE))
+    }
+}
+
+/// The player's cannon (not the original's, whose rounds flew straight along the nose at a
+/// fixed speed): muzzle speed (m/s, added to the aircraft's speed along the nose), gravity
+/// (m/s^2) and metres per world unit.
+pub const GUN_MUZZLE_SPEED: f64 = 1050.0;
+pub const GUN_GRAVITY: f64 = 9.81;
+pub const WU_METRES: f64 = 512_000.0 / 1_048_576.0;
+/// Hit radius of a player round per opponent quality (m): a round stands for a burst.
+pub const GUN_HIT_RADIUS: [f64; 4] = [150.0, 100.0, 75.0, 60.0];
 
 /// Countermeasure cartridge. Slot 0 = decoy, 1..3 flares / chaff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -265,6 +291,9 @@ pub struct Commands {
     pub fire: bool,
     /// Backspace / button 0 held: cannon.
     pub gun: bool,
+    /// The fire button held (not in the original): fires the cannon when it is selected.
+    #[serde(default)]
+    pub trigger: bool,
     /// Key 1.
     pub flare: bool,
     /// Key 2.

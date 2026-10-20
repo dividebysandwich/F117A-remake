@@ -108,6 +108,8 @@ pub struct Stores {
     pub bays: Vec<Bay>,
     pub selected: usize,
     pub gun_rounds: Option<u32>,
+    /// The gun is the selected weapon (no bay is).
+    pub gun_selected: bool,
 }
 
 impl Default for Stores {
@@ -122,6 +124,7 @@ impl Default for Stores {
             ],
             selected: 0,
             gun_rounds: Some(650),
+            gun_selected: false,
         }
     }
 }
@@ -186,6 +189,22 @@ pub struct HudCues {
     /// Lock valid and target in range (the LOCK oval and its red state).
     pub lock: bool,
     pub in_range: bool,
+    /// Gun selected: the gun pipper.
+    pub gun: Option<GunCue>,
+}
+
+/// Where the target has to be for the rounds fired now to hit it: compensates the time of
+/// flight to the target's range for its motion relative to the rounds and for their drop.
+#[derive(Debug, Clone, Copy)]
+pub struct GunCue {
+    /// Direction from the eye (aircraft frame: x right, y up, -z forward).
+    pub dir: Vec3,
+    /// The pipper on the 320x200 screen (classic HUD).
+    pub screen: Option<(i32, i32)>,
+    /// Range to the locked target (m); None: no target, the pipper is for 1000 m.
+    pub range_m: Option<f32>,
+    /// Locked target within the gun's range.
+    pub in_range: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -225,7 +244,7 @@ fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, 
                 }
             }
             Action::NearestTarget => {
-                let air = stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
+                let air = stores.gun_selected || stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
                 hud.mode = if air { HudMode::Air } else { HudMode::Gnd };
             }
             Action::HudDeclutter => hud.declutter = (hud.declutter + 1) % 3,
@@ -323,6 +342,7 @@ pub struct HudFrame {
     pub weapon: Option<(u32, String)>,
     pub weapon_air_to_air: bool,
     pub gun_rounds: Option<u32>,
+    pub gun_selected: bool,
     pub message: Option<String>,
     pub accel: bool,
     pub training: bool,
@@ -379,7 +399,7 @@ impl HudParams<'_, '_> {
         let (h, p, r) = a.euler();
         // Avionics damage also takes out the INS waypoint cue.
         let bearing = self.waypoints.target().filter(|_| !a.damage.autopilot_failed).map(|wp| waypoint_bearing(pos, wp));
-        let bay = self.stores.bays.get(self.stores.selected);
+        let bay = self.stores.bays.get(self.stores.selected).filter(|_| !self.stores.gun_selected);
         let knots = a.knots();
         let (_, sound) = speed_of_sound(a.altitude);
         let path = a.path_dir();
@@ -410,11 +430,12 @@ impl HudParams<'_, '_> {
             weapon: bay.map(|b| (b.count, b.name.clone())),
             weapon_air_to_air: bay.is_some_and(|b| b.air_to_air),
             gun_rounds: self.stores.gun_rounds,
+            gun_selected: self.stores.gun_selected,
             message: (self.messages.timer > 0.0).then(|| self.messages.text.clone()),
             accel: self.messages.accel,
             training: self.messages.training,
             camera_sight,
-            gun_lead: (self.lead.x, self.lead.y),
+            gun_lead: self.cues.gun.and_then(|g| g.screen).map_or((self.lead.x, self.lead.y), |(x, y)| ((x - 160) << 4, (y - 52) << 4)),
             cues: self.cues.clone(),
             orientation: a.orientation,
             path_dir: path,

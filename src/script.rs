@@ -8,7 +8,7 @@
 //! `alt<300:pitch=0.3` / `alt>8000:Autopilot` = below / above an altitude in feet,
 //! `msl<2:ViewChase` / `air<2:HudMode` = an enemy missile / an airborne aircraft within 2 km. The step `Screenshot` takes the
 //! `--screenshot` picture at that moment. `yaw=0.5` sets the rudder, `throttle=0.8` holds an
-//! absolute throttle and `press=Gear` pushes the 3D-cockpit control bound to that action.
+//! absolute throttle, `trigger=1` / `trigger=0` holds / releases the fire button and `press=Gear` pushes the 3D-cockpit control bound to that action.
 
 use bevy::prelude::*;
 
@@ -42,6 +42,8 @@ enum Step {
     SlewY(f32),
     /// Presses a 3D-cockpit control bound to this action (`press=Gear`).
     Press(String),
+    /// Holds (true) or releases the fire button (`trigger=1`, `trigger=0`).
+    Trigger(bool),
 }
 
 #[derive(Clone, Copy)]
@@ -74,6 +76,7 @@ struct Axes {
     yaw: f32,
     throttle: Option<f32>,
     slew: Vec2,
+    trigger: bool,
 }
 
 fn parse_step(what: &str) -> Option<Step> {
@@ -89,6 +92,8 @@ fn parse_step(what: &str) -> Option<Step> {
         Step::SlewY(x.parse().ok()?)
     } else if let Some(x) = what.strip_prefix("throttle=") {
         Step::Throttle(x.parse().ok()?)
+    } else if let Some(x) = what.strip_prefix("trigger=") {
+        Step::Trigger(x.parse::<u8>().ok()? != 0)
     } else if let Some(x) = what.strip_prefix("press=") {
         Step::Press(x.to_string())
     } else {
@@ -151,6 +156,7 @@ fn apply(
         Step::Throttle(t) => axes.throttle = Some(*t),
         Step::SlewX(x) => axes.slew.x = *x,
         Step::SlewY(y) => axes.slew.y = *y,
+        Step::Trigger(t) => axes.trigger = *t,
         Step::Press(name) => {
             if let Some(act) = crate::input::action_by_name(name) {
                 presses.write(crate::cockpit3d::PressControl(act));
@@ -225,6 +231,7 @@ fn run_script(
     controls.pitch = script.axes.pitch;
     controls.yaw = script.axes.yaw;
     controls.slew = script.axes.slew;
+    controls.fire |= script.axes.trigger;
     if script.axes.throttle.is_some() {
         controls.throttle = script.axes.throttle;
     }
@@ -240,6 +247,7 @@ fn step_name(s: &Step) -> String {
         Step::SlewX(x) => format!("slewx={x}"),
         Step::SlewY(y) => format!("slewy={y}"),
         Step::Press(a) => format!("press={a}"),
+        Step::Trigger(t) => format!("trigger={}", *t as u8),
     }
 }
 

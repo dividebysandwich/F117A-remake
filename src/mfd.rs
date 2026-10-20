@@ -1495,7 +1495,7 @@ impl MfdParams<'_, '_> {
         let row = ht / rows as i32;
         for (i, bay) in self.stores.bays.iter().enumerate().take(rows) {
             let y = row * i as i32;
-            if i == self.stores.selected {
+            if i == self.stores.selected && !self.stores.gun_selected {
                 c.fill_rect(1, y + 1, w - 2, row - 1, 8);
             }
             if let Some((sx, sy)) = ordnance_picture(bay.picture) {

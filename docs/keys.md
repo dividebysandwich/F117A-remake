@@ -13,8 +13,8 @@ These are the defaults: the menu's CONTROLS dialog rebinds every key except the 
 | | max stick movement | fast double-press of a direction |
 | Throttle | max power / no power | Shift + `=` (`+`) / Shift + `-` |
 | | increase / decrease | `=` / `-` |
-| Weapons | select weapon | Space |
-| | fire weapon | Return/Enter (joystick button 2) |
+| Weapons | select weapon (the stores, then the gun) | Space |
+| | fire weapon (the gun while held) | Return/Enter (joystick button 2) |
 | | fire cannon | Backspace (joystick button 1) |
 | Defenses | flare / chaff | 1 / 2 |
 | | IR jammer / ECM toggle | 3 / 4 |

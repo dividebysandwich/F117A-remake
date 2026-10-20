@@ -1,5 +1,5 @@
 use crate::Sim;
-use crate::math::{abs16, approx, cdiv, clamp_v, isqrt, s16};
+use crate::math::{abs16, approx, cdiv, clamp_v, s16};
 use crate::types::*;
 
 /// Frames a nearest-target request waits for the HUD to switch to the weapon's mode.
@@ -120,19 +120,32 @@ impl Sim {
         }
     }
 
-    /// Space: the next weapon carried (stations with the selected weapon are skipped; the
-    /// original steps through its 2 or 4 bays, the same with a different weapon in each).
+    /// Space: the next weapon carried, then the cannon (stations with the selected weapon are
+    /// skipped; the original steps through its 2 or 4 bays, the same with a different weapon in
+    /// each).
     fn next_weapon(&mut self) {
+        // Entries: the first station of each weapon, then the cannon (index n).
         let n = self.bays.len();
         let first_of = |b: &[(i32, i32)], i: usize| b[i].0 >= 0 && !b[..i].iter().any(|o| o.0 == b[i].0);
-        let cur = self.bays.get(self.cur_bay).map_or(-1, |b| b.0);
-        if let Some(i) = (1..=n).map(|k| (self.cur_bay + k) % n).find(|&i| first_of(&self.bays, i) && self.bays[i].0 != cur) {
-            self.cur_bay = i;
+        let cur = if self.gun_selected { n } else { self.cur_bay };
+        let cur_w = if self.gun_selected { -2 } else { self.bays.get(cur).map_or(-1, |b| b.0) };
+        let gun = self.has_gun();
+        let next = (1..=n + 1).map(|k| (cur + k) % (n + 1)).find(|&i| if i == n { gun } else { first_of(&self.bays, i) && self.bays[i].0 != cur_w });
+        match next {
+            Some(i) if i == n => self.gun_selected = true,
+            Some(i) => {
+                self.cur_bay = i;
+                self.gun_selected = false;
+            }
+            None => {}
         }
     }
 
-    /// The selected weapon (-1 none) and its rounds on all stations.
+    /// The selected weapon (-1 none or the cannon) and its rounds on all stations.
     pub(crate) fn selected_weapon(&self) -> (i32, i32) {
+        if self.gun_selected {
+            return (-1, 0);
+        }
         let w = self.bays.get(self.cur_bay).map_or(-1, |b| b.0);
         if w < 0 {
             return (-1, 0);
@@ -352,36 +365,55 @@ impl Sim {
         self.sound(15, 2);
     }
 
-    /// Cannon and all gun rounds: move, then the HUD-overlay hit tests.
+    /// Velocity of a player round leaving the cannon: the muzzle speed plus the aircraft's
+    /// speed along the nose (fine units per frame: east, south, up).
+    pub fn gun_round_velocity(heading: i32, pitch: i32, knots: i32, fs: i32) -> (f64, f64, f64) {
+        let bam = std::f64::consts::TAU / 65536.0;
+        let (h, p) = ((heading as u16) as f64 * bam, (pitch as i16) as f64 * bam);
+        let v = (GUN_MUZZLE_SPEED + knots as f64 * 0.514_444) / WU_METRES * ROUND_FINE as f64 / fs as f64;
+        (v * h.sin() * p.cos(), -v * h.cos() * p.cos(), v * p.sin())
+    }
+
+    /// Gravity on a player round (fine units per frame, each frame).
+    pub fn gun_round_gravity(fs: i32) -> i32 {
+        (GUN_GRAVITY / WU_METRES * ROUND_FINE as f64 / (fs * fs) as f64).round() as i32
+    }
+
+    /// Cannon and all gun rounds: move, then the hit tests.
     pub(crate) fn update_bullets(&mut self, ps: &PlayerState) {
         let fs = self.fs;
         let nb = self.n_bullets;
+        let f = ROUND_FINE;
         if !self.lockheed && self.frame & 1 != 0 {
             let slot = ((self.frame >> 1) as usize) % nb;
-            if ps.cmd.gun && self.gun_ammo > 0 && self.eject == 0 {
+            let trigger = ps.cmd.gun || (self.gun_selected && ps.cmd.trigger);
+            if trigger && self.gun_ammo > 0 && self.eject == 0 {
                 self.gun_ammo = clamp_v(self.gun_ammo + cdiv(-40, fs), 0, 1000);
                 self.sound(6, 2);
-                let v = cdiv(0x70, fs);
-                let vz = self.trig.sin_mul(self.p.pitch, v) << 5;
-                let h = self.trig.cos_mul(self.p.pitch, v);
-                let vx = self.trig.sin_mul(self.p.heading, h);
-                let vy = -self.trig.cos_mul(self.p.heading, h);
-                self.bullets[slot] = Bullet { x: self.p.mx + vx, y: self.p.my + vy, alt: self.p.view_z + vz - 2, vx, vy, vz };
+                let (vx, vy, vz) = Self::gun_round_velocity(self.p.heading, self.p.pitch, self.p.knots, fs);
+                let (vx, vy, vz) = (vx.round() as i32, vy.round() as i32, vz.round() as i32);
+                let (x, y) = (self.p.wx * f, (0x100000 - self.p.wy) * f);
+                self.bullets[slot] = Bullet { x: x + vx, y: y + vy, alt: (self.p.view_z - 2) * f + vz, vx, vy, vz };
                 self.gun_firing = true;
             } else {
                 self.bullets[slot].x = 0;
                 self.gun_firing = false;
             }
         }
-        for b in self.bullets.iter_mut() {
+        let g = Self::gun_round_gravity(fs);
+        for (i, b) in self.bullets.iter_mut().enumerate() {
             if b.x != 0 {
                 b.x += b.vx;
                 b.y += b.vy;
                 b.alt += b.vz;
+                if i < nb {
+                    b.vz -= g;
+                }
             }
         }
-        // Hit tests (the original only tests rounds that project on screen).
-        let r = 0x17A / isqrt(4 * (fs + 2));
+        // Hit tests (the original only tests rounds that project on screen). A player round
+        // hits what passes within the hit radius of its path over this frame.
+        let r = GUN_HIT_RADIUS[self.diff.clamp(0, 3) as usize] / WU_METRES;
         for i in 0..self.bullets.len() {
             let b = self.bullets[i];
             if b.x == 0 {
@@ -390,11 +422,19 @@ impl Sim {
             if i < nb {
                 for j in 0..self.flights.len() {
                     let u = self.flights[j];
-                    if u.flags & fflags::AIRBORNE == 0 {
+                    // A falling wreck is not shot down again.
+                    if u.flags & fflags::AIRBORNE == 0 || u.flags & fflags::DESTROYED != 0 {
                         continue;
                     }
-                    let d = (s16(b.x - u.x).abs() + s16(b.y - u.y).abs() + (s16(b.alt - u.alt).abs() >> 5)).abs();
-                    if d < r / (self.diff + 1) {
+                    let fine = f as f64;
+                    let end = [b.x as f64 / fine, b.y as f64 / fine, b.alt as f64 / fine];
+                    let step = [b.vx as f64 / fine, b.vy as f64 / fine, b.vz as f64 / fine];
+                    let to = [u.wx as f64 - end[0], u.wy as f64 - end[1], u.alt as f64 - end[2]];
+                    // Closest point of the segment end - step .. end.
+                    let len2 = step.iter().map(|s| s * s).sum::<f64>().max(1e-9);
+                    let k = (-(to[0] * step[0] + to[1] * step[1] + to[2] * step[2]) / len2).clamp(0.0, 1.0);
+                    let d2: f64 = (0..3).map(|a| (to[a] + k * step[a]).powi(2)).sum();
+                    if d2 < r * r {
                         self.flights[j].flags |= fflags::HIT;
                         self.destroy_aircraft(j);
                         let n = self.ac_type(u.spec).name.clone();
@@ -405,22 +445,25 @@ impl Sim {
                     }
                 }
             } else {
-                let d = (s16(b.x - self.p.mx).abs() + s16(b.y - self.p.my).abs() + (s16(b.alt - self.p.view_z).abs() >> 5)).abs();
+                let (bx, by) = b.map_xy();
+                let d = (s16(bx - self.p.mx).abs() + s16(by - self.p.my).abs() + (s16(b.alt / f - self.p.view_z).abs() >> 5)).abs();
                 if d < 0x20 {
                     self.msg("Hit by gunfire");
                     if d < 0x20 / (4 - self.diff) {
                         self.player_hit();
                     }
-                    self.emit(SimEvent::Explosion { x: b.x, y: b.y, alt: b.alt, kind: -1 });
+                    let (bx, by) = b.map_xy();
+                    self.emit(SimEvent::Explosion { x: bx, y: by, alt: b.alt / f, kind: -1 });
                     self.bullets[i].x = 0;
                     continue;
                 }
             }
             let b = self.bullets[i];
             if b.x != 0 && b.alt < 0 {
-                self.emit(SimEvent::Explosion { x: b.x, y: b.y, alt: 0, kind: -1 });
+                let (bx, by) = b.map_xy();
+                self.emit(SimEvent::Explosion { x: bx, y: by, alt: 0, kind: -1 });
                 self.bullets[i].x = 0;
-                let o = self.find_object_at(b.x, b.y);
+                let o = self.find_object_at(bx, by);
                 if o == -1 || self.obj(o).flags & oflags::DESTROYED != 0 {
                     continue;
                 }
@@ -429,7 +472,7 @@ impl Sim {
                     continue;
                 }
                 let (tx, ty) = t.map_or((self.obj(o).x, self.obj(o).y), |t| t.map_pos());
-                let d = approx(tx - b.x, ty - b.y);
+                let d = approx(tx - bx, ty - by);
                 if self.compat(18, o) * 6 / (self.diff + 2) > d {
                     self.destroy_ground(o);
                     let n = self.place_name(o as usize);

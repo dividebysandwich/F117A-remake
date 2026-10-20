@@ -228,6 +228,12 @@ pub(super) fn grab_levers(
             };
             match m.target {
                 ButtonTarget::Gun => controls.gun |= held,
+                ButtonTarget::Action(Action::FireWeapon) if held && !block.0 => {
+                    controls.fire = true;
+                    if pressed {
+                        actions.write(ActionEvent(Action::FireWeapon));
+                    }
+                }
                 ButtonTarget::Action(a) if pressed && (!block.0 || a == Action::Menu) => {
                     actions.write(ActionEvent(a));
                 }

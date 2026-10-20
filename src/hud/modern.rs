@@ -146,11 +146,15 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
         HudMode::Gnd => "AG",
     };
     text(c, 270.0, 392.0, mode, Align::Left);
-    if let Some((count, name)) = &f.weapon {
-        text(c, 270.0, 418.0, &format!("{count} {name}"), Align::Left);
-    }
-    if let Some(rounds) = f.gun_rounds {
-        text(c, 270.0, 444.0, &format!("GUN {rounds}"), Align::Left);
+    if f.gun_selected {
+        text(c, 270.0, 418.0, &format!("GUN {}", f.gun_rounds.unwrap_or(0)), Align::Left);
+    } else {
+        if let Some((count, name)) = &f.weapon {
+            text(c, 270.0, 418.0, &format!("{count} {name}"), Align::Left);
+        }
+        if let Some(rounds) = f.gun_rounds {
+            text(c, 270.0, 444.0, &format!("GUN {rounds}"), Align::Left);
+        }
     }
 
     // Lower right: steerpoint number, distance and time to go.
@@ -172,6 +176,7 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
         HudMode::Air => air_to_air(c, f),
         HudMode::Gnd => air_to_ground(c, f, fpm),
     }
+    gun_sight(c, f);
 
     // Messages and status words.
     if let Some(m) = &f.message {
@@ -394,10 +399,31 @@ fn air_to_air(c: &mut Canvas, f: &HudFrame) {
             text(c, CX, CY - ase - 22.0, "SHOOT", Align::Centre);
         }
         launch_zone(c, f);
-    } else if f.gun_rounds.is_some() {
-        let p = Vec2::new(CX + (f.gun_lead.0 >> 4) as f32 * 4.0, CY + (f.gun_lead.1 >> 4) as f32 * 4.0);
-        c.ring(p, 30.0, PEN, INK);
-        c.ring(p, 1.5, PEN * 1.4, INK);
+    }
+}
+
+/// Gun selected: the pipper (where the target has to be for the rounds fired now to hit it),
+/// with a locked target's range as an arc unwinding from 12 o'clock (a full circle is
+/// 12,000 ft), the range in km under it and SHOOT within the gun's range.
+fn gun_sight(c: &mut Canvas, f: &HudFrame) {
+    let Some(g) = f.cues.gun else { return };
+    let Some(p) = project(g.dir, f.scale) else { return };
+    let q = p.clamp(FIELD.0, FIELD.1);
+    let r = 28.0;
+    c.ring(q, r, PEN, INK);
+    c.ring(q, 1.5, PEN * 1.4, INK);
+    if q != p {
+        c.stroke(q - Vec2::splat(r * 0.7), q + Vec2::splat(r * 0.7), THIN, INK);
+        c.stroke(q + Vec2::new(-r * 0.7, r * 0.7), q + Vec2::new(r * 0.7, -r * 0.7), THIN, INK);
+    }
+    let Some(m) = g.range_m else { return };
+    let sweep = (m / 3657.6).clamp(0.0, 1.0) * std::f32::consts::TAU;
+    let n = ((sweep / std::f32::consts::TAU) * 48.0).ceil().max(1.0) as usize;
+    let arc: Vec<Vec2> = (0..=n).map(|k| sweep * k as f32 / n as f32).map(|a| q + Vec2::new(a.sin(), -a.cos()) * (r + 6.0)).collect();
+    c.polyline(&arc, PEN * 1.3, INK);
+    small(c, q.x, q.y + r + 22.0, &format!("{:.1}", m / 1000.0), Align::Centre);
+    if g.in_range && f.blink {
+        text(c, q.x, q.y - r - 22.0, "SHOOT", Align::Centre);
     }
 }
 
@@ -498,7 +524,17 @@ mod tests {
                 f.weapon_air_to_air = mode == HudMode::Air;
                 let mut c = Canvas::new(WIDTH, HEIGHT);
                 draw(&mut c, &f);
-                assert!(c.px.iter().filter(|&&p| p != 0).count() > 2000, "{mode:?} {declutter}");
+                let ink = c.px.iter().filter(|&&p| p != 0).count();
+                assert!(ink > 2000, "{mode:?} {declutter}");
+                // The gun pipper with its range arc adds ink in every mode.
+                f.gun_selected = true;
+                let mut c = Canvas::new(WIDTH, HEIGHT);
+                draw(&mut c, &f);
+                let ink = c.px.iter().filter(|&&p| p != 0).count();
+                f.cues.gun = Some(crate::hud::GunCue { dir: Vec3::new(0.0, -0.01, -1.0), screen: None, range_m: Some(900.0), in_range: true });
+                let mut c = Canvas::new(WIDTH, HEIGHT);
+                draw(&mut c, &f);
+                assert!(c.px.iter().filter(|&&p| p != 0).count() > ink, "{mode:?} {declutter} gun");
             }
         }
     }

@@ -791,3 +791,84 @@ fn csar_hinds_capture_the_pilot() {
     assert_eq!(sim.mission_end().map(|e| e.outcome), Some(8), "{:?}", sim.csar());
     assert_eq!(sim.mission_report().outcome, score::Outcome::Captured);
 }
+
+#[test]
+fn space_steps_through_the_weapons_then_the_gun() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let mut sim = Sim::new(&d.sim, &m);
+    sim.set_loadout(&[(0, 1), (-1, 0), (6, 1), (0, 1)]);
+    let p = player_at(0x4000, 0x4000, 3000, 0, 300);
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        let (groups, sel) = sim.weapon_groups();
+        seen.push(if sim.gun_selected() { -1 } else { groups[sel.unwrap()].0 });
+        let mut q = p.clone();
+        q.cmd.next_bay = true;
+        sim.step(&q, 15);
+    }
+    assert_eq!(seen, [0, 6, -1, 0]);
+    assert_eq!(sim.weapon_groups().0, [(0, 2), (6, 1)]);
+}
+
+/// A burst at an An-72 600 m ahead: the fire button fires the gun only when it is selected.
+#[test]
+fn trigger_fires_the_selected_gun() {
+    let d = data();
+    for selected in [false, true] {
+        let m = mission(d, 3, 0x1234, 1);
+        let mut sim = Sim::new(&d.sim, &m);
+        let (mx, my) = sandbox(&mut sim, &m);
+        {
+            let u = &mut sim.flights_mut()[1];
+            *u = FlightUnit { x: mx, y: my - 38, alt: 3000, spec: 9, flags: 0x43, speed: 200, timer: 30000, wp: 3, ..Default::default() };
+            u.wx = u.x << 5;
+            u.wy = u.y << 5;
+        }
+        sim.set_loadout(&[(0, 4)]);
+        let mut p = player_at(mx, my, 3000, 0, 300);
+        if selected {
+            p.cmd.next_bay = true;
+            sim.step(&p, 15);
+            assert!(sim.gun_selected());
+        }
+        let ammo = sim.gun_ammo();
+        p.cmd = Commands { trigger: true, ..Default::default() };
+        let mut killed = false;
+        for _ in 0..30 {
+            for e in sim.step(&p, 15) {
+                killed |= matches!(e, SimEvent::AircraftDestroyed { unit: 1, .. });
+            }
+        }
+        assert_eq!(killed, selected, "selected {selected}");
+        assert_eq!(sim.gun_ammo() < ammo, selected);
+    }
+}
+
+/// Rounds keep the aircraft's speed and fall: 2 s after leaving a level aircraft a round is
+/// about 20 m lower and (1050 m/s + the aircraft's speed) x 2 s ahead.
+#[test]
+fn gun_rounds_fly_ballistic() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let mut sim = Sim::new(&d.sim, &m);
+    let (mx, my) = sandbox(&mut sim, &m);
+    let mut p = player_at(mx, my, 5000, 0, 400);
+    p.cmd.gun = true;
+    sim.step(&p, 15);
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    let (b0, _) = sim.bullets();
+    let i = b0.iter().position(|b| b.x != 0).expect("a round");
+    let start = b0[i].map_pos();
+    for _ in 0..30 {
+        sim.step(&p, 15);
+    }
+    let end = sim.bullets().0[i].map_pos();
+    let wu = WU_METRES;
+    let ahead = (start.1 - end.1) * 32.0 * wu;
+    let drop = (start.2 - end.2) * wu;
+    let want = (GUN_MUZZLE_SPEED + 400.0 * 0.514_444) * 2.0;
+    assert!((ahead - want).abs() < want * 0.01, "{ahead} m ahead, want {want}");
+    assert!((drop - 0.5 * GUN_GRAVITY * 4.0).abs() < 2.0, "{drop} m drop");
+}

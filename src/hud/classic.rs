@@ -55,7 +55,9 @@ pub fn draw(c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, f: &HudFrame) {
 fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8, col2: u8) {
     let st = &f.state;
     // Weapon line "n NAME" at (53,85); gun line "GUN nnn" at (239,85).
-    if let Some((count, name)) = &f.weapon {
+    if f.gun_selected {
+        fonts.text(c, 53, 85, b"GUN", col);
+    } else if let Some((count, name)) = &f.weapon {
         fonts.text(c, 53, 85, &upper(&format!("{count} {name}")), col);
     }
     if let Some(rounds) = f.gun_rounds {
@@ -89,13 +91,16 @@ fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8,
             c.line(242, y + 2, 244, y, col);
         }
     }
-    if st.mode == HudMode::Air {
-        // Gun sight: atlas (38,76) 13x11, colour 15.
+    if st.mode == HudMode::Air || f.gun_selected {
+        // Gun sight: atlas (38,76) 13x11, colour 15 (with the gun selected, also outside AIR
+        // and at the pipper: not in the original).
         let x = CX + (f.gun_lead.0 >> 4);
         let y = CY + (f.gun_lead.1 >> 4);
         if x > 10 && x < 309 && y > 8 && y < 86 {
             c.blit(atlas, 38, 76, 13, 11, x - 6, y - 5, Some(0), Some(15));
         }
+    }
+    if st.mode == HudMode::Air {
         // Missile envelope: 16-segment ellipse 40x35.
         if f.weapon_air_to_air {
             let mut prev: Option<(i32, i32)> = None;

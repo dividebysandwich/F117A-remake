@@ -172,6 +172,8 @@ pub struct FlightControls {
     pub throttle: Option<f32>,
     /// Gun trigger held.
     pub gun: bool,
+    /// Fire button held (fires the gun when it is the selected weapon).
+    pub fire: bool,
     /// Sensor/cursor slew, -1..1 (x right, y up): moves the sensor of interest's cursor.
     pub slew: Vec2,
 }
@@ -337,6 +339,7 @@ fn read_keyboard(
         controls.roll = 0.0;
         controls.pitch = 0.0;
         controls.gun = false;
+        controls.fire = false;
         controls.yaw = 0.0;
         controls.throttle = None;
         controls.slew = Vec2::ZERO;
@@ -372,6 +375,9 @@ fn read_keyboard(
         .keys
         .iter()
         .any(|m| m.target == crate::hotas::ButtonTarget::Gun && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods));
+    controls.fire = config.keys.iter().any(|m| {
+        m.target == crate::hotas::ButtonTarget::Action(Action::FireWeapon) && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods)
+    });
     controls.yaw = 0.0;
     controls.throttle = None;
     let mut slew = Vec2::ZERO;
@@ -420,6 +426,7 @@ fn read_gamepad(
             controls.yaw = rx;
         }
         controls.gun |= pad.pressed(GamepadButton::East);
+        controls.fire |= pad.pressed(GamepadButton::South);
         for (b, a) in [
             (GamepadButton::South, Action::FireWeapon),
             (GamepadButton::RightTrigger, Action::ThrottleUp),

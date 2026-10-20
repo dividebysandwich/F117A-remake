@@ -176,7 +176,8 @@ impl Sim {
         }
         self.nearest_req -= 1;
         let spec = self.selected_spec();
-        let air = spec > 0 && self.missile(spec).class == 7;
+        // The gun looks for aircraft too.
+        let air = self.gun_selected || (spec > 0 && self.missile(spec).class == 7);
         let want = if air { HudMode::Air } else { HudMode::Gnd };
         if self.hud_mode != want || self.external_view {
             return;

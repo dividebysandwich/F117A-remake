@@ -5,7 +5,7 @@
 //! - `--stage-cam mode[,distance,height]`: a camera placed relative to the chased drone `k`
 //!   and the player: `front` (ahead of the drone looking back), `behind` (behind the player
 //!   looking past him at the drone), `side`, `high`, `missile` (behind the player's missile,
-//!   else `behind`), `drone` (over the drone's shoulder, looking back at the player).
+//!   else `behind`), `drone` (past the drone, looking back over it at the player).
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -107,7 +107,7 @@ fn stage_camera(
         "front" => (drone + ax * d + up * h + side * (d * 0.15), drone.lerp(me, 0.45)),
         "side" => (mid + side * d + up * h, mid),
         "high" => (mid + up * d - ax * (d * 0.4) + side * (d * 0.2), mid),
-        "drone" => (drone - ax * 6.0 + side * 3.0 + up * 1.5, me),
+        "drone" => (drone + ax * (d * 0.4) + side * (d * 0.15) + up * (h * 0.4), me),
         "missile" => match missile {
             Some(m) => {
                 let dir = (drone - m).try_normalize().unwrap_or(ax);

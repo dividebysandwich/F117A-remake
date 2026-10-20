@@ -155,3 +155,23 @@ rendering in VR, `SM89_NO_INDIRECT=0|1` overrides direct draws (on in VR) and `S
 flattens parts of the palette shader (1 all, 2 background, 4 objects, 8 clouds and smoke).
 On the Frame, SteamVR's per-app GPU time (printed at the end of each run) is the reliable GPU
 measurement.
+
+
+## Contributing, LLM Usage, Licensing
+
+Both local and hosted LLMs (usually advertised as "Generative AI") were used in 
+the development of this software. Contributions written using LLMs are ok 
+provided the following rules are observed:
+
+* **Read and review** generated code. You should be able to answer questions 
+about your contribution.
+* **Document and comment** non-trivial parts of the code.
+* **Test** your contribution 
+* Don't use LLMs for trivial things like changing a constant. This is slow, 
+  wasteful and runs the risk of unnecessary modifications elsewhere.
+* Use modern, sufficiently sized models with sufficient context size. Running 
+  small or outdated models or limiting them to small contexts results in low 
+  quality code and damage to existing functionality.
+* Usage of locally-hosted LLMs is encouraged, but not required.
+* Please keep commits as vendor-neutral as possible, i.e. put skills into the 
+  ``docs`` directory and reference them.

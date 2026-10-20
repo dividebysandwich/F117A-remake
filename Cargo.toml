@@ -24,7 +24,8 @@ dev = ["bevy/dynamic_linking"]
 xr = ["dep:bevy_mod_openxr", "dep:bevy_mod_xr", "dep:openxr"]
 
 [dependencies]
-bevy = { version = "0.19.1", features = ["flac"] }
+# trace: spans for every system and render node (timed with SM89_PROFILE, see src/profile.rs).
+bevy = { version = "0.19.1", features = ["flac", "trace"] }
 bevy_egui = "0.42"
 serde.workspace = true
 ron.workspace = true

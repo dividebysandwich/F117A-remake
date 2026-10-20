@@ -34,6 +34,7 @@ mod panel;
 mod planner;
 mod player;
 mod prefs;
+mod profile;
 mod rwr;
 mod scenery;
 mod script;
@@ -84,6 +85,11 @@ fn main() {
             },
             ..default()
         }),
+        ..default()
+    })
+    .set(bevy::log::LogPlugin {
+        filter: format!("{}{}", bevy::log::DEFAULT_FILTER, profile::log_filter()),
+        custom_layer: profile::log_layer,
         ..default()
     });
     // --vr: OpenXR replaces the render plugin (the window stays for the menu / mirror).
@@ -142,6 +148,10 @@ fn main() {
             bevy::diagnostic::EntityCountDiagnosticsPlugin::default(),
             bevy::diagnostic::LogDiagnosticsPlugin::default(),
         ));
+    }
+    // SM89_PROFILE: timings in the log (see profile.rs).
+    if let Some(p) = profile::config() {
+        app.add_plugins(profile::ProfilePlugin(p));
     }
     if let Some(shot) = autoshot::from_args() {
         app.add_plugins(shot);

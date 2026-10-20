@@ -264,6 +264,26 @@ fn apply_remap_changes(palette: Res<Palette>, mut materials: ResMut<Assets<Palet
     }
 }
 
+/// `SM89_MSAA=off|2|4|8`: anti-aliasing in either shading mode (for measuring its cost).
+fn msaa_override() -> Option<Msaa> {
+    static MSAA: std::sync::OnceLock<Option<Msaa>> = std::sync::OnceLock::new();
+    *MSAA.get_or_init(|| {
+        let v = std::env::var("SM89_MSAA").ok()?;
+        let m = match v.trim() {
+            "off" | "0" | "1" => Msaa::Off,
+            "2" => Msaa::Sample2,
+            "4" => Msaa::Sample4,
+            "8" => Msaa::Sample8,
+            _ => {
+                warn!("SM89_MSAA={v}: expected off, 2, 4 or 8");
+                return None;
+            }
+        };
+        info!("SM89_MSAA: {} samples", m.samples());
+        Some(m)
+    })
+}
+
 /// Faithful mode renders without anti-aliasing like the original; modern mode uses 4x MSAA.
 fn apply_msaa(
     settings: Res<Settings>,
@@ -273,7 +293,7 @@ fn apply_msaa(
     if !settings.is_changed() && added.is_empty() {
         return;
     }
-    let want = if settings.modern_shading { Msaa::Sample4 } else { Msaa::Off };
+    let want = msaa_override().unwrap_or(if settings.modern_shading { Msaa::Sample4 } else { Msaa::Off });
     for mut m in &mut cams {
         if *m != want {
             *m = want;

@@ -50,7 +50,7 @@ impl Plugin for Cockpit3dPlugin {
             .add_systems(Startup, (setup_materials, initial_look, model::load_models))
             .add_systems(
                 Update,
-                (respawn_on_style_change, spawn_cockpit, sync_materials, sync_shading, cockpit_visibility).chain().run_if(in_state(AppState::Flight)),
+                (respawn_on_style_change, spawn_cockpit, follow_eye, sync_materials, sync_shading, cockpit_visibility).chain().run_if(in_state(AppState::Flight)),
             )
             .add_systems(
                 PreUpdate,
@@ -135,6 +135,16 @@ impl Hand {
 /// are the high-resolution ones.
 #[derive(Component)]
 pub struct CockpitRoot(pub layout::PanelStyle, pub bool, pub bool);
+
+/// Keeps the cockpit at the eye point (in VR it follows the cockpit size).
+fn follow_eye(settings: Res<crate::settings::Settings>, mut roots: Query<&mut Transform, With<CockpitRoot>>) {
+    let eye = settings.cockpit_eye();
+    for mut tf in &mut roots {
+        if tf.translation != eye {
+            tf.translation = eye;
+        }
+    }
+}
 
 /// Rebuilds the cockpit when the panel layout, the local lights setting or the MFD resolution
 /// changes.
@@ -316,7 +326,7 @@ fn spawn_cockpit(
     }
     let layout = layout::PanelLayout::for_style(style);
     let root = commands
-        .spawn((CockpitRoot(layout.style, settings.local_lights, settings.hires_displays()), Transform::from_translation(settings.aircraft.spec().eye), Visibility::default()))
+        .spawn((CockpitRoot(layout.style, settings.local_lights, settings.hires_displays()), Transform::from_translation(settings.cockpit_eye()), Visibility::default()))
         .id();
     commands.entity(aircraft).add_child(root);
 

@@ -132,6 +132,19 @@ impl Settings {
         if self.vr { spec.vr_hud_scale } else { spec.hud_scale }
     }
 
+    /// The eye point and cockpit in the aircraft frame: the design eye point, in VR raised to
+    /// the aircraft's `vr_eye_height` above the ground as seen through the rig scale.
+    pub fn cockpit_eye(&self) -> Vec3 {
+        let spec = self.aircraft.spec();
+        let mut eye = spec.eye;
+        if self.vr
+            && let Some(h) = spec.vr_eye_height
+        {
+            eye.y = eye.y.max(h / self.vr_rig_scale());
+        }
+        eye
+    }
+
     /// Scale of the VR rig (head and hand offsets) for the chosen cockpit size.
     pub fn vr_rig_scale(&self) -> f32 {
         self.vr_cockpit_scale * self.aircraft.spec().vr_scale

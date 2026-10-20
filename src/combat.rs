@@ -709,7 +709,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     combat.sim_waypoint = o.waypoint;
     let combat = &*combat;
     let Outputs { mut player, mut stores, mut wps, mut msgs, mut clock, mut emv, mut warnings, mut cm, mut contacts, mut cam, mut cues, hud, view, accel, settings, mut emitters, ships, tiles } = out;
-    let eye = settings.aircraft.spec().eye;
+    let eye = settings.cockpit_eye();
     let sim = &combat.sim;
     let data = &combat.data;
     let Ok((mut a, pos)) = player.single_mut() else { return };

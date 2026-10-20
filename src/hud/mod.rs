@@ -437,7 +437,7 @@ impl HudParams<'_, '_> {
             ((self.waypoints.current, km, if ms > 1.0 { km * 1000.0 / ms } else { 0.0 }), d.as_vec3())
         });
         let ils = self.mfd.as_ref().filter(|m| m.ils).zip(self.papi.as_ref()).and_then(|(_, papi)| {
-            let eye = pos.0 + (a.orientation * self.settings.aircraft.spec().eye).as_dvec3();
+            let eye = pos.0 + (a.orientation * self.settings.cockpit_eye()).as_dvec3();
             let (_, along, lateral) = crate::scenery::approach_to(&papi.0, bevy::math::DVec2::new(eye.x, -eye.z), h)?;
             let loc = lateral.atan2(along).to_degrees();
             let gs = eye.y.max(0.0).atan2(along).to_degrees() - crate::scenery::GLIDE_PATH_DEG;

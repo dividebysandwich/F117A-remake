@@ -435,7 +435,7 @@ fn update_rig(
     let Ok((a, pos)) = aircraft.single() else { return };
     // Lowest camera height relative to the aircraft origin in external views (1 m above ground).
     let floor = 1.0 - (a.altitude - a.ground_altitude) * crate::world::WU as f32;
-    let eye = settings.aircraft.spec().eye;
+    let eye = settings.cockpit_eye();
     viewpoint.altitude_wu = a.altitude + eye.y / crate::world::WU as f32;
     let yaw = match state.view {
         View::LookLeft => 90f32.to_radians(),

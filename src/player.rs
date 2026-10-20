@@ -95,7 +95,7 @@ fn spawn_player(
             Visibility::default(),
         ))
         .id();
-    crate::camera::spawn_rig(&mut commands, aircraft, &mut meshes, &palette, xr_root.0, settings.aircraft.spec().eye);
+    crate::camera::spawn_rig(&mut commands, aircraft, &mut meshes, &palette, xr_root.0, settings.cockpit_eye());
     // Debug text readout of the flight state (opt-in, overlaps the panel).
     if !std::env::args().any(|a| a == "--readout") {
         return;

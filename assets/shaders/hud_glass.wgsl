@@ -54,12 +54,14 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         let uv = p / size;
         let texel = 1.0 / size;
         let core = textureSampleLevel(hud_texture, hud_sampler, uv, 0.0).a;
-        var halo = 0.0;
-        for (var i = 0; i < 8; i++) {
-            let a = f32(i) * 0.785398;
-            halo += textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(cos(a), sin(a)) * texel * 2.5, 0.0).a;
-        }
-        halo = halo / 8.0;
+        // Four bilinear taps on the diagonals (each blends 2x2 texels): the glow of the 4x4
+        // texels around, at under half the cost of eight single taps (the combiner covers much
+        // of the view in a headset, every pixel of it pays).
+        let d = texel * 1.8;
+        let halo = (textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(d.x, d.y), 0.0).a
+            + textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(-d.x, d.y), 0.0).a
+            + textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(d.x, -d.y), 0.0).a
+            + textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(-d.x, -d.y), 0.0).a) / 4.0;
         let a = select(0.0, clamp(core * 1.2 + halo * 0.35, 0.0, 1.0), inside);
         if a <= 0.01 {
             if tint.a <= 0.0 {

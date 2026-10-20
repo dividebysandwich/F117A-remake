@@ -545,8 +545,9 @@ mesh_object("dark", cylinder_mesh("dark", 0.004, 0.007, "dark", axis="Z", centre
 # Arm rest behind the stick.
 box("cushion", "cushion", (0.31, 0.03, CONSOLE_TOP + 0.015), (0.09, 0.26, 0.03))
 # Throttle: two rails along the left console; the handle slides on them from idle (its origin)
-# to full: a slider block, the post and the grip sloping up towards the front, with the cut-off
-# release in front, the radar cursor on top and the antenna elevation knob outboard.
+# to full: a slider block, the post and the grip across the console sloping up inboard, with the
+# cut-off release at its inboard end, the radar cursor on top and the antenna elevation knob in
+# front.
 for x in (-0.294, -0.266):
     box("metal", "metal", (x, 0.21, CONSOLE_TOP + 0.007), (0.005, 0.25, 0.006))
 throttle = empty("throttle", (-0.28, 0.125, -0.50), props={"throttle": True})
@@ -554,10 +555,16 @@ empty("throttle_full", (-0.28, 0.30, -0.50), props={"anchor": "throttle_full"})
 mesh_object("dark", box_mesh("dark", (0.05, 0.075, 0.03), "dark", (0.0, 0.0, -0.07)), (0, 0, 0), parent=throttle)
 mesh_object("metal", box_mesh("metal", (0.024, 0.03, 0.065), "metal", (0.0, 0.0, -0.035)), (0, 0, 0), parent=throttle)
 slope = Euler((math.radians(12.0), 0.0, 0.0))
-mesh_object("rubber", box_mesh("rubber", (0.045, 0.12, 0.04), "rubber", (0.0, 0.01, 0.0), slope.to_quaternion()), (0, 0, 0), parent=throttle)
-mesh_object("metal", box_mesh("metal", (0.018, 0.022, 0.014), "metal", (0.0, 0.056, 0.028)), (0, 0, 0), parent=throttle)
-mesh_object("dark", cylinder_mesh("dark", 0.007, 0.012, "dark", axis="Z", centre=(-0.014, 0.012, 0.02)), (0, 0, 0), parent=throttle)
-mesh_object("metal", cylinder_mesh("metal", 0.006, 0.01, "metal", axis="-X", centre=(-0.0225, -0.03, 0.0)), (0, 0, 0), parent=throttle)
+grip = [
+    mesh_object("rubber", box_mesh("rubber", (0.045, 0.12, 0.04), "rubber", (0.0, 0.01, 0.0), slope.to_quaternion()), (0, 0, 0), parent=throttle),
+    mesh_object("metal", box_mesh("metal", (0.018, 0.022, 0.014), "metal", (0.0, 0.056, 0.028)), (0, 0, 0), parent=throttle),
+    mesh_object("dark", cylinder_mesh("dark", 0.007, 0.012, "dark", axis="Z", centre=(-0.014, 0.012, 0.02)), (0, 0, 0), parent=throttle),
+    mesh_object("metal", cylinder_mesh("metal", 0.006, 0.01, "metal", axis="-X", centre=(-0.0225, -0.03, 0.0)), (0, 0, 0), parent=throttle),
+]
+# The grip and its switches turned 90 degrees clockwise seen from above (its long side across
+# the console); the slider block and the post stay along the rails.
+for o in grip:
+    o.data.transform(Matrix.Rotation(math.radians(-90.0), 4, "Z"))
 
 # --- the kept parts, moved into the F-16's cockpit
 objs = {o.name: o for o in root.children}

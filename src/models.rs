@@ -229,6 +229,9 @@ pub fn tile_model_scale(name: &str, unit: f64) -> f32 {
 
 /// Range multiplier for a model's last (coarsest) detail level.
 const LAST_LOD_RANGE: f32 = 4.0;
+/// Range multiplier for the other detail levels: the original switched to its coarse levels
+/// (often just a box or a dot) at a few hundred pixels' worth of distance.
+const NEAR_LOD_RANGE: f32 = 4.0;
 
 /// On a model root: its own range multiplier for the last detail level (instead of
 /// `LAST_LOD_RANGE`).
@@ -252,12 +255,13 @@ fn apply_model_state(
         let prev = all_lods
             .iter()
             .filter(|l| l.root == lod.root && l.level < lod.level)
-            .map(|l| l.max_dist)
+            .map(|l| l.max_dist * NEAR_LOD_RANGE * reduce)
             .fold(0.0, f32::max);
-        // The last level stays drawn LAST_LOD_RANGE (or the root's LodRange) times further
-        // than its model says, reduced by the Alt-D detail setting.
+        // Every level is drawn NEAR_LOD_RANGE times further than its model says, the last one
+        // LAST_LOD_RANGE (or the root's LodRange) times, all reduced by the Alt-D detail setting.
         let last = !all_lods.iter().any(|l| l.root == lod.root && l.level > lod.level);
-        let max_dist = if last { lod.max_dist * range.map_or(LAST_LOD_RANGE, |r| r.0) * reduce } else { lod.max_dist };
+        let factor = if last { range.map_or(LAST_LOD_RANGE, |r| r.0) } else { NEAR_LOD_RANGE };
+        let max_dist = lod.max_dist * factor * reduce;
         let picks = |d: f32| d <= max_dist && (lod.level == 0 || d > prev);
         let main = picks(dist.main);
         let track = dist.track.map_or(main, picks);

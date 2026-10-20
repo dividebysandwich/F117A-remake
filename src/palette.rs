@@ -360,7 +360,7 @@ fn update_globals(
 }
 
 /// Original detail level 0..3 and the model LOD range reduction 0..3. Alt-D first halves the
-/// last detail level's range three times, then cycles the original level 3 -> 2 -> 1 -> 0 (at
+/// models' detail level ranges three times, then cycles the original level 3 -> 2 -> 1 -> 0 (at
 /// the shortest range), then back to full detail. Below 3 the original uses the simpler remap
 /// table (solid terrain colours instead of gradient AND/OR overlays).
 #[derive(Resource)]
@@ -373,7 +373,7 @@ impl Default for DetailLevel {
 }
 
 impl DetailLevel {
-    /// Factor on the range of the models' last detail level.
+    /// Factor on the range of the models' detail levels.
     pub fn lod_range(&self) -> f32 {
         0.5f32.powi(self.1 as i32)
     }

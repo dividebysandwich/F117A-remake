@@ -1,16 +1,15 @@
 //! Draws the combat simulation's moving objects (the per-frame draw list):
 //! aircraft (STFLT models by `aircraftTypes[spec].model`), projectiles (`sams[spec].model`),
-//! countermeasure cartridges, gun rounds, smoke, the falling wreck, the parachute and impact
-//! flashes. Positions are interpolated between the 15 Hz simulation frames.
+//! countermeasure cartridges, gun rounds, the falling wreck and the parachute (explosions and
+//! smoke: explosions.rs). Positions are interpolated between the 15 Hz simulation frames.
 //!
 //! Also drives the model state slots of the world: lights (10/11) from the palette, the turning
 //! antennas (15/16) and the per-object aircraft slots (8, 12, 13, 14).
 
 use std::collections::{HashMap, HashSet};
 
-use bevy::mesh::MeshTag;
 use bevy::prelude::*;
-use stealth_sim::{N_PROJ, Smoke, fflags};
+use stealth_sim::{N_PROJ, fflags};
 
 use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player, bam};
@@ -25,16 +24,20 @@ pub struct SimRenderPlugin;
 impl Plugin for SimRenderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SimVisuals>()
-            .add_systems(OnEnter(AppState::Flight), init_meshes)
             .add_systems(OnExit(AppState::Flight), cleanup)
             .add_systems(
                 Update,
                 (sync_objects.run_if(resource_exists::<Combat>), world_model_state, own_shadow)
+                    .in_set(SimRenderSystems)
                     .after(CombatSystems)
                     .run_if(in_state(AppState::Flight)),
             );
     }
 }
+
+/// The systems placing the simulation's objects.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SimRenderSystems;
 
 /// Marks entities spawned for simulation objects.
 #[derive(Component)]
@@ -46,7 +49,6 @@ const CHAFF: u8 = 7;
 const DECOY: u8 = 13;
 const TRACER: u8 = 17;
 const ENEMY_TRACER: u8 = 41;
-const SMOKE: u8 = 8;
 const CHUTE: u8 = 15;
 const SIGNAL_FLARE: u8 = 41;
 /// Seconds a signal flare burns.
@@ -71,20 +73,11 @@ fn aircraft_model(model: i32) -> i32 {
 fn model_file(model: i32) -> &'static str {
     if model >= REMAKE_MODELS { "drones" } else { "stflt" }
 }
-/// Seconds without new smoke after which the old puffs are no longer drawn.
-const SMOKE_TIMEOUT: f32 = 4.0;
 
 struct Cartridge {
     entity: Entity,
     key: (i32, i32, i32),
     alt: f32,
-}
-
-struct Effect {
-    entity: Entity,
-    age: f32,
-    life: f32,
-    size: f32,
 }
 
 #[derive(Resource, Default)]
@@ -93,17 +86,12 @@ struct SimVisuals {
     proj: [Option<(Entity, i32)>; N_PROJ],
     cms: [Option<Cartridge>; 4],
     bullets: Vec<Entity>,
-    smoke: Vec<Entity>,
-    smoke_state: [Smoke; 16],
-    smoke_age: f32,
     wreck: Option<Entity>,
     chute: Option<Entity>,
-    effects: Vec<Effect>,
     /// Signal flares of the downed pilot: (dot, seconds since fired, map x, map y).
     signal_flares: Vec<(Entity, f32, i32, i32)>,
     /// Solid palette-colour materials (word 0xFF00 | index).
     materials: HashMap<u8, Handle<PaletteMaterial>>,
-    sphere: Option<Handle<Mesh>>,
 }
 
 impl SimVisuals {
@@ -118,10 +106,6 @@ impl SimVisuals {
             })
             .clone()
     }
-}
-
-fn init_meshes(mut vis: ResMut<SimVisuals>, mut meshes: ResMut<Assets<Mesh>>) {
-    vis.sphere = Some(meshes.add(Sphere::new(1.0).mesh().ico(1).unwrap()));
 }
 
 fn cleanup(mut commands: Commands, q: Query<Entity, With<SimObject>>, mut vis: ResMut<SimVisuals>) {
@@ -170,20 +154,6 @@ fn spawn_dot(commands: &mut Commands, assets: &ModelAssets, material: Handle<Pal
     parent
 }
 
-fn spawn_sphere(commands: &mut Commands, mesh: Handle<Mesh>, material: Handle<PaletteMaterial>) -> Entity {
-    commands
-        .spawn((
-            SimObject,
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            MeshTag(mesh_tag(LEVEL_AIRCRAFT, 0, true)),
-            WorldPos::default(),
-            Transform::from_scale(Vec3::ZERO),
-            Visibility::Hidden,
-        ))
-        .id()
-}
-
 #[allow(clippy::too_many_arguments)]
 fn sync_objects(
     mut commands: Commands,
@@ -195,7 +165,7 @@ fn sync_objects(
     mut materials: ResMut<Assets<PaletteMaterial>>,
     time: Res<Time>,
     mut q: Query<(&mut WorldPos, &mut Transform, Option<&mut ModelState>, &mut Visibility), With<SimObject>>,
-    mut mats: Query<&mut MeshMaterial3d<PaletteMaterial>, With<SimObject>>,
+    mut explosions: ResMut<crate::explosions::Explosions>,
 ) {
     let vis = &mut *vis;
     let sim = &combat.sim;
@@ -203,7 +173,6 @@ fn sync_objects(
     let file = library.load(&server, "stflt");
     let lights = assets.palette.lights_on();
     let globals = assets.palette.globals.clone();
-    let Some(sphere) = vis.sphere.clone() else { return };
     let dt = time.delta_secs();
 
     // --- aircraft
@@ -371,32 +340,6 @@ fn sync_objects(
         }
     }
 
-    // --- smoke puffs (grow with age), only while smoke is being produced
-    let smoke = *sim.smoke();
-    if smoke != vis.smoke_state {
-        vis.smoke_state = smoke;
-        vis.smoke_age = 0.0;
-    } else {
-        vis.smoke_age += dt;
-    }
-    while vis.smoke.len() < smoke.len() {
-        let material = vis.material(&mut materials, &globals, SMOKE);
-        let e = spawn_sphere(&mut commands, sphere.clone(), material);
-        vis.smoke.push(e);
-    }
-    let fresh = vis.smoke_age < SMOKE_TIMEOUT;
-    for (s, &e) in smoke.iter().zip(&vis.smoke) {
-        if let Ok((mut pos, mut tf, _, mut v)) = q.get_mut(e) {
-            if fresh && s.x != 0 && (0..16).contains(&s.age) {
-                pos.0 = map_point(s.x as f64 + 0.5, s.y as f64 + 0.5, s.alt as f64);
-                tf.scale = Vec3::splat(8.0 + 5.0 * ((s.age & 0xE) >> 1) as f32);
-                v.set_if_neq(Visibility::Inherited);
-            } else {
-                v.set_if_neq(Visibility::Hidden);
-            }
-        }
-    }
-
     // --- falling wreck (model 11) until it hits the ground
     let w = sim.wreck();
     if w.alt > 0 && w.x != 0 {
@@ -411,10 +354,7 @@ fn sync_objects(
         }
     } else if let Some(e) = vis.wreck.take() {
         commands.entity(e).try_despawn();
-        let size = 90.0;
-        let entity = spawn_sphere(&mut commands, sphere.clone(), vis.material(&mut materials, &globals, 15));
-        commands.entity(entity).insert(WorldPos(map_point(w.x as f64, w.y as f64, 0.0)));
-        vis.effects.push(Effect { entity, age: 0.0, life: 1.5, size });
+        explosions.pending.push((map_point(w.x as f64, w.y as f64, 0.0), crate::explosions::Blast::Crash));
     }
 
     // --- parachute
@@ -460,48 +400,6 @@ fn sync_objects(
         true
     });
 
-    // --- impact flashes: expanding white -> yellow -> red balls
-    for &(x, y, alt, kind) in &combat.explosions {
-        let (size, life) = match kind {
-            -1 => (6.0, 0.4),
-            0x10 => (45.0, 1.2),
-            -6 => (70.0, 1.4),
-            _ => (90.0, 1.6),
-        };
-        let entity = spawn_sphere(&mut commands, sphere.clone(), vis.material(&mut materials, &globals, 15));
-        commands.entity(entity).insert(WorldPos(map_point(x as f64 + 0.5, y as f64 + 0.5, alt.max(0) as f64)));
-        vis.effects.push(Effect { entity, age: 0.0, life, size });
-    }
-    let (white, yellow, red) = (
-        vis.material(&mut materials, &globals, 15),
-        vis.material(&mut materials, &globals, 17),
-        vis.material(&mut materials, &globals, 41),
-    );
-    vis.effects.retain_mut(|fx| {
-        fx.age += dt;
-        if fx.age >= fx.life {
-            commands.entity(fx.entity).try_despawn();
-            return false;
-        }
-        let t = fx.age / fx.life;
-        if let Ok((_, mut tf, _, mut v)) = q.get_mut(fx.entity) {
-            tf.scale = Vec3::splat(fx.size * (0.25 + 0.75 * t.sqrt()));
-            v.set_if_neq(Visibility::Inherited);
-        }
-        // Flash light: white -> orange, fading out.
-        let k = (1.0 - t).powi(2) * 3.0;
-        commands.entity(fx.entity).insert((
-            crate::lighting::LightEmitter { color: Vec3::new(1.0, 0.75 - 0.4 * t, 0.45 - 0.4 * t) * k, range: fx.size * 8.0 },
-            bevy::light::NotShadowCaster,
-        ));
-        if let Ok(mut m) = mats.get_mut(fx.entity) {
-            let want = if t < 0.15 { &white } else if t < 0.5 { &yellow } else { &red };
-            if m.0 != *want {
-                m.0 = want.clone();
-            }
-        }
-        true
-    });
 }
 
 fn sim_missile_model(combat: &Combat, spec: i32) -> i32 {

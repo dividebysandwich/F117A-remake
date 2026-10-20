@@ -74,7 +74,7 @@ to all later flights.
   for throttle, face buttons for fire, gun, weapon select and bay doors.
 - **Preview** (top right): an F-117 outline that moves with the mapped axes, with the throttle
   shown as the exhaust colour. If the aircraft moves the wrong way, enable *Invert* for that axis.
-- **Axes**: Roll, Pitch, Rudder, Throttle. Click **BIND**, then move the axis. *Invert* reverses
+- **Axes**: Roll, Pitch, Rudder, Throttle, Sensor/cursor slew X and Y (modern avionics). Click **BIND**, then move the axis. *Invert* reverses
   the direction, *dead zone* sets the neutral range around the centre, and the bar shows the
   current value. **CLEAR** removes the binding.
 - **Buttons**: every game action, with its keyboard key for reference. Click **BIND**, then press
@@ -252,8 +252,9 @@ an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
 | Shaders | Modern (anti-aliasing, shading, haze) or classic flat shading. |
 | Shadows | Sun shadows on / off. |
 | Point lights | Cockpit lamps, explosions, flares and runway lights lighting the scene. |
-| Cockpit | Modern or classic panel. |
+| Cockpit | Modern or classic panel (F-117A only). |
 | HUD | Modern (F-16 style) or classic HUD. |
+| Avionics | Modern (F-16 style MFD formats, chapter 4.1) or classic MFD pages. |
 | Cockpit size | VR only: size of the cockpit in the headset (70–150 %, default 100 % = 70 % of life size); left / right or the < > halves. |
 | Resume | Closes the menu (as does Esc again). |
 | End mission | Ends the flight and goes to the debrief. |
@@ -262,8 +263,10 @@ Changes apply at once and are saved as the defaults for the next flight.
 
 ## 4. MFD pages
 
-The panel has two multi-function displays (MFDs). The labelled buttons above and below each
-screen select the pages and their functions. The button of the active page is lit.
+The panel has two multi-function displays (MFDs). With the **classic avionics** (menu: Classic /
+Modern, Avionics) they show the original's pages described here; the **modern avionics** are in
+chapter 4.1. The labelled buttons above and below each screen select the pages and their
+functions. The button of the active page is lit.
 
 | Left MFD buttons | Function |
 |---|---|
@@ -317,6 +320,31 @@ buildings appear bright.</td>
 <td></td>
 </tr>
 </table>
+
+### 4.1 Modern avionics
+
+With the modern avionics either MFD can show any of five F-16 style formats, chosen with the
+bottom row of bezel buttons: **HSD**, **HARM**, **TGP**, **MAP** and **SMS**. The buttons'
+functions are written on the display next to them (lit = selected); the bezel caps are blank.
+Choosing the format the other MFD shows swaps the two. F3 cycles the left MFD through HSD, MAP
+and HARM; F5 / F10 bring up SMS, F6 and the camera keys the TGP, F7 the waypoint table.
+
+| Format | Top row buttons | Shows |
+|---|---|---|
+| HSD | DEP / CEN, RNG-, range, RNG+, SOI | Horizontal situation display, heading up: range rings (the range in km is the outer ring), the route with the current steerpoint ringed, SAM sites with their missile's reach as red threat rings, hostile (red) and friendly (green) aircraft, missiles, the mission targets (cyan diamonds); the locked target is boxed. |
+| HARM | ALL / SAM / AIR, SOI | The radars painting the aircraft, like the RWR: at their bearing, the most dangerous nearest the centre (chapter 3.7). |
+| TGP | FLIR, AHD, RGT, REAR, LFT | The tracking camera. |
+| MAP | NUP / HUP, ZM-, ZM+, WAY | The moving map in muted colours; WAY switches to the waypoint table (WP-, WP+, RST). |
+| SMS | WPN, ORD, SEL | Stores (WPN) and mission orders (ORD). |
+
+**Sensor of interest (SOI).** The HSD or the HARM display is the SOI (white frame; the top right
+SOI button, or Alt S to move it to the other MFD). Its cursor, two short vertical lines, moves with
+the **sensor/cursor slew** controls: the keypad (8 / 2 / 4 / 6 and diagonals), the left VR
+thumbstick, or two joystick axes bound in the CONTROLS dialog ("Sensor/cursor slew X/Y"). **Lock
+cursor target** (keypad Enter, left thumbstick click, or a bound button) locks what is under the
+cursor: an aircraft on the HSD (the HUD goes to A-A), a ground object or SAM site (A-G), or a
+radar on the HARM display. The lock holds until the next target key (B, T, N, Shift B or the
+camera keys). Z / X change the HSD range while it is the SOI.
 
 ## 5. Targeting and weapons
 
@@ -471,7 +499,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 
 | Group | Action | Key |
 |---|---|---|
-| **Flight** | Stick (pitch / roll) | Arrow keys or keypad; double-tap for full deflection |
+| **Flight** | Stick (pitch / roll) | Arrow keys; double-tap for full deflection |
 | | Stick sensitivity | Ins |
 | | Throttle up / down | `=` / `-` |
 | | Full / idle throttle | Shift `=` / Shift `-` |
@@ -480,6 +508,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | **Weapons** | Select weapon / fire / gun | Space / Enter / Backspace |
 | | Flare / chaff / IR jammer / ECM / decoy | 1 / 2 / 3 / 4 / 5 |
 | **Targeting** | Nearest target ahead | T |
+| | Slew the SOI's cursor / lock the target under it / SOI to the other MFD (modern avionics) | keypad 1–9 / keypad Enter / Alt S |
 | | Designate new target / next target / clear target | N / B / Shift B |
 | | Tracking camera ahead / rear / right / left | `/` / `.` / `,` / M |
 | **Displays** | HUD mode / declutter | F2 / V |

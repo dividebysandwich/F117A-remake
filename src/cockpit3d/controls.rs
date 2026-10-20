@@ -33,6 +33,7 @@ impl Effect {
             Effect::Osb(side, slot) => match osb(side, slot, mfd)?.1 {
                 OsbFn::Cmd(c) => cmd_action(c),
                 OsbFn::Action(a) => a,
+                OsbFn::Readout => return None,
             },
         })
     }
@@ -171,7 +172,7 @@ impl Fire<'_, '_> {
                 Some(OsbFn::Action(a)) => {
                     self.actions.write(ActionEvent(a));
                 }
-                None => {}
+                Some(OsbFn::Readout) | None => {}
             },
             Effect::CamCycle => {
                 let next = match self.mfd.cam_dir {

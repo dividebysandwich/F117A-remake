@@ -13,6 +13,9 @@
 //! Right MFD: tracking camera (TC), WAY, WPN, ORD pages.
 //! Z/X zoom the map (2..9, 2..10 modern) or the TAC display (0..7); the modern cockpit's bezel
 //! buttons (`osb`) select pages and zoom too.
+//!
+//! With the modern avionics (`MfdState::modern`) the MFDs show the F-16 style formats of
+//! `avionics` instead.
 
 use std::collections::HashMap;
 
@@ -111,6 +114,9 @@ pub struct MfdState {
     pub ils: bool,
     /// Right page before ILS was switched on (restored when it goes off).
     pub page_before_ils: Option<RightMfd>,
+    /// Modern avionics: the MFDs show `av`'s formats.
+    pub modern: bool,
+    pub av: crate::avionics::AvionicsState,
 }
 
 impl Default for MfdState {
@@ -126,6 +132,8 @@ impl Default for MfdState {
             hires: true,
             ils: false,
             page_before_ils: None,
+            modern: false,
+            av: default(),
         }
     }
 }
@@ -133,6 +141,22 @@ impl Default for MfdState {
 impl MfdState {
     pub fn max_map_zoom(&self) -> i32 {
         if self.hires { 10 } else { 9 }
+    }
+
+    /// The tracking camera page is up (classic: the right MFD's camera page; modern: the
+    /// targeting pod on either MFD).
+    pub fn camera_shown(&self) -> bool {
+        if self.modern { self.av.shown(crate::avionics::Format::Tgp).is_some() } else { self.right == RightMfd::Camera }
+    }
+
+    /// The moving map is up (classic: the left MFD's map; modern: the MAP format).
+    pub fn map_shown(&self) -> bool {
+        if self.modern { self.av.shown(crate::avionics::Format::Map).is_some() && !self.av.map_way } else { self.left == LeftMfd::Map }
+    }
+
+    /// The tracking camera page is on this MFD.
+    pub fn camera_on(&self, side: MfdSide) -> bool {
+        if self.modern { self.av.shown(crate::avionics::Format::Tgp) == Some(side) } else { side == MfdSide::Right && self.right == RightMfd::Camera }
     }
 }
 
@@ -147,6 +171,19 @@ pub enum MfdCmd {
     Flir,
     Cam(CamDir),
     Ils,
+    /// Modern avionics: a format on an MFD (swapping with the other MFD if it shows it).
+    Format(MfdSide, crate::avionics::Format),
+    /// Modern avionics: this MFD's format becomes the sensor of interest.
+    Soi(MfdSide),
+    /// Modern avionics: the sensor of interest moves to the other MFD.
+    SwapSoi,
+    HsdRange(i8),
+    HsdCentre,
+    MapZoom(i8),
+    MapWay,
+    /// SMS page: the ORD (true) or WPN page.
+    Sms(bool),
+    HarmFilter,
 }
 
 /// Sent by the cockpit's bezel buttons.
@@ -158,6 +195,8 @@ pub struct MfdCommand(pub MfdCmd);
 pub enum OsbFn {
     Cmd(MfdCmd),
     Action(Action),
+    /// A readout next to the button (it does nothing).
+    Readout,
 }
 
 /// Bezel buttons per MFD: 0..5 along the top, 5..10 along the bottom (left to right).
@@ -166,6 +205,9 @@ pub const OSB_COUNT: u8 = 10;
 /// Label, function and lit state of a bezel button on the current page (None = blank).
 pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn, bool)> {
     use OsbFn::*;
+    if s.modern {
+        return crate::avionics::osb(side, slot, s);
+    }
     let cmd = |c| Cmd(c);
     Some(match (side, slot) {
         (MfdSide::Left, 0) => ("MAP", cmd(MfdCmd::LeftPage(LeftMfd::Map)), s.left == LeftMfd::Map),
@@ -206,10 +248,27 @@ pub fn cmd_action(cmd: MfdCmd) -> Action {
         MfdCmd::ToggleOrient => Action::MapOrientation,
         MfdCmd::Flir => Action::Flir,
         MfdCmd::Ils => Action::Ils,
+        MfdCmd::Format(_, f) => f.action(),
+        MfdCmd::Soi(_) | MfdCmd::SwapSoi => Action::SwapSoi,
+        MfdCmd::HsdRange(d) | MfdCmd::MapZoom(d) => {
+            if d > 0 {
+                Action::MapZoomIn
+            } else {
+                Action::MapZoomOut
+            }
+        }
+        MfdCmd::HsdCentre | MfdCmd::HarmFilter => Action::Maps,
+        MfdCmd::MapWay => Action::SelectWaypoint,
+        MfdCmd::Sms(true) => Action::MissionOrders,
+        MfdCmd::Sms(false) => Action::Ordnance,
     }
 }
 
 pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
+    if state.modern {
+        crate::avionics::apply(state, raster, cmd);
+        return;
+    }
     match cmd {
         MfdCmd::LeftPage(p) => {
             state.left = p;
@@ -254,6 +313,8 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
                 state.right = p;
             }
         }
+        // Modern avionics only.
+        _ => {}
     }
 }
 
@@ -289,6 +350,8 @@ pub struct TrackCam {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct Contacts {
     pub list: Vec<Contact>,
+    /// The simulation's air lock, else its ground lock.
+    pub locked: Option<ContactRef>,
     /// Radar coverage arc of the sweep being displayed (MAP display).
     pub radar_arc: Option<MapArc>,
 }
@@ -328,6 +391,19 @@ pub struct Contact {
     pub heading: u16,
     /// Friendly aircraft.
     pub friendly: bool,
+    /// What a lock on it locks (aircraft: flight unit; sites and targets: world object).
+    pub target: Option<ContactRef>,
+    /// Ground radar: its missile's lock range (km) and RWR symbol.
+    pub threat: Option<(f32, [u8; 3])>,
+}
+
+/// A lockable simulation object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContactRef {
+    /// Flight unit index.
+    Unit(usize),
+    /// World object index.
+    Object(usize),
 }
 
 /// Mission clock for the WAY page ("TIME hh:mm:ss"): seconds of the day at take-off (from the
@@ -345,7 +421,7 @@ impl Default for MissionClock {
 }
 
 fn reset_mfd(mut state: ResMut<MfdState>, mut raster: ResMut<MapRaster>, settings: Res<crate::settings::Settings>) {
-    *state = MfdState { hires: settings.hires_displays(), ..default() };
+    *state = MfdState { hires: settings.hires_displays(), modern: !settings.classic_avionics, ..default() };
     raster.invalidate();
     raster.geometry_theater.clear();
 }
@@ -357,13 +433,16 @@ fn mfd_keys(
     mut raster: ResMut<MapRaster>,
     settings: Res<crate::settings::Settings>,
 ) {
-    if state.hires != settings.hires_displays() {
+    if state.hires != settings.hires_displays() || state.modern == settings.classic_avionics {
         state.hires = settings.hires_displays();
+        state.modern = !settings.classic_avionics;
         state.map_zoom = state.map_zoom.min(state.max_map_zoom());
         raster.invalidate();
     }
     for ActionEvent(a) in actions.read() {
         let cmd = match a {
+            Action::Maps if state.modern => MfdCmd::Format(MfdSide::Left, crate::avionics::next_left_format(state.av.formats[0])),
+            Action::SwapSoi => MfdCmd::SwapSoi,
             Action::Maps => MfdCmd::LeftPage(if state.left == LeftMfd::Map { LeftMfd::Tac } else { LeftMfd::Map }),
             Action::Zoom | Action::MapZoomIn => MfdCmd::ZoomIn,
             Action::Unzoom | Action::MapZoomOut => MfdCmd::ZoomOut,
@@ -666,7 +745,7 @@ fn render_map(
 ) {
     let (Some(theater), Some(palette)) = (theater, palette) else { return };
     let Ok((a, pos)) = q.single() else { return };
-    if state.left != LeftMfd::Map || raster.models.is_empty() {
+    if !state.map_shown() || raster.models.is_empty() {
         return;
     }
     let (x, y) = map_units(pos);
@@ -819,6 +898,8 @@ pub struct MfdParams<'w, 's> {
     pub waypoints: Res<'w, Waypoints>,
     pub theater: Option<Res<'w, Theater>>,
     pub time: Res<'w, Time>,
+    pub palette: Option<Res<'w, Palette>>,
+    pub emitters: Res<'w, crate::rwr::Emitters>,
 }
 
 /// MFD text helper: x = 4*col, y = 6*row in the display.
@@ -841,17 +922,21 @@ const K: i32 = 3;
 
 impl MfdParams<'_, '_> {
     /// Whether the right display should let the tracking camera picture through (index 0).
-    pub fn camera_see_through(&self) -> bool {
-        self.cam.live && self.state.right == RightMfd::Camera
+    pub fn camera_see_through(&self, side: MfdSide) -> bool {
+        self.cam.live && self.state.camera_on(side)
     }
 
     pub fn draw_left(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
         let ac = self.aircraft.single().ok();
         c.reset_clip();
+        if self.state.modern {
+            crate::avionics::draw(self, MfdSide::Left, c, art, fonts);
+            return;
+        }
         match (self.state.left, self.state.hires) {
             (LeftMfd::Map, false) => self.draw_map(c, ac),
             (LeftMfd::Tac, false) => self.draw_tac(c, art, ac),
-            (LeftMfd::Map, true) => self.draw_map_hires(c, art, fonts, ac),
+            (LeftMfd::Map, true) => self.draw_map_hires(c, art, fonts, ac, false),
             (LeftMfd::Tac, true) => self.draw_tac_hires(c, art, fonts, ac),
         }
     }
@@ -859,6 +944,10 @@ impl MfdParams<'_, '_> {
     pub fn draw_right(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
         let ac = self.aircraft.single().ok();
         c.reset_clip();
+        if self.state.modern {
+            crate::avionics::draw(self, MfdSide::Right, c, art, fonts);
+            return;
+        }
         match (self.state.right, self.state.hires) {
             (RightMfd::Camera, false) => self.draw_camera_page(c, fonts),
             (RightMfd::Way, false) => self.draw_way(c, fonts, ac),
@@ -1152,7 +1241,9 @@ impl MfdParams<'_, '_> {
 
     // --- Modern (231x180) pages ---------------------------------------------------------------
 
-    fn draw_map_hires(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>) {
+    /// The modern map; `modern`: the modern avionics' MAP format (muted terrain, no orientation
+    /// tag: it is on a bezel button).
+    pub(crate) fn draw_map_hires(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>, modern: bool) {
         let r = &self.raster;
         let Some((a, pos)) = ac.filter(|_| r.buf_valid) else {
             c.clear(6);
@@ -1161,7 +1252,8 @@ impl MfdParams<'_, '_> {
         let (px, py) = bevy_to_map(pos);
         let (h, _, _) = a.euler();
         let view = hires_view(DVec2::new(px, py), h as f64, self.state.map_zoom, self.state.map_heading_up, Vec2::new(c.w as f32, c.h as f32));
-        // Resample the north-up buffer (nearest pixel).
+        // Resample the north-up buffer (nearest pixel); the modern format mutes the terrain.
+        let tones = if modern { self.modern_tones() } else { std::array::from_fn(|i| i as u8) };
         let (w, ht) = (c.w, c.h);
         for y in 0..ht {
             for x in 0..w {
@@ -1169,7 +1261,7 @@ impl MfdParams<'_, '_> {
                 let b = r.buf_view.to_screen(m.x, m.y);
                 let (bx, by) = (b.x.floor() as i32, b.y.floor() as i32);
                 let v = if bx >= 0 && by >= 0 && (bx as usize) < BUFFER && (by as usize) < BUFFER { r.buffer.px[by as usize * BUFFER + bx as usize] } else { 6 };
-                c.px[y * w + x] = v;
+                c.px[y * w + x] = tones[v as usize];
             }
         }
         let to = |e: f64, n: f64| view.to_screen(e / 32.0, 0x8000 as f64 - n / 32.0);
@@ -1247,7 +1339,9 @@ impl MfdParams<'_, '_> {
             let l = o - n * 14.0;
             fonts.text_scaled(c, l.x as i32 - 3, l.y as i32 - 5, b"N", 15, 2);
         }
-        text2(c, fonts, 10, 6, if self.state.map_heading_up { "HUP" } else { "NUP" }, 15);
+        if !modern {
+            text2(c, fonts, 10, 6, if self.state.map_heading_up { "HUP" } else { "NUP" }, 15);
+        }
         let px_per_km = 1000.0 / (WU * 32.0 * view.scale);
         let km = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0].into_iter().rev().find(|k| k * px_per_km <= 60.0).unwrap_or(0.5);
         let len = (km * px_per_km) as i32;
@@ -1259,6 +1353,31 @@ impl MfdParams<'_, '_> {
         text2(c, fonts, x0, y0 - 15, &label, 15);
     }
 
+    /// Map colours of the modern MAP format: water dark blue, vegetation dark green, the rest in
+    /// greys by brightness (judged in the theater's day palette; the result uses the colours
+    /// 0..15, the same at every time of day).
+    fn modern_tones(&self) -> [u8; 256] {
+        let mut t: [u8; 256] = std::array::from_fn(|i| i as u8);
+        let Some(p) = &self.palette else { return t };
+        for (i, &[r, g, b]) in p.theater.day.colors.iter().enumerate().take(256) {
+            let (r, g, b) = (r as i32, g as i32, b as i32);
+            let lum = (r + g + b) / 3;
+            t[i] = if b > r + 6 && b > g + 4 {
+                2
+            } else if g > r + 4 && g > b + 2 {
+                4
+            } else if lum < 16 {
+                8
+            } else if lum < 34 {
+                14
+            } else {
+                7
+            };
+        }
+        t[6] = 5;
+        t
+    }
+
     fn draw_tac_hires(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>) {
         self.tac(c, art, ac, K);
         // Grid spacing readout.
@@ -1267,7 +1386,7 @@ impl MfdParams<'_, '_> {
         text2(c, fonts, 10, c.h as i32 - 16, &format!("GRID {km:.0} KM"), 8);
     }
 
-    fn draw_camera_hires(&self, c: &mut Canvas, fonts: &Fonts) {
+    pub(crate) fn draw_camera_hires(&self, c: &mut Canvas, fonts: &Fonts) {
         self.camera_background(c, K);
         let text = self.camera_text_colour();
         let w = c.w as i32;
@@ -1287,7 +1406,7 @@ impl MfdParams<'_, '_> {
         }
     }
 
-    fn draw_way_hires(&self, c: &mut Canvas, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>) {
+    pub(crate) fn draw_way_hires(&self, c: &mut Canvas, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>) {
         c.clear(1);
         let t = self.way_time(ac);
         let (hh, mm, ss) = hms(t);
@@ -1312,7 +1431,7 @@ impl MfdParams<'_, '_> {
         c.rect(x0 - 1, 154, w + 2, 14, 7);
     }
 
-    fn draw_wpn_hires(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
+    pub(crate) fn draw_wpn_hires(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
         c.clear(0);
         let (w, ht) = (c.w as i32, c.h as i32);
         let row = ht / 4;
@@ -1334,7 +1453,7 @@ impl MfdParams<'_, '_> {
         }
     }
 
-    fn draw_ord_hires(&self, c: &mut Canvas, fonts: &Fonts) {
+    pub(crate) fn draw_ord_hires(&self, c: &mut Canvas, fonts: &Fonts) {
         c.clear(0);
         for (row, (colour, line)) in self.orders.lines.iter().enumerate().take(13) {
             let mut s = vec![ink(*colour)];

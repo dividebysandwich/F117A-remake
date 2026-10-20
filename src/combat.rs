@@ -28,7 +28,7 @@ use crate::camera::{View, ViewState};
 use crate::flight::{Aircraft, FlightConstants, FlightDamage, FlightEnd, FlightSystems, Player, bam, to_bam};
 use crate::hud::{Bay, HudCues, HudMessages, HudMode, HudState, Stores, TargetBox, Waypoint, Waypoints};
 use crate::input::{Action, ActionEvent, FlightControls};
-use crate::mfd::{Contact, ContactKind, Contacts, MfdState, MissionClock, MissionOrders, RightMfd, TrackCam};
+use crate::mfd::{Contact, ContactKind, ContactRef, Contacts, MfdState, MissionClock, MissionOrders, TrackCam};
 use crate::mission::{ActiveMission, PlannedRoute, clean_text};
 use crate::panel::{Countermeasures, Emv, Warnings};
 use crate::settings::{AppState, MissionSetup, SetupSet, StartPose};
@@ -281,9 +281,20 @@ fn stop_combat(
 }
 
 /// Keys -> one-shot simulation commands, collected until the next frame.
-fn collect_commands(mut actions: MessageReader<ActionEvent>, mut combat: ResMut<Combat>, mut accel: ResMut<TimeAccel>) {
+fn collect_commands(
+    mut actions: MessageReader<ActionEvent>,
+    mut locks: MessageReader<crate::avionics::LockRequest>,
+    mut combat: ResMut<Combat>,
+    mut accel: ResMut<TimeAccel>,
+) {
     let combat = &mut *combat;
     let c = &mut combat.pending;
+    for crate::avionics::LockRequest(target) in locks.read() {
+        match *target {
+            ContactRef::Unit(i) => c.lock_unit = u16::try_from(i).ok(),
+            ContactRef::Object(i) => c.lock_object = u16::try_from(i).ok(),
+        }
+    }
     for ActionEvent(a) in actions.read() {
         match a {
             Action::SelectWeapon => c.next_bay = true,
@@ -356,7 +367,7 @@ fn player_state(
         fuel: a.fuel.max(0.0) as i32,
         collided,
         hud_mode: sim_hud_mode(hud.mode),
-        camera_mfd: mfd.right == RightMfd::Camera,
+        camera_mfd: mfd.camera_shown(),
         external_view: !is_cockpit_view(view.view),
         hud_visible: view.view == View::Cockpit,
         cmd: SimCommands { gun, ..cmd },
@@ -780,17 +791,25 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         }
         let (east, north, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
         let kind = if sim.drones().is_some_and(|d| d.contains(i)) { ContactKind::Drone } else { ContactKind::Aircraft };
-        contacts.list.push(Contact { kind, east, north, alt: alt as f32, heading: u.heading as u16, friendly: sim.friendly_aircraft(u.spec) });
+        let friendly = sim.friendly_aircraft(u.spec);
+        contacts.list.push(Contact { kind, east, north, alt: alt as f32, heading: u.heading as u16, friendly, target: Some(ContactRef::Unit(i)), threat: None });
     }
     for (_, m, _, _) in sim.active_projectiles() {
         let (east, north) = map_wu(m.x, m.y);
-        contacts.list.push(Contact { kind: ContactKind::Missile, east, north, alt: m.alt as f32, heading: m.heading as u16, friendly: false });
+        contacts.list.push(Contact { kind: ContactKind::Missile, east, north, alt: m.alt as f32, heading: m.heading as u16, friendly: false, target: None, threat: None });
     }
     let objects = sim.objects();
     for (i, ob) in objects.iter().enumerate().take(sim.ground_unit_count()).skip(3) {
         if ob.unit_type > 0 && ob.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) == 0 && i < objects.len() {
             let (east, north) = map_wu(ob.x, ob.y);
-            contacts.list.push(Contact { kind: ContactKind::GroundRadar, east, north, alt: 0.0, heading: 0, friendly: false });
+            let label = crate::rwr::rwr_label(sim.threat_name(ob.unit_type), false);
+            let mut sym = [0u8; 3];
+            for (d, s) in sym.iter_mut().zip(label.bytes()) {
+                *d = s;
+            }
+            let ring_km = crate::rwr::km(sim.site_lock_range(ob.unit_type));
+            let threat = Some((ring_km, sym));
+            contacts.list.push(Contact { kind: ContactKind::GroundRadar, east, north, alt: 0.0, heading: 0, friendly: false, target: Some(ContactRef::Object(i)), threat });
         }
     }
     let heading_bam = to_bam(a.euler().0);
@@ -810,14 +829,16 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         if done[k] || !(1..=3).contains(&t.mission_type) {
             continue;
         }
-        if let Some(ob) = usize::try_from(t.object).ok().and_then(|i| objects.get(i))
+        if let Some((i, ob)) = usize::try_from(t.object).ok().and_then(|i| Some((i, objects.get(i)?)))
             && ob.flags & oflags::DESTROYED == 0
             && (ob.x, ob.y) != (0, 0)
         {
             let (east, north) = map_wu(ob.x, ob.y);
-            contacts.list.push(Contact { kind: ContactKind::Target, east, north, alt: 0.0, heading: 0, friendly: false });
+            contacts.list.push(Contact { kind: ContactKind::Target, east, north, alt: 0.0, heading: 0, friendly: false, target: Some(ContactRef::Object(i)), threat: None });
         }
     }
+    let locks = sim.targeting();
+    contacts.locked = locks.air.map(ContactRef::Unit).or(locks.ground.map(ContactRef::Object));
 
     // Tracking camera data and HUD cues.
     let t = sim.targeting();

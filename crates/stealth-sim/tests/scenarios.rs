@@ -176,6 +176,31 @@ fn emitters_ranked() {
     assert!(e[0].launch && e[0].tracking, "{:?}", e[0]);
 }
 
+/// A display's cursor lock (HSD, HARM) holds without the camera page, and survives the HUD
+/// mode change that comes with it.
+#[test]
+fn display_lock_holds() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let mut sim = Sim::new(&d.sim, &m);
+    let (mx, my) = sandbox(&mut sim, &m);
+    place_site(&mut sim, 3, 1, mx, my - 640);
+    let mut p = player_at(mx, my, 6000, 0, 300);
+    p.camera_mfd = false;
+    p.hud_mode = HudMode::Gnd;
+    p.cmd.lock_object = Some(3);
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    for _ in 0..60 {
+        sim.step(&p, 15);
+    }
+    assert_eq!(sim.targeting().ground, Some(3));
+    // A target key releases it to the normal cycling.
+    p.cmd.clear_target = true;
+    sim.step(&p, 15);
+    assert_eq!(sim.targeting().ground, None);
+}
+
 /// Low, fast-ish, bays closed over flat ground: the same SA-2 never detects.
 #[test]
 fn stealthy_player_not_detected() {

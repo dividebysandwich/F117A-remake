@@ -7,9 +7,8 @@ These are the defaults: the menu's CONTROLS dialog rebinds every key except the 
 
 | Group | Action | Key |
 |---|---|---|
-| Stick | pitch down / up | Up / Down arrow, keypad 8 / 2 |
-| | roll left / right | Left / Right arrow, keypad 4 / 6 |
-| | dive left/right, climb left/right | keypad 7 / 9, 1 / 3 |
+| Stick | pitch down / up | Up / Down arrow |
+| | roll left / right | Left / Right arrow |
 | | stick sensitivity (tiny/small/medium) | Ins |
 | | max stick movement | fast double-press of a direction |
 | Throttle | max power / no power | Shift + `=` (`+`) / Shift + `-` |
@@ -33,6 +32,9 @@ These are the defaults: the menu's CONTROLS dialog rebinds every key except the 
 | Tracking camera (right MFD) | cam ahead / rear / right / left | `/` / `.` / `,` / M |
 | | designate new target / select target | N / B |
 | | nearest target ahead / clear target (remake) | T / Shift B |
+| Modern avionics (remake) | sensor/cursor slew | keypad 8 / 2 / 4 / 6, diagonals 7 / 9 / 1 / 3 (also the VR left thumbstick and two bindable joystick axes) |
+| | lock the target under the cursor | keypad Enter (VR: left thumbstick click) |
+| | sensor of interest to the other MFD | Alt S |
 | INS | select waypoint / change waypoint / reset waypoint | F7 / F8 / Shift F8 |
 | | last / next waypoint | PgUp / PgDn (shift if no joystick) |
 | | move waypoint up/down/left/right | arrows / keypad (shift if no joystick) |

@@ -14,7 +14,7 @@ use bevy::render::render_resource::TextureFormat;
 use crate::camera::{View, ViewState};
 use crate::combat::{Combat, CombatSystems, map_wu, unit_position};
 use crate::flight::{Aircraft, Player, bam};
-use crate::mfd::{CamDir, MfdState, RightMfd, TrackCam};
+use crate::mfd::{CamDir, MfdState, TrackCam};
 use crate::settings::{AppState, SetupSet};
 use crate::world::{WorldPos, wu_to_bevy};
 
@@ -112,7 +112,7 @@ fn update_camera(
 ) {
     let Ok((mut camera, mut proj, mut pos, mut tf)) = cam.single_mut() else { return };
     let ac = player.single().ok();
-    let want = mfd.right == RightMfd::Camera && view.view == View::Cockpit && combat.is_some() && ac.is_some();
+    let want = mfd.camera_shown() && view.view == View::Cockpit && combat.is_some() && ac.is_some();
     if camera.is_active != want {
         camera.is_active = want;
     }

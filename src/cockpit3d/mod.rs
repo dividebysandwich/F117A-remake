@@ -98,6 +98,8 @@ pub struct Hand {
     pub grip: Transform,
     /// Index fingertip in the cockpit frame.
     pub finger: Vec3,
+    /// Thumbstick deflection (x right, y up).
+    pub thumb: Vec2,
     pub squeeze: f32,
     pub trigger: f32,
     pub buttons: u8,
@@ -120,15 +122,17 @@ impl Hand {
 }
 
 /// Root of the cockpit model (child of the aircraft at the design eye point), with the panel
-/// layout it was built with and whether it has its lamps (local lights option).
+/// layout it was built with, whether it has its lamps (local lights option) and whether its MFDs
+/// are the high-resolution ones.
 #[derive(Component)]
-pub struct CockpitRoot(pub layout::PanelStyle, pub bool);
+pub struct CockpitRoot(pub layout::PanelStyle, pub bool, pub bool);
 
-/// Rebuilds the cockpit when the panel layout or the local lights setting changes.
+/// Rebuilds the cockpit when the panel layout, the local lights setting or the MFD resolution
+/// changes.
 fn respawn_on_style_change(mut commands: Commands, settings: Res<Settings>, roots: Query<(Entity, &CockpitRoot)>) {
     let want = settings.cockpit().0;
     for (e, root) in &roots {
-        if root.0 != want || root.1 != settings.local_lights {
+        if root.0 != want || root.1 != settings.local_lights || root.2 != settings.hires_displays() {
             commands.entity(e).despawn();
         }
     }
@@ -290,7 +294,7 @@ fn spawn_cockpit(
     }
     let layout = layout::PanelLayout::for_style(style);
     let root = commands
-        .spawn((CockpitRoot(layout.style, settings.local_lights), Transform::from_translation(settings.aircraft.spec().eye), Visibility::default()))
+        .spawn((CockpitRoot(layout.style, settings.local_lights, settings.hires_displays()), Transform::from_translation(settings.aircraft.spec().eye), Visibility::default()))
         .id();
     commands.entity(aircraft).add_child(root);
 
@@ -303,6 +307,7 @@ fn spawn_cockpit(
         tc_image.as_deref(),
         settings.classic_hud,
         settings.local_lights,
+        settings.hires_displays(),
         &mut meshes,
         &mut materials,
         &mut hud_materials,

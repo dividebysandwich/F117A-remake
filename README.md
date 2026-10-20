@@ -25,6 +25,7 @@ Command-line options:
 | `--cloud-cover <percent>` | coverage of the weather's main cloud layer (default: rolled) |
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
 | `--aircraft f117\|f16` | the flown aircraft: the F-117A (default) or the F-16C, which has its own cockpit (with an RWR scope instead of the radar bar graph) and flight model |
+| `--classic-avionics` | the original's MFD pages instead of the F-16 style formats (HSD, HARM, targeting pod, map, stores on either MFD, with a slewable cursor) |
 | `--classic-hud` | the original low-resolution HUD instead of the green F-16 style one |
 | `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons); F-117A only |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |

@@ -103,6 +103,11 @@ pub enum Action {
     Training,
     Resupply,
     DayNight,
+    /// Modern avionics: lock what is under the sensor of interest's cursor (not in the
+    /// original).
+    LockCursor,
+    /// Modern avionics: the sensor of interest moves to the other MFD (not in the original).
+    SwapSoi,
 }
 
 #[derive(Message, Debug, Clone, Copy)]
@@ -164,6 +169,8 @@ pub struct FlightControls {
     pub throttle: Option<f32>,
     /// Gun trigger held.
     pub gun: bool,
+    /// Sensor/cursor slew, -1..1 (x right, y up): moves the sensor of interest's cursor.
+    pub slew: Vec2,
 }
 
 /// Modifier held with a key (Alt wins over Shift).
@@ -189,7 +196,8 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (Shift, K::Minus, ThrottleIdle),
         (None, K::Space, SelectWeapon),
         (None, K::Enter, FireWeapon),
-        (None, K::NumpadEnter, FireWeapon),
+        (None, K::NumpadEnter, LockCursor),
+        (Alt, K::KeyS, SwapSoi),
         (None, K::Digit1, Flare),
         (None, K::Digit2, Chaff),
         (None, K::Digit3, IrJammer),
@@ -279,14 +287,19 @@ const STICK_KEYS: &[(KeyCode, f32, f32)] = &[
     (KeyCode::ArrowDown, 0.0, 1.0),
     (KeyCode::ArrowLeft, -1.0, 0.0),
     (KeyCode::ArrowRight, 1.0, 0.0),
-    (KeyCode::Numpad8, 0.0, -1.0),
-    (KeyCode::Numpad2, 0.0, 1.0),
+];
+
+/// Keyboard sensor/cursor slew (fixed like the stick keys): the numeric keypad.
+const SLEW_KEYS: &[(KeyCode, f32, f32)] = &[
+    // (key, x, y); up = cursor up.
+    (KeyCode::Numpad8, 0.0, 1.0),
+    (KeyCode::Numpad2, 0.0, -1.0),
     (KeyCode::Numpad4, -1.0, 0.0),
     (KeyCode::Numpad6, 1.0, 0.0),
-    (KeyCode::Numpad7, -1.0, -1.0),
-    (KeyCode::Numpad9, 1.0, -1.0),
-    (KeyCode::Numpad1, -1.0, 1.0),
-    (KeyCode::Numpad3, 1.0, 1.0),
+    (KeyCode::Numpad7, -1.0, 1.0),
+    (KeyCode::Numpad9, 1.0, 1.0),
+    (KeyCode::Numpad1, -1.0, -1.0),
+    (KeyCode::Numpad3, 1.0, -1.0),
 ];
 
 fn read_keyboard(
@@ -321,6 +334,7 @@ fn read_keyboard(
         controls.gun = false;
         controls.yaw = 0.0;
         controls.throttle = None;
+        controls.slew = Vec2::ZERO;
         return;
     }
     // Virtual stick (unmodified direction keys only; Shift+arrows move waypoints).
@@ -355,6 +369,21 @@ fn read_keyboard(
         .any(|m| m.target == crate::hotas::ButtonTarget::Gun && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods));
     controls.yaw = 0.0;
     controls.throttle = None;
+    let mut slew = Vec2::ZERO;
+    if mods == Mods::None {
+        for &(key, x, y) in SLEW_KEYS {
+            if keys.pressed(key) {
+                slew += Vec2::new(x, y);
+            }
+        }
+    }
+    controls.slew = slew.clamp(Vec2::splat(-1.0), Vec2::ONE);
+}
+
+/// The larger of two deflections: an analog stick resting a little off centre does not cancel
+/// a held stick key, and the stick still overrides the keys when deflected further.
+pub fn stronger(current: f32, v: f32) -> f32 {
+    if v.abs() > current.abs() { v } else { current }
 }
 
 /// Gamepad: left stick = stick, right stick X = rudder, triggers = throttle, A = fire, B = gun
@@ -378,8 +407,8 @@ fn read_gamepad(
         let x = pad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
         let y = pad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);
         if x.abs() > 0.1 || y.abs() > 0.1 {
-            controls.roll = x;
-            controls.pitch = -y;
+            controls.roll = stronger(controls.roll, x);
+            controls.pitch = stronger(controls.pitch, -y);
         }
         let rx = pad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
         if rx.abs() > 0.15 {
@@ -397,5 +426,36 @@ fn read_gamepad(
                 actions.write(ActionEvent(a));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A held arrow key deflects the stick, and keeps doing so with a joystick axis resting
+    /// slightly off centre.
+    #[test]
+    fn arrow_keys_steer() {
+        let mut app = App::new();
+        app.init_resource::<FlightControls>()
+            .init_resource::<VirtualStick>()
+            .init_resource::<InputBlock>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<Time<Real>>()
+            .insert_resource(crate::hotas::InputConfig::default())
+            .add_message::<ActionEvent>()
+            .add_systems(Update, read_keyboard);
+        for (key, roll, pitch) in [(KeyCode::ArrowLeft, -1.0, 0.0), (KeyCode::ArrowRight, 1.0, 0.0), (KeyCode::ArrowUp, 0.0, -1.0), (KeyCode::ArrowDown, 0.0, 1.0)] {
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
+            app.update();
+            let c = app.world().resource::<FlightControls>().clone();
+            assert!(c.roll * roll > 0.5 || c.pitch * pitch > 0.5, "{key:?}: {c:?}");
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(key);
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+        }
+        assert_eq!(stronger(-0.71, 0.06), -0.71);
+        assert_eq!(stronger(-0.71, 0.9), 0.9);
+        assert_eq!(stronger(0.0, 0.06), 0.06);
     }
 }

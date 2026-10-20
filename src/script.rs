@@ -37,6 +37,9 @@ enum Step {
     Yaw(f32),
     /// Absolute throttle 0..1 (like the VR throttle lever).
     Throttle(f32),
+    /// Sensor/cursor slew right and up (`slewx=`, `slewy=`).
+    SlewX(f32),
+    SlewY(f32),
     /// Presses a 3D-cockpit control bound to this action (`press=Gear`).
     Press(String),
 }
@@ -70,6 +73,7 @@ struct Axes {
     pitch: f32,
     yaw: f32,
     throttle: Option<f32>,
+    slew: Vec2,
 }
 
 fn parse_step(what: &str) -> Option<Step> {
@@ -79,6 +83,10 @@ fn parse_step(what: &str) -> Option<Step> {
         Step::Pitch(x.parse().ok()?)
     } else if let Some(x) = what.strip_prefix("yaw=") {
         Step::Yaw(x.parse().ok()?)
+    } else if let Some(x) = what.strip_prefix("slewx=") {
+        Step::SlewX(x.parse().ok()?)
+    } else if let Some(x) = what.strip_prefix("slewy=") {
+        Step::SlewY(x.parse().ok()?)
     } else if let Some(x) = what.strip_prefix("throttle=") {
         Step::Throttle(x.parse().ok()?)
     } else if let Some(x) = what.strip_prefix("press=") {
@@ -141,6 +149,8 @@ fn apply(
         Step::Pitch(p) => axes.pitch = *p,
         Step::Yaw(y) => axes.yaw = *y,
         Step::Throttle(t) => axes.throttle = Some(*t),
+        Step::SlewX(x) => axes.slew.x = *x,
+        Step::SlewY(y) => axes.slew.y = *y,
         Step::Press(name) => {
             if let Some(act) = crate::input::action_by_name(name) {
                 presses.write(crate::cockpit3d::PressControl(act));
@@ -214,6 +224,7 @@ fn run_script(
     controls.roll = script.axes.roll;
     controls.pitch = script.axes.pitch;
     controls.yaw = script.axes.yaw;
+    controls.slew = script.axes.slew;
     if script.axes.throttle.is_some() {
         controls.throttle = script.axes.throttle;
     }
@@ -226,6 +237,8 @@ fn step_name(s: &Step) -> String {
         Step::Pitch(p) => format!("pitch={p}"),
         Step::Yaw(y) => format!("yaw={y}"),
         Step::Throttle(t) => format!("throttle={t}"),
+        Step::SlewX(x) => format!("slewx={x}"),
+        Step::SlewY(y) => format!("slewy={y}"),
         Step::Press(a) => format!("press={a}"),
     }
 }

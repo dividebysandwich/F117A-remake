@@ -48,12 +48,13 @@ enum Item {
     Lighting,
     Cockpit,
     Hud,
+    Avionics,
     CockpitSize,
     Resume,
     EndMission,
 }
 
-const ITEMS: [Item; 8] = [Item::Shaders, Item::Shadows, Item::Lighting, Item::Cockpit, Item::Hud, Item::CockpitSize, Item::Resume, Item::EndMission];
+const ITEMS: [Item; 9] = [Item::Shaders, Item::Shadows, Item::Lighting, Item::Cockpit, Item::Hud, Item::Avionics, Item::CockpitSize, Item::Resume, Item::EndMission];
 
 impl Item {
     fn label(self) -> &'static str {
@@ -63,6 +64,7 @@ impl Item {
             Item::Lighting => "POINT LIGHTS",
             Item::Cockpit => "COCKPIT",
             Item::Hud => "HUD",
+            Item::Avionics => "AVIONICS",
             Item::CockpitSize => "COCKPIT SIZE",
             Item::Resume => "RESUME",
             Item::EndMission => "END MISSION",
@@ -78,6 +80,7 @@ impl Item {
             Item::Lighting => on(s.local_lights),
             Item::Cockpit => style(s.classic_cockpit),
             Item::Hud => style(s.classic_hud),
+            Item::Avionics => style(s.classic_avionics),
             Item::CockpitSize => format!("< {:.0}% >", s.vr_cockpit_scale * 100.0),
             Item::Resume | Item::EndMission => String::new(),
         }
@@ -102,7 +105,7 @@ const W: usize = 768;
 const H: usize = 512;
 /// Rows of the entries.
 const TOP: f32 = 104.0;
-const ROW: f32 = 45.0;
+const ROW: f32 = 43.0;
 /// Palette colours: background, bright and dim green (the panel's lamp greens), dark row.
 const BG: u8 = 5;
 const BRIGHT: u8 = 47;
@@ -165,8 +168,8 @@ fn set_open(menu: &mut FlightMenu, open: bool, settings: &Settings, time: &mut T
     }
 }
 
-fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, u32) {
-    (s.modern_shading, s.shadows, s.local_lights, s.classic_cockpit, s.classic_hud, (s.vr_cockpit_scale * 100.0).round() as u32)
+fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, u32) {
+    (s.modern_shading, s.shadows, s.local_lights, s.classic_cockpit, s.classic_hud, s.classic_avionics, (s.vr_cockpit_scale * 100.0).round() as u32)
 }
 
 /// The menu screen, in front of the pilot in the cockpit (spawned again when the cockpit is
@@ -346,6 +349,7 @@ fn navigate(
         Item::Lighting => s.local_lights = !s.local_lights,
         Item::Cockpit => s.classic_cockpit = !s.classic_cockpit,
         Item::Hud => s.classic_hud = !s.classic_hud,
+        Item::Avionics => s.classic_avionics = !s.classic_avionics,
         Item::CockpitSize => {
             let dir = if adjust != 0 { adjust.signum() } else if right == Some(false) { -1 } else { 1 };
             s.vr_cockpit_scale = (s.vr_cockpit_scale + 0.05 * dir as f32).clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());

@@ -80,6 +80,27 @@ impl Sim {
         if c.eject {
             self.do_eject();
         }
+        // Display locks, after the HUD mode change above has cleared the old ones.
+        if let Some(o) = c.lock_object.map(usize::from) {
+            if self.objects.get(o).is_some_and(|ob| ob.flags & oflags::DESTROYED == 0) {
+                self.gnd_lock = o as i32;
+                self.target_hold = true;
+                self.nearest_req = 0;
+                self.targeting.target_killed = false;
+                self.pflags &= !pflags::DESIGNATE;
+            } else {
+                self.msg("No target");
+            }
+        }
+        if let Some(u) = c.lock_unit.map(usize::from) {
+            if self.flights.get(u).is_some_and(|f| f.flags & fflags::AIRBORNE != 0 && f.flags & fflags::DESTROYED == 0) {
+                self.air_lock = u as i32;
+                self.target_hold = true;
+                self.nearest_req = 0;
+            } else {
+                self.msg("No target");
+            }
+        }
     }
 
     /// Camera keys.

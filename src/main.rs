@@ -1,5 +1,6 @@
 mod aircraft;
 mod asset_path;
+mod avionics;
 mod autoshot;
 mod camera;
 mod canvas;
@@ -117,7 +118,7 @@ fn main() {
         script::ScriptPlugin,
         sound::SoundPlugin,
     ))
-    .add_plugins((hud::HudPlugin, mfd::MfdPlugin, panel::PanelPlugin))
+    .add_plugins((hud::HudPlugin, mfd::MfdPlugin, avionics::AvionicsPlugin, panel::PanelPlugin))
     .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin, trails::TrailsPlugin, explosions::ExplosionsPlugin, flight_menu::FlightMenuPlugin))
     .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin, weather::WeatherPlugin))
     .add_plugins((fires::FiresPlugin, terrain::TerrainPlugin, csar_view::CsarViewPlugin, stage::StagePlugin));

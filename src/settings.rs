@@ -44,6 +44,9 @@ pub struct Settings {
     /// `--classic-cockpit`: the original instrument panel layout and 77x60 displays instead
     /// of the modern panel with high-resolution displays and bezel buttons.
     pub classic_cockpit: bool,
+    /// `--classic-avionics`: the original's MFD pages (MAP/TAC left, camera/WAY/WPN/ORD right)
+    /// instead of the modern formats (HSD, HARM, targeting pod, MAP, SMS on either MFD).
+    pub classic_avionics: bool,
     /// `--classic-hud`: the original's low-resolution HUD instead of the F-16 style one.
     pub classic_hud: bool,
     /// `--classic-flight`: the original's flight model instead of the modern aerodynamic one
@@ -118,9 +121,10 @@ impl Settings {
         self.aircraft.spec().cockpit(self.classic_cockpit)
     }
 
-    /// The MFDs are the high-resolution ones (every cockpit but the classic one).
+    /// The MFDs are the high-resolution ones (every cockpit but the classic one, which has them
+    /// too with the modern avionics).
     pub fn hires_displays(&self) -> bool {
-        self.cockpit().0 != crate::cockpit3d::layout::PanelStyle::Classic
+        self.cockpit().0 != crate::cockpit3d::layout::PanelStyle::Classic || !self.classic_avionics
     }
 
     /// Scale of the VR rig (head and hand offsets) for the chosen cockpit size.
@@ -147,6 +151,7 @@ impl Settings {
             local_lights: has("--local-lights"),
             classic_cockpit: has("--classic-cockpit"),
             classic_hud: has("--classic-hud"),
+            classic_avionics: has("--classic-avionics"),
             classic_flight: has("--classic-flight") || (has("--script") && !has("--modern-flight")),
             no_crashes: has("--no-crashes"),
             vr_cockpit_scale: get(&a, "--vr-cockpit-scale")

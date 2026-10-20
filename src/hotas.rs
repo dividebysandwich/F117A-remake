@@ -23,10 +23,13 @@ pub enum AxisControl {
     Pitch,
     Yaw,
     Throttle,
+    /// Sensor/cursor slew (modern avionics): right and up.
+    SlewX,
+    SlewY,
 }
 
 impl AxisControl {
-    pub const ALL: [AxisControl; 4] = [AxisControl::Roll, AxisControl::Pitch, AxisControl::Yaw, AxisControl::Throttle];
+    pub const ALL: [AxisControl; 6] = [AxisControl::Roll, AxisControl::Pitch, AxisControl::Yaw, AxisControl::Throttle, AxisControl::SlewX, AxisControl::SlewY];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -34,6 +37,8 @@ impl AxisControl {
             AxisControl::Pitch => "Pitch",
             AxisControl::Yaw => "Rudder",
             AxisControl::Throttle => "Throttle",
+            AxisControl::SlewX => "Sensor/cursor slew X",
+            AxisControl::SlewY => "Sensor/cursor slew Y",
         }
     }
 }
@@ -199,7 +204,8 @@ pub fn default_vr_buttons() -> Vec<VrButtonMapping> {
         (Left, Trigger, ButtonTarget::Action(A::BayDoors)),
         (Left, Primary, ButtonTarget::Action(A::Flare)),
         (Left, Secondary, ButtonTarget::Action(A::Chaff)),
-        (Left, ThumbClick, ButtonTarget::Action(A::Decoy)),
+        (Left, ThumbClick, ButtonTarget::Action(A::LockCursor)),
+        (Right, ThumbUp, ButtonTarget::Action(A::Decoy)),
     ]
     .into_iter()
     .map(|(hand, input, target)| VrButtonMapping { hand, input, target })
@@ -219,17 +225,68 @@ pub struct InputConfig {
     pub vr_buttons: Vec<VrButtonMapping>,
     /// Keyboard keys for the gun and actions (the keyboard stick keys are fixed).
     pub keys: Vec<KeyMapping>,
+    /// Mapping version (`migrate`); files from before the versions read 0.
+    #[serde(default)]
+    pub version: u32,
 }
+
+/// 1: the cursor lock (NumpadEnter, left thumbstick click) and SOI keys.
+const VERSION: u32 = 1;
 
 impl Default for InputConfig {
     fn default() -> Self {
-        Self { gamepad_defaults: true, axes: Vec::new(), buttons: Vec::new(), vr_buttons: default_vr_buttons(), keys: crate::input::default_key_mappings() }
+        Self {
+            gamepad_defaults: true,
+            axes: Vec::new(),
+            buttons: Vec::new(),
+            vr_buttons: default_vr_buttons(),
+            keys: crate::input::default_key_mappings(),
+            version: VERSION,
+        }
     }
 }
 
 impl InputConfig {
     pub fn load() -> Self {
-        crate::prefs::load_json(FILE).unwrap_or_default()
+        let Some(mut c) = crate::prefs::load_json::<Self>(FILE) else { return Self::default() };
+        if c.migrate()
+            && let Err(e) = c.save()
+        {
+            warn!("saving {FILE}: {e}");
+        }
+        c
+    }
+
+    /// Brings an older saved mapping up to date; true if it changed. Version 1: NumpadEnter
+    /// locks the cursor target instead of firing, new actions get their default keys where
+    /// those are free, the left thumbstick click locks (the decoy moves to the right stick up).
+    fn migrate(&mut self) -> bool {
+        if self.version >= VERSION {
+            return false;
+        }
+        use crate::input::{Action, Mods};
+        for k in &mut self.keys {
+            if k.mods == Mods::None && k.key == KeyCode::NumpadEnter && k.target == ButtonTarget::Action(Action::FireWeapon) {
+                k.target = ButtonTarget::Action(Action::LockCursor);
+            }
+        }
+        for d in crate::input::default_key_mappings() {
+            let free = !self.keys.iter().any(|k| k.mods == d.mods && k.key == d.key);
+            if free && self.keys_for(d.target).next().is_none() {
+                self.keys.push(d);
+            }
+        }
+        let slot = |c: &Self, hand: VrHand, input: VrInput| c.vr_buttons.iter().position(|m| m.hand == hand && m.input == input);
+        if let Some(i) = slot(self, VrHand::Left, VrInput::ThumbClick)
+            && self.vr_buttons[i].target == ButtonTarget::Action(Action::Decoy)
+        {
+            self.vr_buttons[i].target = ButtonTarget::Action(Action::LockCursor);
+            if slot(self, VrHand::Right, VrInput::ThumbUp).is_none() {
+                self.vr_buttons.push(VrButtonMapping { hand: VrHand::Right, input: VrInput::ThumbUp, target: ButtonTarget::Action(Action::Decoy) });
+            }
+        }
+        self.version = VERSION;
+        true
     }
 
     pub fn save(&self) -> anyhow::Result<PathBuf> {
@@ -244,7 +301,11 @@ impl InputConfig {
     pub fn bind_axis(&mut self, control: AxisControl, device: String, code: u32) {
         self.axes.retain(|m| m.control != control && !(m.device == device && m.code == code));
         let invert = control == AxisControl::Throttle;
-        let deadzone = if control == AxisControl::Throttle { 0.0 } else { 0.05 };
+        let deadzone = match control {
+            AxisControl::Throttle => 0.0,
+            AxisControl::SlewX | AxisControl::SlewY => 0.1,
+            _ => 0.05,
+        };
         self.axes.push(AxisMapping { control, device, code, invert, deadzone });
     }
 
@@ -401,9 +462,11 @@ pub fn read_hotas(
         let Some(raw) = hotas.axis(&m.device, m.code) else { continue };
         let v = m.output(raw);
         match m.control {
-            AxisControl::Roll if v != 0.0 => controls.roll = v,
-            AxisControl::Pitch if v != 0.0 => controls.pitch = v,
-            AxisControl::Yaw if v != 0.0 => controls.yaw = v,
+            AxisControl::Roll => controls.roll = crate::input::stronger(controls.roll, v),
+            AxisControl::Pitch => controls.pitch = crate::input::stronger(controls.pitch, v),
+            AxisControl::Yaw => controls.yaw = crate::input::stronger(controls.yaw, v),
+            AxisControl::SlewX => controls.slew.x = crate::input::stronger(controls.slew.x, v),
+            AxisControl::SlewY => controls.slew.y = crate::input::stronger(controls.slew.y, v),
             AxisControl::Throttle if hotas.throttle_applied.is_none_or(|t| (t - v).abs() > 0.01) => {
                 hotas.throttle_applied = Some(v);
                 controls.throttle = Some(v);
@@ -441,6 +504,34 @@ pub fn action_name(a: Action) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A mapping saved before the cursor lock: NumpadEnter fired, the left thumbstick click
+    /// dropped a decoy.
+    #[test]
+    fn old_mapping_migrates() {
+        use crate::input::Mods;
+        let mut c = InputConfig { version: 0, ..InputConfig::default() };
+        c.keys.retain(|k| !matches!(k.target, ButtonTarget::Action(Action::LockCursor | Action::SwapSoi)));
+        c.keys.push(KeyMapping { target: ButtonTarget::Action(Action::FireWeapon), mods: Mods::None, key: KeyCode::NumpadEnter });
+        c.vr_buttons.retain(|m| !(m.hand == VrHand::Right && m.input == VrInput::ThumbUp));
+        for m in &mut c.vr_buttons {
+            if m.hand == VrHand::Left && m.input == VrInput::ThumbClick {
+                m.target = ButtonTarget::Action(Action::Decoy);
+            }
+        }
+        let json = serde_json::to_string(&c).unwrap().replace(",\"version\":0", "");
+        let mut c: InputConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(c.version, 0);
+        assert!(c.migrate());
+        let key = |t| c.keys_for(ButtonTarget::Action(t)).map(|k| (k.mods, k.key)).collect::<Vec<_>>();
+        assert_eq!(key(Action::LockCursor), vec![(Mods::None, KeyCode::NumpadEnter)]);
+        assert_eq!(key(Action::SwapSoi), vec![(Mods::Alt, KeyCode::KeyS)]);
+        assert_eq!(key(Action::FireWeapon), vec![(Mods::None, KeyCode::Enter)]);
+        let vr = |h, i| c.vr_buttons.iter().find(|m| m.hand == h && m.input == i).map(|m| m.target);
+        assert_eq!(vr(VrHand::Left, VrInput::ThumbClick), Some(ButtonTarget::Action(Action::LockCursor)));
+        assert_eq!(vr(VrHand::Right, VrInput::ThumbUp), Some(ButtonTarget::Action(Action::Decoy)));
+        assert!(!c.migrate());
+    }
 
     #[test]
     fn binding_replaces_and_round_trips() {

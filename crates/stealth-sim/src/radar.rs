@@ -479,6 +479,11 @@ impl Sim {
         out
     }
 
+    /// Lock range (km) of the missile a site of radar type `t` fires.
+    pub fn site_lock_range(&self, t: i32) -> i32 {
+        self.missile(self.site_missile(t)).lock_range as i32
+    }
+
     /// Name of a radar type ("SA-10", "Hawk").
     pub fn threat_name(&self, t: i32) -> &str {
         self.threat_type(t).map_or("", |t| t.name.as_str())

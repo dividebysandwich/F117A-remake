@@ -20,6 +20,8 @@ use crate::hotas::{ButtonTarget, InputConfig, VrHand, VrInput};
 use crate::input::{Action, ActionEvent, FlightControls};
 
 /// Grip centre above the pivot.
+/// Left thumbstick deflection below which it does not slew the cursor.
+const SLEW_DEADZONE: f32 = 0.15;
 const GRIP_HEIGHT: f32 = 0.11;
 /// Full deflection (radians).
 const STICK_TILT: f32 = 0.35;
@@ -205,6 +207,11 @@ pub(super) fn grab_levers(
             left.haptic = left.haptic.max(0.15);
         }
         controls.throttle = Some(t);
+    }
+
+    // --- sensor/cursor slew: the left thumbstick
+    if left.active && !block.0 && left.thumb.length() > SLEW_DEADZONE {
+        controls.slew = left.thumb.clamp(Vec2::splat(-1.0), Vec2::ONE);
     }
 
     // --- mapped buttons; a trigger only while its hand holds the throttle / stick (otherwise it

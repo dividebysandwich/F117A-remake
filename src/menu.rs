@@ -153,6 +153,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.local_lights, "--local-lights"),
         (settings.classic_cockpit, "--classic-cockpit"),
         (settings.classic_hud, "--classic-hud"),
+        (settings.classic_avionics, "--classic-avionics"),
         (settings.classic_flight, "--classic-flight"),
         (settings.no_crashes, "--no-crashes"),
     ] {
@@ -505,6 +506,7 @@ fn menu_ui(
                     let s = settings.bypass_change_detection();
                     let mut cockpit = !s.classic_cockpit;
                     let mut hud = !s.classic_hud;
+                    let mut avionics = !s.classic_avionics;
                     let mut flight = !s.classic_flight;
                     for (modern, name, f) in [
                         (&mut s.modern_shading, "Shaders", &["Modern: MSAA anti-aliasing, subtle directional shading, smooth distance haze", "Classic: the original's flat shading"][..]),
@@ -516,6 +518,14 @@ fn menu_ui(
                             &["Modern: high-resolution displays with bezel buttons", "Classic: the original instrument panel layout and 77x60 displays"][..],
                         ),
                         (&mut hud, "HUD", &["Modern: high-resolution F-16 style HUD in green with NAV, AA and AG modes", "Classic: the original HUD"][..]),
+                        (
+                            &mut avionics,
+                            "Avionics",
+                            &[
+                                "Modern: F-16 style MFD formats on either MFD (situation display, HARM, targeting pod, map, stores) with a slewable cursor",
+                                "Classic: the original's map and TAC left, camera, WAY, WPN and ORD right",
+                            ][..],
+                        ),
                         (
                             &mut flight,
                             "Flight model",
@@ -529,6 +539,7 @@ fn menu_ui(
                     }
                     s.classic_cockpit = !cockpit;
                     s.classic_hud = !hud;
+                    s.classic_avionics = !avionics;
                     s.classic_flight = !flight;
                     section(ui, "VR");
                     // Read every frame by the rig: no change detection needed.

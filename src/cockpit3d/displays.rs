@@ -203,9 +203,9 @@ pub(super) fn atlas_faces(layout: &PanelLayout) -> Vec<(Face, PxRect)> {
 
 /// A self-luminous screen: an MFD (`Left` / `Right`), the attitude ball, the RWR scope, the HSI
 /// or the approach indexer, with its canvas.
-pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, materials: &mut Assets<StandardMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<StandardMaterial>) {
+pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materials: &mut Assets<StandardMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<StandardMaterial>) {
     let (size, transparent) = match role {
-        CanvasRole::Left | CanvasRole::Right => (if layout.style == PanelStyle::Classic { CLASSIC } else { HIRES }, false),
+        CanvasRole::Left | CanvasRole::Right => (if hires { HIRES } else { CLASSIC }, false),
         CanvasRole::Adi | CanvasRole::Rwr | CanvasRole::Hsi => {
             let r = match role {
                 CanvasRole::Rwr => layout.rwr,
@@ -316,19 +316,20 @@ pub(super) fn update_displays(
     mut tc: Query<(&TrackCamScreen, &mut Visibility)>,
 ) {
     let find = |r: CanvasRole| roles.iter().find(|(_, x)| **x == r).map(|(e, _)| e);
-    let see_through = d.mfd.camera_see_through();
     for (screen, mut v) in &mut tc {
-        let shown = see_through && screen.0 == MfdSide::Right;
-        v.set_if_neq(if shown { Visibility::Inherited } else { Visibility::Hidden });
+        v.set_if_neq(if d.mfd.camera_see_through(screen.0) { Visibility::Inherited } else { Visibility::Hidden });
     }
     for role in [CanvasRole::Left, CanvasRole::Right, CanvasRole::Adi, CanvasRole::Hud, CanvasRole::Approach, CanvasRole::Rwr, CanvasRole::Hsi] {
         let Some(mut tex) = find(role).and_then(|e| texes.get_mut(e).ok()) else { continue };
         let tex = tex.as_mut();
         tex.canvas.reset_clip();
         match role {
-            CanvasRole::Left => d.mfd.draw_left(&mut tex.canvas, &art, &fonts),
+            CanvasRole::Left => {
+                tex.transparent = d.mfd.camera_see_through(MfdSide::Left);
+                d.mfd.draw_left(&mut tex.canvas, &art, &fonts);
+            }
             CanvasRole::Right => {
-                tex.transparent = see_through;
+                tex.transparent = d.mfd.camera_see_through(MfdSide::Right);
                 d.mfd.draw_right(&mut tex.canvas, &art, &fonts);
             }
             CanvasRole::Adi => d.panel.draw_adi(&mut tex.canvas),
@@ -336,7 +337,7 @@ pub(super) fn update_displays(
             CanvasRole::Hsi => d.panel.draw_hsi(&mut tex.canvas),
             CanvasRole::Hud => {
                 tex.canvas.px.fill(0);
-                if let Some(frame) = d.hud.frame(d.mfd.state.right == crate::mfd::RightMfd::Camera) {
+                if let Some(frame) = d.hud.frame(d.mfd.state.camera_shown()) {
                     if tex.canvas.w == 320 {
                         crate::hud::draw(&mut tex.canvas, &art, &fonts, &frame);
                     } else {
@@ -388,6 +389,11 @@ pub(super) fn update_displays(
             }
             Face::Item(Elem::Hazard) => {
                 hazard(c, r, k);
+                false
+            }
+            // Modern avionics: blank caps, the labels are on the display.
+            Face::Osb(..) if d.mfd.state.modern => {
+                draw_lamp(c, &fonts, r, "", (35, 38), k, t);
                 false
             }
             Face::Osb(side, slot) => match osb(side, slot, &d.mfd.state) {

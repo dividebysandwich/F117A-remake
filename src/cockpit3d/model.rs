@@ -92,12 +92,17 @@ pub(super) struct Spawner<'a> {
     pub tc_image: Option<&'a crate::trackcam::TrackCamImage>,
     pub classic_hud: bool,
     pub local_lights: bool,
+    /// High-resolution MFD canvases.
+    pub hires: bool,
     pub meshes: &'a mut Assets<Mesh>,
     pub materials: &'a mut Assets<StandardMaterial>,
     pub hud_materials: &'a mut Assets<HudGlassMaterial>,
     pub images: &'a mut Assets<Image>,
     /// Modelled materials by glTF material (made once).
     modelled: HashMap<AssetId<GltfMaterial>, Handle<StandardMaterial>>,
+    /// The model has no tracking camera picture behind the left screen: one is made from the
+    /// screen's mesh.
+    left_trackcam_missing: bool,
     pub anchors: CockpitAnchors,
 }
 
@@ -111,6 +116,7 @@ impl<'a> Spawner<'a> {
         tc_image: Option<&'a crate::trackcam::TrackCamImage>,
         classic_hud: bool,
         local_lights: bool,
+        hires: bool,
         meshes: &'a mut Assets<Mesh>,
         materials: &'a mut Assets<StandardMaterial>,
         hud_materials: &'a mut Assets<HudGlassMaterial>,
@@ -124,11 +130,13 @@ impl<'a> Spawner<'a> {
             tc_image,
             classic_hud,
             local_lights,
+            hires,
             meshes,
             materials,
             hud_materials,
             images,
             modelled: HashMap::new(),
+            left_trackcam_missing: false,
             anchors: CockpitAnchors::default(),
         }
     }
@@ -137,6 +145,7 @@ impl<'a> Spawner<'a> {
     pub fn spawn(&mut self, commands: &mut Commands, assets: &ModelAssets, file: &Handle<Gltf>, root: Entity) -> bool {
         let Some(g) = assets.gltfs.get(file) else { return false };
         let names: HashMap<AssetId<GltfMaterial>, String> = g.named_materials.iter().map(|(n, h)| (h.id(), n.to_string())).collect();
+        self.left_trackcam_missing = !names.values().any(|n| n == "trackcam_left");
         let children: std::collections::HashSet<AssetId<GltfNode>> =
             g.nodes.iter().filter_map(|n| assets.nodes.get(n)).flat_map(|n| n.children.iter().map(|c| c.id())).collect();
         for n in g.nodes.iter().filter(|n| !children.contains(&n.id())) {
@@ -239,8 +248,11 @@ impl<'a> Spawner<'a> {
                     "hsi" => CanvasRole::Hsi,
                     _ => CanvasRole::Approach,
                 };
-                let (tex, m) = displays::screen(role, self.layout, self.materials, self.images);
+                let (tex, m) = displays::screen(role, self.layout, self.hires, self.materials, self.images);
                 ec.insert((role, tex));
+                if role == CanvasRole::Left && self.left_trackcam_missing {
+                    self.left_trackcam(commands, e, &prim.mesh);
+                }
                 m
             }
             "trackcam" | "trackcam_left" => {
@@ -264,6 +276,35 @@ impl<'a> Spawner<'a> {
             },
         };
         commands.entity(e).insert((Mesh3d(mesh), MeshMaterial3d(material)));
+    }
+
+    /// The tracking camera picture 3 mm behind the left screen, from the screen's mesh.
+    fn left_trackcam(&mut self, commands: &mut Commands, screen: Entity, mesh: &Handle<Mesh>) {
+        let Some(m) = self.meshes.get(mesh) else { return };
+        let Some(VertexAttributeValues::Float32x3(p)) = m.attribute(Mesh::ATTRIBUTE_POSITION) else { return };
+        if p.len() < 3 {
+            return;
+        }
+        let v: Vec<Vec3> = p.iter().map(|&a| Vec3::from(a)).collect();
+        let centre = v.iter().copied().sum::<Vec3>() / v.len() as f32;
+        // Normal towards the eye (the cockpit frame's origin).
+        let mut n = (v[1] - v[0]).cross(v[2] - v[0]).normalize_or_zero();
+        if n.dot(-centre) < 0.0 {
+            n = -n;
+        }
+        let material = displays::trackcam_material(self.materials, self.tc_image);
+        let child = commands
+            .spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material),
+                Transform::from_translation(-n * 0.003),
+                TrackCamScreen(crate::mfd::MfdSide::Left),
+                Visibility::Hidden,
+                NoFrustumCulling,
+                NotShadowCaster,
+            ))
+            .id();
+        commands.entity(screen).add_child(child);
     }
 
     /// The face's mesh with its UVs moved to the face's place in the instrument atlas.

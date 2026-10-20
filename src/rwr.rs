@@ -65,7 +65,6 @@ pub fn rwr_label(name: &str, air: bool) -> String {
 pub fn view(e: &Emitter, name: &str, heading_bam: f32) -> EmitterView {
     let (east, north) = crate::combat::map_wu(e.x, e.y);
     let rel = (e.bearing as f32 - heading_bam).rem_euclid(65536.0) / 65536.0 * std::f32::consts::TAU;
-    let km = |r: i32| r as f32 * 64.0 * 32.0 * crate::world::WU as f32 / 1000.0;
     let air = matches!(e.source, EmitterSource::Aircraft(_));
     EmitterView {
         source: e.source,
@@ -80,6 +79,11 @@ pub fn view(e: &Emitter, name: &str, heading_bam: f32) -> EmitterView {
         launch: e.launch,
         priority: e.priority,
     }
+}
+
+/// Simulation range units (map >> 6) -> km.
+pub fn km(r: i32) -> f32 {
+    r as f32 * 64.0 * 32.0 * crate::world::WU as f32 / 1000.0
 }
 
 /// Distance of a symbol from the centre (fraction of the scope radius): a launching and

@@ -318,6 +318,7 @@ fn read_hands(
             | (b(&actions.menu) as u8 * BUTTON_MENU);
         // Stick directions engage at 70 % and release below 50 % (no chatter at the edge).
         let v = actions.thumbstick.state(&session, path).map_or(Vec2::ZERO, |s| Vec2::new(s.current_state.x, s.current_state.y));
+        hand.thumb = v;
         for (bit, amount) in [(BUTTON_STICK_UP, v.y), (BUTTON_STICK_DOWN, -v.y), (BUTTON_STICK_RIGHT, v.x), (BUTTON_STICK_LEFT, -v.x)] {
             let edge = if hand.prev_buttons & bit != 0 { 0.5 } else { 0.7 };
             if amount > edge {

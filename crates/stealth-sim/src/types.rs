@@ -297,6 +297,13 @@ pub struct Commands {
     pub toggle_training: bool,
     /// Alt-R (training only): resupply.
     pub resupply: bool,
+    /// Lock this world object (a display's cursor lock, not in the original): kept until
+    /// another target key.
+    #[serde(default)]
+    pub lock_object: Option<u16>,
+    /// Lock this flight unit (airborne).
+    #[serde(default)]
+    pub lock_unit: Option<u16>,
 }
 
 /// What the flight model / game reports about the player this frame.

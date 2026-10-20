@@ -48,6 +48,7 @@ pub struct Prefs {
     pub local_lights: bool,
     pub classic_cockpit: bool,
     pub classic_hud: bool,
+    pub classic_avionics: bool,
     pub classic_flight: bool,
     pub vr_cockpit_scale: f32,
     pub aircraft: crate::aircraft::AircraftKind,
@@ -76,6 +77,7 @@ impl Default for Prefs {
             local_lights: false,
             classic_cockpit: false,
             classic_hud: false,
+            classic_avionics: false,
             classic_flight: false,
             vr_cockpit_scale: DEFAULT_VR_COCKPIT_SCALE,
             aircraft: Default::default(),
@@ -116,6 +118,7 @@ impl Prefs {
             local_lights: s.local_lights,
             classic_cockpit: s.classic_cockpit,
             classic_hud: s.classic_hud,
+            classic_avionics: s.classic_avionics,
             classic_flight: s.classic_flight,
             vr_cockpit_scale: s.vr_cockpit_scale,
             aircraft: s.aircraft,
@@ -138,6 +141,7 @@ impl Prefs {
         s.local_lights |= self.local_lights;
         s.classic_cockpit |= self.classic_cockpit;
         s.classic_hud |= self.classic_hud;
+        s.classic_avionics |= self.classic_avionics;
         s.classic_flight |= self.classic_flight;
         if !std::env::args().any(|a| a == "--aircraft") {
             s.aircraft = self.aircraft;
@@ -156,6 +160,7 @@ impl Prefs {
         p.local_lights = s.local_lights;
         p.classic_cockpit = s.classic_cockpit;
         p.classic_hud = s.classic_hud;
+        p.classic_avionics = s.classic_avionics;
         p.vr_cockpit_scale = s.vr_cockpit_scale;
         if let Err(e) = save_json(FILE, &p) {
             warn!("saving the preferences: {e}");

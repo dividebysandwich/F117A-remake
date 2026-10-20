@@ -9,6 +9,8 @@
 //! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.flac) register under id NN, and a
 //!   requested id with no sample stays silent, so speech can be added later by dropping files in.
 //! - Radar warning tones come from `sounds/rwr/` instead of the original sounds 8 and 9.
+//! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
+//!   ejection, explosions and flares.
 
 use std::collections::HashMap;
 
@@ -80,6 +82,9 @@ impl Default for SoundLevel {
 /// Engine drone volume at full level.
 const ENGINE_VOLUME: f32 = 0.8;
 
+/// The sounds still heard after ejecting: impact, explosion, the ejection, signal flare.
+const EJECTED_SOUNDS: [u8; 4] = [4, 5, 0x14, 0x1C];
+
 #[derive(Resource, Default)]
 struct SoundBank {
     /// Sound id -> variants (speech 43 has two).
@@ -126,13 +131,21 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     commands.insert_resource(bank);
 }
 
+/// The pilot has ejected.
+fn has_ejected(combat: Option<&crate::combat::Combat>) -> bool {
+    combat.is_some_and(|c| c.sim.chute().is_some())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn play_sounds(
     mut commands: Commands,
     mut requests: MessageReader<PlaySound>,
     mut actions: MessageReader<ActionEvent>,
     mut level: ResMut<SoundLevel>,
     bank: Option<Res<SoundBank>>,
-    playing: Query<&OneShot>,
+    combat: Option<Res<crate::combat::Combat>>,
+    playing: Query<(Entity, &OneShot)>,
+    mut silenced: Local<bool>,
 ) {
     for ActionEvent(a) in actions.read() {
         if *a == Action::Volume {
@@ -143,13 +156,23 @@ fn play_sounds(
             };
         }
     }
+    // Ejecting cuts off the aircraft's sounds at once.
+    let ejected = has_ejected(combat.as_deref());
+    let silence = ejected && !*silenced;
+    *silenced = ejected;
+    let survives = |id: u8| !ejected || EJECTED_SOUNDS.contains(&id);
+    if silence {
+        for (e, _) in playing.iter().filter(|(_, p)| !survives(p.0)) {
+            commands.entity(e).despawn();
+        }
+    }
     let Some(bank) = bank else {
         requests.clear();
         return;
     };
     for r in requests.read() {
         let allowed = r.priority == DIRECT || (level.0 > 0 && r.priority as i32 >= 3 - level.0 as i32);
-        if !allowed || playing.iter().any(|p| p.0 == r.id) {
+        if !allowed || !survives(r.id) || playing.iter().any(|(_, p)| p.0 == r.id && survives(p.0)) {
             continue;
         }
         let Some(variants) = bank.sfx.get(&r.id) else { continue };
@@ -233,12 +256,13 @@ fn engine_drone(
     bank: Option<Res<SoundBank>>,
     level: Res<SoundLevel>,
     player: Query<&Aircraft, With<Player>>,
+    combat: Option<Res<crate::combat::Combat>>,
     mut drone: Query<(Entity, &EngineDrone, Option<&mut AudioSink>)>,
 ) {
     let Some(bank) = bank else { return };
     let Ok(a) = player.single() else { return };
     let knots = a.knots().min(768.0);
-    let on = level.0 == 3 && a.set_thrust > 0.0 && knots >= 2.0 && a.ended.is_none();
+    let on = level.0 == 3 && a.set_thrust > 0.0 && knots >= 2.0 && a.ended.is_none() && !has_ejected(combat.as_deref());
     if !on || bank.engine.is_empty() {
         for (e, _, _) in &drone {
             commands.entity(e).despawn();

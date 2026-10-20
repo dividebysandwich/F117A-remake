@@ -350,6 +350,25 @@ fn report(
             s.calls as f64 * per_frame
         );
     }
+    // Systems (and their commands) by crate, the game's by module: what each plugin costs,
+    // small systems included.
+    let mut crates: HashMap<&str, (Duration, u32)> = HashMap::new();
+    for (label, s) in &cpu {
+        let path = label.strip_prefix("commands ").unwrap_or(label);
+        if let Some((first, _)) = path.split_once("::")
+            && !first.contains(' ')
+        {
+            let e = crates.entry(first).or_default();
+            e.0 += s.total;
+            e.1 += 1;
+        }
+    }
+    let mut crates: Vec<_> = crates.into_iter().collect();
+    crates.sort_by_key(|(_, (t, _))| std::cmp::Reverse(*t));
+    let _ = writeln!(out, "  CPU per frame by crate / game module (ms, systems):");
+    for (name, (t, n)) in crates {
+        let _ = writeln!(out, "    {:7.3} {n:4}  {name}", t.as_secs_f64() * 1000.0 * per_frame);
+    }
     info!("{}", out.trim_end());
 
     r.since = now;

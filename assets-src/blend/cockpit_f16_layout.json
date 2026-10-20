@@ -46,134 +46,13 @@
     },
     {
       "control": null,
-      "key": "Item(Lamp(Mw, Some(\"MASTER\\nCAUTN\")))",
-      "kind": null,
-      "rect": [
-        -394.0,
-        -194.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Stall, None))",
-      "kind": null,
-      "rect": [
-        -361.0,
-        -194.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(LowFuel, Some(\"LOW\\nFUEL\")))",
-      "kind": null,
-      "rect": [
-        -394.0,
-        -178.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(EmvWarn, Some(\"EMV\")))",
-      "kind": null,
-      "rect": [
-        -361.0,
-        -178.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Fire, None))",
-      "kind": null,
-      "rect": [
-        328.0,
-        -242.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Eng, None))",
-      "kind": null,
-      "rect": [
-        361.0,
-        -242.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Fc, None))",
-      "kind": null,
-      "rect": [
-        328.0,
-        -226.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Fuel, None))",
-      "kind": null,
-      "rect": [
-        361.0,
-        -226.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Jam, None))",
-      "kind": null,
-      "rect": [
-        328.0,
-        -210.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Bd, None))",
-      "kind": null,
-      "rect": [
-        361.0,
-        -210.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Av, None))",
-      "kind": null,
-      "rect": [
-        328.0,
-        -194.0,
-        31.0,
-        14.0
-      ]
-    },
-    {
-      "control": null,
       "key": "Item(Lamp(Trak, None))",
       "kind": null,
       "rect": [
-        361.0,
-        -194.0,
-        31.0,
-        14.0
+        -298.0,
+        -110.0,
+        24.0,
+        22.0
       ]
     },
     {
@@ -181,10 +60,10 @@
       "key": "Item(Lamp(Rad, None))",
       "kind": null,
       "rect": [
-        328.0,
-        -178.0,
-        31.0,
-        14.0
+        -298.0,
+        -85.0,
+        24.0,
+        22.0
       ]
     },
     {
@@ -192,10 +71,120 @@
       "key": "Item(Lamp(Ir, None))",
       "kind": null,
       "rect": [
-        361.0,
-        -178.0,
-        31.0,
-        14.0
+        -298.0,
+        -60.0,
+        24.0,
+        22.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Mw, None))",
+      "kind": null,
+      "rect": [
+        636.0,
+        -40.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Stall, None))",
+      "kind": null,
+      "rect": [
+        680.0,
+        -40.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(LowFuel, Some(\"LOW\\nFUEL\")))",
+      "kind": null,
+      "rect": [
+        724.0,
+        -40.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Fire, None))",
+      "kind": null,
+      "rect": [
+        636.0,
+        -20.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Eng, None))",
+      "kind": null,
+      "rect": [
+        680.0,
+        -20.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Fc, None))",
+      "kind": null,
+      "rect": [
+        724.0,
+        -20.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Fuel, None))",
+      "kind": null,
+      "rect": [
+        636.0,
+        0.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Jam, None))",
+      "kind": null,
+      "rect": [
+        680.0,
+        0.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Av, None))",
+      "kind": null,
+      "rect": [
+        724.0,
+        0.0,
+        40.0,
+        16.0
+      ]
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(EmvWarn, Some(\"EMV\")))",
+      "kind": null,
+      "rect": [
+        636.0,
+        20.0,
+        40.0,
+        16.0
       ]
     },
     {
@@ -797,10 +786,10 @@
       89.61038970947266
     ],
     "rwr": [
-      -240.0,
+      -246.0,
       -150.0,
-      108.0,
-      108.0
+      84.0,
+      84.0
     ]
   }
 }

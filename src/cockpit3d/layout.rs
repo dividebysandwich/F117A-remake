@@ -324,11 +324,11 @@ impl PanelLayout {
     /// The F-16's panel (millimetres, x right and y down, unfolded): the centre column
     /// (|x| <= 75) with the up-front controls on a pedestal under the HUD (y < -80: master modes,
     /// lock and the keypad) and the attitude indicator and HSI side by side under a hood below
-    /// it; the wings either side
-    /// (75 < |x| <= 305, angled towards the pilot) with the MFDs, the RWR scope top left over the
-    /// aircraft system caps, the countermeasure panel top right over the fuel and thrust
-    /// readouts; the warning lights on the eyebrows standing on the glare shield either side of
-    /// the HUD (|x| >= 318, going up from y = -160). No EMV gauge: the RWR shows the radars.
+    /// it; the wings either side (75 < |x| <= 305, angled towards the pilot) with the MFDs,
+    /// the RWR scope top left with the threat lights left of it, over the aircraft system caps,
+    /// the countermeasure panel top right over the fuel and thrust readouts; the advisory light
+    /// panel on the right console ahead of the stick (x >= 600, centred on x 700, y 0). No EMV
+    /// gauge: the RWR shows the radars.
     pub fn f16() -> Self {
         use Effect as E;
         use LampId::*;
@@ -339,12 +339,28 @@ impl PanelLayout {
         lamp(Air, Some("A-A"), rect(-32.0, -150.0, 30.0, 12.0), Some(E::HudMode(1)));
         lamp(Gnd, Some("A-G"), rect(2.0, -150.0, 30.0, 12.0), Some(E::HudMode(2)));
         lamp(Lock, None, rect(36.0, -150.0, 30.0, 12.0), Some(E::Action(Action::DesignateTarget)));
-        // Warning lights: master caution side on the left eyebrow, the rest on the right one.
-        for (k, (id, label)) in [(Mw, Some("MASTER\nCAUTN")), (Stall, None), (LowFuel, Some("LOW\nFUEL")), (EmvWarn, Some("EMV"))].into_iter().enumerate() {
-            lamp(id, label, rect(-394.0 + 33.0 * (k % 2) as f32, -194.0 + 16.0 * (k / 2) as f32, 31.0, 14.0), None);
+        // Threat warnings: square lights left of the RWR (tracking, radar and IR missile launch).
+        for (k, id) in [Trak, Rad, Ir].into_iter().enumerate() {
+            lamp(id, None, rect(-298.0, -110.0 + 25.0 * k as f32, 24.0, 22.0), None);
         }
-        for (k, id) in [Fire, Eng, Fc, Fuel, Jam, Bd, Av, Trak, Rad, Ir].into_iter().enumerate() {
-            lamp(id, None, rect(328.0 + 33.0 * (k % 2) as f32, -242.0 + 16.0 * (k / 2) as f32, 31.0, 14.0), None);
+        // The other warnings on the advisory light panel on the right console (layout x >= 600,
+        // see `f16`'s doc).
+        for (k, (id, label)) in [
+            (Mw, None),
+            (Stall, None),
+            (LowFuel, Some("LOW\nFUEL")),
+            (Fire, None),
+            (Eng, None),
+            (Fc, None),
+            (Fuel, None),
+            (Jam, None),
+            (Av, None),
+            (EmvWarn, Some("EMV")),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            lamp(id, label, rect(636.0 + 44.0 * (k % 3) as f32, -40.0 + 20.0 * (k / 3) as f32, 40.0, 16.0), None);
         }
         // Countermeasures, top right: release caps, counts, released lights; jammers.
         for (k, (label, action, led, act)) in [
@@ -388,7 +404,7 @@ impl PanelLayout {
             items,
             adi: rect(-74.0, -66.0, 70.0, 70.0),
             mfds: [MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: true }, MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: true }],
-            rwr: Some(rect(-240.0, -150.0, 108.0, 108.0)),
+            rwr: Some(rect(-246.0, -150.0, 84.0, 84.0)),
             hsi: Some(rect(4.0, -66.0, 70.0, 70.0)),
         }
     }

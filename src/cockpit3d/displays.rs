@@ -72,18 +72,22 @@ pub(super) struct InstrumentAtlas {
 #[derive(Component)]
 pub(super) struct TrackCamScreen(pub MfdSide);
 
-/// Packs rectangles into the atlas in rows.
+/// Packs rectangles into the atlas in rows, tallest first (rows of similar heights waste
+/// little); the slots come back in the order of `sizes`.
 fn pack(sizes: &[(i32, i32)]) -> Vec<[i32; 4]> {
+    let mut order: Vec<usize> = (0..sizes.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(sizes[i].1));
     let (mut x, mut y, mut row) = (0, 0, 0);
-    let mut out = Vec::new();
-    for &(w, h) in sizes {
+    let mut out = vec![[0; 4]; sizes.len()];
+    for i in order {
+        let (w, h) = sizes[i];
         if x + w > ATLAS as i32 {
             x = 0;
             y += row + 1;
             row = 0;
         }
         assert!(y + h <= ATLAS as i32, "instrument atlas full");
-        out.push([x, y, w, h]);
+        out[i] = [x, y, w, h];
         x += w + 1;
         row = row.max(h);
     }

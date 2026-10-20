@@ -229,9 +229,10 @@ with the EMV warning lamp (lit for 2 s after each detection), **FUEL** (fuel in 
 The F-16C has its own cockpit, laid out like the real one: the master mode (NAV, A-A, A-G) and
 LOCK caps on the up-front controls under the HUD, the attitude indicator and the **HSI** (heading,
 bearing pointer and distance to the current waypoint) under them, the MFDs low left and right,
-the **RWR** scope top left with the aircraft system caps below it, the countermeasure panel top
-right with the fuel and thrust readouts below it, and the warning lights on the eyebrows either side
-of the HUD. The stick is on the right console, the throttle on the left one, with the side panel
+the **RWR** scope top left with the threat lights (TRAK: a radar tracks the aircraft; RAD / IR:
+a radar or infrared guided missile is in the air) left of it and the aircraft system caps below it,
+the countermeasure panel top right with the fuel and thrust readouts below it, and the other
+warning lights on the advisory light panel on the right console, ahead of the stick. The stick is on the right console, the throttle on the left one, with the side panel
 buttons in front of them.
 
 It has no radar bar graph. The **RWR** shows every radar that can see the aircraft, at its bearing

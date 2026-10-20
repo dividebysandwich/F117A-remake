@@ -45,10 +45,11 @@ CENTRE_DEPTH = 0.045
 BEVEL = 55.0
 # The MFDs sit back in wells: their bezels this far behind the panel surface (m).
 MFD_WELL = 0.022
-# Eyebrows: upright light boxes on the glare shield either side of the HUD (layout |x| >= 318).
-EYEBROW = 318.0
-EYEBROW_X = 0.235
-EYEBROW_TILT = math.radians(10.0)
+# Advisory light panel on the right console ahead of the stick (layout x >= CONSOLE_U, its
+# middle at x 700, y 0), tilted towards the pilot.
+CONSOLE_U = 600.0
+ADVISORY_CENTRE = Vector((0.28, 0.33, -0.585))
+ADVISORY_TILT = math.radians(15.0)
 TOP = -160.0
 # HUD combiner glass: half width, bottom and top (m), at HUD_Y in front of the eye.
 HUD_Y = 0.70
@@ -60,9 +61,9 @@ NORMAL = Vector((0.0, -math.cos(PANEL_TILT), math.sin(PANEL_TILT)))
 
 
 def section(u):
-    """-2 / 2 left / right eyebrow, -1 / 1 left / right wing, 0 centre column."""
-    if abs(u) >= EYEBROW:
-        return int(math.copysign(2, u))
+    """3 right console, -1 / 1 left / right wing, 0 centre column."""
+    if u >= CONSOLE_U:
+        return 3
     if abs(u) > HINGE:
         return int(math.copysign(1, u))
     return 0
@@ -76,8 +77,9 @@ def basis(sec):
     if abs(sec) == 1:
         c, n = math.cos(WING_ANGLE), math.sin(WING_ANGLE)
         return RIGHT * c + NORMAL * n * s, NORMAL * c - RIGHT * n * s, UP
-    up = Vector((0.0, math.sin(EYEBROW_TILT), math.cos(EYEBROW_TILT)))
-    normal = Vector((0.0, -math.cos(EYEBROW_TILT), math.sin(EYEBROW_TILT)))
+    # Console: facing up, tilted towards the pilot; up the layout = forward.
+    up = Vector((0.0, math.cos(ADVISORY_TILT), math.sin(ADVISORY_TILT)))
+    normal = Vector((0.0, -math.sin(ADVISORY_TILT), math.cos(ADVISORY_TILT)))
     return RIGHT, normal, up
 
 
@@ -95,9 +97,7 @@ def point(u, v, offset=0.0, plane=False):
         hinge = PANEL_CENTRE + RIGHT * (s * HINGE / 1000) - UP * (v / 1000)
         p = hinge + d * ((u - s * HINGE) / 1000)
     else:
-        # Eyebrow: centred at x = +-EYEBROW_X on the glare shield, layout x 360 at its middle.
-        base = point(0.0, TOP) + NORMAL * 0.005
-        p = Vector((s * EYEBROW_X, base.y + 0.03, base.z + 0.012)) + d * ((u - s * 360.0) / 1000) + up * ((TOP - v) / 1000)
+        p = ADVISORY_CENTRE + n * 0.004 + d * ((u - 700.0) / 1000) - up * (v / 1000)
     return p + n * offset
 
 
@@ -334,10 +334,8 @@ mesh_object("black", box_mesh("black", (2 * HINGE / 1000 + 0.012, 0.075, 0.008),
 for s_ in (-1, 1):
     cheek = Matrix((d, -n, up)).transposed() @ Matrix.Rotation(math.radians(s_ * 35.0), 3, "Z")
     mesh_object("black", box_mesh("black", (0.008, 0.06, 0.07), "black"), point(s_ * (HINGE + 2.0), -40.0, 0.02), cheek.to_quaternion())
-# Eyebrows: light boxes on the glare shield either side of the HUD.
-for s in (-1, 1):
-    r = (s * 360.0 - 38.0, -252.0, 76.0, 96.0)
-    panel_box("black", "black", r, 0.05, 2.0, -0.05)
+# Advisory light panel: a raised box on the right console.
+panel_box("black", "black", (628.0, -48.0, 144.0, 96.0), 0.012, 0.0, -0.016)
 # HUD frame: posts either side of the combiner, a bar over it.
 # HUD frame: posts either side of the combiner glass, a bar on top of them (the glass fills the
 # frame's inside: HUD_GLASS; AircraftSpec::hud_scale fits the symbology into it).
@@ -362,6 +360,7 @@ plates = [
     (-72.0, -156.0, 144.0, 72.0),  # up-front controls
     (114.0, -150.0, 84.0, 74.0),  # countermeasures
     (-300.0, -28.0, 48.0, 94.0),  # aircraft systems
+    (-301.0, -113.0, 30.0, 78.0),  # threat lights
     (250.0, -44.0, 48.0, 84.0),  # fuel, thrust
 ]
 for r in plates:

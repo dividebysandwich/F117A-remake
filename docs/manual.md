@@ -56,7 +56,7 @@ The menu remembers its choices and switches for the next start.
 | NEW MISSION | Generate a different mission with the same options. |
 | CONTROLS | Open the input mapping (chapter 2). |
 | CAREER | Pilot records and the tour of duty (chapter 10). |
-| PLAN ROUTE | The mission planner (chapter 9). |
+| PLAN ROUTE | Below the mission summary: the mission planner (chapter 9). |
 | FLY IN VR | Restart the game in the VR headset with this mission (requires an OpenXR runtime). |
 | FLY | Start the mission. |
 
@@ -455,9 +455,10 @@ close range.
 | <img src="images/units/ac_f14.png" width="200"> | **F-14 Tomcat** | Fighter (Iran). Doppler radar, 80 km. Armament: AIM-9 (IR rear-aspect, 12 km). Theater: PG. |
 | <img src="images/units/ac_il76.png" width="200"> | **IL-76 Mainstay** | Airborne early warning aircraft. Doppler radar, 200 km, sees all around. Armament listed: AA-10 (active radar, 64 km). Theaters: CE, NC, UA. |
 | <img src="images/units/ac_an72.png" width="200"> | **An-72 Coaler** | Transport. No radar, unarmed. All theaters; a typical air-to-air mission target. |
-| | **Mi-24 Hind** | Attack helicopter. Flies low, hovers, guns a low and slow player at close range; hunts a downed pilot (chapter 12). |
-| | **UH-60 Black Hawk** | Friendly rescue helicopter (chapter 12). |
-| | **Geran-2 / Geran-3** | Attack drones (Ukraine). Geran-2: propeller, about 185 km/h, low. Geran-3: jet, about 600 km/h, higher. No radar, unarmed: they fly straight at their target and dive into it. Shown on the TAC display as open deltas. |
+| <img src="images/units/ac_uh60.png" width="200"> | **Mi-24 Hind** | Attack helicopter (drawn with the UH-60 model). Flies low, hovers, guns a low and slow player at close range; hunts a downed pilot (chapter 12). |
+| <img src="images/units/ac_uh60.png" width="200"> | **UH-60 Black Hawk** | Friendly rescue helicopter (chapter 12). |
+| <img src="images/units/ac_geran2.png" width="200"> | **Geran-2** (Shahed-136) | Attack drone (Ukraine). Piston engine and pusher propeller, about 185 km/h, low. No radar, unarmed: it flies straight at its target and dives into it. Shown on the TAC display as an open delta. |
+| <img src="images/units/ac_geran3.png" width="200"> | **Geran-3** (Shahed-238) | The jet version: about 600 km/h, flies higher. Otherwise like the Geran-2. |
 | <img src="images/units/ac_f18.png" width="200"> | **F/A-18 Hornet** | Friendly fighter. No threat. LB, ME, NC, PG, CE, UA. |
 | <img src="images/units/ac_f15.png" width="200"> | **F-15 Eagle** | Friendly fighter. No threat. DS. |
 | <img src="images/units/ac_a10.png" width="200"> | **A-10 Thunderbolt II** | Friendly ground attack aircraft. No threat. DS. |
@@ -512,6 +513,8 @@ the game.
 
 ## 9. Mission planner
 
+![Mission planner](images/planner.png)
+
 *Plan route* in the menu opens the theater map with the mission's route. The targets and the
 landing base stay where they are; between them you add, move and remove navigation points:
 
@@ -536,6 +539,8 @@ goes along with *Fly in VR*.
 
 ## 10. Debrief and career
 
+![Debrief](images/debrief.png)
+
 After every flight the **debrief** shows the result, the statistics, the points and a rating, and
 a timeline of the mission (kills, radar and visual identifications, objectives). Points: primary
 objective 100, secondary 50, each aircraft or ground target 10 (+5 for an aircraft shot down
@@ -557,9 +562,13 @@ the career window returns to it). In a tour:
 - A crash or failed ejection ends the career (killed in action); so does being captured after an
   ejection (prisoner of war).
 
+![Pilot records](images/career.png)
+
 Single missions from the menu do not count for any pilot.
 
 ## 11. Drone defense (Ukraine)
+
+![Closing in on a Geran-3](images/geran_chase.png)
 
 Russian Geran attack drones are on their way to a Ukrainian city or the South Ukraine nuclear power
 plant. They start already in the air and arrive one after another, about 9 to 25 minutes after
@@ -575,9 +584,20 @@ Paveways (with *Realistic weapons*: the gun, the Paveways and extra fuel).
 - Opponents and situation set the size of the wave (4 to 12) and the share of the faster jet
   Geran-3.
 
+<table>
+<tr>
+<td width="40%"><img src="images/mfd_map_drones.png" alt="Drones on the MAP page"><br>
+The drones (crosses) on the MAP page, on their way to Poltava.</td>
+<td width="60%"><img src="images/geran_missile.png" alt="AMRAAM hit"><br>
+An AMRAAM fired from 120 m behind hits the Geran-3.</td>
+</tr>
+</table>
+
 In Ukraine strike missions a few drones may also cross the theater; shooting them down earns points.
 
 ## 12. Ejection and rescue
+
+![Waiting for the rescue](images/csar.png)
 
 After a good ejection over enemy territory (Shift-F10, or the ejection handle in the cockpit) the
 mission goes on from the ground. The view follows the pilot under the parachute and on the ground,

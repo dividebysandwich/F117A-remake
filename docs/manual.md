@@ -374,7 +374,9 @@ the **sensor/cursor slew** controls: the keypad (8 / 2 / 4 / 6 and diagonals), t
 thumbstick, or two joystick axes bound in the CONTROLS dialog ("Sensor/cursor slew X/Y"). **Lock
 cursor target** (keypad Enter, left thumbstick click, or a bound button) locks what is under the
 cursor: an aircraft on the HSD (the HUD goes to A-A), a ground object or SAM site (A-G), or a
-radar on the HARM display. The lock holds until the next target key (B, T, N, Shift B or the
+radar on the HARM display. Held down on the HSD or HARM display, it opens a window magnified four
+times around the cursor, in the corner away from it, and the cursor slews four times slower; letting
+go locks what is right under the cursor in the window. The lock holds until the next target key (B, T, N, Shift B or the
 camera keys). Z / X change the HSD range while it is the SOI. The HSD cursor stays on its ground
 point as the aircraft flies, turns or the range changes, and the HARM cursor turns with the radar
 symbols, so a turn doesn't take the cursor off its target.

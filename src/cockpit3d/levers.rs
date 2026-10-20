@@ -234,6 +234,12 @@ pub(super) fn grab_levers(
                         actions.write(ActionEvent(Action::FireWeapon));
                     }
                 }
+                ButtonTarget::Action(Action::LockCursor) if held && !block.0 => {
+                    controls.mark = true;
+                    if pressed {
+                        actions.write(ActionEvent(Action::LockCursor));
+                    }
+                }
                 ButtonTarget::Action(a) if pressed && (!block.0 || a == Action::Menu) => {
                     actions.write(ActionEvent(a));
                 }

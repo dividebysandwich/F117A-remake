@@ -483,6 +483,7 @@ pub fn read_hotas(
             ButtonTarget::Gun => controls.gun |= now,
             ButtonTarget::Action(a) => {
                 controls.fire |= now && a == Action::FireWeapon;
+                controls.mark |= now && a == Action::LockCursor;
                 if now && !hotas.active(&m.device, m.source, true) {
                     actions.write(ActionEvent(a));
                 }

@@ -127,6 +127,9 @@ pub struct AvionicsState {
     /// The HSD view the cursors were last placed in: the HSD cursor stays on its ground point
     /// and the HARM cursor turns with the symbols when the aircraft moves or turns.
     cursor_view: Option<HsdView>,
+    /// Seconds "lock cursor target" has been held on the HSD or HARM display; past `MARK_HOLD`
+    /// a zoomed window around the cursor shows (`zoom_window`).
+    pub mark_held: f32,
     pub harm_filter: HarmFilter,
     /// MAP shows the waypoint table.
     pub map_way: bool,
@@ -258,12 +261,23 @@ impl Default for AvionicsState {
             hsd_cursor: centre - Vec2::Y * 30.0,
             harm_cursor: centre,
             cursor_view: None,
+            mark_held: 0.0,
             harm_filter: HarmFilter::All,
             map_way: false,
             sms_ord: true,
             before_ils: None,
             tgp: default(),
         }
+    }
+}
+
+/// Seconds "lock cursor target" is held before the zoomed window shows.
+const MARK_HOLD: f32 = 0.3;
+
+impl AvionicsState {
+    /// The zoomed window around the SOI's cursor is up.
+    pub fn zoom_window(&self) -> bool {
+        self.mark_held >= MARK_HOLD
     }
 }
 
@@ -581,6 +595,11 @@ impl HsdView {
         self.origin + Vec2::new((right * self.scale) as f32, (-ahead * self.scale) as f32)
     }
 
+    /// This view magnified `zoom` times around display point `cursor`, which lands on `at`.
+    pub fn zoomed(self, cursor: Vec2, at: Vec2, zoom: f32) -> Self {
+        Self { origin: at + (self.origin - cursor) * zoom, scale: self.scale * zoom as f64, radius: self.radius * zoom, ..self }
+    }
+
     pub fn to_world(self, p: Vec2) -> DVec2 {
         let d = (p - self.origin).as_dvec2() / self.scale;
         let (right, ahead) = (d.x, -d.y);
@@ -613,6 +632,18 @@ fn draw_hsd(p: &MfdParams, c: &mut Canvas, ac: Option<(&Aircraft, &WorldPos)>, s
     c.clear(BLACK);
     let av = &p.state.av;
     let Some(view) = hsd_view(av, ac) else { return };
+    hsd_picture(p, c, view);
+    if soi {
+        draw_cursor(c, av.hsd_cursor);
+        if av.zoom_window() {
+            draw_zoom_window(c, av.hsd_cursor, |c, at| hsd_picture(p, c, view.zoomed(av.hsd_cursor, at, ZOOM)));
+        }
+    }
+}
+
+/// Everything on the HSD but the cursor, through `view`.
+fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
+    let av = &p.state.av;
     let o = view.origin;
     // Range rings (the inner ones dashed) and the compass rose on the outer one.
     for k in 1..3 {
@@ -699,9 +730,6 @@ fn draw_hsd(p: &MfdParams, c: &mut Canvas, ac: Option<(&Aircraft, &WorldPos)>, s
     c.stroke(o + Vec2::new(0.0, -6.0), o + Vec2::new(0.0, 6.0), 1.6, CYAN);
     c.stroke(o + Vec2::new(-6.0, -1.0), o + Vec2::new(6.0, -1.0), 1.6, CYAN);
     c.stroke(o + Vec2::new(-3.0, 5.0), o + Vec2::new(3.0, 5.0), 1.6, CYAN);
-    if soi {
-        draw_cursor(c, av.hsd_cursor);
-    }
 }
 
 /// HARM display: the radars painting the aircraft (filtered), placed by danger like the RWR.
@@ -709,6 +737,22 @@ fn draw_harm(p: &MfdParams, c: &mut Canvas, soi: bool) {
     c.clear(BLACK);
     let av = &p.state.av;
     let (centre, r) = harm_scope();
+    harm_picture(p, c, centre, r);
+    if p.emitters.list.iter().all(|e| !harm_shows(av.harm_filter, e)) {
+        stroke_text_at(c, centre.x, centre.y + r * 0.5, "NO EMITTERS", 8.0, 1.0, NAVY.max(DARK), Align::Centre);
+    }
+    if soi {
+        draw_cursor(c, av.harm_cursor);
+        if av.zoom_window() {
+            let cursor = av.harm_cursor;
+            draw_zoom_window(c, cursor, |c, at| harm_picture(p, c, at + (centre - cursor) * ZOOM, r * ZOOM));
+        }
+    }
+}
+
+/// The HARM scope and its symbols, centred at `centre` with radius `r`.
+fn harm_picture(p: &MfdParams, c: &mut Canvas, centre: Vec2, r: f32) {
+    let av = &p.state.av;
     c.ring(centre, r, 1.0, GREY);
     for f in [0.33, 0.66] {
         c.ring(centre, r * f, 1.0, DARK);
@@ -723,12 +767,27 @@ fn draw_harm(p: &MfdParams, c: &mut Canvas, soi: bool) {
     let locked = p.contacts.locked.map(emitter_source);
     let filter = av.harm_filter;
     crate::rwr::draw_symbols(c, &p.emitters.list, centre, r, crate::hud::blink(&p.time), locked, |e| harm_shows(filter, e));
-    if p.emitters.list.iter().all(|e| !harm_shows(filter, e)) {
-        stroke_text_at(c, centre.x, centre.y + r * 0.5, "NO EMITTERS", 8.0, 1.0, NAVY.max(DARK), Align::Centre);
-    }
-    if soi {
-        draw_cursor(c, av.harm_cursor);
-    }
+}
+
+/// Magnification of the zoomed window and its size (display pixels).
+const ZOOM: f32 = 4.0;
+const ZOOM_WINDOW: Vec2 = Vec2::new(104.0, 80.0);
+
+/// The zoomed window shown while "lock cursor target" is held: in the corner away from the
+/// cursor, `draw` paints the page magnified around the cursor, which sits in the middle.
+fn draw_zoom_window(c: &mut Canvas, cursor: Vec2, draw: impl FnOnce(&mut Canvas, Vec2)) {
+    let size = Vec2::new(c.w as f32, c.h as f32);
+    let x = if cursor.x > size.x / 2.0 { 3.0 } else { size.x - 3.0 - ZOOM_WINDOW.x };
+    let y = if cursor.y > size.y / 2.0 { BAND as f32 + 3.0 } else { size.y - BAND as f32 - 3.0 - ZOOM_WINDOW.y };
+    let (a, b) = (Vec2::new(x, y), Vec2::new(x, y) + ZOOM_WINDOW);
+    c.fill_rect(a.x as i32, a.y as i32, ZOOM_WINDOW.x as i32, ZOOM_WINDOW.y as i32, BLACK);
+    c.set_clip(a.x as i32 + 1, a.y as i32 + 1, b.x as i32 - 2, b.y as i32 - 2);
+    let at = (a + b) / 2.0;
+    draw(c, at);
+    draw_cursor(c, at);
+    c.reset_clip();
+    c.frame(a, b - Vec2::ONE, 1.5, WHITE);
+    stroke_text_at(c, a.x + 5.0, b.y - 10.0, "X4", 9.0, 1.3, WHITE, Align::Left);
 }
 
 fn harm_shows(filter: HarmFilter, e: &EmitterView) -> bool {
@@ -837,27 +896,34 @@ fn slew_and_lock(
     let hi = size - lo;
     let view = hsd_view(&state.av, aircraft.single().ok());
     follow_view(&mut state.av, view, lo, hi);
-    let Some(f) = state.av.soi_format() else { return };
-    let delta = Vec2::new(controls.slew.x, -controls.slew.y) * SLEW_SPEED * time.delta_secs();
+    let f = state.av.soi_format().filter(|f| matches!(f, Format::Hsd | Format::Harm));
     let av = &mut state.av;
+    // Holding the lock shows the zoomed window and slews finely; letting go locks again, now
+    // picking only what is right under the cursor in the window.
+    let zoomed = av.zoom_window();
+    av.mark_held = if controls.mark && f.is_some() { av.mark_held + time.delta_secs() } else { 0.0 };
+    let release = zoomed && av.mark_held == 0.0;
+    let Some(f) = f else { return };
+    let fine = if zoomed { ZOOM } else { 1.0 };
+    let delta = Vec2::new(controls.slew.x, -controls.slew.y) * SLEW_SPEED / fine * time.delta_secs();
     let cursor = match f {
         Format::Hsd => &mut av.hsd_cursor,
-        Format::Harm => &mut av.harm_cursor,
-        _ => return,
+        _ => &mut av.harm_cursor,
     };
     if delta != Vec2::ZERO {
         *cursor = (*cursor + delta).clamp(lo, hi);
     }
-    if !lock {
+    if !lock && !release {
         return;
     }
     let cursor = *cursor;
+    let radius = if release { PICK_RADIUS / ZOOM } else { PICK_RADIUS };
     let picked = match f {
-        Format::Hsd => hsd_view(av, aircraft.single().ok()).and_then(|view| pick_contact(&contacts, &view, cursor)),
+        Format::Hsd => view.and_then(|view| pick_contact(&contacts, &view, cursor, radius)),
         _ => {
             let (centre, r) = harm_scope();
             let filter = av.harm_filter;
-            nearest(emitters.list.iter().filter(|e| harm_shows(filter, e)).map(|e| (crate::rwr::scope_point(e, centre, r), emitter_ref(e))), cursor)
+            nearest(emitters.list.iter().filter(|e| harm_shows(filter, e)).map(|e| (crate::rwr::scope_point(e, centre, r), emitter_ref(e))), cursor, radius)
         }
     };
     if let Some(target) = picked {
@@ -897,14 +963,14 @@ fn emitter_ref(e: &EmitterView) -> ContactRef {
 }
 
 /// The lockable contact nearest the cursor on the HSD.
-pub fn pick_contact(contacts: &Contacts, view: &HsdView, cursor: Vec2) -> Option<ContactRef> {
-    nearest(contacts.list.iter().filter_map(|k| Some((view.to_screen(k.east, k.north), k.target?))), cursor)
+pub fn pick_contact(contacts: &Contacts, view: &HsdView, cursor: Vec2, radius: f32) -> Option<ContactRef> {
+    nearest(contacts.list.iter().filter_map(|k| Some((view.to_screen(k.east, k.north), k.target?))), cursor, radius)
 }
 
-fn nearest(candidates: impl Iterator<Item = (Vec2, ContactRef)>, cursor: Vec2) -> Option<ContactRef> {
+fn nearest(candidates: impl Iterator<Item = (Vec2, ContactRef)>, cursor: Vec2, radius: f32) -> Option<ContactRef> {
     candidates
         .map(|(q, t)| (q.distance(cursor), t))
-        .filter(|(d, _)| *d <= PICK_RADIUS)
+        .filter(|(d, _)| *d <= radius)
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, t)| t)
 }
@@ -1061,7 +1127,7 @@ mod tests {
             ..default()
         };
         let p = v.to_screen(0.0, 1040.0);
-        assert_eq!(pick_contact(&contacts, &v, p), Some(ContactRef::Unit(3)));
-        assert_eq!(pick_contact(&contacts, &v, p + Vec2::X * 40.0), None);
+        assert_eq!(pick_contact(&contacts, &v, p, PICK_RADIUS), Some(ContactRef::Unit(3)));
+        assert_eq!(pick_contact(&contacts, &v, p + Vec2::X * 40.0, PICK_RADIUS), None);
     }
 }

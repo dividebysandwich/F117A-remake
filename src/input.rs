@@ -176,6 +176,8 @@ pub struct FlightControls {
     pub fire: bool,
     /// Sensor/cursor slew, -1..1 (x right, y up): moves the sensor of interest's cursor.
     pub slew: Vec2,
+    /// "Lock cursor target" held (held on the HSD or HARM display: a zoomed view to aim with).
+    pub mark: bool,
 }
 
 /// Modifier held with a key (Alt wins over Shift).
@@ -340,6 +342,7 @@ fn read_keyboard(
         controls.pitch = 0.0;
         controls.gun = false;
         controls.fire = false;
+        controls.mark = false;
         controls.yaw = 0.0;
         controls.throttle = None;
         controls.slew = Vec2::ZERO;
@@ -375,9 +378,11 @@ fn read_keyboard(
         .keys
         .iter()
         .any(|m| m.target == crate::hotas::ButtonTarget::Gun && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods));
-    controls.fire = config.keys.iter().any(|m| {
-        m.target == crate::hotas::ButtonTarget::Action(Action::FireWeapon) && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods)
-    });
+    let held = |a: Action| {
+        config.keys.iter().any(|m| m.target == crate::hotas::ButtonTarget::Action(a) && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods))
+    };
+    controls.fire = held(Action::FireWeapon);
+    controls.mark = held(Action::LockCursor);
     controls.yaw = 0.0;
     controls.throttle = None;
     let mut slew = Vec2::ZERO;

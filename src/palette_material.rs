@@ -40,16 +40,46 @@ pub const TAG_SMOKE_FIRE: u32 = 1 << 14;
 pub struct PaletteParams {
     pub word: u32,
     pub flags: u32,
-    pub _pad0: u32,
+    /// The lighting options are on: the shader variant with sun shadows and local lights
+    /// (kept in sync by `sync_lighting`).
+    pub lit: u32,
     pub _pad1: u32,
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
+#[bind_group_data(PaletteKey)]
 pub struct PaletteMaterial {
     #[uniform(0)]
     pub params: PaletteParams,
     #[storage(1, read_only)]
     pub globals: Handle<ShaderBuffer>,
+}
+
+/// The shader variant of a material: objects (polygons, lines, dots), the background sphere,
+/// or clouds and smoke.
+#[repr(C)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub struct PaletteKey {
+    kind: u8,
+    lit: bool,
+}
+
+const KIND_OBJECT: u8 = 0;
+const KIND_BACKGROUND: u8 = 1;
+const KIND_CLOUD: u8 = 2;
+
+impl From<&PaletteMaterial> for PaletteKey {
+    fn from(m: &PaletteMaterial) -> Self {
+        let f = m.params.flags;
+        let kind = if f & FLAG_CLOUD != 0 {
+            KIND_CLOUD
+        } else if f & FLAG_BACKGROUND != 0 {
+            KIND_BACKGROUND
+        } else {
+            KIND_OBJECT
+        };
+        Self { kind, lit: m.params.lit != 0 }
+    }
 }
 
 impl Material for PaletteMaterial {
@@ -93,8 +123,18 @@ impl Material for PaletteMaterial {
         _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayoutRef,
-        _key: MaterialPipelineKey<Self>,
+        key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            match key.bind_group_data.kind {
+                KIND_BACKGROUND => fragment.shader_defs.push("PALETTE_BACKGROUND".into()),
+                KIND_CLOUD => fragment.shader_defs.push("PALETTE_CLOUD".into()),
+                _ => {}
+            }
+            if key.bind_group_data.lit {
+                fragment.shader_defs.push("PALETTE_LIT".into());
+            }
+        }
         // Only positions are used (models have no normals or UVs). Batched dot lights (scenery
         // lamps) also carry each vertex's quad corner as UV.
         let mut attributes = vec![Mesh::ATTRIBUTE_POSITION.at_shader_location(0)];
@@ -205,4 +245,16 @@ pub const TAG_DOT: u32 = 1 << 7;
 /// Dot size multiplier minus one (0..7) in mesh tag bits 8..10.
 pub fn dot_scale(scale: u32) -> u32 {
     (scale.clamp(1, 8) - 1) << 8
+}
+
+/// Switches every palette material to the shader variant with or without the lighting options
+/// (also materials created later).
+pub fn sync_lighting(settings: Res<crate::settings::Settings>, mut materials: ResMut<Assets<PaletteMaterial>>) {
+    let lit = (settings.shadows || settings.local_lights) as u32;
+    let stale: Vec<_> = materials.iter().filter(|(_, m)| m.params.lit != lit).map(|(id, _)| id).collect();
+    for id in stale {
+        if let Some(mut m) = materials.get_mut(id) {
+            m.params.lit = lit;
+        }
+    }
 }

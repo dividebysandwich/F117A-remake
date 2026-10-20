@@ -29,7 +29,7 @@ impl Plugin for PalettePlugin {
                 PostUpdate,
                 (apply_remap_changes, update_globals.after(crate::lighting::LightingSystems)).run_if(resource_exists::<Palette>),
             )
-            .add_systems(PostUpdate, apply_msaa);
+            .add_systems(PostUpdate, (apply_msaa, crate::palette_material::sync_lighting));
     }
 }
 

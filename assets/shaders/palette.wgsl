@@ -65,7 +65,8 @@ struct PaletteMaterial {
     word: u32,
     // bit 0: background sphere (sky/ground gradient), bit 1: line/dot (always solid low byte)
     flags: u32,
-    _pad0: u32,
+    // The lighting options are on (the PALETTE_LIT variant; unused here).
+    lit: u32,
     _pad1: u32,
 };
 
@@ -670,7 +671,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 fn shade_fragment(in: VertexOutput) -> vec4<f32> {
     let dir = in.world_position - view.world_position;
     let modern = globals.params.w != 0.0;
-    if ((material.flags & FLAG_CLOUD) != 0u) {
+    // One pipeline per kind of material (palette_material.rs `PaletteKey`): a shader with
+    // every branch needs so many registers that the Frame's GPU runs half as many fragments
+    // at once.
+#ifdef PALETTE_CLOUD
+    {
         if ((u32(globals.light_info.w) & 8u) != 0u) {
             return vec4<f32>(pal(CLOUD_RAMP + 4u), 1.0);
         }
@@ -695,7 +700,8 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
         let noise = cloud_noise(in.world_position, d);
         return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d), in.world_position), cover);
     }
-    if ((material.flags & 1u) != 0u) {
+#else ifdef PALETTE_BACKGROUND
+    {
         if ((u32(globals.light_info.w) & 2u) != 0u) {
             return vec4<f32>(pal(select(0x7Cu, 0x88u, dir.y >= 0.0)), 1.0);
         }
@@ -714,12 +720,14 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
         }
         // Lighting options: the ground gradient is lit like flat ground where the view ray
         // meets the ground plane (y = 0), so it takes shadows and local lights.
-        let flags = u32(globals.ambient.w);
         let eye = view.world_position;
+#ifdef PALETTE_LIT
+        let flags = u32(globals.ambient.w);
         if (flags != 0u && dir.y < 0.0 && eye.y > 0.0) {
             let ground = eye + dir * (-eye.y / dir.y);
             bg = lit_surface(bg, ground, vec3<f32>(0.0, 1.0, 0.0), in.clip_position, flags);
         }
+#endif
         // Stratus layer beyond its planes: its underside over the sky below it, its top over
         // the ground above it, where the layer's coverage field has cloud.
         if (globals.clouds.z != 0.0) {
@@ -750,7 +758,7 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
         bg = flash(whiteout(bg, 1e4), eye + normalize(dir) * along) + BOLT_COLOR * sheet;
         return vec4<f32>(bg, 1.0);
     }
-
+#else
     let word = material.word;
     let hi = (word >> 8u) & 0xFFu;
     var lo = word & 0xFFu;
@@ -794,11 +802,15 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
             rgb = pal(select(lo, hi, ((px.x + px.y) & 1u) == 1u));
         }
     }
+#ifdef PALETTE_LIT
     let flags = u32(globals.ambient.w);
     if (!is_line && flags != 0u) {
         rgb = lit(rgb, in.world_position, dir, in.clip_position, flags);
-    } else if (modern && !is_line) {
+    } else
+#endif
+    if (modern && !is_line) {
         rgb = rgb * shade(in.world_position, dir);
     }
     return vec4<f32>(flash(whiteout(rgb, length(dir)), in.world_position), 1.0);
+#endif
 }

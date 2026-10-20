@@ -156,6 +156,11 @@ pub struct TgpState {
     idle: f32,
     /// The ground point on the pod's line of sight (Bevy world position), when it is up.
     pub los_ground: Option<DVec3>,
+    /// CZ pressed: the pod is to look ahead instead of at the current lock.
+    cz: bool,
+    /// After CZ: the (ground, air) lock the pod no longer looks at; a new lock ends it. The
+    /// slaved pod then looks ahead, so a slew starts from there.
+    pub zeroed: Option<(Option<usize>, Option<usize>)>,
 }
 
 impl TgpMode {
@@ -383,7 +388,9 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
         }
         MfdCmd::TgpCz => {
             av.tgp.mode = TgpMode::Slaved;
+            av.tgp.cz = true;
             state.cam_zoom = None;
+            state.cam_dir = crate::mfd::CamDir::Ahead;
         }
         // Applied before (`mfd::cam_zoom`).
         MfdCmd::CamZoom(_) | MfdCmd::CamZoomCycle => {}
@@ -762,11 +769,21 @@ fn update_pod(
     mut hud: ResMut<HudState>,
     aircraft: Query<(&Aircraft, &WorldPos), With<Player>>,
     camera: Query<&Transform, With<crate::trackcam::TrackCamera>>,
+    combat: Option<Res<crate::combat::Combat>>,
     mut designate: MessageWriter<PodDesignate>,
 ) {
     let lock = actions.read().any(|a| a.0 == Action::LockCursor);
     if !state.modern {
         return;
+    }
+    if let Some(combat) = &combat {
+        let t = combat.sim.targeting();
+        let tgp = &mut state.av.tgp;
+        if std::mem::take(&mut tgp.cz) {
+            tgp.zeroed = Some((t.ground, t.air));
+        } else if tgp.zeroed.is_some_and(|z| z != (t.ground, t.air)) {
+            tgp.zeroed = None;
+        }
     }
     let Ok((a, pos)) = aircraft.single() else { return };
     let shown = state.camera_shown();
@@ -785,6 +802,7 @@ fn update_pod(
                 designate.write(PodDesignate((e / 32.0).round() as i32, (0x8000 as f64 - n / 32.0).round() as i32));
                 hud.mode = HudMode::Gnd;
                 tgp.mode = TgpMode::Slaved;
+                tgp.zeroed = None;
             }
             None => tgp.mode = TgpMode::Slaved,
         }
@@ -993,7 +1011,7 @@ mod tests {
         s.modern = true;
         s.av.tgp.mode = TgpMode::Area { az: 0.1, el: -0.2 };
         apply(&mut s, &mut MapRaster::default(), MfdCmd::TgpCz);
-        assert_eq!((s.av.tgp.mode, s.cam_zoom), (TgpMode::Slaved, None));
+        assert_eq!((s.av.tgp.mode, s.cam_zoom, s.av.tgp.cz), (TgpMode::Slaved, None, true));
     }
 
     #[test]

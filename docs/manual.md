@@ -383,7 +383,8 @@ symbols, so a turn doesn't take the cursor off its target.
 or where the camera keys turn it. Made the SOI, the slew controls turn the pod itself (AREA, slower
 when zoomed in); a moment after the slew stops it holds the ground point it looks at (PNT), wherever
 the aircraft flies. **Lock cursor target** then locks what is at that point (the ground itself if
-nothing is there) and the pod follows the lock again. CZ returns it to SLV and the zoom to AUTO.
+nothing is there) and the pod follows the lock again. CZ returns it to SLV looking ahead (until
+something new is locked, so the next slew starts from straight ahead) and the zoom to AUTO.
 ZM- / ZM+ (also `[` / `]`, and Z / X while the pod is the SOI) zoom it from 1X to 6X. The HSD shows where
 the pod looks: a green diamond on its ground point with a dashed line from the aircraft.
 

@@ -165,7 +165,10 @@ pub(crate) fn update_camera(
     }
     let sim = &combat.sim;
     let t = sim.targeting();
-    let target = if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
+    // After CZ the pod looks ahead until something new is locked.
+    let target = if mfd.modern && mfd.av.tgp.zeroed.is_some() {
+        None
+    } else if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
         let (e, n) = map_wu(o.x, o.y);
         Some(wu_to_bevy(e + 16.0, n - 16.0, 0.0))
     } else if let Some((i, u)) = t.air.and_then(|i| sim.flights().get(i).map(|u| (i, *u))) {

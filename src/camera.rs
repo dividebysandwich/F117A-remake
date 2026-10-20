@@ -223,7 +223,7 @@ fn update_rig(
             let base_pitch = if state.view == View::Cockpit { COCKPIT_DOWN_PITCH } else { 0.0 };
             let (y, p) = if settings.vr { (0.0, 0.0) } else { (yaw + look.yaw, base_pitch + look.pitch) };
             *head = Transform::from_translation(EYE_OFFSET).with_rotation(Quat::from_rotation_y(y) * Quat::from_rotation_x(p));
-            *cam_tf = if settings.vr { offset.scaled(settings.vr_cockpit_scale) } else { offset.0 };
+            *cam_tf = if settings.vr { offset.scaled(settings.vr_rig_scale()) } else { offset.0 };
         }
         View::Chase => {
             // Behind and above, looking along the flight direction (camera stays in the aircraft frame).

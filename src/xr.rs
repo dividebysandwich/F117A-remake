@@ -303,7 +303,7 @@ fn read_hands(
     mut hands: ResMut<Hands>,
 ) {
     let cockpit_view = view.view == View::Cockpit;
-    let offset = offset.scaled(settings.vr_cockpit_scale);
+    let offset = offset.scaled(settings.vr_rig_scale());
     for (i, hand) in hands.hands.iter_mut().enumerate() {
         let path = actions.hands[i];
         let f = |a: &openxr::Action<f32>| a.state(&session, path).map(|s| s.current_state).unwrap_or(0.0);

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use stealth_mission::{MissionKind, Sky};
 
 use crate::menu::MenuState;
-use crate::settings::{DEFAULT_VR_COCKPIT_SCALE, Settings, VR_COCKPIT_SCALE_RANGE};
+use crate::settings::{DEFAULT_VR_COCKPIT_SCALE, Settings, VR_COCKPIT_SCALE_BASE, VR_COCKPIT_SCALE_RANGE};
 
 /// `<config dir>/stealth-mission-89/<name>`.
 pub fn config_path(name: &str) -> Option<PathBuf> {
@@ -50,7 +50,13 @@ pub struct Prefs {
     pub classic_hud: bool,
     pub classic_flight: bool,
     pub vr_cockpit_scale: f32,
+    /// 0: `vr_cockpit_scale` is relative to life size (before the 70% size became 100%),
+    /// 1: relative to `VR_COCKPIT_SCALE_BASE`.
+    #[serde(default)]
+    pub vr_scale_version: u32,
 }
+
+const VR_SCALE_VERSION: u32 = 1;
 
 impl Default for Prefs {
     fn default() -> Self {
@@ -71,6 +77,7 @@ impl Default for Prefs {
             classic_hud: false,
             classic_flight: false,
             vr_cockpit_scale: DEFAULT_VR_COCKPIT_SCALE,
+            vr_scale_version: VR_SCALE_VERSION,
         }
     }
 }
@@ -79,7 +86,17 @@ const FILE: &str = "prefs.json";
 
 impl Prefs {
     pub fn load() -> Self {
-        load_json(FILE).unwrap_or_default()
+        let mut p: Self = load_json(FILE).unwrap_or_default();
+        p.migrate();
+        p
+    }
+
+    /// Converts a VR cockpit size saved relative to life size.
+    fn migrate(&mut self) {
+        if self.vr_scale_version == 0 {
+            self.vr_cockpit_scale /= VR_COCKPIT_SCALE_BASE;
+            self.vr_scale_version = VR_SCALE_VERSION;
+        }
     }
 
     pub fn from_state(menu: &MenuState, s: &Settings) -> Self {
@@ -99,6 +116,7 @@ impl Prefs {
             classic_hud: s.classic_hud,
             classic_flight: s.classic_flight,
             vr_cockpit_scale: s.vr_cockpit_scale,
+            vr_scale_version: VR_SCALE_VERSION,
         }
     }
 
@@ -148,5 +166,21 @@ impl Prefs {
             warn!("saving {FILE}: {e}");
         }
         *last = Some(now);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_vr_cockpit_size_is_rebased() {
+        let mut p: Prefs = serde_json::from_str(r#"{"vr_cockpit_scale": 0.7}"#).unwrap();
+        p.migrate();
+        assert!((p.vr_cockpit_scale - 1.0).abs() < 1e-6);
+        let mut q: Prefs = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        q.migrate();
+        assert!((q.vr_cockpit_scale - 1.0).abs() < 1e-6);
+        assert_eq!(Prefs::default().vr_scale_version, VR_SCALE_VERSION);
     }
 }

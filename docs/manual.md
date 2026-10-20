@@ -234,7 +234,7 @@ an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
 | Point lights | Cockpit lamps, explosions, flares and runway lights lighting the scene. |
 | Cockpit | Modern or classic panel. |
 | HUD | Modern (F-16 style) or classic HUD. |
-| Cockpit size | VR only: size of the cockpit in the headset (70–130 %); left / right or the < > halves. |
+| Cockpit size | VR only: size of the cockpit in the headset (70–150 %, default 100 % = 70 % of life size); left / right or the < > halves. |
 | Resume | Closes the menu (as does Esc again). |
 | End mission | Ends the flight and goes to the debrief. |
 

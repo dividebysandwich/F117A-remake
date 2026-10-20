@@ -51,15 +51,17 @@ pub struct Settings {
     pub classic_flight: bool,
     /// `--no-crashes`: crash protection (auto pull-up, no ground crashes, collisions bounce).
     pub no_crashes: bool,
-    /// `--vr-cockpit-scale <percent>`: size of the cockpit (and the world) in the headset
-    /// relative to life size.
+    /// `--vr-cockpit-scale <percent>`: size of the cockpit (and the world) in the headset,
+    /// 100% = `VR_COCKPIT_SCALE_BASE` of life size.
     pub vr_cockpit_scale: f32,
 }
 
-/// Default VR cockpit scale: a little smaller than life size.
-pub const DEFAULT_VR_COCKPIT_SCALE: f32 = 0.9;
-/// Range of the VR cockpit scale.
-pub const VR_COCKPIT_SCALE_RANGE: std::ops::RangeInclusive<f32> = 0.7..=1.3;
+/// Rig scale of the 100% VR cockpit size: 70% of life size looked most realistic in the headset.
+pub const VR_COCKPIT_SCALE_BASE: f32 = 0.7;
+/// Default VR cockpit size.
+pub const DEFAULT_VR_COCKPIT_SCALE: f32 = 1.0;
+/// Range of the VR cockpit size.
+pub const VR_COCKPIT_SCALE_RANGE: std::ops::RangeInclusive<f32> = 0.7..=1.5;
 
 /// What the next flight looks like (filled by the menu or command-line flags).
 #[derive(Resource, Debug, Clone)]
@@ -109,6 +111,11 @@ fn get(args: &[String], f: &str) -> Option<String> {
 }
 
 impl Settings {
+    /// Scale of the VR rig (head and hand offsets) for the chosen cockpit size.
+    pub fn vr_rig_scale(&self) -> f32 {
+        self.vr_cockpit_scale * VR_COCKPIT_SCALE_BASE
+    }
+
     pub fn from_args() -> Self {
         let a = args();
         let has = |f: &str| a.iter().any(|x| x == f);

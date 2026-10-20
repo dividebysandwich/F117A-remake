@@ -432,7 +432,7 @@ impl HudParams<'_, '_> {
             ((self.waypoints.current, km, if ms > 1.0 { km * 1000.0 / ms } else { 0.0 }), d.as_vec3())
         });
         Some(HudFrame {
-            scale: self.settings.aircraft.spec().hud_scale,
+            scale: self.settings.hud_scale(),
             state: self.state.clone(),
             knots: a.knots() as i32,
             alt: a.altitude.clamp(0.0, 65535.0) as i32,

@@ -342,7 +342,7 @@ pub(super) fn restyle_hud(
         if *role != CanvasRole::Hud || (tex.canvas.w == 320) == classic {
             continue;
         }
-        let (new, proj, style) = hud_canvas(&mut images, classic, settings.aircraft.spec().hud_scale);
+        let (new, proj, style) = hud_canvas(&mut images, classic, settings.hud_scale());
         if let Some(mut m) = materials.get_mut(&mat.0) {
             m.image = new.image.clone();
             m.proj = proj;

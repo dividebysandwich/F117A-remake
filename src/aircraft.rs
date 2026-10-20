@@ -53,6 +53,9 @@ pub struct AircraftSpec {
     /// Modern HUD scale: canvas pixels per unit of the tangent plane (`hud::modern`), set by
     /// the combiner's size.
     pub hud_scale: f32,
+    /// The modern HUD scale in VR, where the symbology filling the combiner on a screen looks
+    /// far too large.
+    pub vr_hud_scale: f32,
     /// Weapons in a bay (else on pylons: always "open", seen by radars as the F-117A's open bay).
     pub bomb_bay: bool,
     flight: fn() -> FlightConstants,
@@ -92,6 +95,8 @@ static F117: AircraftSpec = AircraftSpec {
     shadow: Shadow::Model(17),
     vr_scale: 0.85 * 0.7,
     hud_scale: crate::hud::modern::SCALE,
+    // About the F-16's angular size: the symbology in the middle half of the combiner.
+    vr_hud_scale: 2.0 * crate::hud::modern::SCALE,
     bomb_bay: true,
     flight: FlightConstants::default,
 };
@@ -109,6 +114,7 @@ static F16: AircraftSpec = AircraftSpec {
     // 0.095 at 0.70 m in front of the eye, tools/models/build_cockpit_f16.py).
     vr_scale: 1.25 * 0.7,
     hud_scale: 2080.0,
+    vr_hud_scale: 2080.0,
     bomb_bay: false,
     flight: FlightConstants::f16,
 };

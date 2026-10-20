@@ -328,7 +328,7 @@ fn spawn_cockpit(
         settings.classic_hud,
         settings.local_lights,
         settings.hires_displays(),
-        settings.aircraft.spec().hud_scale,
+        settings.hud_scale(),
         &mut meshes,
         &mut materials,
         &mut hud_materials,

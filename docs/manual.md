@@ -111,7 +111,8 @@ The rest of this manual describes the modern cockpit.
 
 ### 3.1 HUD and HUD mode buttons
 
-The modern HUD is drawn in green in the style of the F-16's:
+The modern HUD is drawn in green in the style of the F-16's (in VR the F-117A's symbology is
+drawn at half the size, about the F-16C's, so it stays in the middle of the large combiner):
 
 ![Modern HUD](images/hud_modern.png)
 

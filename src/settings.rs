@@ -125,6 +125,13 @@ impl Settings {
         self.cockpit().0 != crate::cockpit3d::layout::PanelStyle::Classic || !self.classic_avionics
     }
 
+    /// Modern HUD scale (canvas pixels per unit of the tangent plane) of the aircraft, on the
+    /// screen or in VR.
+    pub fn hud_scale(&self) -> f32 {
+        let spec = self.aircraft.spec();
+        if self.vr { spec.vr_hud_scale } else { spec.hud_scale }
+    }
+
     /// Scale of the VR rig (head and hand offsets) for the chosen cockpit size.
     pub fn vr_rig_scale(&self) -> f32 {
         self.vr_cockpit_scale * self.aircraft.spec().vr_scale

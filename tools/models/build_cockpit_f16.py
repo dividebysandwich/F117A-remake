@@ -359,6 +359,15 @@ LEGS = (0.20, -0.50)  # half width, top (m)
 for s_ in (-1, 1):
     box("panel_grey", "panel_grey", (s_ * (LEGS[0] + 0.31) / 2, low.y + 0.08, (low.z - 1.0) / 2), (0.31 - LEGS[0], 0.02, 1.0 + low.z))
 box("panel_grey", "panel_grey", (0.0, low.y + 0.08, (low.z + LEGS[1]) / 2), (2 * LEGS[0], 0.02, low.z - LEGS[1]))
+# The footwell behind the opening: side walls, roof, front wall and floor.
+WELL_DEPTH = 0.35
+y0 = low.y + 0.08
+yc = y0 + WELL_DEPTH / 2
+for s_ in (-1, 1):
+    box("dark", "dark", (s_ * (LEGS[0] + 0.01), yc, (LEGS[1] - 1.0) / 2), (0.02, WELL_DEPTH, LEGS[1] + 1.0))
+box("dark", "dark", (0.0, yc, LEGS[1] + 0.01), (2 * LEGS[0] + 0.04, WELL_DEPTH, 0.02))
+box("dark", "dark", (0.0, y0 + WELL_DEPTH, (LEGS[1] - 1.0) / 2), (2 * LEGS[0] + 0.04, 0.02, LEGS[1] + 1.0))
+box("dark", "dark", (0.0, yc, -1.0), (2 * LEGS[0] + 0.04, WELL_DEPTH, 0.02))
 # Shroud over the attitude indicator and HSI: a lid sloping down towards the pilot, bevelled
 # cheeks either side.
 d, n, up = basis(0)

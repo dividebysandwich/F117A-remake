@@ -72,7 +72,9 @@ impl Default for Prefs {
             weather: menu.weather,
             cloud_cover: menu.cloud_cover,
             no_crashes: false,
-            modern_shading: false,
+            // New players: modern shaders; classic shadows and lighting; modern cockpit, HUD,
+            // avionics and flight model.
+            modern_shading: true,
             shadows: false,
             local_lights: false,
             classic_cockpit: false,

@@ -234,7 +234,7 @@ impl Sim {
         }
     }
 
-    fn aircraft_name(&self, spec: i32) -> String {
+    pub fn aircraft_name(&self, spec: i32) -> String {
         self.aircraft_types.get(spec.max(0) as usize).map_or_else(|| "aircraft".into(), |t| t.name.clone())
     }
 }

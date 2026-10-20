@@ -366,6 +366,68 @@ pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
     }
 }
 
+/// HSI on a square canvas: the compass card turning with the heading (radians), a lubber line
+/// and aircraft symbol, the bearing pointer to the waypoint (radians, true) and its distance
+/// (km) and number.
+pub fn hsi(c: &mut Canvas, heading: f32, bearing: Option<f32>, dist_km: Option<f32>, waypoint: usize) {
+    use crate::font::{Align, stroke_text_at};
+    c.px.fill(0);
+    let n = c.w.min(c.h) as f32;
+    let centre = Vec2::new(c.w as f32 / 2.0, c.h as f32 / 2.0);
+    let r = n / 2.0 - 1.0;
+    for y in 0..c.h {
+        for x in 0..c.w {
+            if (Vec2::new(x as f32 + 0.5, y as f32 + 0.5) - centre).length() <= r {
+                c.set(x as i32, y as i32, 5);
+            }
+        }
+    }
+    let w = (n / 150.0).max(1.0);
+    // Direction on the card: up = the nose.
+    let dir = |a: f32| Vec2::new((a - heading).sin(), -(a - heading).cos());
+    let card = r * 0.78;
+    for k in 0..72 {
+        let a = (k as f32 * 5.0).to_radians();
+        let len = if k % 6 == 0 { 0.12 } else if k % 2 == 0 { 0.08 } else { 0.05 };
+        c.stroke(centre + dir(a) * card, centre + dir(a) * card * (1.0 - len), w, 15);
+        if k % 6 == 0 {
+            let deg = k * 5;
+            let label = match deg {
+                0 => "N".to_string(),
+                90 => "E".to_string(),
+                180 => "S".to_string(),
+                270 => "W".to_string(),
+                d => (d / 10).to_string(),
+            };
+            let p = centre + dir(a) * card * 0.76;
+            stroke_text_at(c, p.x, p.y, &label, r * 0.11, w, 15, Align::Centre);
+        }
+    }
+    // Lubber line.
+    c.stroke(centre - Vec2::Y * (r * 0.98), centre - Vec2::Y * (card * 1.02), w * 1.5, 15);
+    // Bearing pointer to the waypoint (cyan): head at the card, tail opposite.
+    if let Some(b) = bearing {
+        let d = dir(b);
+        let head = centre + d * card * 0.98;
+        let tail = centre - d * card * 0.98;
+        c.stroke(tail, head, w * 1.5, 11);
+        let side = Vec2::new(-d.y, d.x) * r * 0.07;
+        c.polyline(&[head - d * r * 0.14 + side, head, head - d * r * 0.14 - side], w * 1.5, 11);
+    }
+    // Aircraft symbol.
+    let s = r * 0.12;
+    c.stroke(centre - Vec2::X * s, centre + Vec2::X * s, w * 1.5, 41);
+    c.stroke(centre - Vec2::Y * s * 0.8, centre + Vec2::Y * s * 1.2, w * 1.5, 41);
+    c.stroke(centre + Vec2::new(-s * 0.45, s), centre + Vec2::new(s * 0.45, s), w * 1.5, 41);
+    // Distance (top left) and waypoint (top right).
+    let th = r * 0.12;
+    if let Some(km) = dist_km {
+        let text = if km < 100.0 { format!("{km:.1}") } else { format!("{km:.0}") };
+        stroke_text_at(c, centre.x - r * 0.62, centre.y - r * 0.62, &text, th, w, 15, Align::Centre);
+    }
+    stroke_text_at(c, centre.x + r * 0.62, centre.y - r * 0.62, &format!("WP{waypoint}"), th, w, 15, Align::Centre);
+}
+
 #[derive(SystemParam)]
 pub struct PanelParams<'w, 's> {
     pub aircraft: Query<'w, 's, &'static Aircraft, With<Player>>,
@@ -376,6 +438,9 @@ pub struct PanelParams<'w, 's> {
     pub warnings: Res<'w, Warnings>,
     pub approach: Res<'w, Approach>,
     pub time: Res<'w, Time>,
+    pub positions: Query<'w, 's, &'static crate::world::WorldPos, With<Player>>,
+    pub waypoints: Res<'w, crate::hud::Waypoints>,
+    pub emitters: Res<'w, crate::rwr::Emitters>,
 }
 
 /// Fuel (lbs) below which the low-fuel light blinks.
@@ -471,6 +536,25 @@ impl PanelParams<'_, '_> {
             (p, r)
         });
         adi(c, p, r);
+    }
+
+    /// The horizontal situation indicator: heading and the bearing and distance to the
+    /// current waypoint.
+    pub fn draw_hsi(&self, c: &mut Canvas) {
+        let Ok(a) = self.aircraft.single() else { return };
+        let heading = a.euler().0;
+        let wp = self.waypoints.points.get(self.waypoints.current);
+        let dist = wp.zip(self.positions.single().ok()).map(|(w, p)| {
+            let (e, n, _) = crate::world::bevy_to_wu(p.0);
+            ((w.east - e).hypot(w.north - n) * crate::world::WU / 1000.0) as f32
+        });
+        let bearing = wp.map(|_| crate::flight::bam(a.waypoint_bearing));
+        hsi(c, heading, bearing, dist, self.waypoints.current);
+    }
+
+    /// The RWR scope.
+    pub fn draw_rwr(&self, c: &mut Canvas) {
+        crate::rwr::draw_rwr(c, &self.emitters.list, crate::hud::blink(&self.time));
     }
 
     /// The approach indexer into its own 10x21 canvas.

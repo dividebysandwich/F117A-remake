@@ -425,6 +425,66 @@ impl Sim {
     }
 }
 
+impl Sim {
+    /// The radars that can see the player (hostile sites and aircraft within their detection
+    /// range), most dangerous first: launching, then tracking, then the ones whose missiles
+    /// reach the player, the higher threat tiers and the closer ones.
+    pub fn emitters(&self) -> Vec<Emitter> {
+        let (px, py) = (self.p.mx, self.p.my);
+        let launched = |source: EmitterSource| {
+            self.proj[..8].iter().any(|m| {
+                m.ttl != 0
+                    && match source {
+                        EmitterSource::Site(i) => m.launcher == i as i32,
+                        EmitterSource::Aircraft(i) => m.launcher == -(i as i32) && i > 0,
+                    }
+            })
+        };
+        let mut out = Vec::new();
+        let mut push = |source, x: i32, y: i32, alt: i32, radar_type: i32, missile: i32, painted: bool, tracking: bool| {
+            let Some(t) = self.threat_type(radar_type) else { return };
+            let (dx, dy) = (s16(px - x), s16(py - y));
+            let range = approx(dx, dy) >> 6;
+            if range >= t.lethality as i32 {
+                return;
+            }
+            // Bearing from the player to the emitter.
+            let bearing = bearing(s16(x - px), s16(py - y));
+            let lock_range = self.missile(missile).lock_range as i32;
+            let launch = launched(source);
+            let priority = t.tier as i32 * 8
+                + if launch { 300 } else { 0 }
+                + if tracking { 120 } else { 0 }
+                + if painted { 30 } else { 0 }
+                + if range < lock_range { 60 } else { 0 }
+                + (t.lethality as i32 - range) / 4;
+            out.push(Emitter { source, x, y, alt, radar_type, range, bearing, lock_range, painted, tracking, launch, priority });
+        };
+        for (i, o) in self.objects.iter().enumerate().take(self.ground_units) {
+            if o.unit_type == 0 || o.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) != 0 {
+                continue;
+            }
+            let tracking = o.flags & oflags::TRACKING != 0 || o.alert > 0xC0;
+            let missile = self.site_missile(o.unit_type);
+            push(EmitterSource::Site(i), o.x, o.y, 0, o.unit_type, missile, o.flags & oflags::PAINTED != 0, tracking);
+        }
+        for (i, u) in self.flights.iter().enumerate() {
+            let radar = self.ac_type(u.spec).radar as i32;
+            if u.flags & (fflags::EXISTS | fflags::AIRBORNE) != fflags::EXISTS | fflags::AIRBORNE || u.flags & fflags::DESTROYED != 0 || radar <= 0 {
+                continue;
+            }
+            push(EmitterSource::Aircraft(i), u.x, u.y, u.alt, radar, u.missile, u.flags & fflags::CONTACT != 0, u.heat > 0xC0);
+        }
+        out.sort_by_key(|e| std::cmp::Reverse(e.priority));
+        out
+    }
+
+    /// Name of a radar type ("SA-10", "Hawk").
+    pub fn threat_name(&self, t: i32) -> &str {
+        self.threat_type(t).map_or("", |t| t.name.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

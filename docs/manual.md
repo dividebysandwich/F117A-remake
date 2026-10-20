@@ -157,7 +157,7 @@ F2 cycles through the modes; V declutters the HUD.
 | NEXT | B | Select the next target. |
 | NONE | Shift B | Clear the target. No automatic acquisition until the next target or camera key. |
 | WPN | Space | Select the next weapon bay. |
-| MENU | Esc | Open or close the in-flight settings menu (chapter 3.7). |
+| MENU | Esc | Open or close the in-flight settings menu (chapter 3.8). |
 
 The selected weapon is released with Enter, the gamepad's A button or the right VR trigger while
 the hand holds the stick.
@@ -222,7 +222,25 @@ From left to right: the **EGR/EAR radar bar graph** (described in chapter 6.2), 
 with the EMV warning lamp (lit for 2 s after each detection), **FUEL** (fuel in lbs divided by
 10) and **THRUST** (in percent).
 
-### 3.7 In-flight settings menu
+### 3.7 The F-16 cockpit
+
+The F-16C has its own cockpit, laid out like the real one: the master mode (NAV, A-A, A-G) and
+LOCK caps on the up-front controls under the HUD, the attitude indicator and the **HSI** (heading,
+bearing pointer and distance to the current waypoint) under them, the MFDs low left and right,
+the **RWR** scope top left with the aircraft system caps below it, the countermeasure panel top
+right with the fuel and thrust readouts below it, and the warning lights on the eyebrows either side
+of the HUD. The stick is on the right console, the throttle on the left one, with the side panel
+buttons in front of them.
+
+It has no radar bar graph. The **RWR** shows every radar that can see the aircraft, at its bearing
+relative to the nose (up = ahead). Like a real RWR it does not show range: the closer a symbol is to
+the centre, the more dangerous the radar (a launching or tracking SAM innermost, a radar only
+searching near the rim). Symbols: the SAM type (`2` SA-2, `10` SA-10, `N6` SA-N-6, `HK` Hawk,
+`RA` Rapier, ...), aircraft radars with a hat over their type (`29` MiG-29, `AW` AWACS); dim =
+searching, bright = tracking, a diamond marks the most dangerous one, a flashing circle a missile in
+the air.
+
+### 3.8 In-flight settings menu
 
 **Esc** (also Pause, Alt P, the gamepad's Start button or the **MENU** button of the left side
 panel) opens the settings menu in front of the pilot and pauses the flight. In VR, touch an
@@ -372,7 +390,7 @@ the aircraft.
 Enemy fighters that detect the aircraft by radar can identify it visually within about 8 km by
 day and 4 km by night (not through clouds).
 
-### 6.2 The radar bar graph
+### 6.2 The radar bar graph (F-117A)
 
 ![Radar bar graph](images/panel_bottom.png)
 

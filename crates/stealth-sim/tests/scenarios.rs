@@ -136,6 +136,46 @@ fn site_detects_and_launches() {
     assert!(sim.damage_effects().hits > 2);
 }
 
+/// The radar warning receiver's list: sites in their detection range, hostile and alive,
+/// ranked with a launching site first.
+#[test]
+fn emitters_ranked() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let mut sim = Sim::new(&d.sim, &m);
+    let (mx, my) = sandbox(&mut sim, &m);
+    // SA-2 10 km north, SA-6 20 km east, a destroyed and a friendly one near, one out of range.
+    place_site(&mut sim, 3, 1, mx, my - 640);
+    place_site(&mut sim, 4, 6, mx + 1280, my);
+    place_site(&mut sim, 5, 1, mx - 640, my);
+    sim.objects_mut()[5].flags |= 0x0080;
+    place_site(&mut sim, 6, 1, mx, my + 640);
+    sim.objects_mut()[6].flags |= 0x0400;
+    place_site(&mut sim, 7, 1, mx, my + 64 * 250);
+    let mut p = player_at(mx, my, 6000, 0x4000, 200);
+    sim.step(&p, 15);
+    let e = sim.emitters();
+    let sites: Vec<EmitterSource> = e.iter().map(|e| e.source).collect();
+    assert_eq!(sites.len(), 2, "{e:?}");
+    assert!(sites.contains(&EmitterSource::Site(3)) && sites.contains(&EmitterSource::Site(4)));
+    let sa2 = e.iter().find(|e| e.source == EmitterSource::Site(3)).unwrap();
+    assert_eq!((sa2.range, sa2.radar_type), (10, 1));
+    assert!(sa2.bearing < 0x100 || sa2.bearing > 0xFF00, "north: {:#x}", sa2.bearing);
+    assert_eq!(sim.threat_name(1), "SA-2");
+    // Detected, tracked and fired at: the SA-2 comes first.
+    p.cmd.toggle_bay = true;
+    for _ in 0..15 * 120 {
+        sim.step(&p, 15);
+        p.cmd = Commands::default();
+        if sim.projectiles()[3].ttl > 0 {
+            break;
+        }
+    }
+    let e = sim.emitters();
+    assert_eq!(e[0].source, EmitterSource::Site(3));
+    assert!(e[0].launch && e[0].tracking, "{:?}", e[0]);
+}
+
 /// Low, fast-ish, bays closed over flat ground: the same SA-2 never detects.
 #[test]
 fn stealthy_player_not_detected() {

@@ -168,6 +168,10 @@ pub const AIRCRAFT_MODEL_SCALE: f64 = crate::world::WU / 8.0;
 #[derive(Component)]
 pub struct OwnModel;
 
+/// The own model as seen from the cockpit (`AircraftSpec::cockpit_view`).
+#[derive(Component)]
+pub struct OwnModelInterior;
+
 fn attach_own_model(
     mut commands: Commands,
     mut library: ResMut<ModelLibrary>,
@@ -183,34 +187,51 @@ fn attach_own_model(
     let Ok(player) = player.single() else { return };
     let spec = settings.aircraft.spec();
     let file = library.load(&server, "stflt");
-    if let Some(model) =
-        assets.spawn_marked(&mut commands, &file, spec.model, crate::palette_material::LEVEL_AIRCRAFT, true, spec.canopy_colours)
-    {
-        commands
-            .entity(model)
-            .insert((
-                OwnModel,
-                Transform::from_xyz(0.0, spec.model_lift, 0.0).with_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32)),
-                Visibility::Hidden,
-            ));
-        commands.entity(player).add_child(model);
+    let transform = Transform::from_xyz(0.0, spec.model_lift, 0.0).with_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32));
+    let Some(model) = assets.spawn(&mut commands, &file, spec.model, crate::palette_material::LEVEL_AIRCRAFT, true) else { return };
+    commands.entity(model).insert((OwnModel, transform, Visibility::Hidden));
+    commands.entity(player).add_child(model);
+    let Some(view) = &spec.cockpit_view else { return };
+    // The cut box in model units.
+    let to_model = |p: Vec3| (spec.eye + p - Vec3::Y * spec.model_lift) / AIRCRAFT_MODEL_SCALE as f32;
+    let (lo, hi) = (to_model(view.cut.0), to_model(view.cut.1));
+    let inside = |v: Vec3| v.cmpge(lo).all() && v.cmple(hi).all();
+    let interior = commands.spawn((OwnModelInterior, transform, Visibility::Hidden)).id();
+    commands.entity(player).add_child(interior);
+    let tag = bevy::mesh::MeshTag(crate::palette_material::mesh_tag(crate::palette_material::LEVEL_AIRCRAFT, 0, true));
+    for (colour, tris) in assets.node_triangles(&file, &format!("{}_lod0", spec.model)) {
+        if view.canopy_colours.contains(&colour) {
+            continue;
+        }
+        let kept: Vec<[Vec3; 3]> = tris.into_iter().filter(|t| !t.iter().any(|&v| inside(v)) && !inside((t[0] + t[1] + t[2]) / 3.0)).collect();
+        if kept.is_empty() {
+            continue;
+        }
+        let mesh = crate::models::triangle_mesh(&kept);
+        let child = commands.spawn((MeshMaterial3d(assets.palette.material(colour)), tag.clone(), Transform::default(), Visibility::Inherited)).id();
+        commands.entity(interior).add_child(child);
+        commands.queue(move |world: &mut World| {
+            let h = world.resource_mut::<Assets<Mesh>>().add(mesh);
+            if let Ok(mut e) = world.get_entity_mut(child) {
+                e.insert(Mesh3d(h));
+            }
+        });
     }
 }
 
-/// The own model shows in the external views, and from the cockpit of aircraft without a
-/// cockpit shell of their own (without its canopy, which would hide the view).
+/// The own model shows in the external views; from the cockpit, its cockpit view if the
+/// aircraft has one.
 fn own_model_visibility(
     view: Res<ViewState>,
-    settings: Res<crate::settings::Settings>,
-    mut q: Query<&mut Visibility, (With<OwnModel>, Without<crate::models::MarkedPrim>)>,
-    mut canopy: Query<&mut Visibility, (With<crate::models::MarkedPrim>, Without<OwnModel>)>,
+    mut q: Query<&mut Visibility, (With<OwnModel>, Without<OwnModelInterior>)>,
+    mut interior: Query<&mut Visibility, (With<OwnModelInterior>, Without<OwnModel>)>,
 ) {
     let external = !matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
-    let shown = external || settings.aircraft.spec().exterior_in_cockpit;
+    let vis = |on: bool| if on { Visibility::Inherited } else { Visibility::Hidden };
     for mut v in &mut q {
-        v.set_if_neq(if shown { Visibility::Inherited } else { Visibility::Hidden });
+        v.set_if_neq(vis(external));
     }
-    for mut v in &mut canopy {
-        v.set_if_neq(if external { Visibility::Inherited } else { Visibility::Hidden });
+    for mut v in &mut interior {
+        v.set_if_neq(vis(!external));
     }
 }

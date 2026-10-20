@@ -95,10 +95,6 @@ pub struct LodShown {
 #[derive(Component)]
 pub struct LodMesh(pub Entity);
 
-/// A primitive picked out by `ModelAssets::spawn_marked` (the own aircraft's canopy).
-#[derive(Component)]
-pub struct MarkedPrim;
-
 /// Convex hull of a detail level from the original's plane list (Q14 normal, 32-bit d, model
 /// units): a point is inside when `n·p + d < 0` for every plane.
 #[derive(Component)]
@@ -346,11 +342,6 @@ impl ModelAssets<'_> {
     /// file. `level` is the unit level for distance haze (`palette_material::mesh_tag`).
     /// Returns `None` if the file is not loaded yet or the model does not exist.
     pub fn spawn(&self, commands: &mut Commands, file: &Handle<Gltf>, name: &str, level: u32, no_fog: bool) -> Option<Entity> {
-        self.spawn_marked(commands, file, name, level, no_fog, &[])
-    }
-
-    /// `spawn`, tagging the primitives drawn in the palette colours `mark` with `MarkedPrim`.
-    pub fn spawn_marked(&self, commands: &mut Commands, file: &Handle<Gltf>, name: &str, level: u32, no_fog: bool, mark: &[u8]) -> Option<Entity> {
         let g = self.gltfs.get(file)?;
         let node = g.named_nodes.get(name)?;
         let material_names: HashMap<AssetId<GltfMaterial>, &str> =
@@ -364,11 +355,10 @@ impl ModelAssets<'_> {
             .unwrap_or(0) as u32;
         let tag = MeshTag(mesh_tag(level, attr & 7, no_fog));
         let root = commands.spawn((ModelState::default(), CameraDistance::default(), ModelInfo { attr: attr as u8 })).id();
-        self.spawn_node(commands, node, &material_names, root, Some(root), None, tag, mark);
+        self.spawn_node(commands, node, &material_names, root, Some(root), None, tag);
         Some(root)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn spawn_node(
         &self,
         commands: &mut Commands,
@@ -378,7 +368,6 @@ impl ModelAssets<'_> {
         reuse: Option<Entity>,
         mut lod: Option<Entity>,
         tag: MeshTag,
-        mark: &[u8],
     ) -> Entity {
         let node = self.nodes.get(handle).expect("glTF node loaded with its file");
         let entity = match reuse {
@@ -474,9 +463,6 @@ impl ModelAssets<'_> {
                     if flat {
                         commands.entity(child).insert(bevy::light::NotShadowCaster);
                     }
-                    if prim_color.is_some_and(|c| mark.contains(&c)) {
-                        commands.entity(child).insert(MarkedPrim);
-                    }
                     if let Some(l) = lod {
                         commands.entity(child).insert((LodMesh(l), bevy::camera::visibility::RenderLayers::layer(0)));
                     }
@@ -485,35 +471,38 @@ impl ModelAssets<'_> {
             }
         }
         for c in &node.children {
-            let child = self.spawn_node(commands, c, material_names, root, None, lod, tag.clone(), mark);
+            let child = self.spawn_node(commands, c, material_names, root, None, lod, tag.clone());
             commands.entity(entity).add_child(child);
         }
         entity
     }
 
-    /// The triangles of a model node's own meshes (not its children's) flattened onto its
-    /// ground plane (y = 0), as one mesh (positions only, like the model files).
-    pub fn flattened(&self, file: &Handle<Gltf>, name: &str) -> Option<Mesh> {
-        let g = self.gltfs.get(file)?;
-        let node = self.nodes.get(g.named_nodes.get(name)?)?;
-        let mesh = self.meshes.get(node.mesh.as_ref()?)?;
-        let (mut pos, mut idx) = (Vec::<[f32; 3]>::new(), Vec::<u32>::new());
+    /// The triangles of a model node's own meshes (not its children's), by palette colour
+    /// (model units).
+    pub fn node_triangles(&self, file: &Handle<Gltf>, name: &str) -> Vec<(u8, Vec<[Vec3; 3]>)> {
+        let Some(g) = self.gltfs.get(file) else { return vec![] };
+        let Some(node) = g.named_nodes.get(name).and_then(|n| self.nodes.get(n)) else { return vec![] };
+        let Some(mesh) = node.mesh.as_ref().and_then(|m| self.meshes.get(m)) else { return vec![] };
+        let names: HashMap<AssetId<GltfMaterial>, &str> = g.named_materials.iter().map(|(n, h)| (h.id(), n.as_ref())).collect();
+        let mut out = Vec::new();
         for prim in &mesh.primitives {
             let Some(m) = self.mesh_data.get(&prim.mesh) else { continue };
-            let base = pos.len() as u32;
-            pos.extend(self.positions(&prim.mesh).iter().map(|p| [p.x, 0.0, p.z]));
-            match m.indices() {
-                Some(i) => idx.extend(i.iter().map(|i| base + i as u32)),
-                None => idx.extend(base..pos.len() as u32),
-            }
+            let colour = prim.material.as_ref().and_then(|m| names.get(&m.id())).and_then(|n| index_from_name(n)).unwrap_or(15);
+            let p = self.positions(&prim.mesh);
+            let idx: Vec<usize> = match m.indices() {
+                Some(i) => i.iter().collect(),
+                None => (0..p.len()).collect(),
+            };
+            let tris = idx.as_chunks::<3>().0.iter().filter_map(|t| Some([*p.get(t[0])?, *p.get(t[1])?, *p.get(t[2])?])).collect();
+            out.push((colour, tris));
         }
-        if idx.is_empty() {
-            return None;
-        }
-        let mut out = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::RENDER_WORLD);
-        out.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
-        out.insert_indices(bevy::mesh::Indices::U32(idx));
-        Some(out)
+        out
+    }
+
+    /// A model node's triangles flattened onto its ground plane (y = 0), as one mesh.
+    pub fn flattened(&self, file: &Handle<Gltf>, name: &str) -> Option<Mesh> {
+        let tris: Vec<[Vec3; 3]> = self.node_triangles(file, name).into_iter().flat_map(|(_, t)| t).map(|t| t.map(|v| Vec3::new(v.x, 0.0, v.z))).collect();
+        (!tris.is_empty()).then(|| triangle_mesh(&tris))
     }
 
     fn positions(&self, mesh: &Handle<Mesh>) -> Vec<Vec3> {
@@ -544,6 +533,14 @@ impl ModelAssets<'_> {
         let metres = (hi - lo) * (stealth_formats::terrain::LEVEL_UNIT[(level as usize).min(4)] * crate::world::WU) as f32;
         (false, metres.x.max(metres.z) < WARM_MAX_SIZE && metres.y < WARM_MAX_HEIGHT)
     }
+}
+
+/// A mesh of separate triangles (positions only, like the model files).
+pub fn triangle_mesh(tris: &[[Vec3; 3]]) -> Mesh {
+    let pos: Vec<[f32; 3]> = tris.iter().flatten().map(|v| v.to_array()).collect();
+    let mut m = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::RENDER_WORLD);
+    m.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
+    m
 }
 
 #[cfg(test)]

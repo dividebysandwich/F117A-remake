@@ -118,6 +118,11 @@ impl Settings {
         self.aircraft.spec().cockpit(self.classic_cockpit)
     }
 
+    /// The MFDs are the high-resolution ones (every cockpit but the classic one).
+    pub fn hires_displays(&self) -> bool {
+        self.cockpit().0 != crate::cockpit3d::layout::PanelStyle::Classic
+    }
+
     /// Scale of the VR rig (head and hand offsets) for the chosen cockpit size.
     pub fn vr_rig_scale(&self) -> f32 {
         self.vr_cockpit_scale * VR_COCKPIT_SCALE_BASE

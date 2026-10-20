@@ -31,7 +31,7 @@ impl Plugin for TrackCamPlugin {
 
 /// Render scale over the original MFD pixels (77x60).
 fn scale(settings: &crate::settings::Settings) -> u32 {
-    if settings.classic_cockpit { 2 } else { 6 }
+    if settings.hires_displays() { 6 } else { 2 }
 }
 /// Photo lens depression below the nose (0x6EF BAM).
 const LENS_DEPRESSION: f32 = 0x6EF as f32;

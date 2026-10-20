@@ -612,6 +612,7 @@ struct Outputs<'w, 's> {
     view: Res<'w, ViewState>,
     accel: Res<'w, TimeAccel>,
     settings: Res<'w, crate::settings::Settings>,
+    emitters: ResMut<'w, crate::rwr::Emitters>,
 }
 
 /// Map units -> world units (east, north).
@@ -629,8 +630,7 @@ pub fn unit_position(prev: Option<&FlightUnit>, u: &FlightUnit, alpha: f32) -> (
 }
 
 /// Projects a world point (wu east, north, viewZ) seen from the eye point (aircraft frame) into
-/// the 320x200 cockpit screen (f = 256,
-/// vertical 0.75 f, centre (159, 52)); None behind the eye.
+/// the 320x200 cockpit screen (f = 256, vertical 0.75 f, centre (159, 52)); None behind the eye.
 pub fn project_cockpit(a: &Aircraft, pos: &WorldPos, eye: Vec3, east: f64, north: f64, alt: f64) -> Option<(i32, i32)> {
     let eye = pos.0 + (a.orientation * eye).as_dvec3();
     let d: DVec3 = wu_to_bevy(east, north, alt) - eye;
@@ -673,7 +673,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     let waypoint_changed = o.waypoint != combat.sim_waypoint;
     combat.sim_waypoint = o.waypoint;
     let combat = &*combat;
-    let Outputs { mut player, mut stores, mut wps, mut msgs, mut clock, mut emv, mut warnings, mut cm, mut contacts, mut cam, mut cues, hud, view, accel, settings } = out;
+    let Outputs { mut player, mut stores, mut wps, mut msgs, mut clock, mut emv, mut warnings, mut cm, mut contacts, mut cam, mut cues, hud, view, accel, settings, mut emitters } = out;
     let eye = settings.aircraft.spec().eye;
     let sim = &combat.sim;
     let data = &combat.data;
@@ -793,6 +793,18 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             contacts.list.push(Contact { kind: ContactKind::GroundRadar, east, north, alt: 0.0, heading: 0, friendly: false });
         }
     }
+    let heading_bam = to_bam(a.euler().0);
+    emitters.list = sim
+        .emitters()
+        .iter()
+        .map(|e| {
+            let name = match e.source {
+                stealth_sim::EmitterSource::Site(_) => sim.threat_name(e.radar_type).to_string(),
+                stealth_sim::EmitterSource::Aircraft(i) => sim.aircraft_name(sim.flights()[i].spec),
+            };
+            crate::rwr::view(e, &name, heading_bam)
+        })
+        .collect();
     let done = [o.primary_done, o.secondary_done];
     for (k, t) in sim.target_slots().iter().enumerate() {
         if done[k] || !(1..=3).contains(&t.mission_type) {

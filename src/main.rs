@@ -33,6 +33,7 @@ mod panel;
 mod planner;
 mod player;
 mod prefs;
+mod rwr;
 mod scenery;
 mod script;
 mod settings;

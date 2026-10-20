@@ -24,6 +24,8 @@ const GLOW_NITS: f32 = 1.0;
 /// Instrument atlas texels per panel pixel (down; see `texels`), classic and modern panel.
 pub(super) const TEXELS: i32 = 3;
 const MODERN_TEXELS: i32 = 4;
+/// Instrument atlas texels per millimetre on the F-16 panel.
+const F16_TEXELS: i32 = 3;
 /// Largest label text scale (atlas texels per font pixel), so the labels match in size.
 const TEXT_SCALE: i32 = 3;
 /// Instrument atlas size (texels).
@@ -43,6 +45,8 @@ pub(super) enum CanvasRole {
     Adi,
     Hud,
     Approach,
+    Rwr,
+    Hsi,
 }
 
 /// A face in the instrument atlas.
@@ -64,8 +68,9 @@ pub(super) struct InstrumentAtlas {
     texels: i32,
 }
 
+/// The tracking camera picture behind an MFD screen.
 #[derive(Component)]
-pub(super) struct TrackCamScreen;
+pub(super) struct TrackCamScreen(pub MfdSide);
 
 /// Packs rectangles into the atlas in rows.
 fn pack(sizes: &[(i32, i32)]) -> Vec<[i32; 4]> {
@@ -143,10 +148,9 @@ pub(super) fn panel_materials(
     commands.entity(root).add_child(e);
 
     // Instrument atlas: every lamp, readout, label and bezel button face.
-    let modern = layout.style == PanelStyle::Modern;
     let faces = atlas_faces(layout);
-    let k = if modern { MODERN_TEXELS } else { TEXELS };
-    let slots = pack(&faces.iter().map(|(_, r)| texels(r, k, modern)).collect::<Vec<_>>());
+    let (k, square) = atlas_scale(layout.style);
+    let slots = pack(&faces.iter().map(|(_, r)| texels(r, k, square)).collect::<Vec<_>>());
     let uv = |s: &[i32; 4]| {
         let n = ATLAS as f32;
         (Vec2::new(s[0] as f32 / n, s[1] as f32 / n), Vec2::new((s[0] + s[2]) as f32 / n, (s[1] + s[3]) as f32 / n))
@@ -172,9 +176,19 @@ pub(super) fn panel_materials(
     PanelMaterials { solid, atlas, faces }
 }
 
+/// Atlas texels per layout unit, and whether a face's texels are made square on the F-117's
+/// panel plane (the F-16's millimetres are square already).
+fn atlas_scale(style: PanelStyle) -> (i32, bool) {
+    match style {
+        PanelStyle::Classic => (TEXELS, false),
+        PanelStyle::Modern => (MODERN_TEXELS, true),
+        PanelStyle::F16 => (F16_TEXELS, false),
+    }
+}
+
 /// The faces of the instrument atlas and their panel rectangles.
 pub(super) fn atlas_faces(layout: &PanelLayout) -> Vec<(Face, PxRect)> {
-    let modern = layout.style == PanelStyle::Modern;
+    let modern = layout.style != PanelStyle::Classic;
     let face_of = |p: &Placed| match p.elem {
         Elem::Lamp(id, label) if modern && p.cap.is_some() => Face::Button(id, label),
         Elem::Gauge if modern => Face::LedBars,
@@ -187,13 +201,18 @@ pub(super) fn atlas_faces(layout: &PanelLayout) -> Vec<(Face, PxRect)> {
     faces
 }
 
-/// A self-luminous screen: an MFD (`Left` / `Right`), the attitude ball or the approach
-/// indexer, with its canvas.
+/// A self-luminous screen: an MFD (`Left` / `Right`), the attitude ball, the RWR scope, the HSI
+/// or the approach indexer, with its canvas.
 pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, materials: &mut Assets<StandardMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<StandardMaterial>) {
     let (size, transparent) = match role {
         CanvasRole::Left | CanvasRole::Right => (if layout.style == PanelStyle::Classic { CLASSIC } else { HIRES }, false),
-        CanvasRole::Adi => {
-            let n = (layout.adi.w * TEXELS as f32) as usize;
+        CanvasRole::Adi | CanvasRole::Rwr | CanvasRole::Hsi => {
+            let r = match role {
+                CanvasRole::Rwr => layout.rwr,
+                CanvasRole::Hsi => layout.hsi,
+                _ => Some(layout.adi),
+            };
+            let n = (r.map_or(90.0, |r| r.w) * TEXELS as f32) as usize;
             ((n, n), true)
         }
         _ => ((10, 21), true),
@@ -294,14 +313,15 @@ pub(super) fn update_displays(
     roles: Query<(Entity, &CanvasRole)>,
     mut texes: Query<&mut CanvasTexture>,
     atlas: Query<&InstrumentAtlas>,
-    mut tc: Query<&mut Visibility, With<TrackCamScreen>>,
+    mut tc: Query<(&TrackCamScreen, &mut Visibility)>,
 ) {
     let find = |r: CanvasRole| roles.iter().find(|(_, x)| **x == r).map(|(e, _)| e);
     let see_through = d.mfd.camera_see_through();
-    for mut v in &mut tc {
-        v.set_if_neq(if see_through { Visibility::Inherited } else { Visibility::Hidden });
+    for (screen, mut v) in &mut tc {
+        let shown = see_through && screen.0 == MfdSide::Right;
+        v.set_if_neq(if shown { Visibility::Inherited } else { Visibility::Hidden });
     }
-    for role in [CanvasRole::Left, CanvasRole::Right, CanvasRole::Adi, CanvasRole::Hud, CanvasRole::Approach] {
+    for role in [CanvasRole::Left, CanvasRole::Right, CanvasRole::Adi, CanvasRole::Hud, CanvasRole::Approach, CanvasRole::Rwr, CanvasRole::Hsi] {
         let Some(mut tex) = find(role).and_then(|e| texes.get_mut(e).ok()) else { continue };
         let tex = tex.as_mut();
         tex.canvas.reset_clip();
@@ -312,6 +332,8 @@ pub(super) fn update_displays(
                 d.mfd.draw_right(&mut tex.canvas, &art, &fonts);
             }
             CanvasRole::Adi => d.panel.draw_adi(&mut tex.canvas),
+            CanvasRole::Rwr => d.panel.draw_rwr(&mut tex.canvas),
+            CanvasRole::Hsi => d.panel.draw_hsi(&mut tex.canvas),
             CanvasRole::Hud => {
                 tex.canvas.px.fill(0);
                 if let Some(frame) = d.hud.frame(d.mfd.state.right == crate::mfd::RightMfd::Camera) {
@@ -391,4 +413,21 @@ pub(super) fn update_displays(
     }
     a.dirty = true;
     g.dirty = true;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every layout's faces fit the instrument atlas (`pack` asserts).
+    #[test]
+    fn atlas_fits() {
+        for style in [PanelStyle::Classic, PanelStyle::Modern, PanelStyle::F16] {
+            let layout = PanelLayout::for_style(style);
+            let (k, square) = atlas_scale(style);
+            let slots = pack(&atlas_faces(&layout).iter().map(|(_, r)| texels(r, k, square)).collect::<Vec<_>>());
+            let used = slots.iter().map(|s| s[1] + s[3]).max().unwrap_or(0);
+            println!("{style:?}: {} faces, atlas rows used {used}/{ATLAS}", slots.len());
+        }
+    }
 }

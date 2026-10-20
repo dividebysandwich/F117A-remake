@@ -41,6 +41,7 @@ impl Plugin for MfdPlugin {
             .init_resource::<MissionOrders>()
             .init_resource::<TrackCam>()
             .init_resource::<Contacts>()
+            .init_resource::<crate::rwr::Emitters>()
             .init_resource::<MissionClock>()
             .init_resource::<MapRaster>()
             .add_message::<MfdCommand>()
@@ -344,7 +345,7 @@ impl Default for MissionClock {
 }
 
 fn reset_mfd(mut state: ResMut<MfdState>, mut raster: ResMut<MapRaster>, settings: Res<crate::settings::Settings>) {
-    *state = MfdState { hires: !settings.classic_cockpit, ..default() };
+    *state = MfdState { hires: settings.hires_displays(), ..default() };
     raster.invalidate();
     raster.geometry_theater.clear();
 }
@@ -356,8 +357,8 @@ fn mfd_keys(
     mut raster: ResMut<MapRaster>,
     settings: Res<crate::settings::Settings>,
 ) {
-    if state.hires == settings.classic_cockpit {
-        state.hires = !settings.classic_cockpit;
+    if state.hires != settings.hires_displays() {
+        state.hires = settings.hires_displays();
         state.map_zoom = state.map_zoom.min(state.max_map_zoom());
         raster.invalidate();
     }

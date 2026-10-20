@@ -24,6 +24,16 @@ pub enum Shadow {
     Flattened,
 }
 
+/// The exterior model drawn from the cockpit: without its canopy glass, and without the parts
+/// reaching into the cockpit.
+pub struct CockpitView {
+    /// Palette colours of the canopy glass.
+    pub canopy_colours: &'static [u8],
+    /// Box around the eye (aircraft frame, metres from the eye point, -Z forward): triangles
+    /// with a corner or their centre inside are left out.
+    pub cut: (Vec3, Vec3),
+}
+
 pub struct AircraftSpec {
     /// STFLT model node of the exterior.
     pub model: &'static str,
@@ -31,11 +41,9 @@ pub struct AircraftSpec {
     pub model_lift: f32,
     /// Design eye point in the aircraft frame (-Z forward, +Y up), m.
     pub eye: Vec3,
-    /// The exterior model is also drawn from the cockpit (the F-117A's cockpit model has its own
-    /// canopy frame, the others look out over their nose and wings).
-    pub exterior_in_cockpit: bool,
-    /// Palette colours of the canopy glass in the exterior model, hidden in the cockpit views.
-    pub canopy_colours: &'static [u8],
+    /// The exterior model as seen from the cockpit (the F-117A's cockpit model has its own canopy
+    /// frame and shows none, the others look out over their nose and wings).
+    pub cockpit_view: Option<CockpitView>,
     /// Cockpit models (glb stem under `models/`): one, or the modern and the classic one.
     pub cockpits: &'static [(PanelStyle, &'static str)],
     pub shadow: Shadow,
@@ -71,8 +79,7 @@ static F117: AircraftSpec = AircraftSpec {
     model: "stflt_024",
     model_lift: F117_LIFT,
     eye: Vec3::new(0.0, 1.6, -3.0),
-    exterior_in_cockpit: false,
-    canopy_colours: &[],
+    cockpit_view: None,
     cockpits: &[(PanelStyle::Modern, "cockpit_modern"), (PanelStyle::Classic, "cockpit_classic")],
     shadow: Shadow::Model(17),
     flight: FlightConstants::default,
@@ -84,9 +91,8 @@ static F16: AircraftSpec = AircraftSpec {
     // Under the canopy bubble (x +-6, y 11..30, z -95..-40 model units), eyes a little forward
     // of its middle and level with its upper part.
     eye: model_point(F16_LIFT, 0.0, 24.0, -72.0),
-    exterior_in_cockpit: true,
-    canopy_colours: &[144, 145],
-    cockpits: &[(PanelStyle::Modern, "cockpit_modern")],
+    cockpit_view: Some(CockpitView { canopy_colours: &[144, 145], cut: (Vec3::new(-0.40, -1.15, -0.85), Vec3::new(0.40, 0.40, 0.80)) }),
+    cockpits: &[(PanelStyle::F16, "cockpit_f16")],
     shadow: Shadow::Flattened,
     flight: FlightConstants::f16,
 };
@@ -166,7 +172,7 @@ mod tests {
     #[test]
     fn f16_eye_under_the_canopy() {
         let spec = AircraftKind::F16.spec();
-        let (lo, hi) = primitive_bounds("stflt_023_lod0", spec.canopy_colours);
+        let (lo, hi) = primitive_bounds("stflt_023_lod0", spec.cockpit_view.as_ref().unwrap().canopy_colours);
         let s = AIRCRAFT_MODEL_SCALE as f32;
         let eye = (spec.eye - Vec3::Y * spec.model_lift) / s;
         assert!(eye.cmpgt(lo).all() && eye.cmplt(hi).all(), "eye {eye} outside the canopy {lo}..{hi}");

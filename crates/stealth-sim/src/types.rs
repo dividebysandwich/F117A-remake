@@ -144,6 +144,40 @@ pub struct Projectile {
     pub locked: bool,
 }
 
+/// What emits a radar signal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EmitterSource {
+    /// Ground site (object index).
+    Site(usize),
+    /// Aircraft (flight unit index).
+    Aircraft(usize),
+}
+
+/// A radar painting the player, for a radar warning receiver (not in the original).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Emitter {
+    pub source: EmitterSource,
+    /// Map position (y south) and altitude (viewZ; 0 for sites).
+    pub x: i32,
+    pub y: i32,
+    pub alt: i32,
+    /// Radar type (threat table index).
+    pub radar_type: i32,
+    /// Range (km, map >> 6) and bearing from the player (BAM, north = 0).
+    pub range: i32,
+    pub bearing: i32,
+    /// Its missile's lock range (km).
+    pub lock_range: i32,
+    /// Detected the player (site: PAINTED; aircraft: radar contact).
+    pub painted: bool,
+    /// Tracking the player (site: TRACKING or alert past 0xC0; aircraft: radar track past 0xC0).
+    pub tracking: bool,
+    /// One of its missiles is in the air.
+    pub launch: bool,
+    /// Higher = more dangerous.
+    pub priority: i32,
+}
+
 /// Gun round; x == 0 is a free slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Bullet {

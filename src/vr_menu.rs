@@ -54,6 +54,15 @@ struct PointerState {
     scroll: f32,
 }
 
+/// Trigger travel that presses and releases the pointer (with hysteresis, so a trigger resting
+/// near one threshold doesn't chatter).
+const TRIGGER_PRESS: f32 = 0.6;
+const TRIGGER_RELEASE: f32 = 0.35;
+/// The pointer stays where the trigger was pressed until the aim moves this far (pixels):
+/// squeezing the trigger turns the controller a little, which egui would take for a drag and
+/// not count as a click. Beyond it the pointer follows again (dragging a slider).
+const PRESS_HOLD: f32 = 45.0;
+
 /// Spawns the menu's egui context drawing into an image, the panel showing it in the headset
 /// and the desktop mirror; every entity gets `tag` (despawned with the menu camera).
 pub fn spawn(commands: &mut Commands, images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, root: Option<Entity>, tag: impl Bundle + Clone) {
@@ -161,7 +170,7 @@ fn pointer(
     let hit = (ld.z.abs() > 1e-6).then(|| -lo.z / ld.z).filter(|t| *t > 0.0).map(|t| (t, lo + ld * t));
     let on_panel = hit.filter(|(_, p)| p.x.abs() <= PANEL.x / 2.0 && p.y.abs() <= PANEL.y / 2.0);
     state.pos = on_panel.map(|(_, p)| egui::pos2((p.x / PANEL.x + 0.5) * W as f32, (0.5 - p.y / PANEL.y) * H as f32));
-    state.pressed = hand.trigger > 0.6;
+    state.pressed = hand.trigger > if state.pressed { TRIGGER_RELEASE } else { TRIGGER_PRESS };
     state.scroll = if on_panel.is_some() { hand.thumb.y } else { 0.0 };
     let len = on_panel.map_or(3.0, |(t, _)| t);
     *ltf = Transform::from_translation(o + d * len / 2.0).looking_to(d, Vec3::Y).with_scale(Vec3::new(1.0, 1.0, len));
@@ -169,11 +178,35 @@ fn pointer(
 }
 
 /// The pointer into the menu's egui input: moves, trigger presses and releases, scrolling.
-fn feed_egui(mut state: ResMut<PointerState>, mut input: Query<&mut EguiInput, With<PrimaryEguiContext>>, mut down: Local<bool>, mut last: Local<Option<egui::Pos2>>, time: Res<Time>) {
+#[allow(clippy::too_many_arguments)]
+fn feed_egui(
+    mut state: ResMut<PointerState>,
+    mut input: Query<&mut EguiInput, With<PrimaryEguiContext>>,
+    mut ctx: Query<&mut bevy_egui::EguiContext, With<PrimaryEguiContext>>,
+    mut down: Local<bool>,
+    mut last: Local<Option<egui::Pos2>>,
+    mut anchor: Local<Option<egui::Pos2>>,
+    time: Res<Time>,
+) {
     let Ok(mut input) = input.single_mut() else { return };
+    if let Ok(mut ctx) = ctx.single_mut() {
+        // A pointing hand is less steady than a mouse.
+        ctx.get_mut().options_mut(|o| {
+            o.input_options.max_click_dist = 12.0;
+            o.input_options.max_click_duration = 2.0;
+        });
+    }
     let ev = &mut input.0.events;
     let modifiers = egui::Modifiers::default();
-    match state.pos {
+    // Held at the press point (also for the release) until the aim moves PRESS_HOLD away.
+    let pos = match (state.pos, *anchor) {
+        (Some(p), Some(a)) if p.distance(a) < PRESS_HOLD => Some(a),
+        (p, _) => {
+            *anchor = None;
+            p
+        }
+    };
+    match pos {
         Some(pos) => {
             if *last != Some(pos) {
                 ev.push(egui::Event::PointerMoved(pos));
@@ -181,6 +214,7 @@ fn feed_egui(mut state: ResMut<PointerState>, mut input: Query<&mut EguiInput, W
             if state.pressed != *down {
                 ev.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: state.pressed, modifiers });
                 *down = state.pressed;
+                *anchor = state.pressed.then_some(pos);
             }
             if state.scroll.abs() > 0.2 {
                 let delta = egui::vec2(0.0, state.scroll * 900.0 * time.delta_secs());
@@ -197,6 +231,6 @@ fn feed_egui(mut state: ResMut<PointerState>, mut input: Query<&mut EguiInput, W
             }
         }
     }
-    *last = state.pos;
+    *last = pos;
     state.scroll = 0.0;
 }

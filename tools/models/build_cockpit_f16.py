@@ -36,9 +36,15 @@ WALL_X = 0.37
 # The panel's wings turn towards the pilot from the centre column's edges.
 HINGE = 75.0
 WING_ANGLE = math.radians(25.0)
-# The up-front controls stand out of the centre column (layout y < ICP_BOTTOM).
+# The centre column stands out of the panel, the up-front controls (layout y < ICP_BOTTOM)
+# further.
 ICP_BOTTOM = -80.0
-ICP_DEPTH = 0.04
+ICP_DEPTH = 0.08
+CENTRE_DEPTH = 0.045
+# The wings' upper outer corners are bevelled (layout mm along the top and down the side).
+BEVEL = 55.0
+# The MFDs sit back in wells: their bezels this far behind the panel surface (m).
+MFD_WELL = 0.022
 # Eyebrows: upright light boxes on the glare shield either side of the HUD (layout |x| >= 318).
 EYEBROW = 318.0
 EYEBROW_X = 0.235
@@ -72,15 +78,16 @@ def basis(sec):
     return RIGHT, normal, up
 
 
-def point(u, v, offset=0.0):
-    """A panel point: layout millimetres (u right, v down), raised `offset` m off its surface."""
+def point(u, v, offset=0.0, plane=False):
+    """A panel point: layout millimetres (u right, v down), raised `offset` m off its surface (the
+    panel plane with `plane`, not the centre column's raised face)."""
     sec = section(u)
     d, n, up = basis(sec)
     s = math.copysign(1, u)
     if sec == 0:
         p = PANEL_CENTRE + RIGHT * (u / 1000) - UP * (v / 1000)
-        if v < ICP_BOTTOM:
-            p += NORMAL * ICP_DEPTH
+        if not plane:
+            p += NORMAL * (ICP_DEPTH if v < ICP_BOTTOM else CENTRE_DEPTH)
     elif abs(sec) == 1:
         hinge = PANEL_CENTRE + RIGHT * (s * HINGE / 1000) - UP * (v / 1000)
         p = hinge + d * ((u - s * HINGE) / 1000)
@@ -237,6 +244,50 @@ def screen(mat, r, offset, behind=None):
         mesh_object(behind, quad_mesh(behind, w / 1000, h / 1000, behind), rect_point(r, offset - 0.003), rot, props={"no_shadow": True})
 
 
+def plate(name, mat, pieces, depth):
+    """A panel plate `depth` m thick behind the panel plane, from convex outlines (layout mm, one
+    section) that together make its shape."""
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    n = basis(section(pieces[0][0][0]))[1]
+    for loop in pieces:
+        front = [bm.verts.new(point(u, v, 0.0, True)) for u, v in loop]
+        back = [bm.verts.new(point(u, v, 0.0, True) - n * depth) for u, v in loop]
+        bm.faces.new(front)
+        bm.faces.new(back[::-1])
+        for i in range(len(loop)):
+            j = (i + 1) % len(loop)
+            bm.faces.new((front[i], back[i], back[j], front[j]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(mats[mat])
+    return mesh_object(name, me, (0, 0, 0))
+
+
+def plane_box(name, mat, r, d0, d1):
+    """A box over the rectangle r (layout mm) from d0 to d1 m off the panel plane."""
+    x, y, w, h = r
+    c = point(x + w / 2, y + h / 2, (d0 + d1) / 2, True)
+    return box(name, mat, c, (w / 1000, abs(d1 - d0), h / 1000), rotation(x + w / 2))
+
+
+def hood(a, b, offset=0.0):
+    """A glare shield hood along the panel's top edge from layout point a to b, reaching back
+    over the panel and sloping down a little."""
+    p0, p1 = point(*a, offset), point(*b, offset)
+    x = (p1 - p0).normalized()
+    n = basis(section((a[0] + b[0]) / 2))[1]
+    y = (-n - x * (-n).dot(x)).normalized()
+    y = (Matrix.Rotation(math.radians(-8.0), 3, x) @ y).normalized()
+    z = x.cross(y)
+    if z.z < 0:
+        x, z = -x, -z
+    m = Matrix((x, y, z)).transposed()
+    c = (p0 + p1) / 2 + y * 0.14 + z * 0.008
+    mesh_object("black", box_mesh("black", ((p1 - p0).length + 0.012, 0.30, 0.016), "black"), c, m.to_quaternion())
+
+
 # --- tub, consoles, glare shield
 box("panel_grey", "panel_grey", (0.0, 0.05, -1.0), (2 * WALL_X, 1.4, 0.02))  # floor
 for s in (-1, 1):
@@ -246,26 +297,40 @@ for s in (-1, 1):
     box("panel_grey", "panel_grey", (cx, 0.12, (CONSOLE_TOP - 1.0) / 2), (CONSOLE_X[1] - CONSOLE_X[0], 0.86, 1.0 + CONSOLE_TOP))
     box("dark", "dark", (cx, 0.12, CONSOLE_TOP + 0.002), (CONSOLE_X[1] - CONSOLE_X[0] - 0.01, 0.84, 0.004))
 box("panel_grey", "panel_grey", (0.0, -0.68, -0.55), (2 * WALL_X, 0.03, 0.9))  # rear bulkhead
-# Panel: the centre column and the wings (their faces on the panel surfaces), the knee well.
-for r in ((-HINGE, TOP, 2 * HINGE, 270.0), (-305.0, TOP, 305.0 - HINGE, 260.0), (HINGE, TOP, 305.0 - HINGE, 260.0)):
-    panel_box("panel_grey", "panel_grey", r, 0.03, 0.0, -0.03)
-low = point(0, 112)
+# Panel: the wings (bevelled upper outer corners, wells for the MFDs), the centre column and
+# the up-front controls' pedestal standing out of it, the knee well under it.
+scr = layout["screens"]
+wells = {}
+for key in ("left", "right"):
+    x, y, w, h = scr[key]
+    wells[key] = (x - 19.0, y - 25.0, w + 38.0, h + 50.0)
+for s_, key in ((-1, "left"), (1, "right")):
+    x, y, w, h = wells[key]
+    # In the right wing's terms (the left one mirrored): above, below, inside and outside the well.
+    x0, x1 = (x, x + w) if s_ > 0 else (-(x + w), -x)
+    y0, y1 = y, y + h
+    pieces = [
+        [(HINGE, TOP), (305.0 - BEVEL, TOP), (305.0, TOP + BEVEL), (305.0, y0), (HINGE, y0)],
+        [(HINGE, y1), (305.0, y1), (305.0, 100.0), (HINGE, 100.0)],
+        [(HINGE, y0), (x0, y0), (x0, y1), (HINGE, y1)],
+        [(x1, y0), (305.0, y0), (305.0, y1), (x1, y1)],
+    ]
+    plate("panel_grey", "panel_grey", [[(s_ * u, v) for u, v in piece] for piece in pieces], 0.03)
+    hood((s_ * HINGE, TOP), (s_ * (305.0 - BEVEL), TOP))
+    hood((s_ * (305.0 - BEVEL), TOP), (s_ * 305.0, TOP + BEVEL))
+plane_box("panel_grey", "panel_grey", (-HINGE, ICP_BOTTOM, 2 * HINGE, 112.0 - ICP_BOTTOM), -0.03, CENTRE_DEPTH)
+plane_box("dark", "dark", (-HINGE, TOP, 2 * HINGE, ICP_BOTTOM - TOP), -0.03, ICP_DEPTH)
+hood((-HINGE, TOP), (HINGE, TOP), ICP_DEPTH)
+low = point(0, 112, 0.0, True)
 box("panel_grey", "panel_grey", (0.0, low.y + 0.08, (low.z - 1.0) / 2), (0.62, 0.02, 1.0 + low.z))
-# Up-front controls' pedestal, the hood over the attitude indicator and HSI.
-panel_box("dark", "dark", (-HINGE, TOP, 2 * HINGE, ICP_BOTTOM - TOP - 2.0), ICP_DEPTH + 0.03, 0.0, -0.03 - ICP_DEPTH)
+# Shroud over the attitude indicator and HSI: a lid sloping down towards the pilot, bevelled
+# cheeks either side.
 d, n, up = basis(0)
-lid = Matrix((d, -n, up)).transposed() @ Matrix.Rotation(math.radians(15.0), 3, "X")
-mesh_object("black", box_mesh("black", (2 * HINGE / 1000 + 0.01, 0.06, 0.008), "black"), point(0.0, -72.0, 0.03), lid.to_quaternion())
-# Glare shield: hoods over the wings and the pedestal, sloping down and away.
-for (u0, u1) in ((-305.0, -HINGE), (HINGE, 305.0), (-HINGE, HINGE)):
-    um = (u0 + u1) / 2
-    d, n, up = basis(section(um))
-    depth = ICP_DEPTH if section(um) == 0 else 0.0
-    edge = point(um, TOP, depth)
-    w = abs(u1 - u0) / 1000 + 0.01
-    m = Matrix((d, -n, up)).transposed() @ Matrix.Rotation(math.radians(-8.0), 3, "X")
-    c = edge + m @ Vector((0.0, 0.14, 0.008))
-    mesh_object("black", box_mesh("black", (w, 0.30, 0.016), "black"), c, m.to_quaternion())
+lid = Matrix((d, -n, up)).transposed() @ Matrix.Rotation(math.radians(18.0), 3, "X")
+mesh_object("black", box_mesh("black", (2 * HINGE / 1000 + 0.012, 0.075, 0.008), "black"), point(0.0, -74.0, 0.03), lid.to_quaternion())
+for s_ in (-1, 1):
+    cheek = Matrix((d, -n, up)).transposed() @ Matrix.Rotation(math.radians(s_ * 35.0), 3, "Z")
+    mesh_object("black", box_mesh("black", (0.008, 0.06, 0.07), "black"), point(s_ * (HINGE + 2.0), -40.0, 0.02), cheek.to_quaternion())
 # Eyebrows: light boxes on the glare shield either side of the HUD.
 for s in (-1, 1):
     r = (s * 360.0 - 38.0, -252.0, 76.0, 96.0)
@@ -287,7 +352,6 @@ for k in range(9):
 
 # --- panel plates, instrument bezels, faces and displays
 PLATE = 0.004
-scr = layout["screens"]
 plates = [
     (-72.0, -156.0, 144.0, 72.0),  # up-front controls
     (114.0, -150.0, 84.0, 74.0),  # countermeasures
@@ -299,16 +363,17 @@ for r in plates:
 for key in ("adi", "hsi", "rwr"):
     panel_box("black", "black", scr[key], 0.012, 5.0)
 for key in ("left", "right"):
-    panel_box("black", "black", scr[key], 0.014, 0.0)
+    # The MFD in its well: the bezel's face MFD_WELL behind the panel surface.
     x, y, w, h = scr[key]
-    panel_box("dark", "dark", (x - 16.0, y - 22.0, w + 32.0, h + 44.0), 0.012)
+    panel_box("dark", "dark", (x - 16.0, y - 22.0, w + 32.0, h + 44.0), 0.008, 0.0, -0.03)
+    panel_box("black", "black", scr[key], 0.002, 0.0, -MFD_WELL)
     # Side bezel buttons (fixed: the game uses the top and bottom rows).
     for k in range(5):
         for bx in (x - 9.0, x + w + 9.0):
             by = y + h * (k + 0.5) / 5
-            panel_box("dark", "dark", (bx - 5.0, by - 4.0, 10.0, 8.0), 0.005, 0.0, 0.012)
-screen("screen_left", scr["left"], 0.0145, "trackcam_left")
-screen("screen_right", scr["right"], 0.0145, "trackcam")
+            panel_box("dark", "dark", (bx - 5.0, by - 4.0, 10.0, 8.0), 0.005, 0.0, -MFD_WELL)
+screen("screen_left", scr["left"], -MFD_WELL + 0.0035, "trackcam_left")
+screen("screen_right", scr["right"], -MFD_WELL + 0.0035, "trackcam")
 screen("adi", scr["adi"], 0.0125)
 screen("hsi", scr["hsi"], 0.0125)
 screen("screen_rwr", scr["rwr"], 0.0125)
@@ -316,7 +381,7 @@ for f in layout["faces"]:
     if f["control"] is None:
         face(f["key"], f["rect"], PLATE + 0.0005)
     elif f["kind"] == "osb":
-        control(f["key"], f["rect"], 0.012, f["control"], "osb")
+        control(f["key"], f["rect"], -MFD_WELL, f["control"], "osb")
     else:
         control(f["key"], f["rect"], PLATE, f["control"], f["kind"])
 

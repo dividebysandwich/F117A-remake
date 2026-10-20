@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use super::geometry::panel_rect;
 use super::hud_glass::HudGlassMaterial;
 use super::shading::{CockpitMaterial, cockpit_material};
-use super::layout::{Elem, PanelLayout, PanelStyle, Placed, PxRect};
+use super::layout::{DED_CANVAS, Elem, PanelLayout, PanelStyle, Placed, PxRect};
 use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit::{CockpitArt, Displays};
 use crate::font::Fonts;
@@ -25,8 +25,9 @@ const GLOW_NITS: f32 = 1.0;
 /// Instrument atlas texels per panel pixel (down; see `texels`), classic and modern panel.
 pub(super) const TEXELS: i32 = 3;
 const MODERN_TEXELS: i32 = 4;
-/// Instrument atlas texels per millimetre on the F-16 panel.
-const F16_TEXELS: i32 = 3;
+/// Instrument atlas texels per millimetre on the F-16 panel (its large round instruments
+/// would not fit the atlas at 3; 2 is still more than a VR pixel per texel at the panel).
+const F16_TEXELS: i32 = 2;
 /// Largest label text scale (atlas texels per font pixel), so the labels match in size.
 const TEXT_SCALE: i32 = 3;
 /// Instrument atlas size (texels).
@@ -48,6 +49,7 @@ pub(super) enum CanvasRole {
     Approach,
     Rwr,
     Hsi,
+    Ded,
 }
 
 /// A face in the instrument atlas.
@@ -253,14 +255,15 @@ pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materi
             let n = (r.map_or(90.0, |r| r.w) * TEXELS as f32) as usize;
             ((n, n), true)
         }
-        _ => ((10, 21), true),
+        // Only the F-16 has a data entry display.
+        CanvasRole::Ded => (if layout.ded.is_some() { DED_CANVAS } else { (8, 8) }, true),
+        _ => (crate::panel::INDEXER_CANVAS, true),
     };
     let tex = CanvasTexture::new(Canvas::new(size.0, size.1), images, transparent);
-    let glow = role != CanvasRole::Approach;
     let material = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(tex.image.clone()),
-        emissive_texture: glow.then(|| tex.image.clone()),
-        emissive: if glow { LinearRgba::rgb(GLOW_NITS, GLOW_NITS, GLOW_NITS) } else { LinearRgba::BLACK },
+        emissive_texture: Some(tex.image.clone()),
+        emissive: LinearRgba::rgb(GLOW_NITS, GLOW_NITS, GLOW_NITS),
         alpha_mode: AlphaMode::Mask(0.5),
         perceptual_roughness: 0.3,
         cull_mode: None,
@@ -357,7 +360,7 @@ pub(super) fn update_displays(
     for (screen, mut v) in &mut tc {
         v.set_if_neq(if d.mfd.camera_see_through(screen.0) { Visibility::Inherited } else { Visibility::Hidden });
     }
-    for role in [CanvasRole::Left, CanvasRole::Right, CanvasRole::Adi, CanvasRole::Hud, CanvasRole::Approach, CanvasRole::Rwr, CanvasRole::Hsi] {
+    for role in [CanvasRole::Left, CanvasRole::Right, CanvasRole::Adi, CanvasRole::Hud, CanvasRole::Approach, CanvasRole::Rwr, CanvasRole::Hsi, CanvasRole::Ded] {
         let Some(mut tex) = find(role).and_then(|e| texes.get_mut(e).ok()) else { continue };
         let tex = tex.as_mut();
         tex.canvas.reset_clip();
@@ -373,6 +376,7 @@ pub(super) fn update_displays(
             CanvasRole::Adi => d.panel.draw_adi(&mut tex.canvas),
             CanvasRole::Rwr => d.panel.draw_rwr(&mut tex.canvas),
             CanvasRole::Hsi => d.panel.draw_hsi(&mut tex.canvas),
+            CanvasRole::Ded => d.panel.draw_ded(&mut tex.canvas, &fonts),
             CanvasRole::Hud => {
                 tex.canvas.px.fill(0);
                 if let Some(frame) = d.hud.frame(d.mfd.state.camera_shown()) {
@@ -383,7 +387,7 @@ pub(super) fn update_displays(
                     }
                 }
             }
-            _ => d.panel.draw_approach(&mut tex.canvas, &art),
+            _ => d.panel.draw_approach(&mut tex.canvas),
         }
         tex.dirty = true;
     }
@@ -433,6 +437,10 @@ pub(super) fn update_displays(
                 let down = lit[LampId::Gear as usize];
                 gear_lights(c, r, down);
                 down
+            }
+            Face::Item(Elem::Dial(dial)) => {
+                crate::panel::draw_dial(c, r, dial, d.panel.dial_value(dial));
+                false
             }
             // Modern avionics: blank caps, the labels are on the display.
             Face::Osb(..) if d.mfd.state.modern => {

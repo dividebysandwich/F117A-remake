@@ -6,11 +6,11 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::canvas::Canvas;
-use crate::cockpit::CockpitArt;
 use crate::flight::{Aircraft, Player};
 use crate::font::{Fonts, upper};
 use crate::hud::{HudMode, HudState};
-use crate::mfd::{CamDir, LeftMfd, MfdState, RightMfd};
+use crate::cockpit3d::layout::Dial;
+use crate::mfd::{CamDir, LeftMfd, MfdState, MissionClock, RightMfd};
 
 pub struct PanelPlugin;
 
@@ -19,7 +19,6 @@ impl Plugin for PanelPlugin {
         app.init_resource::<Emv>()
             .init_resource::<Countermeasures>()
             .init_resource::<Warnings>()
-            .init_resource::<Approach>()
             .add_systems(OnEnter(crate::settings::AppState::Flight), reset_panel);
     }
 }
@@ -76,17 +75,14 @@ pub struct Warnings {
     pub emv_warning: bool,
 }
 
-/// Approach indexer state: 0 off, 1 top chevron, 2 circle, 3 bottom chevron.
-/// STUB: set by the ILS / landing guidance.
-#[derive(Resource, Debug, Clone, Copy, Default)]
-pub struct Approach(pub u8);
-
-fn reset_panel(mut cm: ResMut<Countermeasures>, mut emv: ResMut<Emv>, mut w: ResMut<Warnings>, mut ap: ResMut<Approach>) {
+fn reset_panel(mut cm: ResMut<Countermeasures>, mut emv: ResMut<Emv>, mut w: ResMut<Warnings>) {
     *cm = Countermeasures::default();
     *emv = Emv::default();
     *w = Warnings::default();
-    *ap = Approach::default();
 }
+
+/// The approach indexer's canvas (a 5:14 strip: chevron, circle, chevron).
+pub const INDEXER_CANVAS: (usize, usize) = (40, 112);
 
 /// Panel lamps (the original's lights). The index is the original light number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -436,11 +432,12 @@ pub struct PanelParams<'w, 's> {
     pub emv: Res<'w, Emv>,
     pub cm: Res<'w, Countermeasures>,
     pub warnings: Res<'w, Warnings>,
-    pub approach: Res<'w, Approach>,
     pub time: Res<'w, Time>,
     pub positions: Query<'w, 's, &'static crate::world::WorldPos, With<Player>>,
     pub waypoints: Res<'w, crate::hud::Waypoints>,
     pub emitters: Res<'w, crate::rwr::Emitters>,
+    pub clock: Res<'w, MissionClock>,
+    pub mission: Option<Res<'w, crate::mission::ActiveMission>>,
 }
 
 /// Fuel (lbs) below which the low-fuel light blinks.
@@ -557,18 +554,177 @@ impl PanelParams<'_, '_> {
         crate::rwr::draw_rwr(c, &self.emitters.list, crate::hud::blink(&self.time));
     }
 
-    /// The approach indexer into its own 10x21 canvas.
-    pub fn draw_approach(&self, c: &mut Canvas, art: &CockpitArt) {
-        approach_indexer(c, &art.sprites, self.approach.0, 0, 0);
+    /// Angle of attack (degrees) from the flight path in the body frame.
+    fn aoa(a: &Aircraft) -> f32 {
+        let body = a.orientation.inverse() * a.path_dir();
+        (-body.y).atan2(-body.z).to_degrees()
+    }
+
+    /// The approach indexer: the symbols lit for the angle of attack (gear up or down, as in
+    /// the F-16): the red top chevron 2 degrees or more above the approach AOA (slow), the
+    /// green circle within 2 degrees of it, the amber bottom chevron 2 degrees or more below
+    /// (fast); a chevron and the circle together in the outer degree.
+    pub fn draw_approach(&self, c: &mut Canvas) {
+        let lit = match self.aircraft.single().ok().filter(|a| !a.on_ground) {
+            Some(a) => {
+                let d = Self::aoa(a) - crate::hud::modern::APPROACH_AOA;
+                (d >= 1.0, d.abs() < 2.0, d <= -1.0)
+            }
+            None => (false, false, false),
+        };
+        approach_indexer(c, lit);
+    }
+
+    /// Distance (km) and ETA (seconds of the day) to the current waypoint at the current speed.
+    fn leg(&self, a: &Aircraft, t: f32) -> Option<(f32, f32)> {
+        let wp = self.waypoints.target()?;
+        let p = self.positions.single().ok()?;
+        let (e, n, _) = crate::world::bevy_to_wu(p.0);
+        let km = ((wp.east - e).hypot(wp.north - n) * crate::world::WU / 1000.0) as f32;
+        let ms = a.knots() * 0.5144;
+        Some((km, t + if ms > 1.0 { km * 1000.0 / ms } else { 0.0 }))
+    }
+
+    /// The F-16's data entry display: a CNI-style page with the radio channels (fixed), the
+    /// steerpoint and the target, the clock, the leg to the steerpoint and the time on target
+    /// or the fuel, 24 columns of 5 lines in amber.
+    pub fn draw_ded(&self, c: &mut Canvas, fonts: &Fonts) {
+        use crate::cockpit3d::layout::{DED_COLS, DED_SCALE};
+        const AMBER: u8 = 18;
+        c.clear(5);
+        let a = self.aircraft.single().ok();
+        let t = self.clock.start_seconds + self.clock.elapsed.unwrap_or_else(|| a.map_or(0.0, |a| a.time));
+        let (hh, mm, ss) = crate::mfd::hms(t);
+        let mission = self.mission.as_ref().map(|m| &m.0);
+        let target = mission.map(|m| (crate::mission::clean_text(&m.primary.type_name).to_uppercase(), crate::mission::clean_text(&m.primary.place_name).to_uppercase()));
+        let (kind, place) = target.unwrap_or_default();
+        let leg = a.and_then(|a| self.leg(a, t));
+        let bearing = a.filter(|_| leg.is_some()).map_or(0, |a| crate::flight::bam(a.waypoint_bearing).to_degrees().rem_euclid(360.0).round() as i32 % 360);
+        let dist = leg.map_or("---".to_string(), |(km, _)| if km < 100.0 { format!("{km:.1}KM") } else { format!("{km:.0}KM") });
+        let eta = leg.map_or("--:--".to_string(), |(_, eta)| {
+            let (eh, em, _) = crate::mfd::hms(eta);
+            format!("{eh:02}:{em:02}")
+        });
+        let right = match mission.filter(|m| m.time.has_deadline) {
+            Some(m) => format!("TOT {}", m.time.deadline),
+            None => format!("FUEL {:>5.0}", a.map_or(0.0, |a| a.fuel)),
+        };
+        let steer = if self.waypoints.points.is_empty() { "STPT -".to_string() } else { format!("STPT {}", self.waypoints.current + 1) };
+        let cut = |s: &str, n: usize| s.chars().take(n).collect::<String>();
+        let lines = [
+            format!("{:<12}{:>12}", "UHF 305.00", steer),
+            format!("{:<12}{:>12}", cut(&kind, 12), cut(&place, 12)),
+            format!("{:<12}{:>12}", "VHF 123.45", format!("{hh:02}:{mm:02}:{ss:02}")),
+            format!("BRG {bearing:03} {dist:>6} ETA {eta}"),
+            format!("{:<12}{:>12}", "M3 1234", right),
+        ];
+        for (i, line) in lines.iter().enumerate() {
+            fonts.text_scaled(c, 4, 2 + i as i32 * 8 * DED_SCALE, cut(line, DED_COLS as usize).as_bytes(), AMBER, DED_SCALE);
+        }
+    }
+
+    /// What a needle instrument shows (`draw_dial`'s units).
+    pub fn dial_value(&self, dial: Dial) -> f32 {
+        let Ok(a) = self.aircraft.single() else { return 0.0 };
+        let thrust = a.thrust.clamp(0.0, 120.0);
+        match dial {
+            Dial::Airspeed => a.knots(),
+            Dial::Altimeter => a.altitude.max(0.0),
+            Dial::Aoa => Self::aoa(a),
+            // Feet per second to feet per minute (as the HUD's VVI).
+            Dial::Vvi => a.climb_rate * 60.0,
+            Dial::Rpm => 60.0 + thrust * 0.4,
+            Dial::Ftit => 350.0 + thrust * 6.0,
+            Dial::Oil => 25.0 + thrust * 0.4,
+            Dial::Nozzle => if thrust > 100.0 { (thrust - 100.0) * 5.0 } else { 100.0 - thrust },
+            Dial::Fuel => a.fuel,
+            // Seconds of the day.
+            Dial::Clock => self.clock.start_seconds + self.clock.elapsed.unwrap_or(a.time),
+        }
     }
 }
 
-/// The approach indexer (atlas (251,67) 10x21) with its top-left at (x, y), the
-/// lit part recoloured 30 -> 41 (top chevron), 47 (circle) or 14 (bottom chevron).
-pub fn approach_indexer(c: &mut Canvas, atlas: &Canvas, approach: u8, x: i32, y: i32) {
-    c.copy_rect(atlas, 251, 67, 10, 21, x, y);
-    const PARTS: [(i32, i32, u8); 3] = [(2, 4, 41), (7, 7, 47), (15, 4, 14)];
-    if let Some(&(dy, h, colour)) = (approach as usize).checked_sub(1).and_then(|i| PARTS.get(i)) {
-        c.recolor_rect(x + 1, y + dy, x + 8, y + dy + h, 30, colour);
+/// A round needle instrument into the rectangle r of an instrument atlas: black face, grey
+/// ring and name, white scale and needle. The altimeter has a long needle for the hundreds, a
+/// short one for the thousands and a digital readout; the clock hour, minute and second hands.
+pub fn draw_dial(c: &mut Canvas, r: [i32; 4], dial: Dial, value: f32) {
+    use crate::font::{Align, stroke_text_at};
+    let [x, y, w, h] = r;
+    c.fill_rect(x, y, w, h, 5);
+    let centre = Vec2::new(x as f32 + w as f32 / 2.0, y as f32 + h as f32 / 2.0);
+    let rad = w.min(h) as f32 / 2.0 - 1.0;
+    let pen = (rad / 40.0).max(1.0);
+    c.ring(centre, rad - pen, pen, 7);
+    // Name, scale labels (evenly over the sweep), the needle's fraction of the sweep, and the
+    // sweep: start angle (degrees clockwise from up) and extent.
+    let (name, labels, t, start, sweep): (&str, &[&str], f32, f32, f32) = match dial {
+        Dial::Airspeed => ("KNOTS", &["0", "1", "2", "3", "4", "5", "6", "7", "8"], value / 800.0, -150.0, 300.0),
+        Dial::Altimeter => ("ALT", &["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], (value % 1000.0) / 1000.0, 0.0, 360.0),
+        Dial::Aoa => ("AOA", &["-5", "0", "5", "10", "15", "20", "25", "30"], (value + 5.0) / 35.0, -150.0, 300.0),
+        Dial::Vvi => ("VVI", &["6", "4", "2", "0", "2", "4", "6"], (value + 6000.0) / 12000.0, -240.0, 300.0),
+        Dial::Rpm => ("RPM", &["0", "2", "4", "6", "8", "10"], value / 100.0, -150.0, 300.0),
+        Dial::Ftit => ("FTIT", &["2", "4", "6", "8", "10", "12"], (value - 200.0) / 1000.0, -150.0, 300.0),
+        Dial::Oil => ("OIL", &["0", "25", "50", "75", "100"], value / 100.0, -150.0, 300.0),
+        Dial::Nozzle => ("NOZ", &["0", "2", "4", "6", "8", "10"], value / 100.0, -150.0, 300.0),
+        Dial::Fuel => ("FUEL", &["0", "2", "4", "6", "8", "10"], value / crate::mfd::FULL_FUEL, -150.0, 300.0),
+        Dial::Clock => ("", &["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], (value % 3600.0) / 3600.0, 0.0, 360.0),
+    };
+    let dir = |deg: f32| {
+        let a = deg.to_radians();
+        Vec2::new(a.sin(), -a.cos())
+    };
+    let n = labels.len() as f32 - 1.0;
+    // The altimeter's scale goes all the way round: no label at the end.
+    let last = if sweep >= 360.0 { labels.len() - 1 } else { labels.len() };
+    for (i, label) in labels.iter().enumerate().take(last) {
+        let a = start + sweep * i as f32 / if sweep >= 360.0 { labels.len() as f32 } else { n };
+        let d = dir(a);
+        c.stroke(centre + d * rad * 0.92, centre + d * rad * 0.78, pen, 15);
+        let p = centre + d * rad * 0.62;
+        stroke_text_at(c, p.x, p.y, label, rad * 0.18, pen, 15, Align::Centre);
+        if i + 1 < last || sweep >= 360.0 {
+            let d = dir(a + sweep / 2.0 / if sweep >= 360.0 { labels.len() as f32 } else { n });
+            c.stroke(centre + d * rad * 0.92, centre + d * rad * 0.85, pen, 15);
+        }
     }
+    let name_y = if dial == Dial::Altimeter { -0.3 } else { -0.38 };
+    if !name.is_empty() {
+        stroke_text_at(c, centre.x, centre.y + rad * name_y, name, rad * 0.15, pen, 7, Align::Centre);
+    }
+    match dial {
+        Dial::Altimeter => {
+            let d = dir(start + sweep * (value % 10000.0) / 10000.0);
+            c.stroke(centre, centre + d * rad * 0.5, pen * 2.2, 15);
+            stroke_text_at(c, centre.x, centre.y + rad * 0.38, &format!("{:05}", value.round() as i32), rad * 0.17, pen, 15, Align::Centre);
+        }
+        Dial::Clock => {
+            let d = dir(360.0 * (value % 43200.0) / 43200.0);
+            c.stroke(centre, centre + d * rad * 0.5, pen * 2.2, 15);
+            let d = dir(360.0 * (value % 60.0) / 60.0);
+            c.stroke(centre - d * rad * 0.15, centre + d * rad * 0.85, pen * 0.8, 41);
+        }
+        _ => {}
+    }
+    let d = dir(start + sweep * t.clamp(0.0, 1.0));
+    c.stroke(centre - d * rad * 0.12, centre + d * rad * 0.8, pen * 1.5, 15);
+    c.circle(centre.x, centre.y, pen * 2.0, 7);
+}
+
+/// The approach indexer into its canvas (`INDEXER_CANVAS`): on black, the top chevron
+/// pointing down (red when lit), the circle (green) and the bottom chevron pointing up (amber);
+/// unlit symbols dim grey.
+pub fn approach_indexer(c: &mut Canvas, lit: (bool, bool, bool)) {
+    c.clear(5);
+    let (w, h) = (c.w as f32, c.h as f32);
+    let cx = w / 2.0;
+    let pen = w / 12.0;
+    let half = w * 0.3;
+    let colour = |on: bool, lit_colour: u8| if on { lit_colour } else { 30 };
+    // Top chevron: a V with its apex down.
+    let y = h * 0.18;
+    c.polyline(&[Vec2::new(cx - half, y - half * 0.6), Vec2::new(cx, y + half * 0.6), Vec2::new(cx + half, y - half * 0.6)], pen, colour(lit.0, 41));
+    c.ring(Vec2::new(cx, h / 2.0), half * 0.9, pen, colour(lit.1, 47));
+    // Bottom chevron: apex up.
+    let y = h * 0.82;
+    c.polyline(&[Vec2::new(cx - half, y + half * 0.6), Vec2::new(cx, y - half * 0.6), Vec2::new(cx + half, y + half * 0.6)], pen, colour(lit.2, 18));
 }

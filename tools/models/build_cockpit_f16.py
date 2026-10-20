@@ -1,16 +1,18 @@
-# Builds the F-16 cockpit master (assets-src/blend/cockpit_f16.blend) from the F-117A's modern
+# Builds the F-16C cockpit master (assets-src/blend/cockpit_f16.blend) from the F-117A's modern
 # cockpit and the F-16 panel layout:
 #   blender -b assets-src/blend/cockpit_modern.blend --python-exit-code 1 \
 #       --python tools/models/build_cockpit_f16.py -- assets-src/blend/cockpit_f16_layout.json \
 #       assets-src/blend/cockpit_f16.blend
 # then tools/models/export.sh cockpit_f16.
 #
-# Kept from the modern cockpit (with their materials, labels and control properties): the stick,
-# the throttle and its rail, the seat, the ejection and gear handles, the side panel buttons,
-# the flood lamps, the HUD glass and the approach indexer. Everything else is built here: the tub
-# and side consoles, the glare shield and up-front controls, the main panel with the faces and
-# displays of `PanelLayout::f16` (src/cockpit3d/layout.rs; the layout JSON is written by
-# `UPDATE_F16_LAYOUT=1 cargo test f16_layout_file`).
+# Kept from the modern cockpit (with their materials, labels and control properties): the seat,
+# the ejection and gear handles, five side panel buttons (the target buttons), the flood lamps
+# and the HUD glass. Everything else is built here, low-poly: the tub and
+# side consoles, the glare shield, the up-front controls' pedestal with its round override
+# buttons and keypad, the data entry display, the round instruments in their bezels, the main
+# panel with the faces and displays of `PanelLayout::f16` (src/cockpit3d/layout.rs; the layout
+# JSON is written by `UPDATE_F16_LAYOUT=1 cargo test f16_layout_file`), the side stick and the
+# throttle.
 #
 # Blender frame: eye at the origin, x right, y forward, z up, metres. A control's face points
 # along its local -Y (towards the pilot), local Z is up the panel.
@@ -40,14 +42,16 @@ SLOPE_X = (0.17, 0.37)
 SLOPE_BEVEL = 40.0
 SILL = -0.45
 WALL_X = 0.37
-# The panel's wings either side of the centre column (flat, in the panel's plane).
-HINGE = 75.0
+# The panel's centre column (|x| <= HINGE) and its wings out to WING either side (flat, in the
+# panel's plane).
+HINGE = 85.0
+WING = 335.0
 WING_ANGLE = 0.0
-# The centre column stands out of the panel, the up-front controls (layout y < ICP_BOTTOM)
-# further.
-ICP_BOTTOM = -80.0
-ICP_DEPTH = 0.08
-CENTRE_DEPTH = 0.045
+# The up-front controls (layout y < ICP_BOTTOM) stand out of the panel on a pedestal; the
+# instruments under them are flush.
+ICP_BOTTOM = -46.0
+ICP_DEPTH = 0.055
+CENTRE_DEPTH = 0.0
 # The wings' upper outer corners are bevelled (layout mm along the top and down the side).
 BEVEL = 55.0
 # The MFDs sit back in wells: their bezels this far behind the panel surface (m).
@@ -58,9 +62,14 @@ CONSOLE_U = 600.0
 ADVISORY_CENTRE = Vector((0.28, 0.33, -0.585))
 ADVISORY_TILT = math.radians(15.0)
 TOP = -160.0
+WING_BOTTOM = 125.0
+CENTRE_BOTTOM = 166.0
 # HUD combiner glass: half width, bottom and top (m), at HUD_Y in front of the eye.
 HUD_Y = 0.70
 HUD_GLASS = (0.1675, -0.12, 0.095)
+# Segments of the round parts (bezels, buttons, knobs): low-poly.
+ROUND = 16
+KNOB = 8
 
 RIGHT = Vector((1.0, 0.0, 0.0))
 UP = Vector((0.0, math.sin(PANEL_TILT), math.cos(PANEL_TILT)))
@@ -99,7 +108,7 @@ def basis(sec):
 
 def point(u, v, offset=0.0, plane=False):
     """A panel point: layout millimetres (u right, v down), raised `offset` m off its surface (the
-    panel plane with `plane`, not the centre column's raised face)."""
+    panel plane with `plane`, not the pedestal's raised face)."""
     sec = section(u)
     d, n, up = basis(sec)
     s = math.copysign(1, u)
@@ -131,12 +140,8 @@ def rect_point(r, offset=0.0):
 # --- keep, drop
 def kept(o):
     n = o.name
-    keep = ("stick", "throttle", "control_Action_Eject_", "control_Action_Gear_.001", "button_", "seat_", "cushion_", "lamp", "hud_glass", "approach", "metal_98", "metal_99")
-    if n.startswith(keep):
-        return True
-    # The stick boot and the throttle rail.
-    p = o.matrix_world.translation
-    return abs(abs(p.x) - 0.4) < 0.03 and 0.15 < p.y < 0.3 and p.z < -0.45 and o.type == "MESH"
+    keep = ("control_Action_Eject_", "control_Action_Gear_.001", "button_NEAR", "button_NEXT", "button_NONE", "button_WPN", "button_DTL", "seat_", "cushion_", "lamp", "hud_glass", "metal_98", "metal_99")
+    return n.startswith(keep)
 
 
 def drop(o):
@@ -162,7 +167,7 @@ def material(name, like):
     return m
 
 
-for n, like in (("hsi", "adi"), ("screen_rwr", "adi"), ("trackcam_left", "trackcam")):
+for n, like in (("hsi", "adi"), ("screen_rwr", "adi"), ("ded", "adi"), ("trackcam_left", "trackcam")):
     material(n, like)
 
 
@@ -195,10 +200,11 @@ def empty(name, loc, rot=Euler((0, 0, 0)), parent=root, props=None):
     return o
 
 
-def box_mesh(name, size, mat, centre=(0.0, 0.0, 0.0)):
+def box_mesh(name, size, mat, centre=(0.0, 0.0, 0.0), rot=None):
     me = bpy.data.meshes.new(name)
     bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0, matrix=Matrix.Translation(centre) @ Matrix.Diagonal((*size, 1.0)))
+    m = Matrix.Translation(centre) @ (rot.to_matrix().to_4x4() if rot is not None else Matrix.Identity(4)) @ Matrix.Diagonal((*size, 1.0))
+    bmesh.ops.create_cube(bm, size=1.0, matrix=m)
     uv = bm.loops.layers.uv.new()
     for f in bm.faces:
         for i, l in enumerate(f.loops):
@@ -221,8 +227,43 @@ def quad_mesh(name, w, h, mat, y=0.0):
     return me
 
 
-def box(name, mat, centre, size, rot=Euler((0, 0, 0))):
-    return mesh_object(name, box_mesh(name, size, mat), centre, rot)
+def disc_mesh(name, r, mat, y=0.0, n=ROUND):
+    """A ROUND-gon in the local XZ plane at local y (faces -Y); its UVs map the 0..1 square's
+    inscribed circle onto it, so a square texture face shows round."""
+    me = bpy.data.meshes.new(name)
+    v, uvs = [], []
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        v.append((r * math.cos(a), y, r * math.sin(a)))
+        uvs.append((0.5 + 0.5 * math.cos(a), 0.5 + 0.5 * math.sin(a)))
+    me.from_pydata(v, [], [tuple(range(n))])
+    uv = me.uv_layers.new()
+    for i, d in enumerate(uv.data):
+        d.uv = uvs[i]
+    me.materials.append(mats[mat])
+    return me
+
+
+def cylinder_mesh(name, r, h, mat, axis="-Y", centre=(0.0, 0.0, 0.0), n=KNOB, r2=None):
+    """A closed cylinder (or truncated cone with `r2` at its far end) of radius r and height h
+    from `centre` along `axis` (local)."""
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    rot = {"Z": Matrix.Identity(4), "-Y": Matrix.Rotation(math.radians(90.0), 4, "X"), "Y": Matrix.Rotation(math.radians(-90.0), 4, "X"), "X": Matrix.Rotation(math.radians(90.0), 4, "Y"), "-X": Matrix.Rotation(math.radians(-90.0), 4, "Y")}[axis]
+    m = Matrix.Translation(centre) @ rot @ Matrix.Translation((0.0, 0.0, h / 2))
+    bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=n, radius1=r, radius2=r if r2 is None else r2, depth=h, matrix=m)
+    uv = bm.loops.layers.uv.new()
+    for f in bm.faces:
+        for l in f.loops:
+            l[uv].uv = (0.0, 0.0)
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(mats[mat])
+    return me
+
+
+def box(name, mat, centre, size, rot=Euler((0, 0, 0)), parent=root):
+    return mesh_object(name, box_mesh(name, size, mat), centre, rot, parent=parent)
 
 
 def panel_box(name, mat, r, raise_m, margin=0.0, base=0.0):
@@ -233,32 +274,55 @@ def panel_box(name, mat, r, raise_m, margin=0.0, base=0.0):
     return box(name, mat, c, ((w + 2 * margin) / 1000, abs(raise_m), (h + 2 * margin) / 1000), rotation(x + w / 2))
 
 
-def face(key, r, offset):
+def bezel(r, offset, height=0.008, lip=0.003):
+    """A round black bezel standing `height` out of the panel at `offset` round the rectangle r's
+    inscribed circle."""
     x, y, w, h = r
-    me = quad_mesh("atlas", w / 1000, h / 1000, "atlas")
+    me = cylinder_mesh("black", min(w, h) / 2000 + lip, height, "black", n=ROUND)
+    mesh_object("black", me, rect_point(r, offset), rotation(x + w / 2))
+
+
+def face(key, r, offset, round=False):
+    """An atlas face over the rectangle r; round ones are discs in a bezel (the instruments)."""
+    x, y, w, h = r
+    if round:
+        bezel(r, offset)
+        me = disc_mesh("atlas", min(w, h) / 2000, "atlas")
+        offset += 0.0085
+    else:
+        me = quad_mesh("atlas", w / 1000, h / 1000, "atlas")
     mesh_object("atlas", me, rect_point(r, offset), rotation(x + w / 2), props={"atlas_face": key, "atlas_uv": [0.0, 0.0, 1.0, 1.0], "no_shadow": True})
 
 
-def control(key, r, offset, effect, kind):
+def control(key, r, offset, effect, kind, round=False):
     """A push button: origin on the surface, its face 6 mm out; a dark cap body under the face
-    and a highlight frame."""
+    and a highlight frame. Round ones are cylinders (the up-front override buttons)."""
     x, y, w, h = r
     hw, hh = w / 2000, h / 2000
     height, travel = 0.006, 0.004
     name = "control_" + "".join(ch if ch.isalnum() else "_" for ch in effect)
     c = empty(name, rect_point(r, offset), rotation(x + w / 2), props={"control": effect, "kind": kind, "half": [hw, hh], "height": height, "travel": travel})
     moving = empty("moving", (0, 0, 0), parent=c, props={"moving": True})
-    mesh_object("atlas", quad_mesh("atlas", 2 * hw, 2 * hh, "atlas", -height), (0, 0, 0), parent=moving, props={"atlas_face": key, "atlas_uv": [0.0, 0.0, 1.0, 1.0], "no_shadow": True})
-    mesh_object("dark", box_mesh("dark", (2 * hw, height - 0.0004, 2 * hh), "dark", (0, -(height - 0.0004) / 2, 0)), (0, 0, 0), parent=moving)
+    if round:
+        mesh_object("atlas", disc_mesh("atlas", min(hw, hh), "atlas", -height), (0, 0, 0), parent=moving, props={"atlas_face": key, "atlas_uv": [0.0, 0.0, 1.0, 1.0], "no_shadow": True})
+        mesh_object("dark", cylinder_mesh("dark", min(hw, hh), height - 0.0004, "dark", n=ROUND), (0, 0, 0), parent=moving)
+    else:
+        mesh_object("atlas", quad_mesh("atlas", 2 * hw, 2 * hh, "atlas", -height), (0, 0, 0), parent=moving, props={"atlas_face": key, "atlas_uv": [0.0, 0.0, 1.0, 1.0], "no_shadow": True})
+        mesh_object("dark", box_mesh("dark", (2 * hw, height - 0.0004, 2 * hh), "dark", (0, -(height - 0.0004) / 2, 0)), (0, 0, 0), parent=moving)
     hl = empty("highlight", (0, 0, 0), parent=c, props={"highlight": True})
     t = 0.002
     for (cx, cz, sx, sz) in ((0, hh + t, 2 * hw + 2 * t, t), (0, -hh - t, 2 * hw + 2 * t, t), (hw + t, 0, t, 2 * hh), (-hw - t, 0, t, 2 * hh)):
         mesh_object("highlight", box_mesh("highlight", (sx, t, sz), "highlight"), (cx, -height, cz), parent=hl, props={"no_shadow": True})
 
 
-def screen(mat, r, offset, behind=None):
+def screen(mat, r, offset, behind=None, round=False):
+    """A display over the rectangle r: a quad, or a disc in a bezel (the round instruments)."""
     x, y, w, h = r
     rot = rotation(x + w / 2)
+    if round:
+        bezel(r, offset, 0.010, 0.004)
+        mesh_object(mat, disc_mesh(mat, min(w, h) / 2000, mat), rect_point(r, offset + 0.0105), rot, props={"no_shadow": True})
+        return
     mesh_object(mat, quad_mesh(mat, w / 1000, h / 1000, mat), rect_point(r, offset), rot, props={"no_shadow": True})
     if behind:
         mesh_object(behind, quad_mesh(behind, w / 1000, h / 1000, behind), rect_point(r, offset - 0.003), rot, props={"no_shadow": True})
@@ -290,6 +354,25 @@ def plane_box(name, mat, r, d0, d1):
     x, y, w, h = r
     c = point(x + w / 2, y + h / 2, (d0 + d1) / 2, True)
     return box(name, mat, c, (w / 1000, abs(d1 - d0), h / 1000), rotation(x + w / 2))
+
+
+def knob(u, v, r=0.006, h=0.012, mat="metal", offset=0.0):
+    """A round knob standing out of the panel at layout (u, v)."""
+    mesh_object(mat, cylinder_mesh(mat, r, h, mat, n=KNOB), point(u, v, offset), rotation(u))
+
+
+def toggle(u, v, offset=0.0, up=True):
+    """A toggle switch: a round base and a lever leaning up or down the panel."""
+    mesh_object("dark", cylinder_mesh("dark", 0.005, 0.004, "dark", n=KNOB), point(u, v, offset), rotation(u))
+    lean = Matrix.Rotation(math.radians(-35.0 if up else 35.0), 3, "X")
+    me = box_mesh("metal", (0.004, 0.016, 0.004), "metal", (0.0, -0.011, 0.0), lean.to_quaternion())
+    mesh_object("metal", me, point(u, v, offset + 0.003), rotation(u))
+
+
+def wheel(u, v, offset=0.0):
+    """A thumb wheel (the up-front controls' brightness and reticle wheels): a ridged drum
+    half sunk in the panel, its axis across."""
+    mesh_object("metal", cylinder_mesh("metal", 0.009, 0.006, "metal", axis="X", centre=(-0.003, 0.0, 0.0), n=12), point(u, v, offset + 0.001), rotation(u))
 
 
 def hood(a, b, offset=0.0):
@@ -329,7 +412,7 @@ for s in (-1, 1):
         shape.reverse()
     plate("dark", "dark", [shape], 0.03)
 box("panel_grey", "panel_grey", (0.0, -0.68, -0.55), (2 * WALL_X, 0.03, 0.9))  # rear bulkhead
-# Panel: the wings (bevelled upper outer corners, wells for the MFDs), the centre column and
+# Panel: the wings (bevelled upper outer corners, wells for the MFDs), the centre column with
 # the up-front controls' pedestal standing out of it, the knee well under it.
 scr = layout["screens"]
 wells = {}
@@ -342,22 +425,22 @@ for s_, key in ((-1, "left"), (1, "right")):
     x0, x1 = (x, x + w) if s_ > 0 else (-(x + w), -x)
     y0, y1 = y, y + h
     pieces = [
-        [(HINGE, TOP), (305.0 - BEVEL, TOP), (305.0, TOP + BEVEL), (305.0, y0), (HINGE, y0)],
-        [(HINGE, y1), (305.0, y1), (305.0, 100.0), (HINGE, 100.0)],
+        [(HINGE, TOP), (WING - BEVEL, TOP), (WING, TOP + BEVEL), (WING, y0), (HINGE, y0)],
+        [(HINGE, y1), (WING, y1), (WING, WING_BOTTOM), (HINGE, WING_BOTTOM)],
         [(HINGE, y0), (x0, y0), (x0, y1), (HINGE, y1)],
-        [(x1, y0), (305.0, y0), (305.0, y1), (x1, y1)],
+        [(x1, y0), (WING, y0), (WING, y1), (x1, y1)],
     ]
     plate("panel_grey", "panel_grey", [[(s_ * u, v) for u, v in piece] for piece in pieces], 0.03)
-    hood((s_ * HINGE, TOP), (s_ * (305.0 - BEVEL), TOP))
-    hood((s_ * (305.0 - BEVEL), TOP), (s_ * 305.0, TOP + BEVEL))
-plane_box("panel_grey", "panel_grey", (-HINGE, ICP_BOTTOM, 2 * HINGE, 112.0 - ICP_BOTTOM), -0.03, CENTRE_DEPTH)
+    hood((s_ * HINGE, TOP), (s_ * (WING - BEVEL), TOP))
+    hood((s_ * (WING - BEVEL), TOP), (s_ * WING, TOP + BEVEL))
+plane_box("panel_grey", "panel_grey", (-HINGE, ICP_BOTTOM, 2 * HINGE, CENTRE_BOTTOM - ICP_BOTTOM), -0.03, CENTRE_DEPTH)
 plane_box("dark", "dark", (-HINGE, TOP, 2 * HINGE, ICP_BOTTOM - TOP), -0.03, ICP_DEPTH)
 hood((-HINGE, TOP), (HINGE, TOP), ICP_DEPTH)
-low = point(0, 112, 0.0, True)
+low = point(0, WING_BOTTOM, 0.0, True)
 # Knee well wall under the panel, with an opening in the middle for the pilot's legs.
 LEGS = (0.20, -0.50)  # half width, top (m)
 for s_ in (-1, 1):
-    box("panel_grey", "panel_grey", (s_ * (LEGS[0] + 0.31) / 2, low.y + 0.08, (low.z - 1.0) / 2), (0.31 - LEGS[0], 0.02, 1.0 + low.z))
+    box("panel_grey", "panel_grey", (s_ * (LEGS[0] + WALL_X) / 2, low.y + 0.08, (low.z - 1.0) / 2), (WALL_X - LEGS[0], 0.02, 1.0 + low.z))
 box("panel_grey", "panel_grey", (0.0, low.y + 0.08, (low.z + LEGS[1]) / 2), (2 * LEGS[0], 0.02, low.z - LEGS[1]))
 # The footwell behind the opening: side walls, roof, front wall and floor.
 WELL_DEPTH = 0.35
@@ -368,17 +451,8 @@ for s_ in (-1, 1):
 box("dark", "dark", (0.0, yc, LEGS[1] + 0.01), (2 * LEGS[0] + 0.04, WELL_DEPTH, 0.02))
 box("dark", "dark", (0.0, y0 + WELL_DEPTH, (LEGS[1] - 1.0) / 2), (2 * LEGS[0] + 0.04, 0.02, LEGS[1] + 1.0))
 box("dark", "dark", (0.0, yc, -1.0), (2 * LEGS[0] + 0.04, WELL_DEPTH, 0.02))
-# Shroud over the attitude indicator and HSI: a lid sloping down towards the pilot, bevelled
-# cheeks either side.
-d, n, up = basis(0)
-lid = Matrix((d, -n, up)).transposed() @ Matrix.Rotation(math.radians(18.0), 3, "X")
-mesh_object("black", box_mesh("black", (2 * HINGE / 1000 + 0.012, 0.075, 0.008), "black"), point(0.0, -74.0, 0.03), lid.to_quaternion())
-for s_ in (-1, 1):
-    cheek = Matrix((d, -n, up)).transposed() @ Matrix.Rotation(math.radians(s_ * 35.0), 3, "Z")
-    mesh_object("black", box_mesh("black", (0.008, 0.06, 0.07), "black"), point(s_ * (HINGE + 2.0), -40.0, 0.02), cheek.to_quaternion())
 # Advisory light panel: a raised box on the right console.
-panel_box("black", "black", (628.0, -48.0, 144.0, 96.0), 0.012, 0.0, -0.016)
-# HUD frame: posts either side of the combiner, a bar over it.
+panel_box("black", "black", (628.0, -48.0, 136.0, 65.0), 0.012, 0.0, -0.016)
 # HUD frame: posts either side of the combiner glass, a bar on top of them (the glass fills the
 # frame's inside: HUD_GLASS; AircraftSpec::hud_scale fits the symbology into it).
 post = 0.015
@@ -399,74 +473,106 @@ for k in range(9):
 # --- panel plates, instrument bezels, faces and displays
 PLATE = 0.004
 plates = [
-    (-72.0, -156.0, 144.0, 72.0),  # up-front controls
-    (114.0, -150.0, 84.0, 74.0),  # countermeasures
-    (-300.0, -28.0, 48.0, 94.0),  # aircraft systems
-    (-301.0, -113.0, 30.0, 78.0),  # threat lights
-    (-770.0, -58.0, 44.0, 36.0),  # gear lights
-    (250.0, -44.0, 48.0, 84.0),  # fuel, thrust
+    ("black", (-80.0, -159.0, 160.0, 111.0)),  # up-front controls
+    ("dark", (-320.0, -106.0, 48.0, 56.0)),  # aircraft systems
+    ("dark", (-266.0, -154.0, 32.0, 78.0)),  # threat lights
+    ("dark", (-238.0, -154.0, 54.0, 46.0)),  # master caution, stall
+    ("dark", (-750.0, -108.0, 48.0, 40.0)),  # gear lights (left slope)
+    ("black", (90.0, -157.0, 130.0, 60.0)),  # data entry display
+    ("dark", (1146.0, -74.0, 80.0, 75.0)),  # countermeasures (right slope)
 ]
-for r in plates:
-    panel_box("dark", "dark", r, PLATE)
-for key in ("adi", "hsi", "rwr"):
-    panel_box("black", "black", scr[key], 0.012, 5.0)
+for mat, r in plates:
+    panel_box(mat, mat, r, PLATE)
+# Up-front controls' thumb wheels (symbology and brightness left, reticle and contrast right),
+# the drift cut-out switch, the data control switch and the two knobs right of the keypad.
+for u in (-77.0, 77.0):
+    wheel(u, -118.0, PLATE)
+    wheel(u, -84.0, PLATE)
+toggle(52.0, -124.0, PLATE)
+knob(52.0, -100.0, 0.006, 0.010, offset=PLATE)
+knob(52.0, -66.0, 0.008, 0.014, "dark", offset=PLATE)
+# A few switches on the right slope's lower part and low on the left of the panel.
+for v in (40.0, 60.0, 80.0):
+    toggle(1160.0, v, 0.0, up=(v != 60.0))
+    toggle(1200.0, v, 0.0, up=(v == 60.0))
+knob(1240.0, 60.0, 0.008, 0.012)
+for v in (30.0, 56.0, 82.0):
+    toggle(-312.0, v, 0.0, up=(v != 56.0))
+    toggle(-288.0, v, 0.0, up=(v == 56.0))
+knob(-300.0, 108.0, 0.007, 0.012)
+# MFDs in their wells, the bezel's face MFD_WELL behind the panel surface, with fixed side
+# bezel buttons (the game uses the top and bottom rows).
 for key in ("left", "right"):
-    # The MFD in its well: the bezel's face MFD_WELL behind the panel surface.
     x, y, w, h = scr[key]
     panel_box("dark", "dark", (x - 16.0, y - 22.0, w + 32.0, h + 44.0), 0.008, 0.0, -0.03)
-    # Side bezel buttons (fixed: the game uses the top and bottom rows).
     for k in range(5):
         for bx in (x - 9.0, x + w + 9.0):
             by = y + h * (k + 0.5) / 5
             panel_box("dark", "dark", (bx - 5.0, by - 4.0, 10.0, 8.0), 0.005, 0.0, -MFD_WELL)
 screen("screen_left", scr["left"], -MFD_WELL + 0.0035, "trackcam_left")
 screen("screen_right", scr["right"], -MFD_WELL + 0.0035, "trackcam")
-screen("adi", scr["adi"], 0.0125)
-screen("hsi", scr["hsi"], 0.0125)
-screen("screen_rwr", scr["rwr"], 0.0125)
+screen("adi", scr["adi"], 0.0, round=True)
+screen("hsi", scr["hsi"], 0.0, round=True)
+screen("screen_rwr", scr["rwr"], 0.0, round=True)
+screen("ded", scr["ded"], PLATE + 0.0005)
 for f in layout["faces"]:
     if f["control"] is None:
-        face(f["key"], f["rect"], PLATE + 0.0005)
+        face(f["key"], f["rect"], PLATE + 0.0005, f["round"])
     elif f["kind"] == "osb":
         control(f["key"], f["rect"], -MFD_WELL, f["control"], "osb")
     else:
-        control(f["key"], f["rect"], PLATE, f["control"], f["kind"])
+        control(f["key"], f["rect"], PLATE, f["control"], f["kind"], f["round"])
+
+# --- side stick (right console) and throttle (left console), after the F-16's
+# Stick: a boot on the console, the pivot above it; a short grip leaning forward with the
+# trigger guard in front, the pinky lever behind and the weapon release and trim hat on top.
+STICK = Vector((0.28, 0.22, CONSOLE_TOP))
+box("rubber", "rubber", STICK + Vector((0.0, 0.0, 0.013)), (0.09, 0.09, 0.026))
+stick = empty("stick", STICK + Vector((0.0, 0.0, 0.025)), props={"stick": True})
+mesh_object("metal", cylinder_mesh("metal", 0.013, 0.055, "metal", axis="Z"), (0, 0, 0), parent=stick)
+lean = Euler((math.radians(-12.0), 0.0, 0.0))
+# The grip: a narrower lower part, the wider head leaning forward over it with a dished top.
+mesh_object("rubber", box_mesh("rubber", (0.036, 0.042, 0.065), "rubber", (0.0, 0.008, 0.085), lean.to_quaternion()), (0, 0, 0), parent=stick)
+mesh_object("rubber", box_mesh("rubber", (0.046, 0.058, 0.055), "rubber", (0.0, 0.02, 0.14), lean.to_quaternion()), (0, 0, 0), parent=stick)
+mesh_object("metal", box_mesh("metal", (0.012, 0.028, 0.024), "metal", (0.0, 0.04, 0.088)), (0, 0, 0), parent=stick)
+mesh_object("dark", box_mesh("dark", (0.01, 0.012, 0.03), "dark", (0.0, -0.016, 0.065)), (0, 0, 0), parent=stick)
+mesh_object("metal", box_mesh("metal", (0.013, 0.013, 0.008), "metal", (-0.011, 0.03, 0.17)), (0, 0, 0), parent=stick)
+mesh_object("dark", cylinder_mesh("dark", 0.0055, 0.009, "dark", axis="Z", centre=(0.012, 0.026, 0.167)), (0, 0, 0), parent=stick)
+mesh_object("dark", cylinder_mesh("dark", 0.004, 0.007, "dark", axis="Z", centre=(0.0, 0.006, 0.167)), (0, 0, 0), parent=stick)
+# Arm rest behind the stick.
+box("cushion", "cushion", (0.31, 0.03, CONSOLE_TOP + 0.015), (0.09, 0.26, 0.03))
+# Throttle: two rails along the left console; the handle slides on them from idle (its origin)
+# to full: a slider block, the post and the grip sloping up towards the front, with the cut-off
+# release in front, the radar cursor on top and the antenna elevation knob outboard.
+for x in (-0.294, -0.266):
+    box("metal", "metal", (x, 0.21, CONSOLE_TOP + 0.007), (0.005, 0.25, 0.006))
+throttle = empty("throttle", (-0.28, 0.125, -0.50), props={"throttle": True})
+empty("throttle_full", (-0.28, 0.30, -0.50), props={"anchor": "throttle_full"})
+mesh_object("dark", box_mesh("dark", (0.05, 0.075, 0.03), "dark", (0.0, 0.0, -0.07)), (0, 0, 0), parent=throttle)
+mesh_object("metal", box_mesh("metal", (0.024, 0.03, 0.065), "metal", (0.0, 0.0, -0.035)), (0, 0, 0), parent=throttle)
+slope = Euler((math.radians(12.0), 0.0, 0.0))
+mesh_object("rubber", box_mesh("rubber", (0.045, 0.12, 0.04), "rubber", (0.0, 0.01, 0.0), slope.to_quaternion()), (0, 0, 0), parent=throttle)
+mesh_object("metal", box_mesh("metal", (0.018, 0.022, 0.014), "metal", (0.0, 0.056, 0.028)), (0, 0, 0), parent=throttle)
+mesh_object("dark", cylinder_mesh("dark", 0.007, 0.012, "dark", axis="Z", centre=(-0.014, 0.012, 0.02)), (0, 0, 0), parent=throttle)
+mesh_object("metal", cylinder_mesh("metal", 0.006, 0.01, "metal", axis="-X", centre=(-0.0225, -0.03, 0.0)), (0, 0, 0), parent=throttle)
 
 # --- the kept parts, moved into the F-16's cockpit
 objs = {o.name: o for o in root.children}
-
-
-def move(o, dx=0.0, dy=0.0, dz=0.0):
-    o.location += Vector((dx, dy, dz))
-
-
-# Stick on the right console, throttle on the left one (both 0.12 m further in, and up by as
-# much as the F-117A's were lowered after the F-16's console heights were set).
-F117_CONTROLS_DROP = 0.08
-for o in old:
-    p = o.location
-    if o.name.startswith(("stick", "rubber")) or (o.type == "MESH" and abs(p.x - 0.4) < 0.03 and p.z < -0.45):
-        move(o, dx=-0.12, dz=F117_CONTROLS_DROP)
-    elif o.name.startswith("throttle") or (o.type == "MESH" and abs(p.x + 0.4) < 0.03 and p.z < -0.45):
-        move(o, dx=0.12, dz=F117_CONTROLS_DROP)
 # Seat back, head rest and rails reclined 15 degrees more (the F-16's 30 degree seat).
 hip = Vector((0.0, -0.30, -0.78))
 recline = Matrix.Translation(hip) @ Matrix.Rotation(math.radians(15.0), 4, "X") @ Matrix.Translation(-hip)
 for o in root.children:
     if o.name.startswith(("seat_95", "cushion_96", "cushion_97", "metal_98", "metal_99")):
         o.matrix_world = recline @ o.matrix_world
-# Side panel buttons on the slopes, faces up towards the pilot.
-left = ["button_NEAR", "button_DESG", "button_NEXT", "button_NONE", "button_WPN", "button_MENU"]
-right = ["button_NVG", "button_ILS", "button_TIME", "button_DCLT", "button_VOL", "button_DTL"]
-for names, s in ((left, -1), (right, 1)):
-    for i, n in enumerate(names):
-        o = objs[n]
-        col, row = i % 2, i // 2
-        # Two columns of three on the lower part of the slope (layout y grows down it).
-        u = (-700.0 if s < 0 else 1200.0) + s * (-25.0 + 45.0 * col)
-        o.location = point(u, 15.0 + 34.0 * row, 0.004)
-        o.rotation_quaternion = rotation(u)
-# Gear handle low on the left of the panel.
+# Target buttons on the left slope, ahead of the throttle, faces up towards the pilot.
+for i, n in enumerate(["button_NEAR", "button_NEXT", "button_NONE", "button_WPN", "button_DTL"]):
+    o = objs[n]
+    col, row = i // 3, i % 3
+    # Two columns of three on the lower part of the slope (layout y grows down it).
+    u = -700.0 - (-25.0 + 45.0 * col)
+    o.location = point(u, 15.0 + 34.0 * row, 0.004)
+    o.rotation_quaternion = rotation(u)
+# Gear handle on the left slope, right of the gear lights, above the target buttons.
 g = objs["control_Action_Gear_.001"]
 g.location = point(-672.0, -80.0, 0.002)
 g.rotation_quaternion = rotation(-672.0)
@@ -477,9 +583,11 @@ hi = Vector((max(v.co.x for v in hud.data.vertices), 0.0, max(v.co.z for v in hu
 for v in hud.data.vertices:
     tx, tz = (v.co.x - lo.x) / (hi.x - lo.x), (v.co.z - lo.z) / (hi.z - lo.z)
     v.co = Vector((-HUD_GLASS[0] + 2 * HUD_GLASS[0] * tx, HUD_Y, HUD_GLASS[1] + (HUD_GLASS[2] - HUD_GLASS[1]) * tz))
-# Approach indexer left of the HUD, flood lamps over the consoles.
-appr = next(o for o in root.children if o.name.startswith("approach"))
-appr.location = (-0.15, 0.66, -0.09)
+# Approach (AOA) indexer left of the HUD: a small live canvas in a dark housing; the
+# refuelling / nose wheel steering indexer right of the HUD; flood lamps over the consoles.
+mesh_object("approach", quad_mesh("approach", 0.02, 0.056, "approach"), (-0.15, 0.66, -0.09), props={"no_shadow": True})
+box("dark", "dark", (-0.15, 0.668, -0.09), (0.028, 0.014, 0.066))
+box("dark", "dark", (0.15, 0.665, -0.09), (0.028, 0.014, 0.066))
 for o in root.children:
     if o.name.startswith("lamp") and abs(o.location.x) > 0.3:
         o.location.x = math.copysign(0.30, o.location.x)

@@ -156,6 +156,8 @@ impl Fire<'_, '_> {
                     HudMode::Air => 1,
                     HudMode::Gnd => 2,
                 };
+                // Selecting the selected mode again goes back to NAV (the F-16's A-A / A-G).
+                let target = if target == cur { 0 } else { target };
                 for _ in 0..(target + 3 - cur) % 3 {
                     self.actions.write(ActionEvent(Action::HudMode));
                 }

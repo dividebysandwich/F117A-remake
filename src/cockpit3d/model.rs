@@ -13,8 +13,8 @@
 //! * `atlas`: a lamp, readout, label or bezel button face drawn live into the instrument atlas.
 //!   The object's `atlas_face` names the face (`layout`), `atlas_uv` the uv rectangle its UVs
 //!   were made for; they are moved to wherever the face is in the atlas.
-//! * `screen_left`, `screen_right`, `adi`, `approach`, `screen_rwr` (RWR scope), `hsi`: live
-//!   displays (UVs 0..1 over the screen).
+//! * `screen_left`, `screen_right`, `adi`, `approach`, `screen_rwr` (RWR scope), `hsi`, `ded`
+//!   (data entry display): live displays (UVs 0..1 over the screen).
 //! * `trackcam`, `trackcam_left`: the tracking camera picture behind the right / left screen.
 //! * `hud_glass`: the HUD combiner glass (the HUD is drawn collimated through it).
 //! * `label_<TEXT>`: a side panel button label showing TEXT.
@@ -244,13 +244,14 @@ impl<'a> Spawner<'a> {
                 }
                 self.panel.atlas.clone()
             }
-            "screen_left" | "screen_right" | "adi" | "approach" | "screen_rwr" | "hsi" => {
+            "screen_left" | "screen_right" | "adi" | "approach" | "screen_rwr" | "hsi" | "ded" => {
                 let role = match name {
                     "screen_left" => CanvasRole::Left,
                     "screen_right" => CanvasRole::Right,
                     "adi" => CanvasRole::Adi,
                     "screen_rwr" => CanvasRole::Rwr,
                     "hsi" => CanvasRole::Hsi,
+                    "ded" => CanvasRole::Ded,
                     _ => CanvasRole::Approach,
                 };
                 let (tex, m) = displays::screen(role, self.layout, self.hires, self.materials, self.images);
@@ -383,7 +384,8 @@ mod tests {
                     _ => (l.items.get(i).and_then(|p| p.cap), Some("cap")),
                 };
                 let kind = control.and(kind);
-                serde_json::json!({"key": format!("{face:?}"), "rect": r(rect), "control": control.map(|c| format!("{c:?}")), "kind": kind})
+                let round = l.items.get(i).is_some_and(|p| p.round);
+                serde_json::json!({"key": format!("{face:?}"), "rect": r(rect), "control": control.map(|c| format!("{c:?}")), "kind": kind, "round": round})
             })
             .collect();
         serde_json::json!({
@@ -394,6 +396,7 @@ mod tests {
                 "adi": r(&l.adi),
                 "hsi": r(&l.hsi.unwrap()),
                 "rwr": r(&l.rwr.unwrap()),
+                "ded": r(&l.ded.unwrap()),
             },
         })
     }
@@ -420,8 +423,9 @@ mod tests {
             let nodes = j["nodes"].as_array().unwrap();
             let extras: Vec<&serde_json::Value> = nodes.iter().map(|n| &n["extras"]).collect();
             let materials: Vec<&str> = j["materials"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).collect();
-            let mut required = vec!["atlas", "screen_left", "screen_right", "adi", "approach", "trackcam", "hud_glass", "label_MENU"];
-            required.extend(if style == PanelStyle::F16 { vec!["screen_rwr", "hsi", "trackcam_left"] } else { vec!["swatch"] });
+            let mut required = vec!["atlas", "screen_left", "screen_right", "adi", "approach", "trackcam", "hud_glass"];
+            // The F-16's MENU button is the LIST key of its up-front controls (an atlas face).
+            required.extend(if style == PanelStyle::F16 { vec!["screen_rwr", "hsi", "ded", "trackcam_left", "label_NEAR"] } else { vec!["swatch", "label_MENU"] });
             for m in required {
                 assert!(materials.contains(&m), "{name}: no material {m}");
             }

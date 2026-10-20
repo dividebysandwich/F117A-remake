@@ -233,16 +233,33 @@ with the EMV warning lamp (lit for 2 s after each detection), **FUEL** (fuel in 
 
 ### 3.7 The F-16 cockpit
 
-The F-16C has its own cockpit, laid out like the real one: the master mode (NAV, A-A, A-G) and
-LOCK caps on the up-front controls under the HUD, the attitude indicator and the **HSI** (heading,
-bearing pointer and distance to the current waypoint) under them, the MFDs low left and right,
-the **RWR** scope top left with the threat lights (TRAK: a radar tracks the aircraft; RAD / IR:
-a radar or infrared guided missile is in the air) left of it and the aircraft system caps below it,
-the countermeasure panel top right with the fuel and thrust readouts below it, and the other
-warning lights on the advisory light panel on the right console, ahead of the stick. The stick is on the right console, the throttle on the left one. Sloped panels rise from the
-consoles to the main panel: the side panel buttons are on them, and on the left one the gear
-handle with the gear lights, an aircraft outline with a green lamp at each wheel while the gear is
-down.
+The F-16C has its own cockpit, laid out like the real Block 50's. Under the HUD the **up-front
+controls** stand out of the panel: the round override buttons along the top (**COM1** is the
+sound volume, **LIST** the settings menu, **A-A** and **A-G** the master modes; pressing the lit one
+again returns to NAV) and the keypad with the real page labels, of which **1 T-ILS** (ILS),
+**4 STPT** (the WAY page), **6 TIME** (time acceleration) and **7 MARK** (designate) work, with
+**DCLT** (HUD declutter) and **NVG** right of them. The **DED** (data entry display) right of the
+up-front controls shows a CNI-style page in amber: the radio channels, the current steerpoint and
+the target, the clock, the bearing, distance and ETA to the steerpoint, and the time on target
+(or the fuel). Under the up-front controls the round flight instruments: airspeed, the attitude
+indicator and the altimeter, then the AOA indicator, the **HSI** (heading, bearing pointer and
+distance to the current waypoint) and the vertical velocity indicator, and the clock (local
+time) under the HSI. The MFDs are left and right of them. Top left the flap, brake and
+autopilot caps, the threat lights (TRAK: a radar tracks the aircraft; RAD / IR: a radar or
+infrared guided missile is in the air) with the master caution and stall lights, and the
+**RWR** scope next to the up-front controls. Down the right edge
+the engine instruments (oil pressure and nozzle position over the right MFD, RPM, FTIT and fuel
+beside it). The other warning lights are on the advisory light panel on the right console, ahead
+of the stick. Sloped panels rise from the consoles to the main panel: the countermeasure panel
+(chaff, flare and decoy with their counts, ECM and IRJ) is on the right one; on the left one the
+gear handle with the gear lights left of it (an aircraft outline with a green lamp at each wheel
+while the gear is down) and, below them ahead of the throttle, the target buttons (NEAR, NEXT,
+NONE, WPN, DTL). The side stick is on the right console, the throttle on the left one.
+
+The **AOA indexer** left of the HUD lights its symbols for the angle of attack, as the real one:
+the red top chevron when the aircraft is slow (two or more degrees above the approach angle of
+attack, the middle of the HUD's bracket), the green circle on speed, the amber bottom chevron
+when fast; the circle and a chevron together in between.
 
 It has no radar bar graph. The **RWR** shows every radar that can see the aircraft, at its bearing
 relative to the nose (up = ahead). Like a real RWR it does not show range: the closer a symbol is to
@@ -254,8 +271,8 @@ the air.
 
 ### 3.8 In-flight settings menu
 
-**Esc** (also Pause, Alt P, the gamepad's Start button or the **MENU** button of the left side
-panel) opens the settings menu and pauses the flight: in VR a screen in front of the pilot, on
+**Esc** (also Pause, Alt P, the gamepad's Start button, the **MENU** button of the F-117A's left
+side panel or the F-16C's **LIST** key) opens the settings menu and pauses the flight: in VR a screen in front of the pilot, on
 the desktop over the middle of the window. In VR, touch an
 entry with a fingertip and pull the trigger, or use a thumbstick and A / X. On the desktop, click
 an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).

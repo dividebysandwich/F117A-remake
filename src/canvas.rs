@@ -61,18 +61,6 @@ impl Canvas {
         }
     }
 
-    /// Replaces colour `from` by `to` inside the rectangle (x0,y0)-(x1,y1) inclusive
-    /// (the driver's recolour-rectangle used for panel lights).
-    pub fn recolor_rect(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, from: u8, to: u8) {
-        for y in y0..=y1 {
-            for x in x0..=x1 {
-                if self.get(x, y) == from {
-                    self.set(x, y, to);
-                }
-            }
-        }
-    }
-
     /// Copies a rectangle opaquely (the driver's copyRect).
     #[allow(clippy::too_many_arguments)]
     pub fn copy_rect(&mut self, src: &Canvas, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32) {

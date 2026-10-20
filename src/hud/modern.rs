@@ -356,12 +356,15 @@ fn bank_scale(c: &mut Canvas, down: Vec2, f: &HudFrame) {
     }
 }
 
+/// Approach (on speed) angle of attack in degrees: the middle of the HUD's AOA bracket and
+/// the approach indexer's green circle.
+pub const APPROACH_AOA: f32 = 10.0;
+
 /// Approach angle-of-attack bracket left of the flight path marker (gear down): centred on
 /// the marker at the approach angle of attack, marker high in the bracket = fast.
 fn aoa_bracket(c: &mut Canvas, fpm: Vec2, aoa: f32) {
-    const ON_SPEED: f32 = 10.0;
     let x = fpm.x - 48.0;
-    let y = fpm.y - (aoa - ON_SPEED) * 8.0;
+    let y = fpm.y - (aoa - APPROACH_AOA) * 8.0;
     let half = 18.0;
     c.polyline(&[Vec2::new(x + 6.0, y - half), Vec2::new(x, y - half), Vec2::new(x, y + half), Vec2::new(x + 6.0, y + half)], PEN, INK);
 }

@@ -966,7 +966,7 @@ fn text2(c: &mut Canvas, fonts: &Fonts, x: i32, y: i32, s: &str, colour: u8) -> 
     fonts.text_scaled(c, x, y, &upper(s), colour, 2)
 }
 
-fn hms(seconds: f32) -> (u32, u32, u32) {
+pub(crate) fn hms(seconds: f32) -> (u32, u32, u32) {
     let s = seconds.max(0.0) as u32 % 86400;
     (s / 3600, s / 60 % 60, s % 60)
 }
@@ -1522,7 +1522,7 @@ impl MfdParams<'_, '_> {
 }
 
 /// Fuel load shown as a full bar (lbs).
-const FULL_FUEL: f32 = 10000.0;
+pub(crate) const FULL_FUEL: f32 = 10000.0;
 
 /// Start/end bearing of a radar arc in BAM high-byte units (end > start).
 fn arc_range(arc: &MapArc) -> (f64, f64) {

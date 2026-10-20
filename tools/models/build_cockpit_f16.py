@@ -366,7 +366,6 @@ for key in ("left", "right"):
     # The MFD in its well: the bezel's face MFD_WELL behind the panel surface.
     x, y, w, h = scr[key]
     panel_box("dark", "dark", (x - 16.0, y - 22.0, w + 32.0, h + 44.0), 0.008, 0.0, -0.03)
-    panel_box("black", "black", scr[key], 0.002, 0.0, -MFD_WELL)
     # Side bezel buttons (fixed: the game uses the top and bottom rows).
     for k in range(5):
         for bx in (x - 9.0, x + w + 9.0):

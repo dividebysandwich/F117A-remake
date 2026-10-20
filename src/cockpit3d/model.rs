@@ -44,6 +44,7 @@ use super::displays::{self, CanvasRole, LitMaterial, PanelMaterials, TrackCamScr
 use super::hud_glass::HudGlassMaterial;
 use super::layout::PanelLayout;
 use super::levers::{CockpitAnchors, Stick, ThrottleLever};
+use super::shading::{CockpitMaterial, cockpit_material};
 use super::{CockpitLamp, CockpitMaterials};
 use crate::font::Fonts;
 
@@ -57,7 +58,7 @@ pub(super) fn load_models(mut commands: Commands, server: Res<AssetServer>) {
 }
 
 impl CockpitMaterials {
-    fn by_name(&self, name: &str) -> Option<&Handle<StandardMaterial>> {
+    fn by_name(&self, name: &str) -> Option<&Handle<CockpitMaterial>> {
         Some(match name {
             "panel_grey" => &self.panel_grey,
             "dark" => &self.dark,
@@ -97,11 +98,11 @@ pub(super) struct Spawner<'a> {
     /// Modern HUD scale (`AircraftSpec::hud_scale`).
     pub hud_scale: f32,
     pub meshes: &'a mut Assets<Mesh>,
-    pub materials: &'a mut Assets<StandardMaterial>,
+    pub materials: &'a mut Assets<CockpitMaterial>,
     pub hud_materials: &'a mut Assets<HudGlassMaterial>,
     pub images: &'a mut Assets<Image>,
     /// Modelled materials by glTF material (made once).
-    modelled: HashMap<AssetId<GltfMaterial>, Handle<StandardMaterial>>,
+    modelled: HashMap<AssetId<GltfMaterial>, Handle<CockpitMaterial>>,
     /// The model has no tracking camera picture behind the left screen: one is made from the
     /// screen's mesh.
     left_trackcam_missing: bool,
@@ -121,7 +122,7 @@ impl<'a> Spawner<'a> {
         hires: bool,
         hud_scale: f32,
         meshes: &'a mut Assets<Mesh>,
-        materials: &'a mut Assets<StandardMaterial>,
+        materials: &'a mut Assets<CockpitMaterial>,
         hud_materials: &'a mut Assets<HudGlassMaterial>,
         images: &'a mut Assets<Image>,
     ) -> Self {
@@ -331,7 +332,7 @@ impl<'a> Spawner<'a> {
     }
 
     /// A material as modelled in Blender.
-    fn modelled(&mut self, material: Option<&Handle<GltfMaterial>>, assets: &ModelAssets) -> Handle<StandardMaterial> {
+    fn modelled(&mut self, material: Option<&Handle<GltfMaterial>>, assets: &ModelAssets) -> Handle<CockpitMaterial> {
         let Some(h) = material else { return self.mats.panel_grey.clone() };
         if let Some(m) = self.modelled.get(&h.id()) {
             return m.clone();
@@ -345,7 +346,7 @@ impl<'a> Spawner<'a> {
             fog_enabled: false,
             ..default()
         });
-        let m = self.materials.add(m);
+        let m = self.materials.add(cockpit_material(m));
         self.modelled.insert(h.id(), m.clone());
         m
     }

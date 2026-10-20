@@ -99,6 +99,7 @@ fn status(
     meshes: Res<Assets<Mesh>>,
     images: Res<Assets<Image>>,
     materials: Res<Assets<StandardMaterial>>,
+    cockpit_materials: Res<Assets<crate::cockpit3d::CockpitMaterial>>,
     player: Query<&Aircraft, With<Player>>,
     cameras: Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<TrackCamera>)>,
     lamps: Query<(&crate::scenery::LampBatch, &InheritedVisibility)>,
@@ -156,7 +157,7 @@ fn status(
         stats.history.back().map_or(0, |f| f.entities),
         meshes.len(),
         images.len(),
-        materials.len(),
+        materials.len() + cockpit_materials.len(),
         flight,
     );
     stats.last = now;

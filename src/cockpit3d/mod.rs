@@ -23,12 +23,15 @@ pub mod geometry;
 mod hud_glass;
 pub mod layout;
 mod levers;
+mod shading;
 
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions};
 
+pub use self::shading::CockpitMaterial;
+use self::shading::cockpit_material;
 use crate::camera::{EyeCamera, HeadAnchor, HeadLook, Orbit, View, ViewState};
 use crate::flight::Player;
 use crate::input::{Action, ActionEvent};
@@ -40,7 +43,7 @@ pub struct Cockpit3dPlugin;
 
 impl Plugin for Cockpit3dPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<hud_glass::HudGlassMaterial>::default())
+        app.add_plugins((MaterialPlugin::<hud_glass::HudGlassMaterial>::default(), MaterialPlugin::<shading::CockpitMaterial>::default()))
             .init_resource::<Hands>()
             .init_resource::<levers::CockpitAnchors>()
             .add_message::<PressControl>()
@@ -145,31 +148,31 @@ fn respawn_on_style_change(mut commands: Commands, settings: Res<Settings>, root
 /// Shared cockpit materials.
 #[derive(Resource)]
 pub struct CockpitMaterials {
-    pub panel_grey: Handle<StandardMaterial>,
-    pub dark: Handle<StandardMaterial>,
-    pub black: Handle<StandardMaterial>,
-    pub frame: Handle<StandardMaterial>,
-    pub seat: Handle<StandardMaterial>,
-    pub cushion: Handle<StandardMaterial>,
-    pub yellow: Handle<StandardMaterial>,
-    pub rubber: Handle<StandardMaterial>,
-    pub metal: Handle<StandardMaterial>,
-    pub hand: Handle<StandardMaterial>,
-    pub flash: Handle<StandardMaterial>,
+    pub panel_grey: Handle<CockpitMaterial>,
+    pub dark: Handle<CockpitMaterial>,
+    pub black: Handle<CockpitMaterial>,
+    pub frame: Handle<CockpitMaterial>,
+    pub seat: Handle<CockpitMaterial>,
+    pub cushion: Handle<CockpitMaterial>,
+    pub yellow: Handle<CockpitMaterial>,
+    pub rubber: Handle<CockpitMaterial>,
+    pub metal: Handle<CockpitMaterial>,
+    pub hand: Handle<CockpitMaterial>,
+    pub flash: Handle<CockpitMaterial>,
     /// Frame around the control a VR fingertip touches.
-    pub highlight: Handle<StandardMaterial>,
+    pub highlight: Handle<CockpitMaterial>,
 }
 
-fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<CockpitMaterial>>) {
     // Structure materials are always lit; the panel picture and labels follow the options.
     let mut m = |c: Color, rough: f32, metal: f32| {
-        materials.add(StandardMaterial {
+        materials.add(cockpit_material(StandardMaterial {
             base_color: c,
             perceptual_roughness: rough,
             metallic: metal,
             fog_enabled: false,
             ..default()
-        })
+        }))
     };
     let panel_grey = m(Color::srgb(0.20, 0.22, 0.24), 0.8, 0.0);
     let dark = m(Color::srgb(0.09, 0.10, 0.11), 0.85, 0.0);
@@ -181,21 +184,21 @@ fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<Standard
     let rubber = m(Color::srgb(0.05, 0.05, 0.05), 0.95, 0.0);
     let metal = m(Color::srgb(0.45, 0.46, 0.48), 0.4, 0.8);
     let hand = m(Color::srgb(0.25, 0.27, 0.3), 0.8, 0.0);
-    let flash = materials.add(StandardMaterial {
+    let flash = materials.add(cockpit_material(StandardMaterial {
         base_color: Color::srgba(0.9, 0.0, 0.0, 0.45),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         cull_mode: None,
         fog_enabled: false,
         ..default()
-    });
-    let highlight = materials.add(StandardMaterial {
+    }));
+    let highlight = materials.add(cockpit_material(StandardMaterial {
         base_color: Color::srgb(1.0, 0.9, 0.4),
         emissive: LinearRgba::rgb(2.0, 1.6, 0.6),
         unlit: true,
         fog_enabled: false,
         ..default()
-    });
+    }));
     commands.insert_resource(CockpitMaterials {
         panel_grey,
         dark,
@@ -221,7 +224,7 @@ fn sync_materials(
     settings: Res<Settings>,
     extra: Query<&displays::LitMaterial>,
     added: Query<(), Added<displays::LitMaterial>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<CockpitMaterial>>,
     mut last: Local<Option<bool>>,
 ) {
     let lit = lighting_on(&settings);
@@ -231,9 +234,10 @@ fn sync_materials(
     *last = Some(lit);
     for h in extra.iter().map(|l| &l.0) {
         if let Some(mut m) = materials.get_mut(h)
-            && m.unlit == lit
+            && m.base.unlit == lit
         {
-            m.unlit = !lit;
+            m.base.unlit = !lit;
+            m.extension.unlit = !lit;
         }
     }
 }
@@ -276,7 +280,7 @@ fn spawn_cockpit(
     head: Query<Entity, With<HeadAnchor>>,
     mats: Res<CockpitMaterials>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<CockpitMaterial>>,
     mut hud_materials: ResMut<Assets<hud_glass::HudGlassMaterial>>,
     mut images: ResMut<Assets<Image>>,
     fonts: Res<crate::font::Fonts>,

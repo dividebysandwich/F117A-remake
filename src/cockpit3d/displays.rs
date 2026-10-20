@@ -12,6 +12,7 @@ use bevy::prelude::*;
 
 use super::geometry::panel_rect;
 use super::hud_glass::HudGlassMaterial;
+use super::shading::{CockpitMaterial, cockpit_material};
 use super::layout::{Elem, PanelLayout, PanelStyle, Placed, PxRect};
 use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit::{CockpitArt, Displays};
@@ -33,7 +34,7 @@ const ATLAS: usize = 512;
 
 /// A cockpit material whose `unlit` follows the lighting options (see `sync_materials`).
 #[derive(Component)]
-pub struct LitMaterial(pub Handle<StandardMaterial>);
+pub struct LitMaterial(pub Handle<CockpitMaterial>);
 
 /// What a canvas shows (`update_displays` draws them).
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,8 +154,8 @@ fn gear_lights(c: &mut Canvas, r: [i32; 4], down: bool) {
 /// The panel's run-time materials: the palette swatch for the solid parts, and the instrument
 /// atlas (with its glow twin) holding every lamp, readout, label and bezel button face.
 pub(super) struct PanelMaterials {
-    pub solid: Handle<StandardMaterial>,
-    pub atlas: Handle<StandardMaterial>,
+    pub solid: Handle<CockpitMaterial>,
+    pub atlas: Handle<CockpitMaterial>,
     /// Atlas rectangle (uv min, max) of each face, by face key (`Face`'s `Debug` text).
     pub faces: HashMap<String, (Vec2, Vec2)>,
 }
@@ -164,7 +165,7 @@ pub(super) fn panel_materials(
     commands: &mut Commands,
     root: Entity,
     layout: &PanelLayout,
-    materials: &mut Assets<StandardMaterial>,
+    materials: &mut Assets<CockpitMaterial>,
     images: &mut Assets<Image>,
 ) -> PanelMaterials {
     // Palette swatch for the solid parts (their UVs point at one cell each).
@@ -173,14 +174,14 @@ pub(super) fn panel_materials(
         *p = i as u8;
     }
     let swatch = CanvasTexture::new(swatch, images, false);
-    let solid = materials.add(StandardMaterial {
+    let solid = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(swatch.image.clone()),
         perceptual_roughness: 0.8,
         cull_mode: None,
         unlit: true,
         fog_enabled: false,
         ..default()
-    });
+    }));
     let e = commands.spawn((swatch, LitMaterial(solid.clone()))).id();
     commands.entity(root).add_child(e);
 
@@ -194,7 +195,7 @@ pub(super) fn panel_materials(
     };
     let atlas_tex = CanvasTexture::new(Canvas::new(ATLAS, ATLAS), images, false);
     let glow_tex = CanvasTexture::new(Canvas::new(ATLAS, ATLAS), images, false);
-    let atlas = materials.add(StandardMaterial {
+    let atlas = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(atlas_tex.image.clone()),
         emissive_texture: Some(glow_tex.image.clone()),
         emissive: LinearRgba::rgb(GLOW_NITS, GLOW_NITS, GLOW_NITS),
@@ -203,7 +204,7 @@ pub(super) fn panel_materials(
         unlit: true,
         fog_enabled: false,
         ..default()
-    });
+    }));
     let info = InstrumentAtlas { faces: faces.iter().zip(&slots).map(|((f, _), s)| (*f, *s)).collect(), texels: k };
     let e = commands.spawn((CanvasRole::Atlas, info, atlas_tex, LitMaterial(atlas.clone()))).id();
     commands.entity(root).add_child(e);
@@ -240,7 +241,7 @@ pub(super) fn atlas_faces(layout: &PanelLayout) -> Vec<(Face, PxRect)> {
 
 /// A self-luminous screen: an MFD (`Left` / `Right`), the attitude ball, the RWR scope, the HSI
 /// or the approach indexer, with its canvas.
-pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materials: &mut Assets<StandardMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<StandardMaterial>) {
+pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materials: &mut Assets<CockpitMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<CockpitMaterial>) {
     let (size, transparent) = match role {
         CanvasRole::Left | CanvasRole::Right => (if hires { HIRES } else { CLASSIC }, false),
         CanvasRole::Adi | CanvasRole::Rwr | CanvasRole::Hsi => {
@@ -256,7 +257,7 @@ pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materi
     };
     let tex = CanvasTexture::new(Canvas::new(size.0, size.1), images, transparent);
     let glow = role != CanvasRole::Approach;
-    let material = materials.add(StandardMaterial {
+    let material = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(tex.image.clone()),
         emissive_texture: glow.then(|| tex.image.clone()),
         emissive: if glow { LinearRgba::rgb(GLOW_NITS, GLOW_NITS, GLOW_NITS) } else { LinearRgba::BLACK },
@@ -266,36 +267,36 @@ pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materi
         unlit: true,
         fog_enabled: false,
         ..default()
-    });
+    }));
     (tex, material)
 }
 
 /// The tracking camera picture behind the right screen (seen where its page is see-through).
-pub(super) fn trackcam_material(materials: &mut Assets<StandardMaterial>, tc_image: Option<&crate::trackcam::TrackCamImage>) -> Handle<StandardMaterial> {
-    materials.add(StandardMaterial {
+pub(super) fn trackcam_material(materials: &mut Assets<CockpitMaterial>, tc_image: Option<&crate::trackcam::TrackCamImage>) -> Handle<CockpitMaterial> {
+    materials.add(cockpit_material(StandardMaterial {
         base_color_texture: tc_image.map(|i| i.0.clone()),
         unlit: true,
         cull_mode: None,
         fog_enabled: false,
         ..default()
-    })
+    }))
 }
 
 /// A side panel button label (the button's text on a green cap).
-pub(super) fn side_label(text: &str, fonts: &Fonts, materials: &mut Assets<StandardMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<StandardMaterial>) {
+pub(super) fn side_label(text: &str, fonts: &Fonts, materials: &mut Assets<CockpitMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<CockpitMaterial>) {
     let mut canvas = Canvas::new(28, 11);
     canvas.clear(44);
     let w = fonts.text(&mut Canvas::new(64, 16), 0, 0, text.as_bytes(), 47);
     fonts.text(&mut canvas, (28 - w) / 2, 3, text.as_bytes(), 47);
     let tex = CanvasTexture::new(canvas, images, false);
-    let m = materials.add(StandardMaterial {
+    let m = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(tex.image.clone()),
         emissive_texture: Some(tex.image.clone()),
         emissive: LinearRgba::rgb(1.0, 1.0, 1.0),
         unlit: true,
         fog_enabled: false,
         ..default()
-    });
+    }));
     (tex, m)
 }
 

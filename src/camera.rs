@@ -98,6 +98,12 @@ const BACKGROUND_RADIUS: f32 = 590_000.0;
 pub const MAIN_BACKGROUND_LAYER: usize = 2;
 pub const TRACKCAM_BACKGROUND_LAYER: usize = 1;
 
+/// Mip level bias of the cockpit's textured screens and labels (StandardMaterial samples with
+/// the view's bias): negative picks sharper levels. The headset's eye buffers pick coarser
+/// levels for the same apparent size, so they get more.
+pub const DESKTOP_MIP_BIAS: f32 = -0.5;
+pub const VR_MIP_BIAS: f32 = -1.25;
+
 /// Render layers of model detail levels picked by only one view (`models::LodShown`); levels
 /// picked by both views stay on layer 0.
 pub const MAIN_LOD_LAYER: usize = 3;
@@ -169,6 +175,7 @@ pub fn spawn_rig(
             Transform::default(),
             // Palette colours must reach the screen unchanged.
             bevy::core_pipeline::tonemapping::Tonemapping::None,
+            bevy::render::camera::MipBias(DESKTOP_MIP_BIAS),
         ))
         .id();
     spawn_background(commands, cam, meshes, palette, MAIN_BACKGROUND_LAYER);

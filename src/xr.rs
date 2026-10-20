@@ -376,7 +376,11 @@ fn haptics(actions: Res<XrActions>, session: Res<OxrSession>, mut hands: ResMut<
 fn setup_cameras(mut commands: Commands, cams: Query<Entity, Added<XrCamera>>, root: Query<Entity, With<XrTrackingRoot>>) {
     let root = root.single().ok();
     for e in &cams {
-        commands.entity(e).insert((RenderLayers::from_layers(&[0, MAIN_BACKGROUND_LAYER, crate::camera::MAIN_LOD_LAYER]), Tonemapping::None));
+        commands.entity(e).insert((
+            RenderLayers::from_layers(&[0, MAIN_BACKGROUND_LAYER, crate::camera::MAIN_LOD_LAYER]),
+            Tonemapping::None,
+            bevy::render::camera::MipBias(crate::camera::VR_MIP_BIAS),
+        ));
         if crate::camera::no_indirect(true) {
             commands.entity(e).insert(bevy::render::view::NoIndirectDrawing);
         }

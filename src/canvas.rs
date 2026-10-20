@@ -436,7 +436,7 @@ impl CanvasTexture {
         );
         image.texture_descriptor.mip_level_count = levels.len() as u32;
         image.data = Some(vec![0; levels.iter().map(|(w, h)| w * h * 4).sum()]);
-        image.sampler = ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor { anisotropy_clamp: 4, ..bevy::image::ImageSamplerDescriptor::linear() });
+        image.sampler = ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor { anisotropy_clamp: 16, ..bevy::image::ImageSamplerDescriptor::linear() });
         Self { canvas, image: images.add(image), transparent, mask: None, dirty: true, mips: levels.len(), shown: None }
     }
 }

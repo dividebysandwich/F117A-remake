@@ -136,7 +136,9 @@ The modes add their own symbols:
   down to the flight path marker.
 * **Gun** selected (in every mode): the gun pipper, where the target has to be for the rounds
   fired now to hit it. It allows for the rounds' time of flight to the locked target's range,
-  the target's motion relative to the rounds and their drop; without a lock it is set for a
+  the target's motion relative to the rounds and their drop. Unless an aircraft is locked, when
+  the rounds would hit the ground within 4 km the pipper shows where they hit it (put it on the
+  ground target), with the range to that point; otherwise without a lock it is set for a
   target 1000 m ahead flying along with you. With a lock, an arc around it unwinds with the
   range (a full circle is 12,000 ft), the range in km is under it and *SHOOT* flashes within
   2 km.

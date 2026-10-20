@@ -928,6 +928,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         if sim.gun_selected() {
             // The locked aircraft (position and velocity over the last sim frame) or ground
             // object, else a target 1000 m ahead flying along with the aircraft.
+            let air = t.air.is_some_and(|i| i < sim.flights().len());
             let target = if let Some(i) = t.air.filter(|&i| i < sim.flights().len()) {
                 let u = sim.flights()[i];
                 let (e, n, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
@@ -943,7 +944,8 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                     (wu_to_bevy(e, n, 0.0), DVec3::ZERO)
                 })
             };
-            new_cues.gun = Some(gun_cue(&a, pos, eye, target));
+            let ground_y = wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
+            new_cues.gun = Some(gun_cue(&a, pos, eye, target, air, ground_y));
         }
     }
     *cam = info;
@@ -954,15 +956,29 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
 /// for the rounds fired now to hit it. A round leaves along the nose at the muzzle speed plus
 /// the aircraft's speed and falls (`stealth_sim` gun), so with the target at range R the
 /// pipper is D(t) = (u - v) t + g t^2 / 2 with |D(t)| = R.
-fn gun_cue(a: &Aircraft, pos: &WorldPos, eye: Vec3, target: Option<(DVec3, DVec3)>) -> crate::hud::GunCue {
+///
+/// Unless an aircraft is locked (`air`), when the rounds reach the ground (at height `ground_y`)
+/// within `GROUND_RANGE` the pipper is where they hit it, with the range to that point.
+fn gun_cue(a: &Aircraft, pos: &WorldPos, eye: Vec3, target: Option<(DVec3, DVec3)>, air: bool, ground_y: f64) -> crate::hud::GunCue {
     const DEFAULT_RANGE: f64 = 1000.0;
     /// Range the rounds are effective to (m).
     const GUN_RANGE: f64 = 2000.0;
+    /// Farthest ground impact the pipper shows (m).
+    const GROUND_RANGE: f64 = 4000.0;
     let from = pos.0 + (a.orientation * eye).as_dvec3();
     let nose = (a.orientation * Vec3::NEG_Z).as_dvec3();
     let speed = a.knots() as f64 * 0.514_444;
     let u = nose * (stealth_sim::GUN_MUZZLE_SPEED + speed);
     let g = DVec3::new(0.0, -stealth_sim::GUN_GRAVITY, 0.0);
+    let cue = |d: DVec3, range: f64, range_m: Option<f32>, in_range: bool| {
+        let dir = d.normalize_or_zero();
+        let (e, n, alt) = bevy_to_wu(from + dir * range);
+        crate::hud::GunCue { dir: a.orientation.inverse() * dir.as_vec3(), screen: project_cockpit(a, pos, eye, e, n, alt), range_m, in_range }
+    };
+    if !air && let Some(d) = ground_impact(from, u, ground_y).filter(|d| d.length() <= GROUND_RANGE) {
+        let range = d.length();
+        return cue(d, range, Some(range as f32), target.is_some() && range < GUN_RANGE);
+    }
     let (range, v) = match target {
         Some((p, v)) => ((p - from).length(), v),
         None => (DEFAULT_RANGE, a.path_dir().as_dvec3() * speed),
@@ -974,14 +990,19 @@ fn gun_cue(a: &Aircraft, pos: &WorldPos, eye: Vec3, target: Option<(DVec3, DVec3
         t *= range / d.length().max(1e-6);
         d = rel * t + g * (0.5 * t * t);
     }
-    let dir = a.orientation.inverse() * d.normalize_or_zero().as_vec3();
-    let (e, n, alt) = bevy_to_wu(from + d.normalize_or_zero() * range);
-    crate::hud::GunCue {
-        dir,
-        screen: project_cockpit(a, pos, eye, e, n, alt),
-        range_m: target.map(|_| range as f32),
-        in_range: target.is_some() && range < GUN_RANGE,
+    cue(d, range, target.map(|_| range as f32), target.is_some() && range < GUN_RANGE)
+}
+
+/// Where rounds fired from `from` with velocity `u` hit the ground plane at height `ground_y`,
+/// relative to `from` (None from below it).
+fn ground_impact(from: DVec3, u: DVec3, ground_y: f64) -> Option<DVec3> {
+    let h = from.y - ground_y;
+    if h <= 0.0 {
+        return None;
     }
+    let g = stealth_sim::GUN_GRAVITY;
+    let t = (u.y + (u.y * u.y + 2.0 * g * h).sqrt()) / g;
+    Some(u * t + DVec3::new(0.0, -0.5 * g * t * t, 0.0))
 }
 
 /// The end-of-mission overlay.
@@ -1079,7 +1100,7 @@ mod tests {
     fn pipper_drops_with_range() {
         let (a, pos) = level(400.0);
         let v = DVec3::new(0.0, 0.0, -400.0 * 0.514_444);
-        let at = |m: f64| gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -m), v)));
+        let at = |m: f64| gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -m), v)), true, 0.0);
         let (near, far) = (mils(at(500.0).dir), mils(at(1500.0).dir));
         // A target flying along: the rounds' drop only (g t / 2 v at 1050 m/s).
         let want = |m: f32| 0.5 * 9.81 * (m / 1050.0) / 1050.0 * 1000.0;
@@ -1094,14 +1115,34 @@ mod tests {
         let (a, pos) = level(400.0);
         // 1000 m ahead crossing left to right at 200 m/s: the target has to be left of where
         // the rounds go, by its travel during their flight.
-        let cue = gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -1000.0), DVec3::new(200.0, 0.0, 0.0))));
+        let cue = gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -1000.0), DVec3::new(200.0, 0.0, 0.0))), true, 0.0);
         let (right, _) = mils(cue.dir);
         let t = 1000.0 / (1050.0 + 400.0 * 0.514_444);
         let want = -(200.0f32 * t / 1000.0).atan() * 1000.0;
         assert!((right - want).abs() < 3.0, "{right} mils, want {want}");
         // No target: a target 1000 m ahead flying along.
-        let free = gun_cue(&a, &pos, Vec3::ZERO, None);
+        // No target, the ground far below the rounds' reach: a target 1000 m ahead flying along.
+        let free = gun_cue(&a, &pos, Vec3::ZERO, None, false, 0.0);
         assert!(free.range_m.is_none() && !free.in_range);
         assert!(mils(free.dir).0.abs() < 0.01 && mils(free.dir).1 < 0.0);
+    }
+
+    #[test]
+    fn pipper_on_the_ground_in_a_dive() {
+        let (mut a, pos) = level(400.0);
+        a.orientation = Quat::from_rotation_x(-30f32.to_radians());
+        // 1000 m up in a 30 degree dive: the rounds hit the ground about 2000 m away, a little
+        // short of the boresight.
+        let cue = gun_cue(&a, &pos, Vec3::ZERO, None, false, 0.0);
+        let range = cue.range_m.expect("ground impact") as f64;
+        assert!((1900.0..2000.0).contains(&range), "{range}");
+        let hit = pos.0 + (a.orientation * cue.dir).as_dvec3() * range;
+        assert!(hit.y.abs() < 0.5, "{hit}");
+        assert!(mils(cue.dir).1 < 0.0 && !cue.in_range);
+        // A ground target locked: SHOOT within the gun's range.
+        let target = Some((hit, DVec3::ZERO));
+        assert!(gun_cue(&a, &pos, Vec3::ZERO, target, false, 0.0).in_range);
+        // The ground 600 m higher: the impact is that much nearer.
+        assert!(gun_cue(&a, &pos, Vec3::ZERO, None, false, 600.0).range_m.unwrap() < 900.0);
     }
 }

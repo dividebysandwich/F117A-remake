@@ -854,11 +854,12 @@ fn gun_rounds_fly_ballistic() {
     let mut sim = Sim::new(&d.sim, &m);
     let (mx, my) = sandbox(&mut sim, &m);
     let mut p = player_at(mx, my, 5000, 0, 400);
+    // One round (the gun fires every frame).
     p.cmd.gun = true;
-    sim.step(&p, 15);
     sim.step(&p, 15);
     p.cmd = Commands::default();
     let (b0, _) = sim.bullets();
+    assert_eq!(b0.iter().filter(|b| b.x != 0).count(), 1);
     let i = b0.iter().position(|b| b.x != 0).expect("a round");
     let start = b0[i].map_pos();
     for _ in 0..30 {

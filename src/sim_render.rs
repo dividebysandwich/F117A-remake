@@ -49,6 +49,8 @@ const CHAFF: u8 = 7;
 const DECOY: u8 = 13;
 const TRACER: u8 = 17;
 const ENEMY_TRACER: u8 = 41;
+/// A tracer's streak behind the round: this many sim frames of its travel.
+const TRACER_FRAMES: f64 = 0.6;
 const CHUTE: u8 = 15;
 /// The canopy's gores (alternating orange and white) and its suspension lines.
 const CANOPY_COLOURS: [u8; 2] = [0xCC, 0xE0];
@@ -88,7 +90,8 @@ struct SimVisuals {
     aircraft: HashMap<usize, (Entity, (i32, bool))>,
     proj: [Option<(Entity, i32)>; N_PROJ],
     cms: [Option<Cartridge>; 4],
-    bullets: Vec<Entity>,
+    /// Gun rounds: the dot at the round and its tracer line.
+    bullets: Vec<(Entity, Entity)>,
     wreck: Option<Entity>,
     chute: Option<Entity>,
     canopy: Option<Entity>,
@@ -174,6 +177,31 @@ fn spawn_dot(commands: &mut Commands, assets: &ModelAssets, material: Handle<Pal
         commands.entity(parent).add_child(dot);
     }
     parent
+}
+
+/// A tracer line: a unit segment along +Z from the round, scaled to the streak.
+fn spawn_tracer(commands: &mut Commands, material: Handle<PaletteMaterial>) -> Entity {
+    let e = commands
+        .spawn((
+            SimObject,
+            WorldPos::default(),
+            Transform::default(),
+            Visibility::Hidden,
+            MeshMaterial3d(material),
+            bevy::mesh::MeshTag(mesh_tag(LEVEL_AIRCRAFT, 0, true)),
+            bevy::light::NotShadowCaster,
+            bevy::camera::visibility::NoFrustumCulling,
+        ))
+        .id();
+    commands.queue(move |world: &mut World| {
+        let mut mesh = Mesh::new(bevy::mesh::PrimitiveTopology::LineList, bevy::asset::RenderAssetUsages::RENDER_WORLD);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![Vec3::ZERO, Vec3::Z]);
+        let h = world.resource_mut::<Assets<Mesh>>().add(mesh);
+        if let Ok(mut ent) = world.get_entity_mut(e) {
+            ent.insert(Mesh3d(h));
+        }
+    });
+    e
 }
 
 /// The parachute canopy over the pilot (origin at their feet, metres): a round canopy of 24
@@ -387,21 +415,43 @@ fn sync_objects(
         }
     }
 
-    // --- gun rounds (tracers)
+    // --- gun rounds: a bright line along the path of each round (tracers), drawn one sim
+    // frame behind like everything else
     let (bullets, n) = sim.bullets();
+    if vis.bullets.len() != bullets.len() {
+        for &(dot, line) in &vis.bullets {
+            commands.entity(dot).try_despawn();
+            commands.entity(line).try_despawn();
+        }
+        vis.bullets.clear();
+    }
     while vis.bullets.len() < bullets.len() {
         let colour = if vis.bullets.len() < n { TRACER } else { ENEMY_TRACER };
         let material = vis.material(&mut materials, &globals, colour);
-        let e = spawn_dot(&mut commands, &assets, material, &[Vec3::ZERO]);
-        vis.bullets.push(e);
+        let dot = spawn_dot(&mut commands, &assets, material.clone(), &[Vec3::ZERO]);
+        let line = spawn_tracer(&mut commands, material);
+        vis.bullets.push((dot, line));
     }
-    for (b, &e) in bullets.iter().zip(&vis.bullets) {
-        if let Ok((mut pos, _, _, mut v)) = q.get_mut(e) {
-            if b.x != 0 {
-                pos.0 = map_point(b.x as f64 + 0.5, b.y as f64 + 0.5, b.alt as f64);
-                v.set_if_neq(Visibility::Inherited);
-            } else {
-                v.set_if_neq(Visibility::Hidden);
+    let fine = stealth_sim::ROUND_FINE as f64;
+    for (b, &(dot, line)) in bullets.iter().zip(&vis.bullets) {
+        let (x, y, alt) = b.map_pos();
+        let step = (b.vx as f64 / (32.0 * fine), b.vy as f64 / (32.0 * fine), b.vz as f64 / fine);
+        let back = 1.0 - alpha as f64;
+        let head = map_point(x - step.0 * back, y - step.1 * back, alt - step.2 * back);
+        let tail = map_point(x - step.0 * (back + TRACER_FRAMES), y - step.1 * (back + TRACER_FRAMES), alt - step.2 * (back + TRACER_FRAMES));
+        let streak = (tail - head).as_vec3();
+        for e in [dot, line] {
+            if let Ok((mut pos, mut tf, _, mut v)) = q.get_mut(e) {
+                if b.x != 0 {
+                    pos.0 = head;
+                    if e == line {
+                        tf.rotation = Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
+                        tf.scale = Vec3::new(1.0, 1.0, streak.length().max(0.01));
+                    }
+                    v.set_if_neq(Visibility::Inherited);
+                } else {
+                    v.set_if_neq(Visibility::Hidden);
+                }
             }
         }
     }

@@ -384,11 +384,13 @@ impl Sim {
         let fs = self.fs;
         let nb = self.n_bullets;
         let f = ROUND_FINE;
-        if !self.lockheed && self.frame & 1 != 0 {
-            let slot = ((self.frame >> 1) as usize) % nb;
+        // A round every frame while the trigger is held (the original fired every other frame);
+        // each slot is reused after `nb` frames, which ends the round there.
+        if !self.lockheed {
+            let slot = (self.frame as usize) % nb;
             let trigger = ps.cmd.gun || (self.gun_selected && ps.cmd.trigger);
             if trigger && self.gun_ammo > 0 && self.eject == 0 {
-                self.gun_ammo = clamp_v(self.gun_ammo + cdiv(-40, fs), 0, 1000);
+                self.gun_ammo = clamp_v(self.gun_ammo + cdiv(-20, fs), 0, 1000);
                 self.sound(6, 2);
                 let (vx, vy, vz) = Self::gun_round_velocity(self.p.heading, self.p.pitch, self.p.knots, fs);
                 let (vx, vy, vz) = (vx.round() as i32, vy.round() as i32, vz.round() as i32);
@@ -461,7 +463,11 @@ impl Sim {
             let b = self.bullets[i];
             if b.x != 0 && b.alt < 0 {
                 let (bx, by) = b.map_xy();
-                self.emit(SimEvent::Explosion { x: bx, y: by, alt: 0, kind: -1 });
+                // Where the path over this frame crossed the ground.
+                let above = (b.alt - b.vz) as f64;
+                let k = if above > 0.0 { (above / (above - b.alt as f64)).clamp(0.0, 1.0) - 1.0 } else { 0.0 };
+                let at = |p: i32, v: i32| p + (v as f64 * k).round() as i32;
+                self.emit(SimEvent::RoundImpact { x: at(b.x, b.vx), y: at(b.y, b.vy) });
                 self.bullets[i].x = 0;
                 let o = self.find_object_at(bx, by);
                 if o == -1 || self.obj(o).flags & oflags::DESTROYED != 0 {

@@ -144,6 +144,8 @@ enum PuffLook {
     Fire,
     /// Short bright flash.
     Flash,
+    /// Gun round impact: a short bright yellow flash.
+    GunFlash,
     /// Smoke of the given darkness (0 black .. 1 light grey).
     Smoke(f32),
     /// Brown dust thrown up by ground impacts.
@@ -186,6 +188,7 @@ impl Puff {
                 (c, a, 1.0 - smooth(0.5, 0.95, t))
             }
             PuffLook::Flash => (Vec3::new(6.0, 5.5, 4.5), self.opacity * (1.0 - t).powi(2), 1.0),
+            PuffLook::GunFlash => (Vec3::new(2.6, 2.1, 0.2), self.opacity * (1.0 - t * t), 1.0),
             PuffLook::Smoke(shade) => {
                 let g = 0.04 + 0.32 * shade;
                 // Young smoke is lit from inside by the fire.
@@ -201,6 +204,8 @@ impl Puff {
 #[derive(Clone, Copy, PartialEq)]
 enum ChunkKind {
     Spark,
+    /// A gun round's spark: yellow, cooling to red.
+    GunSpark,
     Debris,
 }
 
@@ -341,6 +346,9 @@ fn spawn_blasts(
         let ground = alt <= 0;
         blasts.push((map_point(x as f64 + 0.5, y as f64 + 0.5, alt.max(0) as f64), Blast::from_kind(kind), ground));
     }
+    for &(x, y) in &combat.round_impacts {
+        blasts.push((map_point(x, y, 0.0), Blast::GunHit, true));
+    }
     for (pos, blast, ground) in blasts {
         spawn_blast(&mut commands, p, &mut materials, &palette.globals, pos, blast, ground);
     }
@@ -385,8 +393,10 @@ fn colour_material(p: &mut Particles, materials: &mut Assets<PaletteMaterial>, g
     m
 }
 
-/// Palette colours: sparks cool from white through yellow to red; debris is dark.
+/// Palette colours: sparks cool from white through yellow to red, gun sparks from yellow;
+/// debris is dark.
 const SPARK_COLOURS: [u8; 3] = [15, 17, 41];
+const GUN_SPARK_COLOURS: [u8; 3] = [17, 17, 41];
 const DEBRIS_COLOURS: [u8; 2] = [5, 8];
 
 #[allow(clippy::too_many_arguments)]
@@ -407,6 +417,7 @@ fn spawn_chunk(
     }
     let colour = match kind {
         ChunkKind::Spark => SPARK_COLOURS[0],
+        ChunkKind::GunSpark => GUN_SPARK_COLOURS[0],
         ChunkKind::Debris => DEBRIS_COLOURS[(p.rand() * 2.0) as usize % 2],
     };
     let material = colour_material(p, materials, globals, colour);
@@ -418,7 +429,7 @@ fn spawn_chunk(
         }
         None => {
             let (spark, debris) = p.meshes.clone().unwrap();
-            let mesh = if kind == ChunkKind::Spark { spark } else { debris };
+            let mesh = if kind == ChunkKind::Debris { debris } else { spark };
             commands
                 .spawn((
                     SimObject,
@@ -452,7 +463,7 @@ fn spawn_blast(
 ) {
     // (fireball radius, fireball puffs, sparks, debris, smoke puffs, flash light strength)
     let (r, fire, sparks, debris, smoke, light) = match blast {
-        Blast::GunHit => (0.0, 0, 6, 0, 1, 0.0),
+        Blast::GunHit => (0.0, 0, 5, 0, 1, 0.0),
         Blast::Kill => (14.0, 9, 28, 14, 7, 2.5),
         Blast::Bomb => (22.0, 12, 34, 22, 10, 3.0),
         Blast::Crash => (30.0, 16, 40, 30, 14, 3.5),
@@ -462,15 +473,17 @@ fn spawn_blast(
     let centre = if ground { pos + DVec3::Y * (r as f64 * 0.4) } else { pos };
 
     if blast == Blast::GunHit {
+        // A small bright yellow flash with yellow sparks.
+        let at = pos + DVec3::Y * 0.5;
         for _ in 0..sparks {
             let v = p.dir(if ground { 0.5 } else { 0.0 }) * p.range(15.0, 45.0);
             let life = p.range(0.2, 0.45);
-            spawn_chunk(commands, p, materials, globals, ChunkKind::Spark, pos, v, life, 0.6, false);
+            spawn_chunk(commands, p, materials, globals, ChunkKind::GunSpark, at, v, life, 1.2, false);
         }
         let look = if ground { PuffLook::Dust } else { PuffLook::Smoke(0.6) };
         let life = p.range(1.2, 2.0);
         p.puff(pos, Vec3::Y * 1.5, life, (1.0, 4.0), look, 1.0, 0.5, 0.7);
-        p.puff(pos, Vec3::ZERO, 0.08, (2.5, 2.5), PuffLook::Flash, 0.0, 0.0, 0.8);
+        p.puff(at, Vec3::ZERO, 0.18, (6.0, 9.0), PuffLook::GunFlash, 0.0, 0.0, 1.0);
         return;
     }
 
@@ -565,7 +578,7 @@ fn simulate(
             p.free.push((c.entity, c.kind));
             continue;
         }
-        let drag = if c.kind == ChunkKind::Spark { 1.2 } else { 0.25 };
+        let drag = if c.kind == ChunkKind::Debris { 0.25 } else { 1.2 };
         c.vel.y -= GRAVITY * dt;
         c.vel *= (-drag * dt).exp();
         c.pos += (c.vel * dt).as_dvec3();
@@ -593,7 +606,7 @@ fn simulate(
         }
         let t = c.age / c.life;
         let (rot, scale) = match c.kind {
-            ChunkKind::Spark => {
+            ChunkKind::Spark | ChunkKind::GunSpark => {
                 let speed = c.vel.length();
                 let dir = c.vel.try_normalize().unwrap_or(Vec3::Y);
                 let w = c.size * 0.6 * (1.0 - t * 0.5);
@@ -608,8 +621,9 @@ fn simulate(
             tf.scale = scale;
             v.set_if_neq(Visibility::Inherited);
         }
-        if c.kind == ChunkKind::Spark {
-            let want = SPARK_COLOURS[((t * 3.0) as usize).min(2)];
+        if c.kind != ChunkKind::Debris {
+            let colours = if c.kind == ChunkKind::Spark { SPARK_COLOURS } else { GUN_SPARK_COLOURS };
+            let want = colours[((t * 3.0) as usize).min(2)];
             if want != c.colour {
                 c.colour = want;
                 let e = c.entity;

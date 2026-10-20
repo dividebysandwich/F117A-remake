@@ -476,7 +476,7 @@ impl Sim {
     fn set_fs(&mut self, fs: i32) {
         let fs = fs.clamp(1, 60);
         self.fs = fs;
-        let nb = (2 * fs).clamp(3, 16) as usize;
+        let nb = (2 * fs + 2).clamp(3, 64) as usize;
         if nb != self.n_bullets {
             self.n_bullets = nb;
             self.bullets = vec![Bullet::default(); nb + 4];

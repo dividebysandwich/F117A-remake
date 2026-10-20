@@ -8,7 +8,7 @@
 //! `alt<300:pitch=0.3` / `alt>8000:Autopilot` = below / above an altitude in feet,
 //! `msl<2:ViewChase` / `air<2:HudMode` = an enemy missile / an airborne aircraft within 2 km. The step `Screenshot` takes the
 //! `--screenshot` picture at that moment. `yaw=0.5` sets the rudder, `throttle=0.8` holds an
-//! absolute throttle, `trigger=1` / `trigger=0` holds / releases the fire button, `mark=1` / `mark=0` the lock cursor
+//! absolute throttle, `trigger=1` / `trigger=0` holds / releases the fire button (`gun=1` / `gun=0` the gun trigger), `mark=1` / `mark=0` the lock cursor
 //! target button and `press=Gear` pushes the 3D-cockpit control bound to that action.
 
 use bevy::prelude::*;
@@ -45,6 +45,8 @@ enum Step {
     Press(String),
     /// Holds (true) or releases the fire button (`trigger=1`, `trigger=0`).
     Trigger(bool),
+    /// Holds or releases the gun trigger (`gun=1`, `gun=0`).
+    Gun(bool),
     /// Holds or releases "lock cursor target" (`mark=1`, `mark=0`).
     Mark(bool),
 }
@@ -80,6 +82,7 @@ struct Axes {
     throttle: Option<f32>,
     slew: Vec2,
     trigger: bool,
+    gun: bool,
     mark: bool,
 }
 
@@ -98,6 +101,8 @@ fn parse_step(what: &str) -> Option<Step> {
         Step::Throttle(x.parse().ok()?)
     } else if let Some(x) = what.strip_prefix("trigger=") {
         Step::Trigger(x.parse::<u8>().ok()? != 0)
+    } else if let Some(x) = what.strip_prefix("gun=") {
+        Step::Gun(x.parse::<u8>().ok()? != 0)
     } else if let Some(x) = what.strip_prefix("mark=") {
         Step::Mark(x.parse::<u8>().ok()? != 0)
     } else if let Some(x) = what.strip_prefix("press=") {
@@ -163,6 +168,7 @@ fn apply(
         Step::SlewX(x) => axes.slew.x = *x,
         Step::SlewY(y) => axes.slew.y = *y,
         Step::Trigger(t) => axes.trigger = *t,
+        Step::Gun(t) => axes.gun = *t,
         Step::Mark(t) => axes.mark = *t,
         Step::Press(name) => {
             if let Some(act) = crate::input::action_by_name(name) {
@@ -239,6 +245,7 @@ fn run_script(
     controls.yaw = script.axes.yaw;
     controls.slew = script.axes.slew;
     controls.fire |= script.axes.trigger;
+    controls.gun |= script.axes.gun;
     controls.mark |= script.axes.mark;
     if script.axes.throttle.is_some() {
         controls.throttle = script.axes.throttle;
@@ -256,6 +263,7 @@ fn step_name(s: &Step) -> String {
         Step::SlewY(y) => format!("slewy={y}"),
         Step::Press(a) => format!("press={a}"),
         Step::Trigger(t) => format!("trigger={}", *t as u8),
+        Step::Gun(t) => format!("gun={}", *t as u8),
         Step::Mark(t) => format!("mark={}", *t as u8),
     }
 }

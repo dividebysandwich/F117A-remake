@@ -412,8 +412,10 @@ shows the target (here *Gutersloh Airbase*, 0.9 km), and the GND lamp is lit.
 
 **Gun:** select it with **WPN** (Space) after the last weapon (the HUD shows *GUN* and the
 rounds left) and hold the fire button (Enter, gamepad A, VR: right trigger): put the target in
-the gun pipper. Backspace fires the gun whatever is selected. The rounds leave along the nose
-at 1050 m/s plus your airspeed and drop under gravity. The real F-117A has no gun: with
+the gun pipper. Backspace fires the gun whatever is selected. The gun fires for as long as the
+trigger is held (until the rounds run out). The rounds leave along the nose at 1050 m/s plus
+your airspeed and drop under gravity; they show as bright yellow tracer lines (enemy rounds in
+red), and where they hit the ground small yellow flashes and sparks. The real F-117A has no gun: with
 *Realistic weapons* there is none.
 
 **Weapon view:** Shift F4 follows your newest missile or bomb in flight from behind (above a

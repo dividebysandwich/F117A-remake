@@ -92,6 +92,8 @@ pub struct Combat {
     pub alpha: f32,
     /// Explosions of the steps of this frame: (map x, map y, viewZ altitude, kind).
     pub explosions: Vec<(i32, i32, i32, i32)>,
+    /// Gun rounds that hit the ground in the steps of this frame (map x, map y).
+    pub round_impacts: Vec<(f64, f64)>,
     /// Signal flares the downed pilot fired in the steps of this frame (map x, map y).
     pub signal_flares: Vec<(i32, i32)>,
     /// Tile objects destroyed in earlier missions of a tour, still to be shown destroyed.
@@ -255,6 +257,7 @@ fn start_combat(
         quit: false,
         alpha: 0.0,
         explosions: Vec::new(),
+        round_impacts: Vec::new(),
         signal_flares: Vec::new(),
         kills: Vec::new(),
         wreck: None,
@@ -439,6 +442,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     let StepParams { time, mut player, controls, hud, mfd, view, mut msgs, mut accel, mut tiles, collision, mut flash, mut sounds } = p;
     let combat = &mut *combat;
     combat.explosions.clear();
+    combat.round_impacts.clear();
     combat.signal_flares.clear();
     for t in std::mem::take(&mut combat.prior_tiles) {
         tiles.set(t.level as usize, t.col, t.row, t.index, t.shape);
@@ -491,6 +495,10 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                     if kind == -16 {
                         combat.kills.push(Kill { x, y, vehicle: true });
                     }
+                }
+                SimEvent::RoundImpact { x, y } => {
+                    let fine = (32 * stealth_sim::ROUND_FINE) as f64;
+                    combat.round_impacts.push((x as f64 / fine, y as f64 / fine));
                 }
                 SimEvent::SignalFlare { x, y } => combat.signal_flares.push((x, y)),
                 // A drone that got through sets its target area on fire.
@@ -547,7 +555,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
 /// `--log-flight` / `--log-sim`: simulation events on stdout (test automation).
 fn log_event(data: &SimData, e: &SimEvent, t: f32) {
     match e {
-        SimEvent::Sound { .. } | SimEvent::Rwr(_) | SimEvent::Log(_) | SimEvent::CancelTimeAccel => {}
+        SimEvent::Sound { .. } | SimEvent::Rwr(_) | SimEvent::Log(_) | SimEvent::CancelTimeAccel | SimEvent::RoundImpact { .. } => {}
         SimEvent::MissileLaunched { slot, spec, launcher } => {
             println!("sim t={t:.1} launch slot {slot} {} by {launcher:?}", data.missile(*spec).name)
         }

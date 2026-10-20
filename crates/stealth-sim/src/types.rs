@@ -516,6 +516,8 @@ pub enum SimEvent {
     DamageFlash,
     /// Impact flash (flash timer value: 0x10 kill, -6 bomb, -16 crash, -1 gun).
     Explosion { x: i32, y: i32, alt: i32, kind: i32 },
+    /// A gun round hit the ground here (a round's fine units: x east, y south).
+    RoundImpact { x: i32, y: i32 },
     AircraftDestroyed { unit: usize, spec: i32 },
     AircraftCrashed { unit: usize },
     AircraftTakeoff { unit: usize, base: usize },

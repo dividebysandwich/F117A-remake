@@ -189,7 +189,8 @@ mod key_name {
 }
 
 /// Default VR controller buttons. The triggers only count while the hand holds the stick or
-/// throttle (otherwise they press the cockpit control under the fingertip).
+/// throttle (otherwise they press the cockpit control under the fingertip). Wheel brakes on a
+/// VR button are on while it is held.
 pub fn default_vr_buttons() -> Vec<VrButtonMapping> {
     use Action as A;
     use VrHand::*;
@@ -201,7 +202,8 @@ pub fn default_vr_buttons() -> Vec<VrButtonMapping> {
         (Right, ThumbClick, ButtonTarget::Action(A::NearestTarget)),
         (Right, ThumbRight, ButtonTarget::Action(A::SelectTarget)),
         (Right, ThumbDown, ButtonTarget::Action(A::DesignateTarget)),
-        (Left, Trigger, ButtonTarget::Action(A::BayDoors)),
+        (Left, Trigger, ButtonTarget::Action(A::Brakes)),
+        (Right, ThumbLeft, ButtonTarget::Action(A::BayDoors)),
         (Left, Primary, ButtonTarget::Action(A::Flare)),
         (Left, Secondary, ButtonTarget::Action(A::Chaff)),
         (Left, ThumbClick, ButtonTarget::Action(A::LockCursor)),
@@ -231,7 +233,9 @@ pub struct InputConfig {
 }
 
 /// 1: the cursor lock (NumpadEnter, left thumbstick click) and SOI keys. 2: camera zoom keys.
-const VERSION: u32 = 2;
+/// 3: the left VR trigger holds the brakes, the bay doors move to the right thumbstick left;
+/// the bombsight mode key.
+const VERSION: u32 = 3;
 
 impl Default for InputConfig {
     fn default() -> Self {
@@ -279,6 +283,17 @@ impl InputConfig {
                 self.vr_buttons[i].target = ButtonTarget::Action(Action::LockCursor);
                 if slot(self, VrHand::Right, VrInput::ThumbUp).is_none() {
                     self.vr_buttons.push(VrButtonMapping { hand: VrHand::Right, input: VrInput::ThumbUp, target: ButtonTarget::Action(Action::Decoy) });
+                }
+            }
+        }
+        if self.version < 3 {
+            let slot = |c: &Self, hand: VrHand, input: VrInput| c.vr_buttons.iter().position(|m| m.hand == hand && m.input == input);
+            if let Some(i) = slot(self, VrHand::Left, VrInput::Trigger)
+                && self.vr_buttons[i].target == ButtonTarget::Action(Action::BayDoors)
+            {
+                self.vr_buttons[i].target = ButtonTarget::Action(Action::Brakes);
+                if slot(self, VrHand::Right, VrInput::ThumbLeft).is_none() {
+                    self.vr_buttons.push(VrButtonMapping { hand: VrHand::Right, input: VrInput::ThumbLeft, target: ButtonTarget::Action(Action::BayDoors) });
                 }
             }
         }

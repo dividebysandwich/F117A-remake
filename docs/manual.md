@@ -89,7 +89,10 @@ to all later flights.
 
 **VR controllers**: the last section assigns an action to each VR controller input (trigger, A/X,
 B/Y, stick click, stick directions) per hand. **DEFAULTS** restores the default assignment. A
-trigger only counts while that hand holds the throttle (left) or the stick (right).
+trigger only counts while that hand holds the throttle (left) or the stick (right). By default
+the right trigger fires, the left trigger holds the wheel brakes (on while pulled; any VR button
+set to *Brakes* works this way) and the right thumbstick pushed left opens and closes the bay
+doors; the left thumbstick slews the displays' cursor.
 
 ## 3. The cockpit
 

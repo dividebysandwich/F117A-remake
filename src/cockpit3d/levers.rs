@@ -79,6 +79,8 @@ pub(super) struct Grabs {
     stick: Option<StickGrab>,
     throttle: Option<ThrottleGrab>,
     eject: Option<(usize, f32)>,
+    /// A held VR button set the wheel brakes (they come off when it is let go).
+    brakes: bool,
 }
 
 struct StickGrab {
@@ -149,6 +151,7 @@ pub(super) fn grab_levers(
     anchors: Res<CockpitAnchors>,
 ) {
     let set_thrust = aircraft.single().map_or(0.0, |a| a.set_thrust / 100.0);
+    let brakes_on = aircraft.single().is_ok_and(|a| a.brakes);
     let [left, right] = &mut hands.hands;
 
     // --- stick (right hand)
@@ -216,6 +219,7 @@ pub(super) fn grab_levers(
 
     // --- mapped buttons; a trigger only while its hand holds the throttle / stick (otherwise it
     // presses the cockpit control under the fingertip)
+    let mut brakes_held = false;
     for (side, hand, holding) in [(VrHand::Left, &*left, grabs.throttle.is_some()), (VrHand::Right, &*right, grabs.stick.is_some())] {
         if !hand.active {
             continue;
@@ -234,6 +238,14 @@ pub(super) fn grab_levers(
                         actions.write(ActionEvent(Action::FireWeapon));
                     }
                 }
+                // The wheel brakes are on while the button is held (released only if it set them).
+                ButtonTarget::Action(Action::Brakes) if !block.0 => {
+                    brakes_held |= held;
+                    if pressed && !brakes_on {
+                        actions.write(ActionEvent(Action::Brakes));
+                        grabs.brakes = true;
+                    }
+                }
                 ButtonTarget::Action(Action::LockCursor) if held && !block.0 => {
                     controls.mark = true;
                     if pressed {
@@ -245,6 +257,12 @@ pub(super) fn grab_levers(
                 }
                 ButtonTarget::Action(_) => {}
             }
+        }
+    }
+    if grabs.brakes && !brakes_held {
+        grabs.brakes = false;
+        if brakes_on {
+            actions.write(ActionEvent(Action::Brakes));
         }
     }
 

@@ -36,11 +36,13 @@ CONSOLE_X = (0.20, 0.36)
 CONSOLE_END = 0.42
 SLOPE_TOP = (0.60, -0.40)  # (y, z)
 SLOPE_X = (0.17, 0.37)
+# Their outer edges come in this much (mm) at the top.
+SLOPE_BEVEL = 40.0
 SILL = -0.45
 WALL_X = 0.37
-# The panel's wings turn towards the pilot from the centre column's edges.
+# The panel's wings either side of the centre column (flat, in the panel's plane).
 HINGE = 75.0
-WING_ANGLE = math.radians(25.0)
+WING_ANGLE = 0.0
 # The centre column stands out of the panel, the up-front controls (layout y < ICP_BOTTOM)
 # further.
 ICP_BOTTOM = -80.0
@@ -318,8 +320,14 @@ for s in (-1, 1):
     # Sloped panel from the console's end to the main panel (the side buttons and gear on it).
     u_mid = -700.0 if s < 0 else 1200.0
     length = (Vector(SLOPE_TOP) - Vector((CONSOLE_END, CONSOLE_TOP))).length * 1000 + 30.0
-    panel_box("panel_grey", "panel_grey", (u_mid - (SLOPE_X[1] - SLOPE_X[0]) * 500, -length / 2, (SLOPE_X[1] - SLOPE_X[0]) * 1000, length), 0.03, 0.0, -0.03)
-    panel_box("dark", "dark", (u_mid - (SLOPE_X[1] - SLOPE_X[0]) * 500 + 6.0, -length / 2 + 6.0, (SLOPE_X[1] - SLOPE_X[0]) * 1000 - 12.0, length - 12.0), 0.002)
+    # Its outer edge bevelled in towards the top, where the fuselage narrows.
+    half = (SLOPE_X[1] - SLOPE_X[0]) * 500
+    inner, outer = u_mid - s * half, u_mid + s * half
+    top, bottom = -length / 2, length / 2
+    shape = [(inner, top), (outer - s * SLOPE_BEVEL, top), (outer, bottom), (inner, bottom)]
+    if s > 0:
+        shape.reverse()
+    plate("dark", "dark", [shape], 0.03)
 box("panel_grey", "panel_grey", (0.0, -0.68, -0.55), (2 * WALL_X, 0.03, 0.9))  # rear bulkhead
 # Panel: the wings (bevelled upper outer corners, wells for the MFDs), the centre column and
 # the up-front controls' pedestal standing out of it, the knee well under it.
@@ -346,7 +354,11 @@ plane_box("panel_grey", "panel_grey", (-HINGE, ICP_BOTTOM, 2 * HINGE, 112.0 - IC
 plane_box("dark", "dark", (-HINGE, TOP, 2 * HINGE, ICP_BOTTOM - TOP), -0.03, ICP_DEPTH)
 hood((-HINGE, TOP), (HINGE, TOP), ICP_DEPTH)
 low = point(0, 112, 0.0, True)
-box("panel_grey", "panel_grey", (0.0, low.y + 0.08, (low.z - 1.0) / 2), (0.62, 0.02, 1.0 + low.z))
+# Knee well wall under the panel, with an opening in the middle for the pilot's legs.
+LEGS = (0.20, -0.50)  # half width, top (m)
+for s_ in (-1, 1):
+    box("panel_grey", "panel_grey", (s_ * (LEGS[0] + 0.31) / 2, low.y + 0.08, (low.z - 1.0) / 2), (0.31 - LEGS[0], 0.02, 1.0 + low.z))
+box("panel_grey", "panel_grey", (0.0, low.y + 0.08, (low.z + LEGS[1]) / 2), (2 * LEGS[0], 0.02, low.z - LEGS[1]))
 # Shroud over the attitude indicator and HSI: a lid sloping down towards the pilot, bevelled
 # cheeks either side.
 d, n, up = basis(0)
@@ -382,7 +394,7 @@ plates = [
     (114.0, -150.0, 84.0, 74.0),  # countermeasures
     (-300.0, -28.0, 48.0, 94.0),  # aircraft systems
     (-301.0, -113.0, 30.0, 78.0),  # threat lights
-    (-692.0, -98.0, 44.0, 36.0),  # gear lights
+    (-770.0, -58.0, 44.0, 36.0),  # gear lights
     (250.0, -44.0, 48.0, 84.0),  # fuel, thrust
 ]
 for r in plates:
@@ -445,8 +457,8 @@ for names, s in ((left, -1), (right, 1)):
         o.rotation_quaternion = rotation(u)
 # Gear handle low on the left of the panel.
 g = objs["control_Action_Gear_.001"]
-g.location = point(-760.0, -80.0, 0.002)
-g.rotation_quaternion = rotation(-760.0)
+g.location = point(-672.0, -80.0, 0.002)
+g.rotation_quaternion = rotation(-672.0)
 # HUD glass: a smaller combiner over the up-front controls (its vertices are absolute).
 hud = next(o for o in root.children if o.name.startswith("hud_glass"))
 lo = Vector((min(v.co.x for v in hud.data.vertices), 0.0, min(v.co.z for v in hud.data.vertices)))

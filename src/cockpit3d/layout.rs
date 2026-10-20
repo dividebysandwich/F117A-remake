@@ -398,7 +398,7 @@ impl PanelLayout {
             (Elem::Led(LedId::Thrust), rect(254.0, 4.0, 40.0, 14.0)),
             (Elem::Hazard, rect(254.0, 26.0, 40.0, 8.0)),
             // Left slope, beside the gear handle.
-            (Elem::GearLights, rect(-688.0, -94.0, 36.0, 28.0)),
+            (Elem::GearLights, rect(-766.0, -54.0, 36.0, 28.0)),
         ]);
         items.extend(fixed.into_iter().map(|(elem, rect)| Placed { elem, rect, cap: None }));
 

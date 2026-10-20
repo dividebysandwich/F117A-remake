@@ -1,0 +1,11 @@
+// stealth-mission-89.exe's icon, which Explorer, shortcuts and the taskbar show;
+// build.rs links it in. Ordinal 1 so it is the first: the one Windows
+// takes for the program. Made from packaging/linux/stealth-mission-89.png.
+1 ICON "stealth-mission-89.ico"
+
+// Its manifest: no console window of its own next to the game window.
+1 24 "stealth-mission-89.manifest"
+
+// Its version, description and names for the Details tab of its
+// properties: version.rc, which build.rs writes from Cargo.toml.
+#include "version.rc"

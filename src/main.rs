@@ -51,6 +51,8 @@ mod weather;
 mod world;
 #[cfg(feature = "xr")]
 mod vr_menu;
+#[cfg(windows)]
+mod win_console;
 #[cfg(feature = "xr")]
 mod xr;
 
@@ -59,6 +61,8 @@ use bevy::prelude::*;
 use settings::{MissionSetup, Settings};
 
 fn main() {
+    #[cfg(windows)]
+    win_console::leave_explorer_console();
     let mut settings = Settings::from_args();
     // Started into the menu (also in VR): the menu choices and switches from the last run.
     let mut menu_state = menu::MenuState::default();

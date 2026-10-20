@@ -44,6 +44,14 @@ openxr = { version = "0.21", optional = true }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+# Closes the console window of a game started from Explorer (src/win_console.rs).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+[build-dependencies]
+# Links the icon, manifest and version (packaging/windows) into stealth-mission-89.exe.
+embed-resource = "3"
+
 [profile.dev]
 opt-level = 1
 

@@ -101,6 +101,16 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             7z a -tzip "$name.zip" "$name" > /dev/null
             echo "file=dist/$name.zip" >> "$GITHUB_OUTPUT"
+            # The installer: Program Files, Start menu shortcuts for the desktop and VR
+            # (packaging/windows/main.wxs).
+            cd ..
+            version=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -n1)
+            arch=x64
+            [[ "${{ matrix.target }}" == aarch64-* ]] && arch=arm64
+            dotnet tool install --global wix --version 5.0.2
+            wix build packaging/windows/main.wxs -arch $arch \
+              -d Version="$version" -d BinDir="target/${{ matrix.target }}/release" -d SrcDir="$GITHUB_WORKSPACE" \
+              -o "dist/$name.msi"
           else
             tar -czf "$name.tar.gz" "$name"
             echo "file=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
@@ -154,6 +164,7 @@ jobs:
           name: ${{ steps.package.outputs.name }}
           path: |
             ${{ steps.package.outputs.file }}
+            dist/*.msi
             dist/*.AppImage
             dist/*.AppImage.zsync
           if-no-files-found: error

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- stealth-mission-89.exe's manifest; packaging/windows/stealth-mission-89.rc links it in.
+     consoleAllocationPolicy "detached" (Windows 11 24H2 and later) gives the
+     game no console window of its own when Explorer, a shortcut or Steam starts
+     it: only the game window shows. Started from a terminal, it still writes
+     to the terminal's. Older Windows ignore it, and the game closes the
+     console it was given instead (src/win_console.rs). -->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <consoleAllocationPolicy xmlns="http://schemas.microsoft.com/SMI/2024/WindowsSettings">detached</consoleAllocationPolicy>
+    </windowsSettings>
+  </application>
+</assembly>

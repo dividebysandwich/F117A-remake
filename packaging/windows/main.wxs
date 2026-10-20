@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Built by the build workflow (WiX 5):
+     wix build packaging/windows/main.wxs -arch x64|arm64 \
+         -d Version=<cargo version> -d BinDir=target/<target>/release \
+         -d SrcDir=<the checkout, a Windows path> -o <out>.msi
+
+     stealth-mission-89.exe needs no DLLs of its own: bevy_mod_openxr links
+     the OpenXR loader statically on Windows, and finds the headset's runtime
+     (SteamVR, Oculus, Windows Mixed Reality) through the registry. The game
+     reads assets\ beside the executable (src/asset_path.rs), which stays
+     read-only in Program Files; pilots, settings and logs go to
+     %APPDATA%\stealth-mission-89. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package Name="Stealth Mission 89"
+             Manufacturer="dividebysandwich"
+             Version="$(var.Version)"
+             UpgradeCode="0F4E9723-C72F-4F5C-A06B-7832EA741155"
+             Language="1033"
+             Compressed="yes"
+             Scope="perMachine">
+
+        <!-- Same-version upgrades: every build of a branch has Cargo.toml's version. -->
+        <MajorUpgrade AllowSameVersionUpgrades="yes"
+                      DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+
+        <Property Id="ARPURLINFOABOUT" Value="https://github.com/dividebysandwich/stealth-mission-89" />
+        <!-- The icon in Installed apps; stealth-mission-89.exe has it built in. -->
+        <Icon Id="stealth_mission_89.ico" SourceFile="packaging/windows/stealth-mission-89.ico" />
+        <Property Id="ARPPRODUCTICON" Value="stealth_mission_89.ico" />
+
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="Stealth Mission 89">
+                <Component Id="MainExe" Guid="6C350833-14FF-4B3B-8FA4-1600949CFE30">
+                    <File Id="GameExe" Source="$(var.BinDir)/stealth-mission-89.exe" KeyPath="yes" />
+                </Component>
+                <Component Id="Docs" Guid="FEEBF74A-5D30-4DC3-A81C-B9537D55399F">
+                    <File Id="LicenseTxt" Source="LICENSE" Name="LICENSE.txt" KeyPath="yes" />
+                    <File Id="ReadmeMd" Source="README.md" />
+                </Component>
+                <Directory Id="AssetsFolder" Name="assets" />
+                <Directory Id="DocsFolder" Name="docs" />
+            </Directory>
+        </StandardDirectory>
+
+        <!-- The game's files (models, shaders, sounds, theaters, ...) and the manual, every
+             file under them with its folders. -->
+        <ComponentGroup Id="Assets" Directory="AssetsFolder">
+            <Files Include="$(var.SrcDir)\assets\**" />
+        </ComponentGroup>
+        <ComponentGroup Id="Manual" Directory="DocsFolder">
+            <Files Include="$(var.SrcDir)\docs\**" />
+        </ComponentGroup>
+
+        <!-- The game, and the game in a VR headset (Arguments): its menu is then a panel in
+             the headset, operated with a controller. -->
+        <StandardDirectory Id="ProgramMenuFolder">
+            <Component Id="StartMenuShortcuts" Guid="0596163F-C27F-4F76-85E9-7F0EC3535418">
+                <Shortcut Id="GameShortcut"
+                          Name="Stealth Mission 89"
+                          Description="A remake of DOS-era 3D flight simulations"
+                          Target="[INSTALLFOLDER]stealth-mission-89.exe"
+                          WorkingDirectory="INSTALLFOLDER" />
+                <Shortcut Id="VrShortcut"
+                          Name="Stealth Mission 89 VR"
+                          Description="Stealth Mission 89 in an OpenXR headset"
+                          Target="[INSTALLFOLDER]stealth-mission-89.exe"
+                          Arguments="--vr"
+                          WorkingDirectory="INSTALLFOLDER" />
+                <RegistryValue Root="HKCU" Key="Software\stealth-mission-89" Name="Shortcuts" Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+        </StandardDirectory>
+
+        <Feature Id="Main">
+            <ComponentRef Id="MainExe" />
+            <ComponentRef Id="Docs" />
+            <ComponentGroupRef Id="Assets" />
+            <ComponentGroupRef Id="Manual" />
+            <ComponentRef Id="StartMenuShortcuts" />
+        </Feature>
+    </Package>
+</Wix>

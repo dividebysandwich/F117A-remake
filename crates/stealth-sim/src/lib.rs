@@ -170,6 +170,9 @@ pub struct Sim {
     /// Rescue of the pilot after an ejection over enemy territory.
     #[serde(default)]
     pub(crate) csar: Option<csar::Csar>,
+    /// Map positions of everything destroyed on the ground (campaign damage).
+    #[serde(default)]
+    pub(crate) destroyed_at: Vec<(i32, i32)>,
     /// Apron parking spots for the parked base traffic (not in the original): world x, y and
     /// heading; empty = parked on the base object as in the original.
     #[serde(default)]
@@ -371,6 +374,7 @@ impl Sim {
             traffic_toggle: false,
             mission_flights: w.flights.len() - m.drones.as_ref().map_or(0, |d| d.count.min(w.flights.len())),
             csar: None,
+            destroyed_at: Vec::new(),
             drones: m.drones.as_ref().map(|d| drones::Drones {
                 defend: d.defend,
                 target: d.target as i32,
@@ -424,6 +428,9 @@ impl Sim {
             events: Vec::new(),
         };
         sim.set_fs(15);
+        if let Some(d) = sim.opts.prior_damage.clone() {
+            sim.apply_damage(&d);
+        }
         let st = sim.start_state();
         sim.ingest(&st);
         sim.find_nearest_base();
@@ -859,6 +866,29 @@ impl Sim {
             heavy_stall: self.hits > 8,
             fragile: self.hits > 4,
         }
+    }
+
+    /// Everything destroyed on the ground so far, earlier missions included.
+    pub fn world_damage(&self) -> WorldDamage {
+        WorldDamage {
+            tiles: self.tile_damage.clone(),
+            objects: (3..self.objects.len()).filter(|&i| self.objects[i].flags & oflags::DESTROYED != 0).map(|i| i as u16).collect(),
+            positions: self.destroyed_at.clone(),
+        }
+    }
+
+    /// Starts the mission with earlier missions' damage.
+    fn apply_damage(&mut self, d: &WorldDamage) {
+        self.tile_damage = d.tiles.clone();
+        for &i in &d.objects {
+            let i = i as usize;
+            if (3..self.objects.len()).contains(&i) {
+                self.objects[i].flags |= oflags::DESTROYED;
+                self.objects[i].unit_type = 0;
+                self.display_shape[i] = self.wreck_shape(i as i32);
+            }
+        }
+        self.destroyed_at = d.positions.clone();
     }
 
     /// Debrief event log (for END).

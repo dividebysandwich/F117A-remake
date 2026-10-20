@@ -25,6 +25,8 @@ impl Plugin for MenuPlugin {
             .add_systems(OnExit(AppState::Debrief), despawn_menu_camera)
             // `--open-planner`: start in the mission planner (screenshots).
             .insert_resource(crate::planner::Planner::opened(std::env::args().any(|a| a == "--open-planner")))
+            // `--open-career`: start in the career window (screenshots).
+            .insert_resource(crate::career::CareerWindow::opened(std::env::args().any(|a| a == "--open-career")))
             .add_systems(Update, crate::planner::prepare_map.run_if(in_state(AppState::Menu)))
             .add_systems(EguiPrimaryContextPass, menu_ui.run_if(in_state(AppState::Menu)));
     }
@@ -60,7 +62,26 @@ pub struct MenuState {
     pub mission: Option<Result<Mission, String>>,
     /// The route to fly (mission planner); reset with every new mission.
     pub route: Option<crate::mission::PlannedRoute>,
+    /// Career mode: the pilot (file key) whose tour sortie this is.
+    pub career: Option<String>,
     dirty: bool,
+}
+
+impl MenuState {
+    /// Career mode: the next sortie of the pilot's tour.
+    pub fn start_career(&mut self, p: &crate::career::Pilot, t: &crate::career::Tour) {
+        self.career = Some(p.key());
+        (self.theater, self.roe, self.opponents, self.lockheed) = (t.theater, t.roe, t.opponents, t.lockheed);
+        // Tour weather is rolled with the mission (also in the VR relaunch).
+        (self.weather, self.cloud_cover) = (None, None);
+        self.seed = rand::random();
+        self.dirty = true;
+    }
+
+    /// Generate a new mission next frame.
+    pub fn regenerate(&mut self) {
+        self.dirty = true;
+    }
 }
 
 impl Default for MenuState {
@@ -76,6 +97,7 @@ impl Default for MenuState {
             seed: rand::random(),
             mission: None,
             route: None,
+            career: None,
             dirty: true,
         }
     }
@@ -131,6 +153,9 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         }
     }
     cmd.args(["--vr-cockpit-scale", &format!("{:.0}", settings.vr_cockpit_scale * 100.0)]);
+    if let Some(key) = &state.career {
+        cmd.args(["--career", key]);
+    }
     if let Some(route) = &state.route {
         match crate::prefs::save_json(crate::mission::ROUTE_FILE, route) {
             Ok(path) => {
@@ -320,8 +345,9 @@ fn menu_ui(
     hotas: Res<crate::hotas::Hotas>,
     keys: Res<ButtonInput<KeyCode>>,
     mut saved: Local<Option<crate::prefs::Prefs>>,
-    mut planner: ResMut<crate::planner::Planner>,
+    windows: (ResMut<crate::planner::Planner>, ResMut<crate::career::CareerWindow>),
 ) -> Result {
+    let (mut planner, mut career) = windows;
     // Generator data is loaded on first use.
     let Some(data) = data else {
         match MissionData::load() {
@@ -332,8 +358,22 @@ fn menu_ui(
     };
     if state.dirty {
         state.dirty = false;
-        let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover);
-        state.mission = Some(crate::mission::generate(&data, &settings, state.seed).map_err(|e| format!("{e:#}")));
+        let pilot = state.career.as_deref().and_then(crate::career::Pilot::load);
+        if let Some(p) = pilot {
+            // Career: the tour's next sortie, on targets that still stand.
+            match crate::career::next_sortie(&data, &p, state.seed) {
+                Some((seed, m)) => {
+                    state.seed = seed;
+                    state.kind = m.settings.kind;
+                    state.mission = Some(Ok(m));
+                }
+                None => state.mission = Some(Err("No targets left standing for this tour".into())),
+            }
+        } else {
+            state.career = None;
+            let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover);
+            state.mission = Some(crate::mission::generate(&data, &settings, state.seed).map_err(|e| format!("{e:#}")));
+        }
         state.route = state.mission.as_ref().and_then(|m| m.as_ref().ok()).map(crate::mission::PlannedRoute::of);
     }
 
@@ -354,11 +394,16 @@ fn menu_ui(
         .max_width(width)
         .frame(egui::Frame::window(&ctx.global_style()).inner_margin(16.0))
         .show(ctx, |ui| {
-            if dialog.open || planner.open {
+            if dialog.open || planner.open || career.open {
                 ui.disable();
             }
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("STEALTH MISSION 89").heading().color(BRIGHT));
+                if let Some(p) = state.career.as_deref().and_then(crate::career::Pilot::load)
+                    && let Some(t) = &p.tour
+                {
+                    ui.label(egui::RichText::new(format!("  CAREER: {}  //  TOUR SORTIE {} OF {}", p.title().to_ascii_uppercase(), t.sortie + 1, t.length)).color(AMBER));
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(egui::RichText::new(format!("MISSION PLANNING SYSTEM  //  MSN {:05}", state.seed)).color(DIM));
                 });
@@ -504,6 +549,9 @@ fn menu_ui(
                 if facts(ui.add(big_button("CONTROLS")), &["Map keys, joystick and HOTAS axes and buttons", "Saved for the next flights"]).clicked() {
                     dialog.open = true;
                 }
+                if facts(ui.add(big_button("CAREER")), &["Pilot records: rank, decorations, sorties", "Tour of duty: 12 sorties in one theater", "What you destroy stays destroyed"]).clicked() {
+                    career.show();
+                }
                 let plan = ui.add_enabled(matches!(state.mission, Some(Ok(_))), big_button("PLAN ROUTE"));
                 if facts(plan, &["The theater map with the enemy radar and SAM coverage", "Add, move and remove navigation points", "Targets and the landing base stay fixed"]).clicked() {
                     planner.open = true;
@@ -517,6 +565,10 @@ fn menu_ui(
                         *setup = crate::mission::setup_from_mission(m, &tables.start_dir);
                         commands.insert_resource(ActiveMission(m.clone()));
                         commands.insert_resource(state.route.clone().unwrap_or_else(|| crate::mission::PlannedRoute::of(m)));
+                        match &state.career {
+                            Some(key) => commands.insert_resource(crate::career::CareerFlight(key.clone())),
+                            None => commands.remove_resource::<crate::career::CareerFlight>(),
+                        }
                         next.set(AppState::Flight);
                     }
                     // Already in VR: "Fly" flies in the headset.
@@ -539,8 +591,11 @@ fn menu_ui(
     crate::input_dialog::show(ctx, &mut dialog, input_config.bypass_change_detection(), &hotas, &keys);
     crate::planner::planner_ui(ctx, &mut planner, &mut state);
     if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover) {
+        // Changing the mission's options leaves career mode.
         state.dirty = true;
+        state.career = None;
     }
+    crate::career::career_ui(ctx, &mut career, &mut state);
     crate::prefs::Prefs::save_if_changed(&state, &settings, &mut saved);
     Ok(())
 }

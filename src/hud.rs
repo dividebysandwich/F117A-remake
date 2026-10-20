@@ -799,3 +799,24 @@ fn pitch_ladder(c: &mut Canvas, fonts: &Fonts, pitch: i16, roll: i16, col: u8) {
     }
     c.set_clip(0, 0, 319, 90);
 }
+
+#[cfg(test)]
+mod route_tests {
+    use super::*;
+
+    fn wps(n: usize, anchors: Vec<usize>) -> Waypoints {
+        Waypoints { points: vec![Waypoint { east: 0.0, north: 0.0 }; n], current: 0, mission_current: 0, anchors }
+    }
+
+    #[test]
+    fn objectives_follow_the_planned_route() {
+        // The mission's own 4 points: the objective waypoints as they are.
+        let w = wps(4, vec![]);
+        assert_eq!([1, 2, 3].map(|k| w.for_mission_waypoint(k)), [1, 2, 3]);
+        let w = wps(4, vec![0, 1, 2, 3]);
+        assert_eq!([1, 2, 3].map(|k| w.for_mission_waypoint(k)), [1, 2, 3]);
+        // N1 P N2 S N3 L: after the primary the planned N2, after both targets N3.
+        let w = wps(6, vec![0, 1, 3, 5]);
+        assert_eq!([1, 2, 3].map(|k| w.for_mission_waypoint(k)), [1, 2, 4]);
+    }
+}

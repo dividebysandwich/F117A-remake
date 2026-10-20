@@ -319,11 +319,52 @@ pub struct SimOptions {
     pub fix_original_bugs: bool,
     /// RNG seed override; default is the mission generator's final RNG state.
     pub seed: Option<u32>,
+    /// Damage done in earlier missions of a campaign (not in the original game).
+    #[serde(default)]
+    pub prior_damage: Option<WorldDamage>,
 }
 
 impl Default for SimOptions {
     fn default() -> Self {
-        Self { landing: LandingMode::Easy, fix_original_bugs: true, seed: None }
+        Self { landing: LandingMode::Easy, fix_original_bugs: true, seed: None, prior_damage: None }
+    }
+}
+
+/// What the player destroyed on the ground, carried from mission to mission in a campaign.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct WorldDamage {
+    /// Changed tile objects.
+    pub tiles: Vec<TileDamage>,
+    /// Destroyed world objects (sites, bases, landmarks; never the scratch slots 0..2).
+    pub objects: Vec<u16>,
+    /// Map positions of everything destroyed (also tile objects), to keep new targets off them.
+    pub positions: Vec<(i32, i32)>,
+}
+
+impl WorldDamage {
+    /// Adds a later mission's damage.
+    pub fn merge(&mut self, later: &WorldDamage) {
+        for t in &later.tiles {
+            match self.tiles.iter_mut().find(|d| (d.level, d.index, d.col, d.row) == (t.level, t.index, t.col, t.row)) {
+                Some(d) => d.shape = t.shape,
+                None => self.tiles.push(*t),
+            }
+        }
+        for &o in &later.objects {
+            if !self.objects.contains(&o) {
+                self.objects.push(o);
+            }
+        }
+        for &p in &later.positions {
+            if !self.positions.contains(&p) {
+                self.positions.push(p);
+            }
+        }
+    }
+
+    /// Something was destroyed within `r` map units of (x, y).
+    pub fn near(&self, x: i32, y: i32, r: i32) -> bool {
+        self.positions.iter().any(|&(px, py)| (px - x).abs() < r && (py - y).abs() < r)
     }
 }
 

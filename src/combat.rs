@@ -94,6 +94,8 @@ pub struct Combat {
     pub explosions: Vec<(i32, i32, i32, i32)>,
     /// Signal flares the downed pilot fired in the steps of this frame (map x, map y).
     pub signal_flares: Vec<(i32, i32)>,
+    /// Tile objects destroyed in earlier missions of a tour, still to be shown destroyed.
+    prior_tiles: Vec<stealth_sim::TileDamage>,
     /// Things destroyed on the ground in the steps of this frame (they burn, fires.rs).
     pub kills: Vec<Kill>,
     /// Map position of the falling wreck (it burns where it lands).
@@ -173,6 +175,7 @@ fn start_combat(
     mut wps: ResMut<Waypoints>,
     mut accel: ResMut<TimeAccel>,
     route: Option<Res<crate::mission::PlannedRoute>>,
+    career: Option<Res<crate::career::CareerFlight>>,
 ) {
     accel.on = false;
     let Some(m) = mission else {
@@ -210,7 +213,10 @@ fn start_combat(
         2 => LandingMode::Realistic,
         _ => LandingMode::Easy,
     };
-    let sim = Sim::with_options(&data, m, SimOptions { landing, ..default() });
+    // A tour sortie starts with what the pilot destroyed earlier in the tour.
+    let prior_damage = career.and_then(|c| crate::career::Pilot::load(&c.0)).and_then(|p| p.tour).map(|t| t.damage);
+    let prior_tiles = prior_damage.as_ref().map(|d| d.tiles.clone()).unwrap_or_default();
+    let sim = Sim::with_options(&data, m, SimOptions { landing, prior_damage, ..default() });
     // The player starts at the sim's start state (the same formula as `mission::start_pose`).
     let st = sim.start_state();
     setup.start = Some(StartPose {
@@ -232,6 +238,7 @@ fn start_combat(
     };
     let names = m.world.names.clone();
     commands.insert_resource(Combat {
+        prior_tiles,
         prev_flights: sim.flights().to_vec(),
         prev_proj: *sim.projectiles(),
         sim,
@@ -410,6 +417,9 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     let combat = &mut *combat;
     combat.explosions.clear();
     combat.signal_flares.clear();
+    for t in std::mem::take(&mut combat.prior_tiles) {
+        tiles.set(t.level as usize, t.col, t.row, t.index, t.shape);
+    }
     combat.kills.clear();
     combat.steps = 0;
     let Ok((mut a, pos)) = player.single_mut() else { return };
@@ -868,6 +878,7 @@ fn end_overlay(
     keys: Res<ButtonInput<KeyCode>>,
     mut overlay: Query<&mut EndOverlay>,
     mut next: ResMut<NextState<AppState>>,
+    mission: Option<Res<ActiveMission>>,
 ) {
     let Some(end) = combat.as_ref().and_then(|c| c.end.clone()) else { return };
     match overlay.single_mut() {
@@ -875,7 +886,13 @@ fn end_overlay(
             o.timer += real.delta_secs();
             if o.timer > END_SECONDS || (o.timer > 1.0 && keys.get_just_pressed().next().is_some()) {
                 if let Some(c) = &combat {
-                    commands.insert_resource(crate::debrief::Debrief { title: end.title.clone(), report: c.sim.mission_report() });
+                    commands.insert_resource(crate::debrief::Debrief {
+                        title: end.title.clone(),
+                        report: c.sim.mission_report(),
+                        damage: Some(c.sim.world_damage()),
+                        mission: mission.as_ref().map(|m| m.0.clone()),
+                        career: Vec::new(),
+                    });
                 }
                 next.set(AppState::Debrief);
             }

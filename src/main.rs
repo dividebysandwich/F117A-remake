@@ -2,6 +2,7 @@ mod asset_path;
 mod autoshot;
 mod camera;
 mod canvas;
+mod career;
 mod cockpit;
 mod cockpit3d;
 mod combat;

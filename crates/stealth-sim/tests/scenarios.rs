@@ -370,6 +370,18 @@ fn bomb_vs_target_uses_effectiveness_table() {
             let r = sim.mission_report();
             assert!(r.primary_done && r.training && r.ground_kills >= 1);
             assert!(r.timeline.iter().any(|t| t.text.ends_with("(primary)")), "{:?}", r.timeline);
+            // Campaign damage: the next mission starts with the target destroyed.
+            let damage = sim.world_damage();
+            assert!(damage.objects.contains(&(t as u16)) || t < 3);
+            assert!(damage.near(o.x, o.y, 0x10) && !damage.tiles.is_empty());
+            let json = serde_json::to_string(&damage).unwrap();
+            let back: WorldDamage = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, damage);
+            let next = Sim::with_options(&d.sim, &m, SimOptions { prior_damage: Some(back), ..Default::default() });
+            if t >= 3 {
+                assert!(next.objects()[t].flags & oflags::DESTROYED != 0);
+            }
+            assert_eq!(next.world_damage(), damage);
         } else {
             assert!(msgs.iter().any(|s| s.ends_with(" misses ")), "{msgs:?}");
         }

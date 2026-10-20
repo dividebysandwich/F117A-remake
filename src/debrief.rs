@@ -6,14 +6,15 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use stealth_sim::score::MissionReport;
 
 use crate::menu::{AMBER, BG, BRIGHT, DIM, GREEN, apply_terminal_style, big_button, section};
-use crate::mission::{ActiveMission, clean_text};
+use crate::mission::clean_text;
 use crate::settings::AppState;
 
 pub struct DebriefPlugin;
 
 impl Plugin for DebriefPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(EguiPrimaryContextPass, debrief_ui.run_if(in_state(AppState::Debrief)));
+        app.add_systems(OnEnter(AppState::Debrief), record_career)
+            .add_systems(EguiPrimaryContextPass, debrief_ui.run_if(in_state(AppState::Debrief)));
     }
 }
 
@@ -23,6 +24,32 @@ pub struct Debrief {
     /// End overlay title (how the flight ended).
     pub title: String,
     pub report: MissionReport,
+    /// Everything destroyed on the ground (for a tour of duty).
+    pub damage: Option<stealth_sim::WorldDamage>,
+    /// The mission flown (the flight's `ActiveMission` is gone by now).
+    pub mission: Option<stealth_mission::Mission>,
+    /// Career news of a tour sortie (medals, promotion, the tour).
+    pub career: Vec<String>,
+}
+
+/// A tour sortie goes into the pilot's record when the debrief opens.
+fn record_career(
+    mut commands: Commands,
+    flight: Option<Res<crate::career::CareerFlight>>,
+    debrief: Option<ResMut<Debrief>>,
+    mut menu: ResMut<crate::menu::MenuState>,
+) {
+    let (Some(flight), Some(mut d)) = (flight, debrief) else { return };
+    commands.remove_resource::<crate::career::CareerFlight>();
+    let Some(mut p) = crate::career::Pilot::load(&flight.0) else { return };
+    let d = &mut *d;
+    let Some(m) = d.mission.clone() else { return };
+    d.career = p.record(&d.report, d.damage.as_ref(), &m);
+    p.save();
+    // Back in the menu: the tour's next sortie, if there is one.
+    menu.career = (p.tour.is_some() && p.status == crate::career::Status::Active).then(|| p.key());
+    menu.seed = rand::random();
+    menu.regenerate();
 }
 
 fn clock(t: i32) -> String {
@@ -32,7 +59,6 @@ fn clock(t: i32) -> String {
 fn debrief_ui(
     mut contexts: EguiContexts,
     debrief: Option<Res<Debrief>>,
-    mission: Option<Res<ActiveMission>>,
     keys: Res<ButtonInput<KeyCode>>,
     mut next: ResMut<NextState<AppState>>,
 ) -> Result {
@@ -59,9 +85,9 @@ fn debrief_ui(
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("MISSION DEBRIEF").heading().color(BRIGHT));
-                if let Some(m) = &mission {
+                if let Some(m) = &d.mission {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(clean_text(&m.0.briefing.title).to_ascii_uppercase()).color(DIM));
+                        ui.label(egui::RichText::new(clean_text(&m.briefing.title).to_ascii_uppercase()).color(DIM));
                     });
                 }
             });
@@ -120,6 +146,12 @@ fn debrief_ui(
                     });
                     ui.add_space(8.0);
                     ui.label(egui::RichText::new(r.rating.to_ascii_uppercase()).size(22.0).color(if r.total > 0 { BRIGHT } else { AMBER }));
+                    if !d.career.is_empty() {
+                        section(ui, "Service record");
+                        for line in &d.career {
+                            ui.label(egui::RichText::new(line.to_ascii_uppercase()).color(AMBER));
+                        }
+                    }
                 });
                 ui.vertical(|ui| {
                     section(ui, "Timeline");

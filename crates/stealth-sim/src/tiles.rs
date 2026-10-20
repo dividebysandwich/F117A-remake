@@ -199,6 +199,7 @@ impl Sim {
                 self.radar_ids -= 1;
             }
             let o = self.objects[iu];
+            self.destroyed_at.push((o.x, o.y));
             let res = if self.tiles.is_some() { self.find_nearest_tile(o.x << 5, (0x8000 - o.y) << 5) } else { None };
             let shape;
             if i != 0 {

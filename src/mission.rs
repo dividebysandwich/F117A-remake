@@ -193,6 +193,10 @@ pub fn from_args(app: &mut App) {
             m.weather.describe()
         );
     }
+    // `--career <pilot>`: a tour sortie (the pilot's tour damage applies).
+    if let Some(key) = get("--career") {
+        app.insert_resource(crate::career::CareerFlight(key));
+    }
     // `--route <file>`: the route planned in the menu (when it is for this mission).
     if let Some(route) = get("--route")
         .and_then(|p| std::fs::read_to_string(p).ok())

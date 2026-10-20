@@ -186,7 +186,7 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     }
     gun_sight(c, f);
     if let Some((loc, gs)) = f.ils {
-        ils_bars(c, f.scale, fpm, h, down, loc, gs);
+        ils_bars(c, fpm, h, down, loc, gs);
     }
 
     // Messages and status words.
@@ -418,23 +418,27 @@ fn air_to_air(c: &mut Canvas, f: &HudFrame) {
 
 /// ILS deviations at full scale (degrees): localizer and glideslope.
 const ILS_FULL_SCALE: (f32, f32) = (2.5, 0.7);
-/// Bar offset at full scale and bar half length (units of the tangent plane).
-const ILS_DEFLECTION: f32 = 0.06;
-const ILS_BAR: f32 = 0.055;
+/// Bar offset at full scale, bar half length, and the ladder ticks on each bar: their distance
+/// from its middle and half length (pixels; the F-16's bars are about 5.5 flight path marker
+/// radii long either side, ticks at 60 %).
+const ILS_DEFLECTION: f32 = 60.0;
+const ILS_BAR: f32 = 50.0;
+const ILS_TICK: (f32, f32) = (30.0, 7.0);
 
 /// ILS steering, as the F-16's: the localizer deviation bar (upright) and the glideslope
-/// deviation bar (level), referenced to the flight path marker. Fly the marker to where they
-/// cross; each stops at full-scale deflection.
-fn ils_bars(c: &mut Canvas, scale: f32, fpm: Vec2, h: Vec2, down: Vec2, loc: f32, gs: f32) {
-    let full = ILS_DEFLECTION * scale;
-    let half = ILS_BAR * scale;
+/// deviation bar (level), each with two short ladder ticks, referenced to the flight path
+/// marker. Fly the marker to where they cross; each stops at full-scale deflection.
+fn ils_bars(c: &mut Canvas, fpm: Vec2, h: Vec2, down: Vec2, loc: f32, gs: f32) {
     // Right of the centreline: the course is left. Above the glide path: it is below.
-    let x = -(loc / ILS_FULL_SCALE.0).clamp(-1.0, 1.0) * full;
-    let y = (gs / ILS_FULL_SCALE.1).clamp(-1.0, 1.0) * full;
-    let lb = fpm + h * x;
-    c.stroke(lb - down * half, lb + down * half, PEN, INK);
-    let gb = fpm + down * y;
-    c.stroke(gb - h * half, gb + h * half, PEN, INK);
+    let x = -(loc / ILS_FULL_SCALE.0).clamp(-1.0, 1.0) * ILS_DEFLECTION;
+    let y = (gs / ILS_FULL_SCALE.1).clamp(-1.0, 1.0) * ILS_DEFLECTION;
+    for (mid, along, across) in [(fpm + h * x, down, h), (fpm + down * y, h, down)] {
+        c.stroke(mid - along * ILS_BAR, mid + along * ILS_BAR, PEN, INK);
+        for side in [-1.0, 1.0] {
+            let t = mid + along * ILS_TICK.0 * side;
+            c.stroke(t - across * ILS_TICK.1, t + across * ILS_TICK.1, PEN, INK);
+        }
+    }
 }
 
 /// Gun selected: the pipper (where the target has to be for the rounds fired now to hit it),

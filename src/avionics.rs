@@ -124,6 +124,9 @@ pub struct AvionicsState {
     /// Cursors in display pixels.
     pub hsd_cursor: Vec2,
     pub harm_cursor: Vec2,
+    /// The HSD view the cursors were last placed in: the HSD cursor stays on its ground point
+    /// and the HARM cursor turns with the symbols when the aircraft moves or turns.
+    cursor_view: Option<HsdView>,
     pub harm_filter: HarmFilter,
     /// MAP shows the waypoint table.
     pub map_way: bool,
@@ -249,6 +252,7 @@ impl Default for AvionicsState {
             hsd_centred: false,
             hsd_cursor: centre - Vec2::Y * 30.0,
             harm_cursor: centre,
+            cursor_view: None,
             harm_filter: HarmFilter::All,
             map_way: false,
             sms_ord: true,
@@ -570,7 +574,6 @@ impl HsdView {
         self.origin + Vec2::new((right * self.scale) as f32, (-ahead * self.scale) as f32)
     }
 
-    #[cfg(test)]
     pub fn to_world(self, p: Vec2) -> DVec2 {
         let d = (p - self.origin).as_dvec2() / self.scale;
         let (right, ahead) = (d.x, -d.y);
@@ -811,10 +814,12 @@ fn slew_and_lock(
     if !state.modern {
         return;
     }
-    let Some(f) = state.av.soi_format() else { return };
     let size = Vec2::new(HIRES.0 as f32, HIRES.1 as f32);
     let lo = Vec2::new(4.0, BAND as f32 + 4.0);
     let hi = size - lo;
+    let view = hsd_view(&state.av, aircraft.single().ok());
+    follow_view(&mut state.av, view, lo, hi);
+    let Some(f) = state.av.soi_format() else { return };
     let delta = Vec2::new(controls.slew.x, -controls.slew.y) * SLEW_SPEED * time.delta_secs();
     let av = &mut state.av;
     let cursor = match f {
@@ -844,6 +849,26 @@ fn slew_and_lock(
         };
         locks.write(LockRequest(target));
     }
+}
+
+/// Keeps the cursors on what they point at as the view changes: the HSD cursor on its ground
+/// point (through turns, flight and range changes), the HARM cursor at its bearing (the HARM
+/// display is heading up, so it turns against the heading like the emitter symbols).
+fn follow_view(av: &mut AvionicsState, view: Option<HsdView>, lo: Vec2, hi: Vec2) {
+    let Some(view) = view else {
+        av.cursor_view = None;
+        return;
+    };
+    if let Some(prev) = av.cursor_view.filter(|prev| *prev != view) {
+        let g = prev.to_world(av.hsd_cursor);
+        av.hsd_cursor = view.to_screen(g.x, g.y).clamp(lo, hi);
+        let (centre, _) = harm_scope();
+        let turn = (prev.heading - view.heading) as f32;
+        let (s, c) = turn.sin_cos();
+        let d = av.harm_cursor - centre;
+        av.harm_cursor = (centre + Vec2::new(d.x * c - d.y * s, d.x * s + d.y * c)).clamp(lo, hi);
+    }
+    av.cursor_view = Some(view);
 }
 
 fn emitter_ref(e: &EmitterView) -> ContactRef {
@@ -989,6 +1014,24 @@ mod tests {
         assert!((p.x - v.origin.x).abs() < 1e-3 && p.y < v.origin.y, "ahead is up: {p}");
         let back = v.to_world(Vec2::new(150.0, 40.0));
         assert!((v.to_screen(back.x, back.y) - Vec2::new(150.0, 40.0)).length() < 1e-3);
+    }
+
+    #[test]
+    fn cursors_follow_a_turn() {
+        let size = Vec2::new(HIRES.0 as f32, HIRES.1 as f32);
+        let (lo, hi) = (Vec2::splat(-1e4), Vec2::splat(1e4));
+        let mut av = AvionicsState::default();
+        let before = HsdView::new(DVec2::new(1000.0, 2000.0), 0.0, 40.0, false, size);
+        follow_view(&mut av, Some(before), lo, hi);
+        let ground = before.to_world(av.hsd_cursor);
+        let (centre, r) = harm_scope();
+        av.harm_cursor = centre - Vec2::Y * r * 0.5;
+        // A right turn of 90 degrees: the HSD cursor stays on its ground point, the HARM cursor
+        // (dead ahead before) moves to the left, like an emitter ahead does.
+        let after = HsdView::new(DVec2::new(1100.0, 2050.0), std::f64::consts::FRAC_PI_2, 40.0, false, size);
+        follow_view(&mut av, Some(after), lo, hi);
+        assert!((av.hsd_cursor - after.to_screen(ground.x, ground.y)).length() < 1e-2);
+        assert!((av.harm_cursor - (centre - Vec2::X * r * 0.5)).length() < 1e-3, "{}", av.harm_cursor);
     }
 
     #[test]

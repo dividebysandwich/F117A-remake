@@ -375,7 +375,9 @@ thumbstick, or two joystick axes bound in the CONTROLS dialog ("Sensor/cursor sl
 cursor target** (keypad Enter, left thumbstick click, or a bound button) locks what is under the
 cursor: an aircraft on the HSD (the HUD goes to A-A), a ground object or SAM site (A-G), or a
 radar on the HARM display. The lock holds until the next target key (B, T, N, Shift B or the
-camera keys). Z / X change the HSD range while it is the SOI.
+camera keys). Z / X change the HSD range while it is the SOI. The HSD cursor stays on its ground
+point as the aircraft flies, turns or the range changes, and the HARM cursor turns with the radar
+symbols, so a turn doesn't take the cursor off its target.
 
 **Targeting pod.** The TGP follows the locked target (SLV); without one it looks ahead and down,
 or where the camera keys turn it. Made the SOI, the slew controls turn the pod itself (AREA, slower

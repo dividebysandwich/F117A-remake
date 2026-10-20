@@ -50,6 +50,9 @@ EYEBROW = 318.0
 EYEBROW_X = 0.235
 EYEBROW_TILT = math.radians(10.0)
 TOP = -160.0
+# HUD combiner glass: half width, bottom and top (m), at HUD_Y in front of the eye.
+HUD_Y = 0.70
+HUD_GLASS = (0.1675, -0.12, 0.095)
 
 RIGHT = Vector((1.0, 0.0, 0.0))
 UP = Vector((0.0, math.sin(PANEL_TILT), math.cos(PANEL_TILT)))
@@ -336,10 +339,13 @@ for s in (-1, 1):
     r = (s * 360.0 - 38.0, -252.0, 76.0, 96.0)
     panel_box("black", "black", r, 0.05, 2.0, -0.05)
 # HUD frame: posts either side of the combiner, a bar over it.
-hud_y, hud_lo, hud_hi = 0.70, -0.125, 0.075
-for s in (-1, 1):
-    box("frame", "frame", (s * 0.175, hud_y, (hud_lo + hud_hi) / 2), (0.015, 0.025, hud_hi - hud_lo))
-box("frame", "frame", (0.0, hud_y + 0.02, hud_hi), (0.365, 0.04, 0.015))
+# HUD frame: posts either side of the combiner glass, a bar on top of them (the glass fills the
+# frame's inside: HUD_GLASS; AircraftSpec::hud_scale fits the symbology into it).
+post = 0.015
+for s_ in (-1, 1):
+    x = s_ * (HUD_GLASS[0] + post / 2)
+    box("frame", "frame", (x, HUD_Y, (HUD_GLASS[1] - 0.02 + HUD_GLASS[2]) / 2), (post, 0.025, HUD_GLASS[2] - HUD_GLASS[1] + 0.02))
+box("frame", "frame", (0.0, HUD_Y, HUD_GLASS[2] + post / 2), (2 * (HUD_GLASS[0] + post), 0.025, post))
 # Canopy bow behind the seat.
 for k in range(9):
     a0, a1 = math.pi * k / 9, math.pi * (k + 1) / 9
@@ -420,8 +426,11 @@ g.location = point(-276.0, 84.0, 0.0)
 g.rotation_quaternion = rotation(-276.0)
 # HUD glass: a smaller combiner over the up-front controls (its vertices are absolute).
 hud = next(o for o in root.children if o.name.startswith("hud_glass"))
+lo = Vector((min(v.co.x for v in hud.data.vertices), 0.0, min(v.co.z for v in hud.data.vertices)))
+hi = Vector((max(v.co.x for v in hud.data.vertices), 0.0, max(v.co.z for v in hud.data.vertices)))
 for v in hud.data.vertices:
-    v.co = Vector((v.co.x * 0.45, 0.68 + (v.co.y - 0.8), (v.co.z - 0.025) * 0.62))
+    tx, tz = (v.co.x - lo.x) / (hi.x - lo.x), (v.co.z - lo.z) / (hi.z - lo.z)
+    v.co = Vector((-HUD_GLASS[0] + 2 * HUD_GLASS[0] * tx, HUD_Y, HUD_GLASS[1] + (HUD_GLASS[2] - HUD_GLASS[1]) * tz))
 # Approach indexer left of the HUD, flood lamps over the consoles.
 appr = next(o for o in root.children if o.name.startswith("approach"))
 appr.location = (-0.15, 0.66, -0.09)

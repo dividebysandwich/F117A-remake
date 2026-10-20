@@ -27,14 +27,15 @@ pub struct HudGlassMaterial {
 }
 
 impl HudGlassMaterial {
-    /// Canvas size, projection and style of the classic or the modern HUD.
-    pub fn layout(classic: bool) -> ((usize, usize), Vec4, Vec4) {
+    /// Canvas size, projection and style of the classic or the modern HUD (`scale`: the modern
+    /// HUD's canvas pixels per unit).
+    pub fn layout(classic: bool, scale: f32) -> ((usize, usize), Vec4, Vec4) {
         use crate::hud::modern;
         if classic {
             let f = crate::cockpit::FOCAL;
             ((320, 200), Vec4::new(159.5, 52.0, f, f * crate::cockpit::VSCALE), Vec4::new(0.0, 1.0, 0.0, 0.0))
         } else {
-            ((modern::WIDTH, modern::HEIGHT), Vec4::new(modern::CX, modern::CY, modern::SCALE, modern::SCALE), Vec4::new(1.0, 1.0, 0.0, 0.0))
+            ((modern::WIDTH, modern::HEIGHT), Vec4::new(modern::CX, modern::CY, scale, scale), Vec4::new(1.0, 1.0, 0.0, 0.0))
         }
     }
 }

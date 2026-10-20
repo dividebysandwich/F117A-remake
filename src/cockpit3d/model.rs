@@ -94,6 +94,8 @@ pub(super) struct Spawner<'a> {
     pub local_lights: bool,
     /// High-resolution MFD canvases.
     pub hires: bool,
+    /// Modern HUD scale (`AircraftSpec::hud_scale`).
+    pub hud_scale: f32,
     pub meshes: &'a mut Assets<Mesh>,
     pub materials: &'a mut Assets<StandardMaterial>,
     pub hud_materials: &'a mut Assets<HudGlassMaterial>,
@@ -117,6 +119,7 @@ impl<'a> Spawner<'a> {
         classic_hud: bool,
         local_lights: bool,
         hires: bool,
+        hud_scale: f32,
         meshes: &'a mut Assets<Mesh>,
         materials: &'a mut Assets<StandardMaterial>,
         hud_materials: &'a mut Assets<HudGlassMaterial>,
@@ -131,6 +134,7 @@ impl<'a> Spawner<'a> {
             classic_hud,
             local_lights,
             hires,
+            hud_scale,
             meshes,
             materials,
             hud_materials,
@@ -261,7 +265,7 @@ impl<'a> Spawner<'a> {
                 displays::trackcam_material(self.materials, self.tc_image)
             }
             "hud_glass" => {
-                let (tex, m) = displays::hud_material(self.hud_materials, self.images, self.classic_hud);
+                let (tex, m) = displays::hud_material(self.hud_materials, self.images, self.classic_hud, self.hud_scale);
                 ec.insert((CanvasRole::Hud, tex, Mesh3d(mesh), MeshMaterial3d(m), NotShadowCaster));
                 return;
             }

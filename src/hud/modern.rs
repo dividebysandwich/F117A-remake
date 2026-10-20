@@ -3,9 +3,10 @@
 //! combiner glass (assets/shaders/hud_glass.wgsl) maps it to directions from the eye and draws
 //! every set pixel in HUD green with a little glow.
 //!
-//! Canvas pixels are angular: (x, y) is the direction (x - CX, CY - y) / SCALE in the
+//! Canvas pixels are angular: (x, y) is the direction (x - CX, CY - y) / scale in the
 //! tangent plane one unit in front of the eye (aircraft frame), so symbols placed by
-//! projecting a direction sit on that direction in the world.
+//! projecting a direction sit on that direction in the world. The scale is the aircraft's
+//! (`HudFrame::scale`): a smaller combiner shows the same symbology over a smaller angle.
 
 use bevy::prelude::*;
 
@@ -20,6 +21,7 @@ pub const HEIGHT: usize = 512;
 /// Boresight (canvas pixels) and pixels per unit of the tangent plane.
 pub const CX: f32 = 640.0;
 pub const CY: f32 = 280.0;
+/// The F-117A's pixels per unit (its combiner's size).
 pub const SCALE: f32 = 1024.0;
 
 /// Ink (any colour but the transparent 0; the glass draws all ink in HUD green).
@@ -32,10 +34,11 @@ const SMALL: f32 = 12.0;
 /// Area symbols are kept inside (the combiner is roughly x 182..1098, y 14..483).
 const FIELD: (Vec2, Vec2) = (Vec2::new(250.0, 75.0), Vec2::new(1030.0, 465.0));
 
-/// Pixel of a direction in the aircraft frame (x right, y up, -z forward); None behind.
-pub fn project(d: Vec3) -> Option<Vec2> {
+/// Pixel of a direction in the aircraft frame (x right, y up, -z forward) at `scale` pixels
+/// per unit; None behind.
+pub fn project(d: Vec3, scale: f32) -> Option<Vec2> {
     let z = -d.z;
-    (z > 1e-3).then(|| Vec2::new(CX + SCALE * d.x / z, CY - SCALE * d.y / z))
+    (z > 1e-3).then(|| Vec2::new(CX + scale * d.x / z, CY - scale * d.y / z))
 }
 
 fn inside(p: Vec2) -> bool {
@@ -72,8 +75,8 @@ fn horizon_axes(f: &HudFrame) -> (Vec2, Vec2) {
     let fwd = f.orientation * Vec3::NEG_Z;
     let level = Vec3::new(fwd.x, 0.0, fwd.z).try_normalize().unwrap_or(Vec3::NEG_Z);
     let right = Vec3::new(-level.z, 0.0, level.x);
-    let a = project(inv * level);
-    let b = project(inv * (level + right * 0.01));
+    let a = project(inv * level, f.scale);
+    let b = project(inv * (level + right * 0.01), f.scale);
     let h = match (a, b) {
         (Some(a), Some(b)) => (b - a).try_normalize().unwrap_or(Vec2::X),
         _ => {
@@ -100,7 +103,7 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     let (h, down) = horizon_axes(f);
 
     // Flight path marker (caged to the field with an X when it would leave it).
-    let fpm_raw = project(inv * f.path_dir);
+    let fpm_raw = project(inv * f.path_dir, f.scale);
     let fpm = fpm_raw.map_or(Vec2::new(CX, FIELD.1.y), |p| p.clamp(FIELD.0, FIELD.1));
     let caged = fpm_raw.is_none_or(|p| !inside(p));
 
@@ -159,7 +162,7 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
         text(c, 1010.0, 444.0, &t, Align::Right);
     }
     if st.mode == HudMode::Nav
-        && let Some(p) = f.steerpoint_dir.and_then(|d| project(inv * d)).filter(|&p| inside(p))
+        && let Some(p) = f.steerpoint_dir.and_then(|d| project(inv * d, f.scale)).filter(|&p| inside(p))
     {
         diamond(c, p, 9.0);
     }
@@ -209,7 +212,7 @@ fn pitch_ladder(c: &mut Canvas, f: &HudFrame, fpm: Vec2, h: Vec2, down: Vec2) {
         }
         let rad = deg.to_radians();
         let dir = track * rad.cos() + Vec3::Y * rad.sin();
-        let Some(p) = project(inv * dir) else { continue };
+        let Some(p) = project(inv * dir, f.scale) else { continue };
         // Centre the rung laterally on the flight path marker (along the horizon direction).
         let p = p + h * (fpm - p).dot(h);
         if k == 0 {
@@ -362,7 +365,7 @@ fn aoa_bracket(c: &mut Canvas, fpm: Vec2, aoa: f32) {
 /// allowable steering error circle, launch zone scale and the gun pipper.
 fn air_to_air(c: &mut Canvas, f: &HudFrame) {
     let cues = &f.cues;
-    let target = cues.target_dir.and_then(project);
+    let target = cues.target_dir.and_then(|d| project(d, f.scale));
     if let Some(p) = target {
         let q = p.clamp(FIELD.0, FIELD.1);
         let s = 20.0;
@@ -419,7 +422,7 @@ fn launch_zone(c: &mut Canvas, f: &HudFrame) {
 /// release (flight-path guide) the azimuth steering line with the release cue.
 fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2) {
     let cues = &f.cues;
-    if let Some(p) = cues.target_dir.and_then(project) {
+    if let Some(p) = cues.target_dir.and_then(|d| project(d, f.scale)) {
         let q = p.clamp(FIELD.0, FIELD.1);
         let s = 16.0;
         c.frame(q - Vec2::splat(s), q + Vec2::splat(s), PEN, INK);
@@ -432,7 +435,7 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2) {
         }
     }
     if let Some(dir) = cues.ccip_dir {
-        let p = project(dir).unwrap_or(Vec2::new(CX, FIELD.1.y));
+        let p = project(dir, f.scale).unwrap_or(Vec2::new(CX, FIELD.1.y));
         let q = p.clamp(FIELD.0, FIELD.1);
         c.stroke(fpm, q, THIN, INK);
         if q == p || f.blink {
@@ -440,7 +443,7 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2) {
             c.ring(q, 1.5, PEN * 1.4, INK);
         }
     }
-    if let Some(p) = cues.diamond_dir.and_then(project) {
+    if let Some(p) = cues.diamond_dir.and_then(|d| project(d, f.scale)) {
         // Azimuth steering line through the release point, release cue sliding down to the
         // flight path marker.
         let x = p.x.clamp(FIELD.0.x, FIELD.1.x);
@@ -461,6 +464,7 @@ mod tests {
 
     fn frame(mode: HudMode) -> HudFrame {
         HudFrame {
+            scale: SCALE,
             state: HudState { mode, ..Default::default() },
             knots: 420,
             alt: 12_480,
@@ -504,7 +508,7 @@ mod tests {
         // 5 degrees below the nose: the marker's ring is 5 degrees under the boresight.
         let mut f = frame(HudMode::Nav);
         f.path_dir = Vec3::new(0.0, -(5f32.to_radians().sin()), -(5f32.to_radians().cos()));
-        let p = project(f.orientation.inverse() * f.path_dir).unwrap();
+        let p = project(f.orientation.inverse() * f.path_dir, f.scale).unwrap();
         assert!((p.x - CX).abs() < 0.01);
         assert!((p.y - (CY + SCALE * 5f32.to_radians().tan())).abs() < 0.01);
     }

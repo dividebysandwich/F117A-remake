@@ -293,6 +293,8 @@ fn advance_waypoints(
 /// Everything the HUD shows, in the original's units.
 #[derive(Debug, Clone, Default)]
 pub struct HudFrame {
+    /// Modern HUD: canvas pixels per unit of the tangent plane (`modern`).
+    pub scale: f32,
     pub state: HudState,
     /// Airspeed, knots.
     pub knots: i32,
@@ -357,6 +359,7 @@ pub struct HudParams<'w, 's> {
     pub tod: Res<'w, crate::palette::TimeOfDay>,
     pub time: Res<'w, Time>,
     pub cam: Option<Res<'w, crate::mfd::TrackCam>>,
+    pub settings: Res<'w, crate::settings::Settings>,
 }
 
 /// (temperature ratio, speed of sound in ft/s) at an altitude in feet (standard atmosphere).
@@ -389,6 +392,7 @@ impl HudParams<'_, '_> {
             ((self.waypoints.current, km, if ms > 1.0 { km * 1000.0 / ms } else { 0.0 }), d.as_vec3())
         });
         Some(HudFrame {
+            scale: self.settings.aircraft.spec().hud_scale,
             state: self.state.clone(),
             knots: a.knots() as i32,
             alt: a.altitude.clamp(0.0, 65535.0) as i32,

@@ -263,16 +263,16 @@ pub(super) fn side_label(text: &str, fonts: &Fonts, materials: &mut Assets<Stand
 }
 
 /// The HUD combiner glass material and canvas.
-pub(super) fn hud_material(materials: &mut Assets<HudGlassMaterial>, images: &mut Assets<Image>, classic: bool) -> (CanvasTexture, Handle<HudGlassMaterial>) {
-    let (tex, proj, style) = hud_canvas(images, classic);
+pub(super) fn hud_material(materials: &mut Assets<HudGlassMaterial>, images: &mut Assets<Image>, classic: bool, scale: f32) -> (CanvasTexture, Handle<HudGlassMaterial>) {
+    let (tex, proj, style) = hud_canvas(images, classic, scale);
     let material = materials.add(HudGlassMaterial { tint: Vec4::ZERO, image: tex.image.clone(), proj, style });
     (tex, material)
 }
 
 /// The HUD canvas for the classic (320x200 palette picture) or the modern HUD (large
 /// monochrome mask, filtered), with the glass projection and style.
-fn hud_canvas(images: &mut Assets<Image>, classic: bool) -> (CanvasTexture, Vec4, Vec4) {
-    let ((w, h), proj, style) = HudGlassMaterial::layout(classic);
+fn hud_canvas(images: &mut Assets<Image>, classic: bool, scale: f32) -> (CanvasTexture, Vec4, Vec4) {
+    let ((w, h), proj, style) = HudGlassMaterial::layout(classic, scale);
     let tex = CanvasTexture::new(Canvas::new(w, h), images, true);
     if !classic && let Some(mut img) = images.get_mut(&tex.image) {
         img.sampler = bevy::image::ImageSampler::linear();
@@ -295,7 +295,7 @@ pub(super) fn restyle_hud(
         if *role != CanvasRole::Hud || (tex.canvas.w == 320) == classic {
             continue;
         }
-        let (new, proj, style) = hud_canvas(&mut images, classic);
+        let (new, proj, style) = hud_canvas(&mut images, classic, settings.aircraft.spec().hud_scale);
         if let Some(mut m) = materials.get_mut(&mat.0) {
             m.image = new.image.clone();
             m.proj = proj;

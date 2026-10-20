@@ -118,15 +118,15 @@ impl Hand {
 }
 
 /// Root of the cockpit model (child of the aircraft at the design eye point), with the panel
-/// layout it was built with.
+/// layout it was built with and whether it has its lamps (local lights option).
 #[derive(Component)]
-pub struct CockpitRoot(pub layout::PanelStyle);
+pub struct CockpitRoot(pub layout::PanelStyle, pub bool);
 
-/// Rebuilds the cockpit when the panel layout setting changes.
+/// Rebuilds the cockpit when the panel layout or the local lights setting changes.
 fn respawn_on_style_change(mut commands: Commands, settings: Res<Settings>, roots: Query<(Entity, &CockpitRoot)>) {
     let want = if settings.classic_cockpit { layout::PanelStyle::Classic } else { layout::PanelStyle::Modern };
     for (e, root) in &roots {
-        if root.0 != want {
+        if root.0 != want || root.1 != settings.local_lights {
             commands.entity(e).despawn();
         }
     }
@@ -288,7 +288,7 @@ fn spawn_cockpit(
     let (Ok(aircraft), Ok(head)) = (player.single(), head.single()) else { return };
     let layout = layout::PanelLayout::for_classic(settings.classic_cockpit);
     let root = commands
-        .spawn((CockpitRoot(layout.style), Transform::from_translation(crate::camera::EYE_OFFSET), Visibility::default()))
+        .spawn((CockpitRoot(layout.style, settings.local_lights), Transform::from_translation(crate::camera::EYE_OFFSET), Visibility::default()))
         .id();
     commands.entity(aircraft).add_child(root);
 

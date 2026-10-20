@@ -155,7 +155,10 @@ F2 cycles through the modes; V declutters the HUD.
 | NEXT | B | Select the next target. |
 | NONE | Shift B | Clear the target. No automatic acquisition until the next target or camera key. |
 | WPN | Space | Select the next weapon bay. |
-| FIRE | Enter | Release the selected weapon. |
+| MENU | Esc | Open or close the in-flight settings menu (chapter 3.7). |
+
+The selected weapon is released with Enter, the gamepad's A button or the right VR trigger while
+the hand holds the stick.
 
 The lever below the buttons is the landing gear lever; its arm shows the gear position (down = gear down).
 
@@ -216,6 +219,26 @@ The attitude indicator (ball) shows pitch and bank. The buttons below it:
 From left to right: the **EGR/EAR radar bar graph** (described in chapter 6.2), the **EMV** label
 with the EMV warning lamp (lit for 2 s after each detection), **FUEL** (fuel in lbs divided by
 10) and **THRUST** (in percent).
+
+### 3.7 In-flight settings menu
+
+**Esc** (also Pause, Alt P, the gamepad's Start button or the **MENU** button of the left side
+panel) opens the settings menu in front of the pilot and pauses the flight. In VR, touch an
+entry with a fingertip and pull the trigger, or use a thumbstick and A / X. On the desktop, click
+an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
+
+| Entry | Function |
+|---|---|
+| Shaders | Modern (anti-aliasing, shading, haze) or classic flat shading. |
+| Shadows | Sun shadows on / off. |
+| Point lights | Cockpit lamps, explosions, flares and runway lights lighting the scene. |
+| Cockpit | Modern or classic panel. |
+| HUD | Modern (F-16 style) or classic HUD. |
+| Cockpit size | VR only: size of the cockpit in the headset (70–130 %); left / right or the < > halves. |
+| Resume | Closes the menu (as does Esc again). |
+| End mission | Ends the flight and goes to the debrief. |
+
+Changes apply at once and are saved as the defaults for the next flight.
 
 ## 4. MFD pages
 
@@ -289,7 +312,7 @@ shows the target (here *Gutersloh Airbase*, 0.9 km), and the GND lamp is lit.
    **NEXT** (B) to step through targets. The camera keys (/ . , M) also select targets in
    their direction.
 3. Open the bay doors (**BAY**, 8).
-4. Release with **FIRE** (Enter) when **LOCK** is steady. Releases fail with *Bay closed*,
+4. Release with Enter (gamepad A, VR: right trigger) when **LOCK** is steady. Releases fail with *Bay closed*,
    with a bank angle above about 67°, or on the ground (*Insufficient Altitude*).
 5. Close the bay doors. Open doors increase the radar signature (chapter 6.1).
 
@@ -452,7 +475,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | | Zoom / unzoom / wide angle | Z / X / C |
 | | Look around (cockpit) / orbit (external views) | Right mouse button |
 | **Time** | Time acceleration / normal | Shift Z / Shift X |
-| **Game** | Pause / detail / sound level | Alt P / Alt D / Alt V |
+| **Game** | Settings menu (pauses) / detail / sound level | Esc, Pause, Alt P, gamepad Start / Alt D / Alt V |
 | | Training / resupply / quit | Alt T / Alt R / Alt Q |
 
 ## 8. Aircraft, air defences and ships

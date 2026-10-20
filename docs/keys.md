@@ -41,6 +41,6 @@ These are the defaults: the menu's CONTROLS dialog rebinds every key except the 
 | External views | slot / chase / side / missile / tactical / inverse tactical | Shift F1 .. Shift F6 |
 | View | zoom / unzoom / wide angle | Z / X / C |
 | Time | accelerate / normal | Shift Z / Shift X |
-| Misc | pause / boss / quit | Alt P / Alt B / Alt Q |
+| Misc | pause (remake: settings menu, also Esc) / boss / quit | Alt P / Alt B / Alt Q |
 | | volume / detail level | Alt V / Alt D |
 | Training | go to training / resupply / day-night / teleport | Alt T / Alt R / Alt N / Alt + arrows |

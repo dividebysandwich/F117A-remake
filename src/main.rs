@@ -11,6 +11,7 @@ mod csar_view;
 mod debrief;
 mod dots;
 mod explosions;
+mod flight_menu;
 mod fires;
 mod flight;
 mod font;
@@ -115,7 +116,7 @@ fn main() {
         sound::SoundPlugin,
     ))
     .add_plugins((hud::HudPlugin, mfd::MfdPlugin, panel::PanelPlugin))
-    .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin, trails::TrailsPlugin, explosions::ExplosionsPlugin))
+    .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin, trails::TrailsPlugin, explosions::ExplosionsPlugin, flight_menu::FlightMenuPlugin))
     .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin, weather::WeatherPlugin))
     .add_plugins((fires::FiresPlugin, terrain::TerrainPlugin, csar_view::CsarViewPlugin, stage::StagePlugin));
     mission::from_args(&mut app);

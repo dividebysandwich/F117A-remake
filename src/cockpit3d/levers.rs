@@ -236,6 +236,7 @@ pub(super) fn grab_levers(
     mut controls: ResMut<FlightControls>,
     mut actions: MessageWriter<ActionEvent>,
     aircraft: Query<&Aircraft, With<Player>>,
+    block: Res<crate::input::InputBlock>,
 ) {
     let set_thrust = aircraft.single().map_or(0.0, |a| a.set_thrust / 100.0);
     let [left, right] = &mut hands.hands;
@@ -312,7 +313,7 @@ pub(super) fn grab_levers(
             };
             match m.target {
                 ButtonTarget::Gun => controls.gun |= held,
-                ButtonTarget::Action(a) if pressed => {
+                ButtonTarget::Action(a) if pressed && (!block.0 || a == Action::Menu) => {
                     actions.write(ActionEvent(a));
                 }
                 ButtonTarget::Action(_) => {}

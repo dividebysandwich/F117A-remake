@@ -69,7 +69,7 @@ const SIDE_BUTTONS: &[(Kind, Effect)] = &[
     side(-1.0, 1, 0, "NEXT", Action::SelectTarget),
     side(-1.0, 1, 1, "NONE", Action::ClearTarget),
     side(-1.0, 2, 0, "WPN", Action::SelectWeapon),
-    side(-1.0, 2, 1, "FIRE", Action::FireWeapon),
+    side(-1.0, 2, 1, "MENU", Action::Menu),
     side(1.0, 0, 0, "NVG", Action::Nvg),
     side(1.0, 0, 1, "ILS", Action::Ils),
     (Kind::Side(1.0, 1, 0, "TIME"), Effect::TimeToggle),
@@ -423,8 +423,11 @@ pub(super) fn interact(
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform), With<EyeCamera>>,
     root: Query<&GlobalTransform, With<CockpitRoot>>,
+    menu: Res<crate::flight_menu::FlightMenu>,
 ) {
     let dt = time.delta_secs();
+    // With the menu open only the MENU button works (it closes the menu again).
+    let usable = |c: &Control| !menu.open || c.effect == Effect::Action(Action::Menu);
     for PressControl(a) in presses.read() {
         // Panel caps and bezel buttons before the side panel duplicates; of two bezel buttons
         // with the same key action (MAP / TAC), the one not selected.
@@ -455,6 +458,9 @@ pub(super) fn interact(
         let d = inv.transform_vector3(*ray.direction).normalize();
         let mut best: Option<(f32, Mut<Control>)> = None;
         for (_, c, tf) in &mut controls {
+            if !usable(&c) {
+                continue;
+            }
             let n = tf.rotation * Vec3::Z;
             let plane = tf.translation + n * c.height;
             let denom = d.dot(n);
@@ -483,7 +489,7 @@ pub(super) fn interact(
         c.click = (c.click - dt).max(0.0);
         for (h, hand) in hands.hands.iter().enumerate() {
             // The ejection handle has to be grabbed and pulled (no accidental pokes).
-            if !hand.active || !cockpit_view || c.kind == Kind::EjectHandle {
+            if !hand.active || !cockpit_view || c.kind == Kind::EjectHandle || !usable(&c) {
                 continue;
             }
             let local = tf.rotation.inverse() * (hand.finger - tf.translation);

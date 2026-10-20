@@ -10,11 +10,16 @@ impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FlightControls>()
             .init_resource::<VirtualStick>()
+            .init_resource::<InputBlock>()
             .add_message::<ActionEvent>()
             .add_plugins(crate::hotas::build)
             .add_systems(PreUpdate, (read_keyboard, read_gamepad, crate::hotas::read_hotas).chain().in_set(InputSystemsSet).after(bevy::input::InputSystems));
     }
 }
+
+/// While set (the in-flight menu is open), keys, buttons and sticks only open and close the menu.
+#[derive(Resource, Default)]
+pub struct InputBlock(pub bool);
 
 /// Keyboard, gamepad and joystick reading (other input sources run after it and override).
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -89,7 +94,9 @@ pub enum Action {
     WideAngle,
     TimeAccel,
     TimeNormal,
-    Pause,
+    /// In-flight settings menu (pauses the flight).
+    #[serde(alias = "Pause")]
+    Menu,
     Quit,
     Detail,
     Volume,
@@ -235,8 +242,9 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::KeyC, WideAngle),
         (Shift, K::KeyZ, TimeAccel),
         (Shift, K::KeyX, TimeNormal),
-        (Alt, K::KeyP, Pause),
-        (None, K::Pause, Pause),
+        (Alt, K::KeyP, Menu),
+        (None, K::Pause, Menu),
+        (None, K::Escape, Menu),
         (Alt, K::KeyQ, Quit),
         (Alt, K::KeyD, Detail),
         (Alt, K::KeyV, Volume),
@@ -288,12 +296,16 @@ fn read_keyboard(
     mut stick: ResMut<VirtualStick>,
     mut controls: ResMut<FlightControls>,
     mut actions: MessageWriter<ActionEvent>,
+    block: Res<InputBlock>,
 ) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
     let mods = if alt { Mods::Alt } else if shift { Mods::Shift } else { Mods::None };
     for m in &config.keys {
         let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
+        if block.0 && action != Action::Menu {
+            continue;
+        }
         if m.mods == mods && keys.just_pressed(m.key) {
             if action == Action::StickSensitivity {
                 stick.sensitivity = (stick.sensitivity + 1) % 3;
@@ -302,6 +314,15 @@ fn read_keyboard(
         }
     }
 
+    if block.0 {
+        // The menu reads the arrow keys.
+        controls.roll = 0.0;
+        controls.pitch = 0.0;
+        controls.gun = false;
+        controls.yaw = 0.0;
+        controls.throttle = None;
+        return;
+    }
     // Virtual stick (unmodified direction keys only; Shift+arrows move waypoints).
     let now = time.elapsed_secs_f64();
     let (mut roll, mut pitch) = (0.0, 0.0);
@@ -343,8 +364,14 @@ fn read_gamepad(
     config: Res<crate::hotas::InputConfig>,
     mut controls: ResMut<FlightControls>,
     mut actions: MessageWriter<ActionEvent>,
+    block: Res<InputBlock>,
 ) {
-    if !config.gamepad_defaults {
+    for pad in &gamepads {
+        if pad.just_pressed(GamepadButton::Start) {
+            actions.write(ActionEvent(Action::Menu));
+        }
+    }
+    if !config.gamepad_defaults || block.0 {
         return;
     }
     for pad in &gamepads {

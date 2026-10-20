@@ -381,8 +381,22 @@ impl Hotas {
 }
 
 /// Reads the joysticks and applies the mapping (after the keyboard and gamepad, overriding them).
-pub fn read_hotas(mut hotas: ResMut<Hotas>, config: Res<InputConfig>, mut controls: ResMut<FlightControls>, mut actions: MessageWriter<ActionEvent>) {
+pub fn read_hotas(
+    mut hotas: ResMut<Hotas>,
+    config: Res<InputConfig>,
+    mut controls: ResMut<FlightControls>,
+    mut actions: MessageWriter<ActionEvent>,
+    block: Res<crate::input::InputBlock>,
+) {
     hotas.poll();
+    if block.0 {
+        for m in &config.buttons {
+            if m.target == ButtonTarget::Action(Action::Menu) && hotas.active(&m.device, m.source, false) && !hotas.active(&m.device, m.source, true) {
+                actions.write(ActionEvent(Action::Menu));
+            }
+        }
+        return;
+    }
     for m in &config.axes {
         let Some(raw) = hotas.axis(&m.device, m.code) else { continue };
         let v = m.output(raw);

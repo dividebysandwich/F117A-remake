@@ -24,7 +24,7 @@ impl Plugin for LightingPlugin {
             .add_systems(OnEnter(AppState::Flight), spawn_sun)
             .add_systems(OnExit(AppState::Flight), despawn_lights)
             // Before the cascades are built (PostUpdate) so a shadow toggle applies at once.
-            .add_systems(Update, update_sun.run_if(in_state(AppState::Flight)))
+            .add_systems(Update, (update_sun, sync_mirror_lights).run_if(in_state(AppState::Flight)))
             .add_systems(
                 PostUpdate,
                 (collect_local_lights, mirror_point_lights)
@@ -98,15 +98,32 @@ fn spawn_sun(mut commands: Commands, settings: Res<Settings>) {
     // Only with the local lighting option: point lights put the PBR shader's clustered light
     // loop to work in every lit pixel, and on the Steam Frame (Turnip, Adreno 750) that loop
     // hangs the GPU.
-    if !settings.local_lights {
-        return;
+    if settings.local_lights {
+        spawn_mirror_lights(&mut commands);
     }
+}
+
+fn spawn_mirror_lights(commands: &mut Commands) {
     for i in 0..MIRRORED {
         commands.spawn((
             MirrorLight(i),
             PointLight { intensity: 0.0, range: 1.0, shadow_maps_enabled: false, ..default() },
             Transform::default(),
         ));
+    }
+}
+
+/// Adds or removes the mirrored point lights when the local lights option changes in flight.
+fn sync_mirror_lights(mut commands: Commands, settings: Res<Settings>, lights: Query<Entity, With<MirrorLight>>) {
+    if !settings.is_changed() || settings.local_lights != lights.is_empty() {
+        return;
+    }
+    if settings.local_lights {
+        spawn_mirror_lights(&mut commands);
+    } else {
+        for e in &lights {
+            commands.entity(e).despawn();
+        }
     }
 }
 

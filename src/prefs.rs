@@ -123,6 +123,21 @@ impl Prefs {
         }
     }
 
+    /// Saves the graphics, cockpit and HUD switches and the VR cockpit size (in-flight menu),
+    /// keeping the rest of the file.
+    pub fn save_switches(s: &Settings) {
+        let mut p = Self::load();
+        p.modern_shading = s.modern_shading;
+        p.shadows = s.shadows;
+        p.local_lights = s.local_lights;
+        p.classic_cockpit = s.classic_cockpit;
+        p.classic_hud = s.classic_hud;
+        p.vr_cockpit_scale = s.vr_cockpit_scale;
+        if let Err(e) = save_json(FILE, &p) {
+            warn!("saving the preferences: {e}");
+        }
+    }
+
     /// Writes the file if anything changed since the last save.
     pub fn save_if_changed(menu: &MenuState, s: &Settings, last: &mut Option<Prefs>) {
         let now = Self::from_state(menu, s);

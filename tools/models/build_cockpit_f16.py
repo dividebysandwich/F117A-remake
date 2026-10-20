@@ -155,6 +155,12 @@ for o in list(root.children):
     if not kept(o):
         drop(o)
 old = list(root.children)
+# The seat back up by as much as the F-117A's was lowered after the F-16's was set.
+F117_SEAT_DROP = 0.22
+for o in old:
+    if o.name.startswith(("seat_", "cushion_", "metal_98", "metal_99", "control_Action_Eject_")):
+        o.location.z += F117_SEAT_DROP
+bpy.context.view_layer.update()
 
 # --- materials
 mats = bpy.data.materials

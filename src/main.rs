@@ -34,6 +34,7 @@ mod scenery;
 mod script;
 mod settings;
 mod sound;
+mod stage;
 mod sim_render;
 mod terrain;
 mod trackcam;
@@ -61,6 +62,13 @@ fn main() {
             title: "Stealth Mission 89".into(),
             // Wayland app id / X11 class, matching packaging/linux/stealth-mission-89.desktop.
             name: Some("stealth-mission-89".into()),
+            // `--window-size WxH` (screenshots).
+            resolution: std::env::args()
+                .collect::<Vec<_>>()
+                .windows(2)
+                .find(|w| w[0] == "--window-size")
+                .and_then(|w| w[1].split_once('x').and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.parse::<u32>().ok()?))))
+                .map_or_else(Default::default, |(w, h)| bevy::window::WindowResolution::new(w, h)),
             // --novsync: uncapped frame rate (performance measurements).
             present_mode: if std::env::args().any(|a| a == "--novsync") {
                 bevy::window::PresentMode::AutoNoVsync
@@ -108,7 +116,7 @@ fn main() {
     .add_plugins((hud::HudPlugin, mfd::MfdPlugin, panel::PanelPlugin))
     .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin, trails::TrailsPlugin))
     .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin, weather::WeatherPlugin))
-    .add_plugins((fires::FiresPlugin, terrain::TerrainPlugin, csar_view::CsarViewPlugin));
+    .add_plugins((fires::FiresPlugin, terrain::TerrainPlugin, csar_view::CsarViewPlugin, stage::StagePlugin));
     mission::from_args(&mut app);
     if let Some(scale) = std::env::args()
         .collect::<Vec<_>>()

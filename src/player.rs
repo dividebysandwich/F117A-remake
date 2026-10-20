@@ -34,6 +34,7 @@ fn spawn_player(
     mut meshes: ResMut<Assets<Mesh>>,
     palette: Res<crate::palette::Palette>,
     xr_root: Res<crate::camera::XrRoot>,
+    mission: Option<Res<crate::mission::ActiveMission>>,
 ) {
     let base = setup
         .start_base
@@ -69,6 +70,19 @@ fn spawn_player(
         a.velocity = kts * 27.0;
         a.set_thrust = 50.0;
         a.thrust = 50.0;
+    }
+    if let Some((p, heading, alt, kts)) = mission.as_ref().and_then(|m| crate::stage::chase_start(&m.0)) {
+        // Test aid (`--start-chase`): in the air behind a drone, gear up.
+        pos = p;
+        let a = &mut aircraft_state;
+        a.orientation = Aircraft::from_euler(heading, 0.0, 0.0);
+        a.altitude = alt;
+        a.on_ground = false;
+        a.has_flown = true;
+        a.gear_down = false;
+        a.velocity = kts * 27.0;
+        a.set_thrust = 60.0;
+        a.thrust = 60.0;
     }
     let aircraft = commands
         .spawn((

@@ -803,7 +803,10 @@ In Ukraine strike missions a few drones may also cross the theater; shooting the
 After a good ejection over enemy territory (Shift-F10, or the ejection handle in the cockpit) the
 mission goes on from the ground. The view follows the pilot under the parachute (look up, with the
 headset or the right mouse button, to see the canopy; it is packed away on landing) and on the
-ground, and a panel shows the rescue's progress:
+ground, and a panel shows the rescue's progress, with buttons for the signal flare and time
+acceleration (click them with the mouse; in the headset the panel floats at chest height: point at
+a button with either controller and pull the trigger). The aircraft falls silent once you are out;
+on the ground your emergency beacon chirps every few seconds.
 
 - A **UH-60** comes from the nearest friendly airfield's alert area. Close in it cannot find you
   without a **signal flare** (the flare key, 1): fire one when it is near (you have three).

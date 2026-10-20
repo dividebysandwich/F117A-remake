@@ -595,7 +595,8 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 
 | Group | Action | Key |
 |---|---|---|
-| **Flight** | Stick (pitch / roll) | Arrow keys; double-tap for full deflection |
+| **Flight** | Stick (pitch / roll) | Arrow keys (rebindable); double-tap for full deflection |
+| | Rudder (yaw) left / right | Unbound by default; bind keys in the input mapping |
 | | Stick sensitivity | Ins |
 | | Throttle up / down | `=` / `-` |
 | | Full / idle throttle | Shift `=` / Shift `-` |

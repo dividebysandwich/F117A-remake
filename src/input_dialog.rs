@@ -346,8 +346,10 @@ fn vr_buttons(ui: &mut egui::Ui, config: &mut InputConfig) {
             .color(DIM)
             .small(),
     );
-    let targets: Vec<ButtonTarget> =
-        std::iter::once(ButtonTarget::Gun).chain(all_actions().into_iter().map(ButtonTarget::Action)).collect();
+    // The stick keys are for the keyboard and joystick buttons: VR has the real stick.
+    let targets: Vec<ButtonTarget> = std::iter::once(ButtonTarget::Gun)
+        .chain(all_actions().into_iter().filter(|a| a.stick_direction().is_none()).map(ButtonTarget::Action))
+        .collect();
     egui::Grid::new("vr_buttons").num_columns(3).spacing([14.0, 4.0]).striped(true).show(ui, |ui| {
         ui.label("");
         ui.label(egui::RichText::new("LEFT HAND").color(GREEN));

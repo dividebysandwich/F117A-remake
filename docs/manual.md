@@ -131,9 +131,19 @@ The modes add their own symbols:
 * **AA:** the target designator box with the missile diamond once locked, the range below it;
   with an air-to-air missile selected the steering circle and dot, *SHOOT* in range, and the
   launch zone scale (maximum and minimum range, target range caret).
-* **AG:** the target designator box (*IN RNG* in range); for bombs the CCIP pipper with the bomb
-  fall line, and for guided release the azimuth steering line with the release cue that slides
-  down to the flight path marker.
+* **AG:** the target designator box (*IN RNG* in range); for guided bombs the azimuth steering
+  line with the release cue that slides down to the flight path marker. With a free-fall or
+  retarded bomb the bombsight replaces *AG* at the bottom left with its mode, **CCIP** or
+  **CCRP** (chapter 5, *Bombing*), and the bottom right shows the slant range in nautical miles
+  (*F004.2*) to the impact point (CCIP) or the target (CCRP), the time to release (CCRP,
+  *REL 0:12*) and the bomb's time of fall (*TOF*):
+  * **CCIP:** the bomb fall line runs down from the flight path marker to the pipper, a small
+    circle with a dot where a bomb released now would land. While that point is below the HUD
+    the pipper stays at the HUD's edge and the time delay cue crosses the line: dive steeper or
+    wait.
+  * **CCRP:** the azimuth steering line runs through the target designator box; the solution
+    cue (a short bar on the line) slides down towards the flight path marker as the release
+    point comes up and reaches it at release.
 * **Gun** selected (in every mode): the gun pipper, where the target has to be for the rounds
   fired now to hit it. It allows for the rounds' time of flight to the locked target's range,
   the target's motion relative to the rounds and their drop. Unless an aircraft is locked, when
@@ -237,8 +247,8 @@ with the EMV warning lamp (lit for 2 s after each detection), **FUEL** (fuel in 
 
 The F-16C has its own cockpit, laid out like the real Block 50's. Under the HUD the **up-front
 controls** stand out of the panel: the round override buttons along the top (**COM1** is the
-sound volume, **LIST** the settings menu, **A-A** and **A-G** the master modes; pressing the lit one
-again returns to NAV) and the keypad with the real page labels, of which **1 T-ILS** (ILS),
+sound volume, **LIST** the settings menu, **A-A** and **A-G** the master modes; pressing A-A again
+returns to NAV, pressing A-G again switches the bombsight between CCIP and CCRP) and the keypad with the real page labels, of which **1 T-ILS** (ILS),
 **4 STPT** (the WAY page), **6 TIME** (time acceleration) and **7 MARK** (designate) work, with
 **DCLT** (HUD declutter) and **NVG** right of them. The **DED** (data entry display) right of the
 up-front controls shows a CNI-style page in amber: the radio channels, the current steerpoint and
@@ -341,7 +351,8 @@ each waypoint; fuel bar at the bottom. WP- / WP+ (PgUp / PgDn) select the waypoi
 <tr>
 <td><img src="images/mfd_wpn.png" alt="WPN"><br>
 <b>WPN</b> – The weapons carried and how many are left; the selected one is highlighted.
-SEL (Space) selects the next weapon, after the last one the gun.</td>
+SEL (Space) selects the next weapon, after the last one the gun; the button next to it shows
+the bombsight mode, CCIP or CCRP, and switches it (Alt F2).</td>
 <td><img src="images/mfd_ord.png" alt="ORD"><br>
 <b>ORD</b> – Mission orders: primary objective (yellow), secondary objective (red), landing
 base (green).</td>
@@ -368,7 +379,7 @@ and HARM; F5 / F10 bring up SMS, F6 and the camera keys the TGP, F7 the waypoint
 | HARM | ALL / SAM / AIR, SOI | The radars painting the aircraft, like the RWR: at their bearing, the most dangerous nearest the centre (chapter 3.7). |
 | TGP | FLIR, ZM-, ZM+, CZ, SOI | The targeting pod (tracking camera), see below. The pod's mode (SLV / AREA / PNT) is shown bottom left, the zoom bottom right (AUTO: by range). |
 | MAP | NUP / HUP, ZM-, ZM+, WAY | The moving map in muted colours; WAY switches to the waypoint table (WP-, WP+, RST). |
-| SMS | WPN, ORD, SEL | Stores (WPN) and mission orders (ORD). |
+| SMS | WPN, ORD, SEL, CCIP / CCRP | Stores (WPN) and mission orders (ORD); on WPN the bombsight mode. |
 
 **Sensor of interest (SOI).** The HSD, the HARM display or the TGP is the SOI (white frame; the top right
 SOI button, or Alt S to move it to the other MFD). Its cursor, two short vertical lines, moves with
@@ -409,6 +420,20 @@ shows the target (here *Gutersloh Airbase*, 0.9 km), and the GND lamp is lit.
 4. Release with Enter (gamepad A, VR: right trigger) when **LOCK** is steady. Releases fail with *Bay closed*,
    with a bank angle above about 67°, or on the ground (*Insufficient Altitude*).
 5. Close the bay doors. Open doors increase the radar signature (chapter 6.1).
+
+**Bombing:** free-fall and retarded bombs have two release modes; CCIP is the default. Switch
+with Alt F2, the F-16's **A-G** button pressed again in AG mode, or the CCIP / CCRP button on the
+weapons page. The HUD shows the mode at the bottom left (in AG mode).
+
+* **CCIP** (continuously computed impact point): put the pipper at the end of the bomb fall line
+  on the target and release with Enter. Free-fall bombs need a dive or some height to bring the
+  pipper into the HUD; low and level, retarded bombs do.
+* **CCRP** (continuously computed release point): lock the target (NEAR, DESG, NEXT or a display
+  lock), steer the flight path marker onto the azimuth steering line and hold Enter (or the
+  trigger): the bomb is released by itself when the solution cue reaches the flight path marker,
+  i.e. when the target passes the release point. Pressing Enter does not release the bomb in
+  CCRP; without a target the HUD says *No target designated*. Let go of the button to hold
+  the release.
 
 **Gun:** select it with **WPN** (Space) after the last weapon (the HUD shows *GUN* and the
 rounds left) and hold the fire button (Enter, gamepad A, VR: right trigger): put the target in
@@ -579,6 +604,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | | Tracking camera ahead / rear / right / left | `/` / `.` / `,` / M |
 | | Tracking camera zoom in / out | `]` / `[` |
 | **Displays** | HUD mode / declutter | F2 / V |
+| | Bombsight CCIP / CCRP | Alt F2 |
 | | MAP / TAC (left MFD) | F3 |
 | | Map zoom in / out, north up / heading up | Alt Z / Alt X / Alt F3 |
 | | Night vision goggles | F4 |

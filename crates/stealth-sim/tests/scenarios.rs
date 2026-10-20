@@ -913,3 +913,57 @@ fn bombs_land_on_the_ccip_point() {
     // 1 map unit is 32 ft: the slick bomb flies about 4,000 ft, the retarded one under 3,000.
     assert!(ahead[0] > 100 && ahead[1] > 40 && ahead[1] < ahead[0] * 3 / 4, "{ahead:?}");
 }
+
+/// CCRP: flying level at a locked target with the fire button held, the bomb is not released
+/// on the press but when the target passes the release point, and lands on the target.
+#[test]
+fn ccrp_releases_at_the_release_point() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    for w in [9, 10] {
+        let mut sim = Sim::new(&d.sim, &m);
+        let (mx, my) = sandbox(&mut sim, &m);
+        sim.set_training(true);
+        sim.set_loadout(&[(w, 2)]);
+        // The target 400 map units (12,800 ft) north of the start.
+        let t = 5;
+        {
+            let o = &mut sim.objects_mut()[t];
+            o.x = mx;
+            o.y = my - 400;
+            o.flags = 0;
+        }
+        let knots = 450u16;
+        let mut p = player_at(mx, my, 500, 0, knots);
+        p.hud_mode = HudMode::Gnd;
+        p.ccrp = true;
+        p.cmd.toggle_bay = true;
+        p.cmd.lock_object = Some(t as u16);
+        let step = knots as f64 * 27.0 / 16.0 / 15.0;
+        let mut y = p.y as f64;
+        let mut released_at = None;
+        for f in 0..15 * 40 {
+            if f == 5 {
+                p.cmd.fire = true;
+            }
+            p.cmd.trigger = f >= 5;
+            sim.step(&p, 15);
+            p.cmd = Commands { trigger: p.cmd.trigger, ..Default::default() };
+            if released_at.is_none() && sim.weapon_groups().0[0].1 < 2 {
+                released_at = Some(f);
+                assert!(f > 5, "weapon {w}: released on the press");
+            }
+            if released_at.is_some() && (8..12).all(|s| sim.projectiles()[s].ttl == 0) {
+                break;
+            }
+            y += step;
+            p.y = y as i32;
+        }
+        assert!(released_at.is_some(), "weapon {w}: not released");
+        let slot = (8..12).find(|&s| sim.projectiles()[s].fall.is_some()).unwrap();
+        let (x, y, _) = sim.projectiles()[slot].map_pos();
+        let o = sim.objects()[t];
+        assert!((x - (o.x as f64 + 0.5)).abs() < 2.0 && (y - (o.y as f64 + 0.5)).abs() < 3.0, "weapon {w}: impact {x},{y} target {},{}", o.x, o.y);
+        assert_eq!(sim.weapon_groups().0[0].1, 1, "weapon {w}: one bomb");
+    }
+}

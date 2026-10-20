@@ -22,6 +22,7 @@ These are the defaults: the menu's CONTROLS dialog rebinds every key except the 
 | Equipment | gear / autopilot / bay doors / flaps / brakes | 6 / 7 / 8 / 9 / 0 |
 | | eject | Shift F10 |
 | Displays | HUD modes / declutter | F2 / V |
+| | bombsight CCIP / CCRP (remake; also A-G pressed again on the F-16) | Alt F2 |
 | | maps (left MFD) | F3 |
 | | map zoom in / out, north up / heading up (remake, modern panel) | Alt Z / Alt X / Alt F3 |
 | | night vision goggles (remake) | F4 |

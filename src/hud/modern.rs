@@ -140,10 +140,15 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     text(c, 300.0, 152.0, &format!("{:.1}", f.state.max_gees as f32 / 16.0), Align::Left);
 
     // Lower left: mode, stores, gun.
+    let bomb = f.cues.bomb.filter(|_| st.mode == HudMode::Gnd);
     let mode = match st.mode {
         HudMode::Nav => "NAV",
         HudMode::Air => "AA",
-        HudMode::Gnd => "AG",
+        HudMode::Gnd => match bomb {
+            Some(b) if b.ccrp => "CCRP",
+            Some(_) => "CCIP",
+            None => "AG",
+        },
     };
     text(c, 270.0, 392.0, mode, Align::Left);
     if f.gun_selected {
@@ -157,8 +162,10 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
         }
     }
 
-    // Lower right: steerpoint number, distance and time to go.
-    if let Some((n, km, secs)) = f.steerpoint {
+    // Lower right: steerpoint number, distance and time to go; with a bomb the release data.
+    if let Some(b) = bomb {
+        bomb_readouts(c, &b);
+    } else if let Some((n, km, secs)) = f.steerpoint {
         text(c, 1010.0, 392.0, &format!("STPT {n}"), Align::Right);
         text(c, 1010.0, 418.0, &format!("{km:.1} KM"), Align::Right);
         let s = secs.clamp(0.0, 359_999.0) as i32;
@@ -174,7 +181,7 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     match st.mode {
         HudMode::Nav => {}
         HudMode::Air => air_to_air(c, f),
-        HudMode::Gnd => air_to_ground(c, f, fpm),
+        HudMode::Gnd => air_to_ground(c, f, fpm, down),
     }
     gun_sight(c, f);
 
@@ -447,9 +454,53 @@ fn launch_zone(c: &mut Canvas, f: &HudFrame) {
     }
 }
 
-/// AG: CCIP pipper with the bomb fall line, target designator box, and for the guided
-/// release (flight-path guide) the azimuth steering line with the release cue.
-fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2) {
+/// "m:ss" of seconds (0 and up).
+fn min_sec(secs: f32) -> String {
+    let s = secs.max(0.0).round() as i32;
+    format!("{}:{:02}", s / 60, s % 60)
+}
+
+/// Bomb readouts in the lower right: the slant range (nautical miles, F) to the impact point
+/// (CCIP) or the target (CCRP), the time to release (CCRP, REL) and the bomb's time of fall
+/// (TOF).
+fn bomb_readouts(c: &mut Canvas, b: &super::BombCue) {
+    let range = b.range_m.map_or("F---.-".to_string(), |m| format!("F{:05.1}", m / 1852.0));
+    text(c, 1010.0, 392.0, &range, Align::Right);
+    if b.ccrp {
+        let rel = b.release_secs.map_or("--:--".to_string(), min_sec);
+        text(c, 1010.0, 418.0, &format!("REL {rel}"), Align::Right);
+    }
+    text(c, 1010.0, if b.ccrp { 444.0 } else { 418.0 }, &format!("TOF {:.1}", b.fall_secs), Align::Right);
+}
+
+/// Pixels per second to the release the CCRP solution cue sits above the flight path marker.
+const SOLUTION_PX_PER_S: f32 = 10.0;
+
+/// The part of the line through `p` along `d` inside the field.
+fn field_line(p: Vec2, d: Vec2) -> Option<(Vec2, Vec2)> {
+    let (mut t0, mut t1) = (-1e4f32, 1e4f32);
+    for a in 0..2 {
+        let (lo, hi, o, v) = (FIELD.0[a], FIELD.1[a], p[a], d[a]);
+        if v.abs() < 1e-6 {
+            if o < lo || o > hi {
+                return None;
+            }
+        } else {
+            let (a0, a1) = ((lo - o) / v, (hi - o) / v);
+            t0 = t0.max(a0.min(a1));
+            t1 = t1.min(a0.max(a1));
+        }
+    }
+    (t0 < t1).then(|| (p + d * t0, p + d * t1))
+}
+
+/// AG, F-16 style: the target designator box; with a free-fall or retarded bomb in CCIP the
+/// pipper on the bomb fall line from the flight path marker (a delay cue across the line while
+/// the impact point is below the field), in CCRP the azimuth steering line through the target
+/// with the solution cue sliding down it to the flight path marker (the bomb goes when the
+/// cue reaches the marker with the button held); for the guided release (flight-path guide)
+/// the steering line with the release cue.
+fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2, down: Vec2) {
     let cues = &f.cues;
     if let Some(p) = cues.target_dir.and_then(|d| project(d, f.scale)) {
         let q = p.clamp(FIELD.0, FIELD.1);
@@ -463,13 +514,46 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2) {
             small(c, q.x, q.y + s + 16.0, &format!("{r:.1}"), Align::Centre);
         }
     }
-    if let Some(dir) = cues.ccip_dir {
+    let bomb = cues.bomb;
+    if let Some(dir) = cues.ccip_dir.filter(|_| bomb.is_none_or(|b| !b.ccrp)) {
+        // The bomb fall line from the flight path marker to the pipper, a circle with a dot on
+        // the impact point; while that is below the field the pipper stays on the line at the
+        // field's edge and the time delay cue crosses the line there.
+        let r = 10.0;
         let p = project(dir, f.scale).unwrap_or(Vec2::new(CX, FIELD.1.y));
+        let along = (p - fpm).normalize_or(Vec2::Y);
+        let q = if inside(p) { p } else { field_line(fpm, along).map_or(p.clamp(FIELD.0, FIELD.1), |(_, e)| e - along * r) };
+        if (q - fpm).dot(along) > r + 9.0 {
+            c.stroke(fpm + along * 9.0, q - along * r, PEN, INK);
+        }
+        if q != p {
+            let across = along.perp();
+            let tdc = q - along * (r + 24.0);
+            c.stroke(tdc - across * 16.0, tdc + across * 16.0, PEN, INK);
+        }
+        c.ring(q, r, PEN, INK);
+        c.ring(q, 1.5, PEN * 1.4, INK);
+    }
+    if let Some(b) = bomb.filter(|b| b.ccrp)
+        && let Some(p) = cues.target_dir.and_then(|d| project(d, f.scale))
+    {
         let q = p.clamp(FIELD.0, FIELD.1);
-        c.stroke(fpm, q, THIN, INK);
-        if q == p || f.blink {
-            c.ring(q, 14.0, PEN, INK);
-            c.ring(q, 1.5, PEN * 1.4, INK);
+        if let Some((a, e)) = field_line(q, down) {
+            c.stroke(a, e, PEN, INK);
+        }
+        if let Some(secs) = b.release_secs {
+            // On the steering line, level with the flight path marker at release.
+            let base = q + down * (fpm - q).dot(down);
+            // It waits at the top of the line until the release comes within reach.
+            let mut cue = base - down * secs.max(0.0) * SOLUTION_PX_PER_S;
+            if let Some((a, e)) = field_line(q, down) {
+                let top = if a.y < e.y { a } else { e };
+                if (cue - top).dot(down) < 0.0 {
+                    cue = top + down * 6.0;
+                }
+            }
+            let h = down.perp();
+            c.stroke(cue - h * 24.0, cue + h * 24.0, PEN * 1.3, INK);
         }
     }
     if let Some(p) = cues.diamond_dir.and_then(|d| project(d, f.scale)) {
@@ -540,6 +624,28 @@ mod tests {
                 assert!(c.px.iter().filter(|&&p| p != 0).count() > ink, "{mode:?} {declutter} gun");
             }
         }
+    }
+
+    #[test]
+    fn draws_the_bombsights() {
+        let ink = |f: &HudFrame| {
+            let mut c = Canvas::new(WIDTH, HEIGHT);
+            draw(&mut c, f);
+            c.px.iter().filter(|&&p| p != 0).count()
+        };
+        let mut f = frame(HudMode::Gnd);
+        f.cues.target_dir = Some(Vec3::new(0.05, -0.2, -1.0));
+        let plain = ink(&f);
+        // CCIP: the pipper on its fall line.
+        f.cues.ccip_dir = Some(Vec3::new(0.0, -0.3, -1.0));
+        f.cues.bomb = Some(crate::hud::BombCue { ccrp: false, fall_secs: 5.5, range_m: Some(1200.0), release_secs: None });
+        let ccip = ink(&f);
+        assert!(ccip > plain);
+        // CCRP: no pipper, the steering line and the solution cue instead.
+        f.cues.bomb = Some(crate::hud::BombCue { ccrp: true, fall_secs: 5.5, range_m: Some(4000.0), release_secs: None });
+        let asl = ink(&f);
+        f.cues.bomb = Some(crate::hud::BombCue { ccrp: true, fall_secs: 5.5, range_m: Some(4000.0), release_secs: Some(8.0) });
+        assert!(ink(&f) > asl, "solution cue");
     }
 
     #[test]

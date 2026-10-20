@@ -58,6 +58,8 @@ pub struct HudState {
     pub nvg: bool,
     /// Highest load factor of the flight (1/16 g), shown by the modern HUD.
     pub max_gees: i32,
+    /// Bombing mode: CCRP (release on the target with the button held) instead of CCIP.
+    pub ccrp: bool,
 }
 
 /// Main HUD colour and second colour (pitch ladder).
@@ -191,6 +193,20 @@ pub struct HudCues {
     pub in_range: bool,
     /// Gun selected: the gun pipper.
     pub gun: Option<GunCue>,
+    /// Unguided bomb selected in AG: the CCIP or CCRP solution.
+    pub bomb: Option<BombCue>,
+}
+
+/// The bombsight's solution for the selected free-fall or retarded bomb.
+#[derive(Debug, Clone, Copy)]
+pub struct BombCue {
+    pub ccrp: bool,
+    /// Seconds a bomb released now falls.
+    pub fall_secs: f32,
+    /// Slant range (m) to the impact point (CCIP) or the target (CCRP; None without one).
+    pub range_m: Option<f32>,
+    /// CCRP: seconds to the release point (negative past it); None without a target.
+    pub release_secs: Option<f32>,
 }
 
 /// Where the target has to be for the rounds fired now to hit it: compensates the time of
@@ -232,7 +248,7 @@ fn reset_hud(mut hud: ResMut<HudState>, mut msg: ResMut<HudMessages>) {
     *msg = HudMessages::default();
 }
 
-fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, mut wps: ResMut<Waypoints>, stores: Res<Stores>) {
+fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, mut wps: ResMut<Waypoints>, stores: Res<Stores>, mut msg: ResMut<HudMessages>) {
     let n = wps.points.len();
     for ActionEvent(a) in actions.read() {
         match a {
@@ -246,6 +262,10 @@ fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, 
             Action::NearestTarget => {
                 let air = stores.gun_selected || stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
                 hud.mode = if air { HudMode::Air } else { HudMode::Gnd };
+            }
+            Action::BombMode => {
+                hud.ccrp = !hud.ccrp;
+                msg.show(if hud.ccrp { "CCRP" } else { "CCIP" });
             }
             Action::HudDeclutter => hud.declutter = (hud.declutter + 1) % 3,
             Action::Nvg => hud.nvg = !hud.nvg,

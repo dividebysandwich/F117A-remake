@@ -46,6 +46,8 @@ pub enum Action {
     Brakes,
     Eject,
     HudMode,
+    /// Bombing mode CCIP / CCRP (not in the original; also the A-G button again in AG).
+    BombMode,
     HudDeclutter,
     Maps,
     /// Night vision goggles (F4; replaces the original's day/night HUD colours).
@@ -219,6 +221,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::Digit0, Brakes),
         (Shift, K::F10, Eject),
         (None, K::F2, HudMode),
+        (Alt, K::F2, BombMode),
         (None, K::KeyV, HudDeclutter),
         (None, K::F3, Maps),
         (None, K::F4, Nvg),

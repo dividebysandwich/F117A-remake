@@ -385,6 +385,7 @@ fn player_state(
         camera_mfd: mfd.camera_shown(),
         external_view: !is_cockpit_view(view.view),
         hud_visible: view.view == View::Cockpit,
+        ccrp: hud.ccrp,
         cmd: SimCommands { gun, trigger, ..cmd },
     }
 }
@@ -893,7 +894,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                 red: t.in_range,
             });
         }
-        if cockpit && hud.mode == HudMode::Gnd && (28..=30).contains(&spec) {
+        if cockpit && hud.mode == HudMode::Gnd && spec == 28 {
             // Flight-path guide: 128 map units beyond the target along the heading, own altitude.
             let hr = bam(heading as f32);
             let (qx, qy) = (ob.x as f64 + hr.sin() as f64 * 128.0, ob.y as f64 - hr.cos() as f64 * 128.0);
@@ -925,10 +926,11 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         }
     }
     if cockpit {
-        if let Some((x, y)) = t.ccip {
-            let (east, north) = map_wu(x, y);
-            new_cues.ccip_dir = direction_cockpit(&a, pos, eye, east, north, 0.0);
-            new_cues.ccip = Some(on_hud(project_cockpit(&a, pos, eye, east, north, 0.0)).unwrap_or((0xA0, 0x5A)));
+        if hud.mode == HudMode::Gnd
+            && !sim.gun_selected()
+            && let Some(cue) = bomb_cue(&a, pos, eye, spec, sim.opts.fix_original_bugs, hud.ccrp, t.ground.and_then(|g| objects.get(g)), &mut new_cues)
+        {
+            new_cues.bomb = Some(cue);
         }
         new_cues.ranging_bar = t.ranging_bar;
         new_cues.lock = t.lock_valid;
@@ -999,6 +1001,45 @@ fn gun_cue(a: &Aircraft, pos: &WorldPos, eye: Vec3, target: Option<(DVec3, DVec3
         d = rel * t + g * (0.5 * t * t);
     }
     cue(d, range, target.map(|_| range as f32), target.is_some() && range < GUN_RANGE)
+}
+
+/// Bombsight for an unguided bomb (`stealth_sim::ballistics`, as the simulation releases it):
+/// CCIP puts the pipper (`cues.ccip_dir`, `cues.ccip`) where a bomb released now lands; CCRP
+/// gives the time to the release point on the locked `target`.
+#[allow(clippy::too_many_arguments)]
+fn bomb_cue(
+    a: &Aircraft,
+    pos: &WorldPos,
+    eye: Vec3,
+    spec: i32,
+    fix_original_bugs: bool,
+    ccrp: bool,
+    target: Option<&stealth_sim::GroundObject>,
+    cues: &mut HudCues,
+) -> Option<crate::hud::BombCue> {
+    use stealth_sim::ballistics;
+    let k = ballistics::drag(spec, fix_original_bugs)?;
+    let heading = to_bam(a.euler().0) as i32;
+    let v = ballistics::release_velocity(heading, a.velocity as i32, a.climb_rate as i32);
+    let (d, fall) = ballistics::impact(v, k, a.altitude as f64 - ballistics::RELEASE_DROP, 1.0 / FS as f64)?;
+    let (east, north, _) = bevy_to_wu(pos.0);
+    // The offset is east and south.
+    let (ie, inn) = (east + d[0], north - d[1]);
+    let mut cue = crate::hud::BombCue { ccrp, fall_secs: fall as f32, range_m: None, release_secs: None };
+    if ccrp {
+        let vh = v[0].hypot(v[1]);
+        if let Some(o) = target.filter(|_| vh > 1.0) {
+            let (te, tn) = ((o.x as f64 + 0.5) * 32.0, (0x8000 as f64 - o.y as f64 - 0.5) * 32.0);
+            let along = ((te - ie) * v[0] - (tn - inn) * v[1]) / vh;
+            cue.release_secs = Some((along / vh) as f32);
+            cue.range_m = Some(((te - east).hypot(tn - north).hypot(a.altitude as f64) * WU) as f32);
+        }
+    } else {
+        cues.ccip_dir = direction_cockpit(a, pos, eye, ie, inn, 0.0);
+        cues.ccip = Some(on_hud(project_cockpit(a, pos, eye, ie, inn, 0.0)).unwrap_or((0xA0, 0x5A)));
+        cue.range_m = Some(((ie - east).hypot(inn - north).hypot(a.altitude as f64) * WU) as f32);
+    }
+    Some(cue)
 }
 
 /// Where rounds fired from `from` with velocity `u` hit the ground plane at height `ground_y`,

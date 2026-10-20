@@ -220,10 +220,44 @@ impl Sim {
         if self.fire_cooldown > 0 {
             self.fire_cooldown -= 1;
         }
+        let ccrp = ps.ccrp && self.hud_mode == HudMode::Gnd && ballistics::drag(self.selected_spec(), self.opts.fix_original_bugs).is_some();
         if ps.cmd.fire && self.fire_cooldown == 0 && self.eject == 0 {
-            self.fire_missile();
-            self.fire_cooldown = 4;
+            if !ccrp {
+                self.fire_missile();
+                self.fire_cooldown = 4;
+            } else if self.ccrp_solution().is_none() {
+                self.msg("No target designated");
+            }
         }
+        // CCRP: with the button held, the bomb goes when the impact point reaches the target.
+        let along = if ccrp { self.ccrp_solution().map(|s| s.0) } else { None };
+        if let (Some(last), Some(now)) = (self.ccrp_last, along)
+            && last > 0.0
+            && now <= 0.0
+            && ps.cmd.trigger
+            && self.eject == 0
+        {
+            self.fire_missile();
+        }
+        self.ccrp_last = along;
+    }
+
+    /// CCRP release solution against the ground lock: the ground distance (ft) the impact
+    /// point of a bomb released now still has to go to the target along the flight path (<= 0
+    /// at and past the release point) and the seconds to the release point.
+    pub(crate) fn ccrp_solution(&self) -> Option<(f64, f64)> {
+        let g = self.gnd_lock;
+        let o = self.objects.get(usize::try_from(g).ok()?)?;
+        let (ix, iy) = self.bomb_impact()?;
+        let v = ballistics::release_velocity(self.p.heading, self.p.velocity, self.p.climb);
+        let vh = v[0].hypot(v[1]);
+        if vh < 1.0 {
+            return None;
+        }
+        // Map units are 32 ft (y south, like the velocity).
+        let (dx, dy) = ((o.x as f64 + 0.5 - ix) * 32.0, (o.y as f64 + 0.5 - iy) * 32.0);
+        let along = (dx * v[0] + dy * v[1]) / vh;
+        Some((along, along / vh))
     }
 
     /// Release the selected store.

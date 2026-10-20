@@ -122,6 +122,8 @@ pub struct MfdState {
     /// Modern avionics: the MFDs show `av`'s formats.
     pub modern: bool,
     pub av: crate::avionics::AvionicsState,
+    /// Bombing mode CCRP (else CCIP), mirrored from the HUD for the weapons page's button.
+    pub ccrp: bool,
 }
 
 impl Default for MfdState {
@@ -140,6 +142,7 @@ impl Default for MfdState {
             cam_zoom: None,
             modern: false,
             av: default(),
+            ccrp: false,
         }
     }
 }
@@ -239,9 +242,15 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
         (MfdSide::Right, 6) if s.right == RightMfd::Way => ("WP+", Action(crate::input::Action::NextWaypoint), false),
         (MfdSide::Right, 7) if s.right == RightMfd::Way => ("RST", Action(crate::input::Action::ResetWaypoint), false),
         (MfdSide::Right, 5) if s.right == RightMfd::Wpn => ("SEL", Action(crate::input::Action::SelectWeapon), false),
+        (MfdSide::Right, 6) if s.right == RightMfd::Wpn => (bomb_mode_label(s.ccrp), Action(crate::input::Action::BombMode), false),
         (MfdSide::Right, 9) if s.right == RightMfd::Camera => (cam_zoom_label(s.cam_zoom), cmd(MfdCmd::CamZoomCycle), s.cam_zoom.is_some()),
         _ => return None,
     })
+}
+
+/// The weapons page's bombing mode button.
+pub fn bomb_mode_label(ccrp: bool) -> &'static str {
+    if ccrp { "CCRP" } else { "CCIP" }
 }
 
 /// Tracking camera zoom steps (as the camera page shows them: step + 1).
@@ -475,8 +484,12 @@ fn mfd_keys(
     mut raster: ResMut<MapRaster>,
     settings: Res<crate::settings::Settings>,
     cam: Res<TrackCam>,
+    hud: Res<crate::hud::HudState>,
 ) {
     let auto_zoom = cam.zoom.saturating_sub(1);
+    if state.ccrp != hud.ccrp {
+        state.ccrp = hud.ccrp;
+    }
     if state.hires != settings.hires_displays() || state.modern == settings.classic_avionics {
         state.hires = settings.hires_displays();
         state.modern = !settings.classic_avionics;

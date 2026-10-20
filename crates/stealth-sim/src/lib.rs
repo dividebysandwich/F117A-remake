@@ -107,6 +107,10 @@ pub struct Sim {
     pub(crate) gun_firing: bool,
     pub(crate) fire_cooldown: i32,
     pub(crate) prev_fire: bool,
+    /// CCRP: ground distance (ft) the bomb's impact point still had to go to the target last
+    /// frame (None: no CCRP solution).
+    #[serde(default)]
+    pub(crate) ccrp_last: Option<f64>,
     pub(crate) prev_hud_mode: HudMode,
     pub(crate) hud_mode: HudMode,
     pub(crate) camera_mfd: bool,
@@ -332,6 +336,7 @@ impl Sim {
             gun_firing: false,
             fire_cooldown: 0,
             prev_fire: false,
+            ccrp_last: None,
             prev_hud_mode: HudMode::Nav,
             hud_mode: HudMode::Nav,
             camera_mfd: false,

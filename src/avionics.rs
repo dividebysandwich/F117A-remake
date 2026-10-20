@@ -479,6 +479,7 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
         (Format::Sms, 0) => ("WPN", Cmd(MfdCmd::Sms(false)), !av.sms_ord),
         (Format::Sms, 1) => ("ORD", Cmd(MfdCmd::Sms(true)), av.sms_ord),
         (Format::Sms, 2) if !av.sms_ord => ("SEL", Action(A::SelectWeapon), false),
+        (Format::Sms, 3) if !av.sms_ord => (crate::mfd::bomb_mode_label(s.ccrp), Action(A::BombMode), false),
         _ => return None,
     })
 }

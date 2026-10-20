@@ -406,6 +406,10 @@ pub struct PlayerState {
     pub external_view: bool,
     /// Cockpit / HUD drawn.
     pub hud_visible: bool,
+    /// Bombing in CCRP (else CCIP; not in the original): with a ground target locked, holding
+    /// the fire button releases the bomb when the target passes the release point.
+    #[serde(default)]
+    pub ccrp: bool,
     pub cmd: Commands,
 }
 
@@ -651,6 +655,9 @@ pub struct TargetingState {
     pub ccip: Option<(i32, i32)>,
     /// Ranging bar half-length (release cue at 0) and whether it flashes.
     pub ranging_bar: Option<(i32, bool)>,
+    /// CCRP: frames to the release point (negative past it).
+    #[serde(default)]
+    pub ccrp_release: Option<i32>,
     /// Range (map units) / bearing (BAM) to the ground lock.
     pub range: i32,
     pub bearing: i32,

@@ -510,7 +510,7 @@ pub fn draw(p: &MfdParams, side: MfdSide, c: &mut Canvas, art: &CockpitArt, font
         Format::Harm => draw_harm(p, c, soi),
         _ => {
             // The original pages, between the label bands.
-            let mut page = Canvas::new(c.w, c.h - 2 * BAND as usize);
+            let mut page = Canvas::scaled(c.w, c.h - 2 * BAND as usize, c.scale);
             match f {
                 Format::Tgp => p.draw_camera_hires(&mut page, fonts),
                 Format::Map if av.map_way => p.draw_way_hires(&mut page, fonts, ac),

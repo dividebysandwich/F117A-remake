@@ -62,6 +62,9 @@ impl Plugin for MfdPlugin {
 /// MFD canvas size: the original screen, and the modern cockpit's (3x).
 pub const CLASSIC: (usize, usize) = (77, 60);
 pub const HIRES: (usize, usize) = (231, 180);
+/// Texels per `HIRES` pixel on the modern screens: the layout stays 231x180, lines, rings and
+/// the map are drawn this much finer.
+pub const HIRES_SCALE: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MfdSide {
@@ -1308,10 +1311,10 @@ impl MfdParams<'_, '_> {
         let view = hires_view(DVec2::new(px, py), h as f64, self.state.map_zoom, self.state.map_heading_up, Vec2::new(c.w as f32, c.h as f32));
         // Resample the north-up buffer (nearest pixel); the modern format mutes the terrain.
         let tones = if modern { self.modern_tones() } else { std::array::from_fn(|i| i as u8) };
-        let (w, ht) = (c.w, c.h);
+        let (w, ht, s) = (c.pw(), c.ph(), c.scale as f32);
         for y in 0..ht {
             for x in 0..w {
-                let m = view.to_map(Vec2::new(x as f32 + 0.5, y as f32 + 0.5));
+                let m = view.to_map(Vec2::new(x as f32 + 0.5, y as f32 + 0.5) / s);
                 let b = r.buf_view.to_screen(m.x, m.y);
                 let (bx, by) = (b.x.floor() as i32, b.y.floor() as i32);
                 let v = if bx >= 0 && by >= 0 && (bx as usize) < BUFFER && (by as usize) < BUFFER { r.buffer.px[by as usize * BUFFER + bx as usize] } else { 6 };

@@ -244,8 +244,9 @@ pub(super) fn atlas_faces(layout: &PanelLayout) -> Vec<(Face, PxRect)> {
 /// A self-luminous screen: an MFD (`Left` / `Right`), the attitude ball, the RWR scope, the HSI
 /// or the approach indexer, with its canvas.
 pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materials: &mut Assets<CockpitMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<CockpitMaterial>) {
-    let (size, transparent) = match role {
-        CanvasRole::Left | CanvasRole::Right => (if hires { HIRES } else { CLASSIC }, false),
+    let (canvas, transparent) = match role {
+        CanvasRole::Left | CanvasRole::Right if hires => (Canvas::scaled(HIRES.0, HIRES.1, crate::mfd::HIRES_SCALE), false),
+        CanvasRole::Left | CanvasRole::Right => (Canvas::new(CLASSIC.0, CLASSIC.1), false),
         CanvasRole::Adi | CanvasRole::Rwr | CanvasRole::Hsi => {
             let r = match role {
                 CanvasRole::Rwr => layout.rwr,
@@ -253,13 +254,13 @@ pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materi
                 _ => Some(layout.adi),
             };
             let n = (r.map_or(90.0, |r| r.w) * TEXELS as f32) as usize;
-            ((n, n), true)
+            (Canvas::new(n, n), true)
         }
         // Only the F-16 has a data entry display.
-        CanvasRole::Ded => (if layout.ded.is_some() { DED_CANVAS } else { (8, 8) }, true),
-        _ => (crate::panel::INDEXER_CANVAS, true),
+        CanvasRole::Ded => (if layout.ded.is_some() { Canvas::new(DED_CANVAS.0, DED_CANVAS.1) } else { Canvas::new(8, 8) }, true),
+        _ => (Canvas::new(crate::panel::INDEXER_CANVAS.0, crate::panel::INDEXER_CANVAS.1), true),
     };
-    let tex = CanvasTexture::new(Canvas::new(size.0, size.1), images, transparent);
+    let tex = if canvas.scale > 1 { CanvasTexture::mipmapped(canvas, images, transparent) } else { CanvasTexture::new(canvas, images, transparent) };
     let material = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(tex.image.clone()),
         emissive_texture: Some(tex.image.clone()),

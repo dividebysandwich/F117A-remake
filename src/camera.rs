@@ -131,10 +131,15 @@ pub fn spawn_background(
     sphere
 }
 
-/// `SM89_NO_INDIRECT=1`: the eye cameras draw without indirect draws (GPU preprocessing still
-/// builds the instance data; measuring the indirect draws' cost on the Steam Frame).
-pub fn no_indirect() -> bool {
-    std::env::var("SM89_NO_INDIRECT").is_ok_and(|v| v == "1")
+/// Whether the eye cameras draw without indirect draws (GPU preprocessing still builds the
+/// instance data): in VR, where on the Steam Frame's GPU indirect draws took 8 ms more per
+/// frame. `SM89_NO_INDIRECT=0|1` overrides.
+pub fn no_indirect(vr: bool) -> bool {
+    match std::env::var("SM89_NO_INDIRECT").as_deref() {
+        Ok("1") => true,
+        Ok("0") => false,
+        _ => vr,
+    }
 }
 
 /// Spawns the rig under the given aircraft entity, the head at the pilot's eye point (`eye`,
@@ -168,7 +173,7 @@ pub fn spawn_rig(
         .id();
     spawn_background(commands, cam, meshes, palette, MAIN_BACKGROUND_LAYER);
     commands.entity(cam).insert(bevy::camera::visibility::RenderLayers::from_layers(&[0, MAIN_BACKGROUND_LAYER, MAIN_LOD_LAYER]));
-    if no_indirect() {
+    if no_indirect(false) {
         commands.entity(cam).insert(bevy::render::view::NoIndirectDrawing);
     }
     commands.entity(head).add_child(cam);

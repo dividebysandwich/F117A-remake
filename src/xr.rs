@@ -376,7 +376,7 @@ fn setup_cameras(mut commands: Commands, cams: Query<Entity, Added<XrCamera>>, r
     let root = root.single().ok();
     for e in &cams {
         commands.entity(e).insert((RenderLayers::from_layers(&[0, MAIN_BACKGROUND_LAYER, crate::camera::MAIN_LOD_LAYER]), Tonemapping::None));
-        if crate::camera::no_indirect() {
+        if crate::camera::no_indirect(true) {
             commands.entity(e).insert(bevy::render::view::NoIndirectDrawing);
         }
         if let Some(r) = root {

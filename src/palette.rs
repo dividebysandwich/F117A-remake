@@ -284,7 +284,8 @@ fn msaa_override() -> Option<Msaa> {
     })
 }
 
-/// Faithful mode renders without anti-aliasing like the original; modern mode uses 4x MSAA.
+/// Faithful mode renders without anti-aliasing like the original; modern mode uses 4x MSAA,
+/// 2x in VR (4x cost the Steam Frame 2 ms per frame, over its 72 Hz budget).
 fn apply_msaa(
     settings: Res<Settings>,
     mut cams: Query<&mut Msaa, (With<Camera3d>, Without<crate::trackcam::TrackCamera>)>,
@@ -293,7 +294,8 @@ fn apply_msaa(
     if !settings.is_changed() && added.is_empty() {
         return;
     }
-    let want = msaa_override().unwrap_or(if settings.modern_shading { Msaa::Sample4 } else { Msaa::Off });
+    let modern = if settings.vr { Msaa::Sample2 } else { Msaa::Sample4 };
+    let want = msaa_override().unwrap_or(if settings.modern_shading { modern } else { Msaa::Off });
     for mut m in &mut cams {
         if *m != want {
             *m = want;

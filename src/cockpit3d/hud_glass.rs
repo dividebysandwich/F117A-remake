@@ -21,7 +21,7 @@ pub struct HudGlassMaterial {
     /// (zw, horizontal and vertical).
     #[uniform(3)]
     pub proj: Vec4,
-    /// x: 1 = modern HUD (every set texel drawn in HUD green with a glow), y: brightness.
+    /// x: 1 = modern HUD (every set texel drawn in HUD green), y: brightness.
     #[uniform(4)]
     pub style: Vec4,
 }

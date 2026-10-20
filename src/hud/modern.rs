@@ -1,7 +1,7 @@
 //! High-resolution HUD in the style of the F-16's: NAV, AA (air-to-air) and AG
 //! (air-to-ground) symbology drawn with thin strokes into a large monochrome canvas. The
 //! combiner glass (assets/shaders/hud_glass.wgsl) maps it to directions from the eye and draws
-//! every set pixel in HUD green with a little glow.
+//! every set pixel in HUD green.
 //!
 //! Canvas pixels are angular: (x, y) is the direction (x - CX, CY - y) / scale in the
 //! tangent plane one unit in front of the eye (aircraft frame), so symbols placed by

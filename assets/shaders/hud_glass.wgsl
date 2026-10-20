@@ -15,7 +15,7 @@
 @group(#{MATERIAL_BIND_GROUP}) @binding(2) var hud_sampler: sampler;
 // Canvas pixel of the boresight (xy), canvas pixels per unit of the tangent plane (zw).
 @group(#{MATERIAL_BIND_GROUP}) @binding(3) var<uniform> proj: vec4<f32>;
-// x: 1 = modern HUD (monochrome ink drawn in HUD green with a glow), y: brightness.
+// x: 1 = modern HUD (monochrome ink drawn in HUD green), y: brightness.
 @group(#{MATERIAL_BIND_GROUP}) @binding(4) var<uniform> style: vec4<f32>;
 
 // Modern HUD green (linear).
@@ -50,19 +50,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let size = vec2<f32>(textureDimensions(hud_texture));
     let inside = p.x >= 0.0 && p.y >= 0.0 && p.x < size.x && p.y < size.y;
     if style.x > 0.5 {
-        // Modern: ink coverage (linear filtered) plus a soft halo from the texels around.
-        let uv = p / size;
-        let texel = 1.0 / size;
-        let core = textureSampleLevel(hud_texture, hud_sampler, uv, 0.0).a;
-        // Four bilinear taps on the diagonals (each blends 2x2 texels): the glow of the 4x4
-        // texels around, at under half the cost of eight single taps (the combiner covers much
-        // of the view in a headset, every pixel of it pays).
-        let d = texel * 1.8;
-        let halo = (textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(d.x, d.y), 0.0).a
-            + textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(-d.x, d.y), 0.0).a
-            + textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(d.x, -d.y), 0.0).a
-            + textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(-d.x, -d.y), 0.0).a) / 4.0;
-        let a = select(0.0, clamp(core * 1.2 + halo * 0.35, 0.0, 1.0), inside);
+        // Modern: ink coverage (linear filtered), one sample per pixel (the combiner covers much
+        // of the view in a headset).
+        let core = textureSampleLevel(hud_texture, hud_sampler, p / size, 0.0).a;
+        let a = select(0.0, clamp(core * 1.2, 0.0, 1.0), inside);
         if a <= 0.01 {
             if tint.a <= 0.0 {
                 discard;

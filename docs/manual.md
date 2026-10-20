@@ -9,7 +9,9 @@ theaters. A complete list of keys is in [keys.md](keys.md).
 The player flies an F-117A or an F-16C (chosen in the menu's *Aircraft* section). Both have four
 weapon bays (two with *Realistic weapons*), a 20 mm gun with 650 rounds, chaff, flares, decoys,
 an ECM jammer and an IR jammer. The F-16C is faster (Mach 2 class at altitude), pulls 9 g and
-rolls about twice as fast; the F-117A has a modern and a classic cockpit, the F-16C its own.
+rolls about twice as fast, but it has no weapon bay: its stores hang outside, so radars see it as
+an F-117A with its bay doors always open (+24 EMV), and the bay door key does nothing. The F-117A
+has a modern and a classic cockpit, the F-16C its own.
 
 ## Contents
 

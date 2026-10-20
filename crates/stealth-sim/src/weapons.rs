@@ -36,7 +36,7 @@ impl Sim {
         if c.toggle_ecm {
             self.pflags ^= pflags::ECM;
         }
-        if c.toggle_bay && self.damage & dmg::BD == 0 {
+        if c.toggle_bay && self.damage & dmg::BD == 0 && !self.opts.external_stores {
             self.bay_req = !self.bay_req;
             self.sound(0x1F, 1);
         }

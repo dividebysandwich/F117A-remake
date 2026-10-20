@@ -176,6 +176,7 @@ fn start_combat(
     mut accel: ResMut<TimeAccel>,
     route: Option<Res<crate::mission::PlannedRoute>>,
     career: Option<Res<crate::career::CareerFlight>>,
+    settings: Res<crate::settings::Settings>,
 ) {
     accel.on = false;
     let Some(m) = mission else {
@@ -216,7 +217,8 @@ fn start_combat(
     // A tour sortie starts with what the pilot destroyed earlier in the tour.
     let prior_damage = career.and_then(|c| crate::career::Pilot::load(&c.0)).and_then(|p| p.tour).map(|t| t.damage);
     let prior_tiles = prior_damage.as_ref().map(|d| d.tiles.clone()).unwrap_or_default();
-    let sim = Sim::with_options(&data, m, SimOptions { landing, prior_damage, ..default() });
+    let external_stores = !settings.aircraft.spec().bomb_bay;
+    let sim = Sim::with_options(&data, m, SimOptions { landing, prior_damage, external_stores, ..default() });
     // The player starts at the sim's start state (the same formula as `mission::start_pose`).
     let st = sim.start_state();
     setup.start = Some(StartPose {

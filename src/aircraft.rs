@@ -47,6 +47,8 @@ pub struct AircraftSpec {
     /// Cockpit models (glb stem under `models/`): one, or the modern and the classic one.
     pub cockpits: &'static [(PanelStyle, &'static str)],
     pub shadow: Shadow,
+    /// Weapons in a bay (else on pylons: always "open", seen by radars as the F-117A's open bay).
+    pub bomb_bay: bool,
     flight: fn() -> FlightConstants,
 }
 
@@ -82,6 +84,7 @@ static F117: AircraftSpec = AircraftSpec {
     cockpit_view: None,
     cockpits: &[(PanelStyle::Modern, "cockpit_modern"), (PanelStyle::Classic, "cockpit_classic")],
     shadow: Shadow::Model(17),
+    bomb_bay: true,
     flight: FlightConstants::default,
 };
 
@@ -94,6 +97,7 @@ static F16: AircraftSpec = AircraftSpec {
     cockpit_view: Some(CockpitView { canopy_colours: &[144, 145], cut: (Vec3::new(-0.40, -1.15, -0.85), Vec3::new(0.40, 0.40, 0.80)) }),
     cockpits: &[(PanelStyle::F16, "cockpit_f16")],
     shadow: Shadow::Flattened,
+    bomb_bay: false,
     flight: FlightConstants::f16,
 };
 

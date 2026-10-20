@@ -363,11 +363,9 @@ impl PanelLayout {
         items.push(Placed { elem: Elem::Lamp(Ecm, None), rect: rect(120.0, -93.0, 34.0, 13.0), cap: Some(E::Action(Action::Ecm)) });
         items.push(Placed { elem: Elem::Lamp(Irj, None), rect: rect(158.0, -93.0, 34.0, 13.0), cap: Some(E::Action(Action::IrJammer)) });
         // Aircraft systems down the left edge.
-        for (k, (id, action)) in
-            [(Gear, Action::Gear), (Flaps, Action::Flaps), (Brake, Action::Brakes), (Bay, Action::BayDoors), (Auto, Action::Autopilot)].into_iter().enumerate()
-        {
-            let label = (id == Bay).then_some("ARM");
-            items.push(Placed { elem: Elem::Lamp(id, label), rect: rect(-296.0, -24.0 + 18.0 * k as f32, 40.0, 14.0), cap: Some(E::Action(action)) });
+        // (No bay: the stores hang outside.)
+        for (k, (id, action)) in [(Gear, Action::Gear), (Flaps, Action::Flaps), (Brake, Action::Brakes), (Auto, Action::Autopilot)].into_iter().enumerate() {
+            items.push(Placed { elem: Elem::Lamp(id, None), rect: rect(-296.0, -24.0 + 18.0 * k as f32, 40.0, 14.0), cap: Some(E::Action(action)) });
         }
         // Keypad (not working, as in the original's cockpit art) and the readouts.
         const KEYS: [&str; 12] = ["1", "2", "3", "RCL", "4", "5", "6", "ENTR", "7", "8", "9", "0"];

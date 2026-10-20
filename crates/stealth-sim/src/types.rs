@@ -367,11 +367,15 @@ pub struct SimOptions {
     /// Damage done in earlier missions of a campaign (not in the original game).
     #[serde(default)]
     pub prior_damage: Option<WorldDamage>,
+    /// The aircraft carries its weapons outside (no bay): the "doors" are always open, with
+    /// their radar signature (not in the original).
+    #[serde(default)]
+    pub external_stores: bool,
 }
 
 impl Default for SimOptions {
     fn default() -> Self {
-        Self { landing: LandingMode::Easy, fix_original_bugs: true, seed: None, prior_damage: None }
+        Self { landing: LandingMode::Easy, fix_original_bugs: true, seed: None, prior_damage: None, external_stores: false }
     }
 }
 

@@ -201,6 +201,31 @@ fn display_lock_holds() {
     assert_eq!(sim.targeting().ground, None);
 }
 
+/// External stores (F-16): the bay is open from the start and stays open, which the EMV shows.
+#[test]
+fn external_stores_always_open() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let opts = SimOptions { external_stores: true, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    let mut p = player_at(mx, my, 3000, 0, 300);
+    sim.step(&p, 15);
+    assert!(sim.bay_doors_open());
+    let open_emv = sim.emv();
+    p.cmd.toggle_bay = true;
+    for _ in 0..30 {
+        sim.step(&p, 15);
+        p.cmd = Commands::default();
+    }
+    assert!(sim.bay_doors_open());
+    let mut closed = Sim::new(&d.sim, &m);
+    sandbox(&mut closed, &m);
+    closed.step(&player_at(mx, my, 3000, 0, 300), 15);
+    assert!(!closed.bay_doors_open());
+    assert_eq!(open_emv, closed.emv() + 24);
+}
+
 /// Low, fast-ish, bays closed over flat ground: the same SA-2 never detects.
 #[test]
 fn stealthy_player_not_detected() {

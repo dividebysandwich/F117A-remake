@@ -431,6 +431,11 @@ impl Sim {
         if let Some(d) = sim.opts.prior_damage.clone() {
             sim.apply_damage(&d);
         }
+        if sim.opts.external_stores {
+            sim.bay_req = true;
+            sim.door_anim = 2;
+            sim.pflags |= pflags::BAY_OPEN;
+        }
         let st = sim.start_state();
         sim.ingest(&st);
         sim.find_nearest_base();

@@ -68,6 +68,7 @@ fn debrief_ui(
     };
     let r = &d.report;
     let ctx = contexts.ctx_mut()?;
+    crate::menu::apply_ui_zoom(ctx);
     if ctx.global_style().visuals.window_fill != BG {
         ctx.all_styles_mut(apply_terminal_style);
     }

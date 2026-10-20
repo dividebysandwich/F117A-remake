@@ -32,8 +32,8 @@ const PER_KM: f64 = 64.0;
 /// Flight profile the radar coverage is drawn for (doors shut, wings level).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Profile {
-    Low,
     #[default]
+    Low,
     Medium,
     High,
 }

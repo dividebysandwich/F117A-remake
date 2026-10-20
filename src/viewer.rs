@@ -1,4 +1,5 @@
-//! `--viewer [--file stflt] [--model N]`: browse every converted model.
+//! `--viewer [--file stflt] [--model N] [--yaw deg] [--pitch deg] [--distance d] [--no-label]`:
+//! browse every converted model.
 //! PgUp/PgDn model, Tab file, drag orbit, wheel zoom, P palette, R day/night remap table,
 //! L lights (state slots 10/12), D destroyed variant (slot 1), A animate parts.
 
@@ -71,6 +72,9 @@ fn setup(
     state.model = arg("--model").and_then(|m| m.parse().ok()).unwrap_or(0);
     if let Some(d) = arg("--pitch").and_then(|m| m.parse::<f32>().ok()) {
         state.pitch = d.to_radians();
+    }
+    if let Some(d) = arg("--yaw").and_then(|m| m.parse::<f32>().ok()) {
+        state.yaw = d.to_radians();
     }
     if let Some(d) = arg("--distance").and_then(|m| m.parse().ok()) {
         state.distance = d;
@@ -188,6 +192,10 @@ fn orbit(
 }
 
 fn label(state: Res<ViewerState>, palette: Res<Palette>, mut text: Single<&mut Text, With<ViewerLabel>>) {
+    if std::env::args().any(|a| a == "--no-label") {
+        text.0.clear();
+        return;
+    }
     let file = state.files.get(state.file).map_or("(no models)", String::as_str);
     let model = state.names.get(state.model).map_or("", String::as_str);
     text.0 = format!(

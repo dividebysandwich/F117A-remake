@@ -236,6 +236,15 @@ fn sky_facts(sky: Sky) -> &'static [&'static str] {
     }
 }
 
+/// `--ui-zoom f`: interface scale (screenshots in small windows).
+pub(crate) fn apply_ui_zoom(ctx: &egui::Context) {
+    if let Some(z) = std::env::args().collect::<Vec<_>>().windows(2).find(|w| w[0] == "--ui-zoom").and_then(|w| w[1].parse::<f32>().ok())
+        && ctx.zoom_factor() != z
+    {
+        ctx.set_zoom_factor(z);
+    }
+}
+
 pub(crate) fn apply_terminal_style(style: &mut egui::Style) {
     use egui::{CornerRadius, FontFamily::Monospace, FontId, Shadow, Stroke, TextStyle};
     style.text_styles = [
@@ -378,6 +387,7 @@ fn menu_ui(
     }
 
     let ctx = contexts.ctx_mut()?;
+    apply_ui_zoom(ctx);
     // Both themes, so the system light/dark preference does not matter.
     if ctx.global_style().visuals.window_fill != BG {
         ctx.all_styles_mut(apply_terminal_style);
@@ -524,7 +534,14 @@ fn menu_ui(
                     ui.vertical(|ui| {
                         ui.set_width(summary_width);
                         match &state.mission {
-                            Some(Ok(m)) => mission_summary(ui, &state, m),
+                            Some(Ok(m)) => {
+                                mission_summary(ui, &state, m);
+                                ui.add_space(6.0);
+                                let plan = ui.button(egui::RichText::new("PLAN ROUTE").size(16.0));
+                                if facts(plan, &["The theater map with the enemy radar and SAM coverage", "Add, move and remove navigation points", "Targets and the landing base stay fixed"]).clicked() {
+                                    planner.open = true;
+                                }
+                            }
                             Some(Err(e)) => {
                                 ui.colored_label(AMBER, e);
                             }
@@ -552,10 +569,7 @@ fn menu_ui(
                 if facts(ui.add(big_button("CAREER")), &["Pilot records: rank, decorations, sorties", "Tour of duty: 12 sorties in one theater", "What you destroy stays destroyed"]).clicked() {
                     career.show();
                 }
-                let plan = ui.add_enabled(matches!(state.mission, Some(Ok(_))), big_button("PLAN ROUTE"));
-                if facts(plan, &["The theater map with the enemy radar and SAM coverage", "Add, move and remove navigation points", "Targets and the landing base stay fixed"]).clicked() {
-                    planner.open = true;
-                }
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let can_fly = matches!(state.mission, Some(Ok(_)));
                     let fly = ui.add_enabled(can_fly, big_button("FLY").fill(DIM));

@@ -39,7 +39,7 @@ fn status(combat: &Combat) -> Option<String> {
     let sim = &combat.sim;
     let (x, y, alt) = sim.chute()?;
     let Some(c) = sim.csar() else {
-        return Some(if alt > 0 { "UNDER THE PARACHUTE".into() } else { "ON THE GROUND".into() });
+        return Some(if alt > 0 { "PARACHUTE DEPLOYED".into() } else { "ON THE GROUND".into() });
     };
     let mut lines = vec!["DOWN IN ENEMY TERRITORY".to_string()];
     let r = sim.flights()[c.rescue];

@@ -411,8 +411,8 @@ fn read_keyboard(
     let deflection = if stick.full { 1.0 } else { KEY_DEFLECTION };
     // Sensitivity scales the deflection like the original: (sens+1)/3.
     let scale = deflection * (stick.sensitivity as f32 + 1.0) / 3.0;
-    controls.roll = (roll as f32).clamp(-1.0, 1.0) * scale;
-    controls.pitch = (pitch as f32).clamp(-1.0, 1.0) * scale;
+    controls.roll = roll.clamp(-1.0, 1.0) * scale;
+    controls.pitch = pitch.clamp(-1.0, 1.0) * scale;
     if !held {
         stick.full = false;
     }
@@ -426,7 +426,7 @@ fn read_keyboard(
     };
     controls.fire = held(Action::FireWeapon);
     controls.mark = held(Action::LockCursor);
-    controls.yaw = (yaw as f32).clamp(-1.0, 1.0) * scale;
+    controls.yaw = yaw.clamp(-1.0, 1.0) * scale;
     controls.throttle = None;
     let mut slew = Vec2::ZERO;
     if mods == Mods::None {

@@ -376,20 +376,46 @@ def wheel(u, v, offset=0.0):
     mesh_object("metal", cylinder_mesh("metal", 0.009, 0.006, "metal", axis="X", centre=(-0.003, 0.0, 0.0), n=12), point(u, v, offset + 0.001), rotation(u))
 
 
-def hood(a, b, offset=0.0):
-    """A glare shield hood along the panel's top edge from layout point a to b, reaching back
-    over the panel and sloping down a little."""
-    p0, p1 = point(*a, offset), point(*b, offset)
-    x = (p1 - p0).normalized()
-    n = basis(section((a[0] + b[0]) / 2))[1]
-    y = (-n - x * (-n).dot(x)).normalized()
-    y = (Matrix.Rotation(math.radians(-8.0), 3, x) @ y).normalized()
-    z = x.cross(y)
-    if z.z < 0:
-        x, z = -x, -z
-    m = Matrix((x, y, z)).transposed()
-    c = (p0 + p1) / 2 + y * 0.14 + z * 0.008
-    mesh_object("black", box_mesh("black", ((p1 - p0).length + 0.012, 0.30, 0.016), "black"), c, m.to_quaternion())
+def glare_shield(depth=0.28, thickness=0.016, lip=0.01, slope=8.0):
+    """The glare shield: one piece over the top of the panel, its front edge along the panel's
+    top (the bevelled wing corners, the wings, the up-front controls' pedestal standing out in
+    the middle), reaching forward `depth` m to a straight back edge and sloping down `slope`
+    degrees; `lip` m overhangs the panel towards the pilot."""
+    edge = [
+        point(-WING, TOP + BEVEL), point(-(WING - BEVEL), TOP), point(-HINGE, TOP, 0.0, True),
+        point(-HINGE, TOP, ICP_DEPTH, True), point(HINGE, TOP, ICP_DEPTH, True),
+        point(HINGE, TOP, 0.0, True), point(WING - BEVEL, TOP), point(WING, TOP + BEVEL),
+    ]
+    a = math.radians(slope)
+    fwd = Vector((0.0, math.cos(a), -math.sin(a)))
+    up = Vector((0.0, math.sin(a), math.cos(a)))
+    front = [e - fwd * lip + up * thickness for e in edge]
+    y_back = max(f.y for f in front) + depth
+    back = [f + fwd * ((y_back - f.y) / fwd.y) for f in front]
+    me = bpy.data.meshes.new("black")
+    bm = bmesh.new()
+    top_f = [bm.verts.new(v) for v in front]
+    top_b = [bm.verts.new(v) for v in back]
+    bot_f = [bm.verts.new(v - up * thickness) for v in front]
+    bot_b = [bm.verts.new(v - up * thickness) for v in back]
+    n = len(front)
+    for i in range(n - 1):
+        j = i + 1
+        bm.faces.new((top_f[i], top_f[j], top_b[j], top_b[i]))
+        bm.faces.new((bot_f[j], bot_f[i], bot_b[i], bot_b[j]))
+        bm.faces.new((bot_f[i], bot_f[j], top_f[j], top_f[i]))
+        bm.faces.new((top_b[i], top_b[j], bot_b[j], bot_b[i]))
+    for i in (0, n - 1):
+        bm.faces.new((top_f[i], top_b[i], bot_b[i], bot_f[i]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    uv = bm.loops.layers.uv.new()
+    for f in bm.faces:
+        for l in f.loops:
+            l[uv].uv = (0.0, 0.0)
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(mats["black"])
+    mesh_object("black", me, (0.0, 0.0, 0.0))
 
 
 # --- tub, consoles, glare shield
@@ -432,11 +458,9 @@ for s_, key in ((-1, "left"), (1, "right")):
         [(x1, y0), (WING, y0), (WING, y1), (x1, y1)],
     ]
     plate("panel_grey", "panel_grey", [[(s_ * u, v) for u, v in piece] for piece in pieces], 0.03)
-    hood((s_ * HINGE, TOP), (s_ * (WING - BEVEL), TOP))
-    hood((s_ * (WING - BEVEL), TOP), (s_ * WING, TOP + BEVEL))
 plane_box("panel_grey", "panel_grey", (-HINGE, ICP_BOTTOM, 2 * HINGE, CENTRE_BOTTOM - ICP_BOTTOM), -0.03, CENTRE_DEPTH)
 plane_box("dark", "dark", (-HINGE, TOP, 2 * HINGE, ICP_BOTTOM - TOP), -0.03, ICP_DEPTH)
-hood((-HINGE, TOP), (HINGE, TOP), ICP_DEPTH)
+glare_shield()
 low = point(0, WING_BOTTOM, 0.0, True)
 # Knee well wall under the panel, with an opening in the middle for the pilot's legs.
 LEGS = (0.20, -0.50)  # half width, top (m)

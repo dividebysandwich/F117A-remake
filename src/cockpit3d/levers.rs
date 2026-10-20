@@ -19,9 +19,9 @@ use crate::flight::{Aircraft, Player};
 use crate::hotas::{ButtonTarget, InputConfig, VrHand, VrInput};
 use crate::input::{Action, ActionEvent, FlightControls};
 
-/// Grip centre above the pivot.
 /// Left thumbstick deflection below which it does not slew the cursor.
 const SLEW_DEADZONE: f32 = 0.15;
+/// Grip centre above the pivot, unless the model says (the stick's `grip`).
 const GRIP_HEIGHT: f32 = 0.11;
 /// Full deflection (radians).
 const STICK_TILT: f32 = 0.35;
@@ -37,6 +37,8 @@ const TWIST_HYSTERESIS: f32 = 0.03;
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct CockpitAnchors {
     pub stick_pivot: Vec3,
+    /// The stick's grip centre above the pivot.
+    pub grip_height: f32,
     pub throttle_idle: Vec3,
     pub throttle_full: Vec3,
     pub eject: Vec3,
@@ -46,6 +48,7 @@ impl Default for CockpitAnchors {
     fn default() -> Self {
         Self {
             stick_pivot: Vec3::new(0.40, -0.48, -0.22),
+            grip_height: GRIP_HEIGHT,
             throttle_idle: Vec3::new(-0.40, -0.40, -0.12),
             throttle_full: Vec3::new(-0.40, -0.40, -0.30),
             eject: Vec3::new(0.0, -0.74, -0.20),
@@ -155,7 +158,7 @@ pub(super) fn grab_levers(
     let [left, right] = &mut hands.hands;
 
     // --- stick (right hand)
-    let grip_centre = anchors.stick_pivot + Vec3::Y * GRIP_HEIGHT;
+    let grip_centre = anchors.stick_pivot + Vec3::Y * anchors.grip_height;
     if !right.active || right.squeeze < 0.4 {
         if grabs.stick.take().is_some() {
             right.haptic = right.haptic.max(0.2);

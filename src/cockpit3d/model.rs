@@ -27,7 +27,8 @@
 //!   Its `moving` child is what moves when pressed; a `highlight` object under it is shown
 //!   while a VR fingertip touches the control.
 //! * `stick`, `throttle`: the levers (their origins: the stick pivot, the throttle handle at
-//!   idle); `anchor: "throttle_full"`: the handle at full thrust.
+//!   idle; the stick's `grip`: its grip centre above the pivot, metres); `anchor:
+//!   "throttle_full"`: the handle at full thrust.
 //! * `lamp` ([r, g, b], linear) and `range`: a flood lamp (with the local lights option).
 //! * `no_shadow`: casts no shadow.
 
@@ -186,6 +187,9 @@ impl<'a> Spawner<'a> {
         if extras["stick"].as_bool() == Some(true) {
             ec.insert(Stick);
             self.anchors.stick_pivot = at.translation;
+            if let Some(g) = extras["grip"].as_f64() {
+                self.anchors.grip_height = g as f32;
+            }
         }
         if extras["throttle"].as_bool() == Some(true) {
             ec.insert(ThrottleLever);

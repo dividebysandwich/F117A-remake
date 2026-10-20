@@ -130,8 +130,12 @@ pub fn setup_from_mission(m: &Mission, start_dir: &[i16]) -> MissionSetup {
     MissionSetup {
         theater: m.theater_code.to_ascii_lowercase(),
         night: m.night,
-        // Palette fade seed k = (row0 + row1) & 15.
-        tod_seed: ((m.primary.row + m.secondary.row) & 15) as u8,
+        // Palette fade seed k = (row0 + row1) & 15; `--tod-seed` overrides it (screenshots).
+        tod_seed: std::env::args()
+            .skip_while(|a| a != "--tod-seed")
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(((m.primary.row + m.secondary.row) & 15) as u8),
         start_base: Some(m.takeoff.name.clone()),
         start: Some(start_pose(m, start_dir)),
         freecam: false,

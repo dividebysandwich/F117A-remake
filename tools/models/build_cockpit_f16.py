@@ -440,13 +440,15 @@ def move(o, dx=0.0, dy=0.0, dz=0.0):
     o.location += Vector((dx, dy, dz))
 
 
-# Stick on the right console, throttle on the left one (both 0.12 m further in).
+# Stick on the right console, throttle on the left one (both 0.12 m further in, and up by as
+# much as the F-117A's were lowered after the F-16's console heights were set).
+F117_CONTROLS_DROP = 0.08
 for o in old:
     p = o.location
     if o.name.startswith(("stick", "rubber")) or (o.type == "MESH" and abs(p.x - 0.4) < 0.03 and p.z < -0.45):
-        move(o, dx=-0.12)
+        move(o, dx=-0.12, dz=F117_CONTROLS_DROP)
     elif o.name.startswith("throttle") or (o.type == "MESH" and abs(p.x + 0.4) < 0.03 and p.z < -0.45):
-        move(o, dx=0.12)
+        move(o, dx=0.12, dz=F117_CONTROLS_DROP)
 # Seat back, head rest and rails reclined 15 degrees more (the F-16's 30 degree seat).
 hip = Vector((0.0, -0.30, -0.78))
 recline = Matrix.Translation(hip) @ Matrix.Rotation(math.radians(15.0), 4, "X") @ Matrix.Translation(-hip)

@@ -24,7 +24,7 @@ use stealth_sim::{
     SimData, SimEvent, SimOptions, dmg, fflags, oflags,
 };
 
-use crate::camera::{EYE_OFFSET, View, ViewState};
+use crate::camera::{View, ViewState};
 use crate::flight::{Aircraft, FlightConstants, FlightDamage, FlightEnd, FlightSystems, Player, bam, to_bam};
 use crate::hud::{Bay, HudCues, HudMessages, HudMode, HudState, Stores, TargetBox, Waypoint, Waypoints};
 use crate::input::{Action, ActionEvent, FlightControls};
@@ -611,6 +611,7 @@ struct Outputs<'w, 's> {
     hud: Res<'w, HudState>,
     view: Res<'w, ViewState>,
     accel: Res<'w, TimeAccel>,
+    settings: Res<'w, crate::settings::Settings>,
 }
 
 /// Map units -> world units (east, north).
@@ -627,10 +628,11 @@ pub fn unit_position(prev: Option<&FlightUnit>, u: &FlightUnit, alpha: f32) -> (
     (old.0 + (cur.0 - old.0) * t, old.1 + (cur.1 - old.1) * t, old.2 + (cur.2 - old.2) * t)
 }
 
-/// Projects a world point (wu east, north, viewZ) into the 320x200 cockpit screen (f = 256,
+/// Projects a world point (wu east, north, viewZ) seen from the eye point (aircraft frame) into
+/// the 320x200 cockpit screen (f = 256,
 /// vertical 0.75 f, centre (159, 52)); None behind the eye.
-pub fn project_cockpit(a: &Aircraft, pos: &WorldPos, east: f64, north: f64, alt: f64) -> Option<(i32, i32)> {
-    let eye = pos.0 + (a.orientation * EYE_OFFSET).as_dvec3();
+pub fn project_cockpit(a: &Aircraft, pos: &WorldPos, eye: Vec3, east: f64, north: f64, alt: f64) -> Option<(i32, i32)> {
+    let eye = pos.0 + (a.orientation * eye).as_dvec3();
     let d: DVec3 = wu_to_bevy(east, north, alt) - eye;
     let l = a.orientation.inverse() * d.as_vec3();
     let z = -l.z;
@@ -644,8 +646,8 @@ pub fn project_cockpit(a: &Aircraft, pos: &WorldPos, east: f64, north: f64, alt:
 
 /// Direction from the cockpit eye to a world point (wu east, north, viewZ) in the aircraft
 /// frame (x right, y up, -z forward), normalised.
-pub fn direction_cockpit(a: &Aircraft, pos: &WorldPos, east: f64, north: f64, alt: f64) -> Option<Vec3> {
-    let eye = pos.0 + (a.orientation * EYE_OFFSET).as_dvec3();
+pub fn direction_cockpit(a: &Aircraft, pos: &WorldPos, eye: Vec3, east: f64, north: f64, alt: f64) -> Option<Vec3> {
+    let eye = pos.0 + (a.orientation * eye).as_dvec3();
     let d: DVec3 = wu_to_bevy(east, north, alt) - eye;
     (a.orientation.inverse() * d.as_vec3()).try_normalize()
 }
@@ -671,7 +673,8 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     let waypoint_changed = o.waypoint != combat.sim_waypoint;
     combat.sim_waypoint = o.waypoint;
     let combat = &*combat;
-    let Outputs { mut player, mut stores, mut wps, mut msgs, mut clock, mut emv, mut warnings, mut cm, mut contacts, mut cam, mut cues, hud, view, accel } = out;
+    let Outputs { mut player, mut stores, mut wps, mut msgs, mut clock, mut emv, mut warnings, mut cm, mut contacts, mut cam, mut cues, hud, view, accel, settings } = out;
+    let eye = settings.aircraft.spec().eye;
     let sim = &combat.sim;
     let data = &combat.data;
     let Ok((mut a, pos)) = player.single_mut() else { return };
@@ -824,8 +827,8 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         info.zoom = camera_zoom(t.range) + 1;
         let (east, north) = map_wu(ob.x, ob.y);
         if cockpit && hud.mode == HudMode::Gnd && t.box_size > 0 {
-            new_cues.target_dir = direction_cockpit(&a, pos, east, north, 0.0);
-            new_cues.target_box = on_hud(project_cockpit(&a, pos, east, north, 0.0)).map(|(x, y)| TargetBox {
+            new_cues.target_dir = direction_cockpit(&a, pos, eye, east, north, 0.0);
+            new_cues.target_box = on_hud(project_cockpit(&a, pos, eye, east, north, 0.0)).map(|(x, y)| TargetBox {
                 x,
                 y,
                 size: t.box_size,
@@ -838,9 +841,9 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             // Flight-path guide: 128 map units beyond the target along the heading, own altitude.
             let hr = bam(heading as f32);
             let (qx, qy) = (ob.x as f64 + hr.sin() as f64 * 128.0, ob.y as f64 - hr.cos() as f64 * 128.0);
-            new_cues.diamond_dir = direction_cockpit(&a, pos, qx * 32.0, (0x8000 as f64 - qy) * 32.0, player_view.view_z as f64);
+            new_cues.diamond_dir = direction_cockpit(&a, pos, eye, qx * 32.0, (0x8000 as f64 - qy) * 32.0, player_view.view_z as f64);
             new_cues.diamond =
-                on_hud(project_cockpit(&a, pos, qx * 32.0, (0x8000 as f64 - qy) * 32.0, player_view.view_z as f64));
+                on_hud(project_cockpit(&a, pos, eye, qx * 32.0, (0x8000 as f64 - qy) * 32.0, player_view.view_z as f64));
         }
     } else if let Some(u) = t.air.and_then(|i| sim.flights().get(i).map(|u| (i, *u))) {
         let (i, u) = u;
@@ -854,8 +857,8 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         info.bearing = Some(((brg as u16) as u32 * 360 / 65536) as i32);
         info.zoom = camera_zoom(range_mu) + 1;
         if cockpit && hud.mode == HudMode::Air {
-            new_cues.target_dir = direction_cockpit(&a, pos, east, north, alt);
-            new_cues.target_box = on_hud(project_cockpit(&a, pos, east, north, alt)).map(|(x, y)| TargetBox {
+            new_cues.target_dir = direction_cockpit(&a, pos, eye, east, north, alt);
+            new_cues.target_box = on_hud(project_cockpit(&a, pos, eye, east, north, alt)).map(|(x, y)| TargetBox {
                 x,
                 y,
                 size: 9,
@@ -868,8 +871,8 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     if cockpit {
         if let Some((x, y)) = t.ccip {
             let (east, north) = map_wu(x, y);
-            new_cues.ccip_dir = direction_cockpit(&a, pos, east, north, 0.0);
-            new_cues.ccip = Some(on_hud(project_cockpit(&a, pos, east, north, 0.0)).unwrap_or((0xA0, 0x5A)));
+            new_cues.ccip_dir = direction_cockpit(&a, pos, eye, east, north, 0.0);
+            new_cues.ccip = Some(on_hud(project_cockpit(&a, pos, eye, east, north, 0.0)).unwrap_or((0xA0, 0x5A)));
         }
         new_cues.ranging_bar = t.ranging_bar;
         new_cues.lock = t.lock_valid;

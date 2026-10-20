@@ -1,6 +1,6 @@
-//! Modern flight model (not in the original): a point-mass aerodynamic model of the F-117A with
-//! a fly-by-wire control system, tuned to the classic model's performance (about 560 kt at sea
-//! level, 120 kt clean stall, 7 g).
+//! Modern flight model (not in the original): a point-mass aerodynamic model with a fly-by-wire
+//! control system. The airframe constants come per aircraft type (`Aero`); the F-117A's are
+//! tuned to the classic model's performance (about 560 kt at sea level, 120 kt clean stall, 7 g).
 //!
 //! - Forces: thrust along the nose (lapsing with air density), lift from the angle of attack
 //!   (linear up to the stall, falling off past it), drag (parasite, induced, gear, flaps, speed
@@ -28,48 +28,151 @@ use super::{Aircraft, FlightConstants, FlightControls, Theater, WorldPos, bam, b
 const G: f32 = 32.174;
 /// Sea level air density (slug/ft^3).
 const RHO0: f32 = 0.002_376_9;
-/// Wing loading at the reference weight (lb/ft^2).
-const WING_LOADING: f32 = 58.5;
-/// Weight without fuel and the reference weight (full internal fuel), lb.
-const DRY_WEIGHT: f32 = 37_000.0;
-const REF_WEIGHT: f32 = 47_000.0;
-/// Static thrust to reference weight at full throttle.
-const THRUST_RATIO: f32 = 0.8;
-
-/// Lift slope (1/rad) and stall angles of attack (rad).
-const CL_ALPHA: f32 = 3.0;
-const ALPHA_STALL: f32 = 0.40;
-const ALPHA_STALL_NEG: f32 = -0.28;
-/// Angle of attack limiter of the control system (rad).
-const ALPHA_LIMIT: f32 = 0.36;
-const ALPHA_LIMIT_NEG: f32 = -0.22;
-/// Lift added by the fully extended flaps, and the stall / limiter angles they add (rad).
-const CL_FLAPS: f32 = 0.45;
-const ALPHA_FLAPS: f32 = 0.05;
 /// Seconds the flaps take to extend or retract.
 const FLAP_TIME: f32 = 3.0;
-
-const CD0: f32 = 0.040;
-/// Induced drag factor.
-const CD_K: f32 = 0.16;
-const CD_GEAR: f32 = 0.025;
-const CD_FLAPS: f32 = 0.05;
-const CD_SPEED_BRAKE: f32 = 0.12;
-const CD_BAY: f32 = 0.008;
-/// Side force per radian of sideslip.
-const CY_BETA: f32 = 0.8;
-
-/// Load factor limits (g).
-const N_MAX: f32 = 7.0;
-const N_MIN: f32 = -3.0;
-/// Full stick roll rate (rad/s) and the dynamic pressure (psf) below which it fades.
-const ROLL_RATE: f32 = 1.75;
+/// Dynamic pressure (psf) below which the full stick roll rate fades.
 const ROLL_Q_FULL: f32 = 150.0;
-/// Full stick pitch rate (rad/s) where the load factor doesn't limit it, pushing a fraction.
-const PITCH_RATE_MAX: f32 = 0.5;
-const PUSH_RATE: f32 = 0.6;
-/// Yaw rate limit (rad/s).
-const YAW_RATE_MAX: f32 = 0.5;
+
+/// Airframe constants of one aircraft type.
+#[derive(Debug, Clone, Copy)]
+pub struct Aero {
+    /// Wing loading at the reference weight (lb/ft^2).
+    pub wing_loading: f32,
+    /// Weight without fuel and the reference weight (full internal fuel), lb.
+    pub dry_weight: f32,
+    pub ref_weight: f32,
+    /// Static thrust to reference weight at full throttle, and its rise per Mach (ram effect).
+    pub thrust_ratio: f32,
+    pub thrust_mach: f32,
+    /// Lift slope (1/rad) and stall angles of attack (rad).
+    pub cl_alpha: f32,
+    pub alpha_stall: f32,
+    pub alpha_stall_neg: f32,
+    /// Angle of attack limiter of the control system (rad).
+    pub alpha_limit: f32,
+    pub alpha_limit_neg: f32,
+    /// Lift added by the fully extended flaps, and the stall / limiter angles they add (rad).
+    pub cl_flaps: f32,
+    pub alpha_flaps: f32,
+    pub cd0: f32,
+    /// Induced drag factor.
+    pub cd_k: f32,
+    pub cd_gear: f32,
+    pub cd_flaps: f32,
+    pub cd_speed_brake: f32,
+    pub cd_bay: f32,
+    /// Side force per radian of sideslip.
+    pub cy_beta: f32,
+    /// Transonic and supersonic drag rise.
+    pub drag_rise: DragRise,
+    /// Load factor limits (g).
+    pub n_max: f32,
+    pub n_min: f32,
+    /// Full stick roll rate (rad/s).
+    pub roll_rate: f32,
+    /// Full stick pitch rate (rad/s) where the load factor doesn't limit it, pushing a fraction.
+    pub pitch_rate_max: f32,
+    pub push_rate: f32,
+    /// Yaw rate limit (rad/s).
+    pub yaw_rate_max: f32,
+}
+
+/// Drag added near and above the speed of sound.
+#[derive(Debug, Clone, Copy)]
+pub enum DragRise {
+    /// Subsonic airframe: a steep rise from Mach 0.85 (the F-117A's limit).
+    Subsonic,
+    /// Supersonic airframe: the rise from `start` peaks by `peak_mach` and eases off above it.
+    Supersonic { start: f32, peak_mach: f32, peak: f32, supersonic: f32 },
+}
+
+impl DragRise {
+    fn cd(self, mach: f32) -> f32 {
+        match self {
+            DragRise::Subsonic => {
+                if mach > 0.85 {
+                    0.6 * (mach - 0.85).powi(2) + 4.0 * (mach - 0.95).max(0.0).powi(2)
+                } else {
+                    0.0
+                }
+            }
+            DragRise::Supersonic { start, peak_mach, peak, supersonic } => {
+                let smooth = |t: f32| {
+                    let t = t.clamp(0.0, 1.0);
+                    t * t * (3.0 - 2.0 * t)
+                };
+                if mach <= peak_mach {
+                    peak * smooth((mach - start) / (peak_mach - start))
+                } else {
+                    peak + (supersonic - peak) * smooth((mach - peak_mach) / 0.5)
+                }
+            }
+        }
+    }
+}
+
+impl Aero {
+    /// F-117A: about 560 kt at sea level, 120 kt clean stall, 7 g.
+    pub const F117: Aero = Aero {
+        wing_loading: 58.5,
+        dry_weight: 37_000.0,
+        ref_weight: 47_000.0,
+        thrust_ratio: 0.8,
+        thrust_mach: 0.0,
+        cl_alpha: 3.0,
+        alpha_stall: 0.40,
+        alpha_stall_neg: -0.28,
+        alpha_limit: 0.36,
+        alpha_limit_neg: -0.22,
+        cl_flaps: 0.45,
+        alpha_flaps: 0.05,
+        cd0: 0.040,
+        cd_k: 0.16,
+        cd_gear: 0.025,
+        cd_flaps: 0.05,
+        cd_speed_brake: 0.12,
+        cd_bay: 0.008,
+        cy_beta: 0.8,
+        drag_rise: DragRise::Subsonic,
+        n_max: 7.0,
+        n_min: -3.0,
+        roll_rate: 1.75,
+        pitch_rate_max: 0.5,
+        push_rate: 0.6,
+        yaw_rate_max: 0.5,
+    };
+
+    /// F-16C: Mach 1.2 at sea level, about Mach 1.9 at altitude, 9 g, a 240 deg/s roll rate.
+    pub const F16: Aero = Aero {
+        wing_loading: 90.0,
+        dry_weight: 19_000.0,
+        ref_weight: 29_000.0,
+        thrust_ratio: 1.07,
+        thrust_mach: 0.1,
+        cl_alpha: 4.0,
+        alpha_stall: 0.50,
+        alpha_stall_neg: -0.30,
+        alpha_limit: 0.44,
+        alpha_limit_neg: -0.25,
+        cl_flaps: 0.35,
+        alpha_flaps: 0.04,
+        cd0: 0.021,
+        cd_k: 0.12,
+        cd_gear: 0.02,
+        cd_flaps: 0.04,
+        cd_speed_brake: 0.10,
+        cd_bay: 0.0,
+        cy_beta: 0.8,
+        drag_rise: DragRise::Supersonic { start: 0.85, peak_mach: 1.1, peak: 0.036, supersonic: 0.0245 },
+        n_max: 9.0,
+        n_min: -3.0,
+        roll_rate: 4.2,
+        pitch_rate_max: 0.6,
+        push_rate: 0.6,
+        yaw_rate_max: 0.6,
+    };
+}
+
 /// Full rudder sideslip (rad).
 const BETA_RUDDER: f32 = 0.1;
 /// Lags (s): roll rate, yaw rate, sideslip correction, the limiters' angle of attack correction.
@@ -133,25 +236,25 @@ fn atmosphere(h: f32) -> (f32, f32) {
     }
 }
 
-fn cl_zero(a: &Aircraft) -> f32 {
-    CL_FLAPS * a.modern.flap_pos
+fn cl_zero(ae: &Aero, a: &Aircraft) -> f32 {
+    ae.cl_flaps * a.modern.flap_pos
 }
 
-fn alpha_stall(a: &Aircraft) -> f32 {
-    let s = ALPHA_STALL + ALPHA_FLAPS * a.modern.flap_pos;
+fn alpha_stall(ae: &Aero, a: &Aircraft) -> f32 {
+    let s = ae.alpha_stall + ae.alpha_flaps * a.modern.flap_pos;
     if a.damage.heavy_stall { s - 0.06 } else { s }
 }
 
-fn alpha_limit(a: &Aircraft) -> f32 {
-    let l = ALPHA_LIMIT + ALPHA_FLAPS * a.modern.flap_pos;
+fn alpha_limit(ae: &Aero, a: &Aircraft) -> f32 {
+    let l = ae.alpha_limit + ae.alpha_flaps * a.modern.flap_pos;
     if a.damage.heavy_stall { l - 0.06 } else { l }
 }
 
 /// Lift coefficient: linear to the stall, then falling off to 60% of the peak.
-fn lift_coefficient(a: &Aircraft, alpha: f32) -> f32 {
-    let c0 = cl_zero(a);
-    let (hi, lo) = (alpha_stall(a), ALPHA_STALL_NEG);
-    let peak = |s: f32| c0 + CL_ALPHA * s;
+fn lift_coefficient(ae: &Aero, a: &Aircraft, alpha: f32) -> f32 {
+    let c0 = cl_zero(ae, a);
+    let (hi, lo) = (alpha_stall(ae, a), ae.alpha_stall_neg);
+    let peak = |s: f32| c0 + ae.cl_alpha * s;
     if alpha > hi {
         let p = peak(hi);
         (p - (alpha - hi) * 2.0).max(0.6 * p)
@@ -178,6 +281,7 @@ fn neutral_load(gamma: f32, roll: f32) -> f32 {
 }
 
 pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt: f32, controls: &FlightControls, k: &FlightConstants, theater: Option<&Theater>) {
+    let ae = &k.aero;
     a.time += dt;
     if a.ended.is_some() {
         return;
@@ -193,11 +297,11 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
             // Airborne start: trimmed, the nose raised above the flight path by the 1 g angle of
             // attack, and the path held.
             let (sigma, _) = atmosphere(a.altitude);
-            let per_cl = 0.5 * RHO0 * sigma * speed * speed / (WING_LOADING * (DRY_WEIGHT + a.fuel) / REF_WEIGHT);
+            let per_cl = 0.5 * RHO0 * sigma * speed * speed / (ae.wing_loading * (ae.dry_weight + a.fuel) / ae.ref_weight);
             if per_cl > 1e-3 {
                 let (_, _, roll) = a.euler();
                 let n0 = neutral_load(a.modern.vel.normalize_or_zero().y.clamp(-1.0, 1.0).asin(), roll).max(0.0);
-                let alpha = ((n0 / per_cl - cl_zero(a)) / CL_ALPHA).clamp(0.0, alpha_limit(a));
+                let alpha = ((n0 / per_cl - cl_zero(ae, a)) / ae.cl_alpha).clamp(0.0, alpha_limit(ae, a));
                 a.orientation = (a.orientation * Quat::from_rotation_x(alpha)).normalize();
             }
             a.modern.hold = Some(a.modern.vel.normalize_or_zero().y.clamp(-1.0, 1.0).asin());
@@ -245,7 +349,7 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
     let vhat = if speed > 1.0 { vel / speed } else { a.orientation * Vec3::NEG_Z };
     let (sigma, sound) = atmosphere(a.altitude);
     let qbar = 0.5 * RHO0 * sigma * speed * speed;
-    let mass = (DRY_WEIGHT + a.fuel) / REF_WEIGHT;
+    let mass = (ae.dry_weight + a.fuel) / ae.ref_weight;
     let fwd = a.orientation * Vec3::NEG_Z;
     let up = a.orientation * Vec3::Y;
     let right = a.orientation * Vec3::X;
@@ -255,36 +359,34 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
     let mach = speed / sound;
 
     // --- aerodynamic and thrust accelerations (g per unit of q * CL / wing loading)
-    let per_cl = qbar / (WING_LOADING * mass);
-    let cl = lift_coefficient(a, alpha);
-    let mut cd = CD0 + CD_K * cl * cl;
+    let per_cl = qbar / (ae.wing_loading * mass);
+    let cl = lift_coefficient(ae, a, alpha);
+    let mut cd = ae.cd0 + ae.cd_k * cl * cl;
     if a.gear_down {
-        cd += CD_GEAR;
+        cd += ae.cd_gear;
     }
-    cd += CD_FLAPS * a.modern.flap_pos;
+    cd += ae.cd_flaps * a.modern.flap_pos;
     if a.brakes && air {
-        cd += CD_SPEED_BRAKE;
+        cd += ae.cd_speed_brake;
     }
     if a.bay_open {
-        cd += CD_BAY;
+        cd += ae.cd_bay;
     }
-    if alpha > alpha_stall(a) {
-        cd += (alpha - alpha_stall(a)) * 1.5;
+    if alpha > alpha_stall(ae, a) {
+        cd += (alpha - alpha_stall(ae, a)) * 1.5;
     }
-    if mach > 0.85 {
-        cd += 0.6 * (mach - 0.85).powi(2) + 4.0 * (mach - 0.95).max(0.0).powi(2);
-    }
-    let thrust = THRUST_RATIO * a.thrust / 100.0 * sigma.powf(0.6) / mass;
+    cd += ae.drag_rise.cd(mach);
+    let thrust = ae.thrust_ratio * (1.0 + ae.thrust_mach * mach.min(2.0)) * a.thrust / 100.0 * sigma.powf(0.6) / mass;
     let lift_dir = (up - vhat * up.dot(vhat)).normalize_or(up);
     let side_dir = (right - vhat * right.dot(vhat)).normalize_or(right);
     let n_lift = per_cl * cl;
-    let mut accel = (fwd * thrust + lift_dir * n_lift - vhat * per_cl * cd - side_dir * per_cl * CY_BETA * beta) * G;
+    let mut accel = (fwd * thrust + lift_dir * n_lift - vhat * per_cl * cd - side_dir * per_cl * ae.cy_beta * beta) * G;
     accel.y -= G;
 
     // Stall speed at the current load (velocity units) for the warnings.
-    let cl_avail = cl_zero(a) + CL_ALPHA * alpha_limit(a);
+    let cl_avail = cl_zero(ae, a) + ae.cl_alpha * alpha_limit(ae, a);
     let load = (a.gees / 16.0).max(1.0);
-    a.stall_speed = (2.0 * load * WING_LOADING * mass / (RHO0 * sigma * cl_avail)).sqrt() * 16.0;
+    a.stall_speed = (2.0 * load * ae.wing_loading * mass / (RHO0 * sigma * cl_avail)).sqrt() * 16.0;
 
     if air {
         // --- control laws
@@ -300,9 +402,9 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
         let q_turn = (n0 - gamma.cos() * roll.cos()).max(0.0) * G / v;
         // Pilot: pitch rate, at most what gives the load factor limits.
         let q_stick = if pitch_stick >= 0.0 {
-            pitch_stick * PITCH_RATE_MAX.min((N_MAX - n0).max(0.0) * G / v)
+            pitch_stick * ae.pitch_rate_max.min((ae.n_max - n0).max(0.0) * G / v)
         } else {
-            pitch_stick * (PITCH_RATE_MAX * PUSH_RATE).min((n0 - N_MIN).max(0.0) * G / v)
+            pitch_stick * (ae.pitch_rate_max * ae.push_rate).min((n0 - ae.n_min).max(0.0) * G / v)
         };
         let free = pitch_stick.abs() < STICK_FREE && !a.autopilot();
         let st = &mut a.modern;
@@ -315,7 +417,7 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
             st.hold = Some(gamma);
         }
         let mut q_cmd = q_turn + q_stick + st.hold.map_or(0.0, |g0| (g0 - gamma) * HOLD_GAIN * roll.cos());
-        let mut p_cmd = roll_stick * ROLL_RATE * (qbar / ROLL_Q_FULL).clamp(0.25, 1.0);
+        let mut p_cmd = roll_stick * ae.roll_rate * (qbar / ROLL_Q_FULL).clamp(0.25, 1.0);
         if a.autopilot() {
             // Bank toward the waypoint bearing (at most 30 degrees), hold the altitude.
             let e = bam(bam_diff(a.waypoint_bearing, to_bam(heading)));
@@ -326,22 +428,22 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
         }
         // Crash protection: wings level and pull when the ground is less than 3 s away.
         if k.landing == 0 && !a.gear_down && vel.y < 0.0 && a.altitude - a.ground_altitude + vel.y * 3.0 < 150.0 && roll_b.abs() < 24576.0 {
-            p_cmd = (-roll * 3.0).clamp(-ROLL_RATE, ROLL_RATE);
+            p_cmd = (-roll * 3.0).clamp(-ae.roll_rate, ae.roll_rate);
             q_cmd = q_cmd.max(q_path + (4.0 - n0).max(0.0) * G / v);
             a.modern.hold = None;
         }
         // Limiters: the angle of attack stays within the limiter angles and the angles that give
         // the load factor limits (corrected towards them near the limits only).
-        let lo_n = if per_cl > 1e-3 { (N_MIN / per_cl - cl_zero(a)) / CL_ALPHA } else { ALPHA_LIMIT_NEG };
-        let hi_n = if per_cl > 1e-3 { (N_MAX / per_cl - cl_zero(a)) / CL_ALPHA } else { alpha_limit(a) };
-        let hi = alpha_limit(a).min(hi_n);
-        let lo = ALPHA_LIMIT_NEG.max(lo_n).min(hi);
+        let lo_n = if per_cl > 1e-3 { (ae.n_min / per_cl - cl_zero(ae, a)) / ae.cl_alpha } else { ae.alpha_limit_neg };
+        let hi_n = if per_cl > 1e-3 { (ae.n_max / per_cl - cl_zero(ae, a)) / ae.cl_alpha } else { alpha_limit(ae, a) };
+        let hi = alpha_limit(ae, a).min(hi_n);
+        let lo = ae.alpha_limit_neg.max(lo_n).min(hi);
         q_cmd = q_cmd.min(q_path + (hi - alpha) / TAU_LIMIT).max(q_path + (lo - alpha) / TAU_LIMIT);
         // Past the stall the nose drops.
-        if alpha > alpha_stall(a) {
-            q_cmd -= (alpha - alpha_stall(a)) * 4.0;
+        if alpha > alpha_stall(ae, a) {
+            q_cmd -= (alpha - alpha_stall(ae, a)) * 4.0;
         }
-        let r_cmd = (-path_rate.dot(up) + (beta + rudder * BETA_RUDDER) / TAU_BETA).clamp(-YAW_RATE_MAX, YAW_RATE_MAX);
+        let r_cmd = (-path_rate.dot(up) + (beta + rudder * BETA_RUDDER) / TAU_BETA).clamp(-ae.yaw_rate_max, ae.yaw_rate_max);
         // Pitch rate: second-order response to its command.
         let st = &mut a.modern;
         st.q_dot += (PITCH_OMEGA * PITCH_OMEGA * (q_cmd - rates.y) - 2.0 * PITCH_ZETA * PITCH_OMEGA * st.q_dot) * dt;
@@ -352,8 +454,8 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
         let omega = vhat * r.x + right * r.y - up * r.z;
         a.orientation = (Quat::from_scaled_axis(omega * dt) * a.orientation).normalize();
         vel += accel * dt;
-        a.gees = ((accel + Vec3::Y * G).dot(up) / G * 16.0).clamp(-128.0, 128.0);
-        a.roll_input = r.x / ROLL_RATE * 126.0;
+        a.gees = ((accel + Vec3::Y * G).dot(up) / G * 16.0).clamp(-k.max_gees, k.max_gees);
+        a.roll_input = r.x / ae.roll_rate * 126.0;
         a.pitch_input = pitch_stick * 42.0;
     } else {
         // --- ground roll along the nose, lift unloading the wheels

@@ -29,9 +29,6 @@ impl Plugin for CameraPlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RigSystems;
 
-/// Pilot eye point above the aircraft origin (metres).
-pub const EYE_OFFSET: Vec3 = Vec3::new(0.0, 1.6, -3.0);
-
 /// Desktop forward cockpit view tilts down slightly so the lower panel stays in view (radians).
 const COCKPIT_DOWN_PITCH: f32 = -0.1;
 
@@ -134,7 +131,8 @@ pub fn spawn_background(
     sphere
 }
 
-/// Spawns the rig under the given aircraft entity. `xr_root`: the XR tracking root, used as
+/// Spawns the rig under the given aircraft entity, the head at the pilot's eye point (`eye`,
+/// aircraft frame, metres). `xr_root`: the XR tracking root, used as
 /// the eye camera (its headset cameras get the render layers from the XR module).
 pub fn spawn_rig(
     commands: &mut Commands,
@@ -142,8 +140,9 @@ pub fn spawn_rig(
     meshes: &mut Assets<Mesh>,
     palette: &crate::palette::Palette,
     xr_root: Option<Entity>,
+    eye: Vec3,
 ) {
-    let head = commands.spawn((HeadAnchor, Transform::from_translation(EYE_OFFSET), Visibility::default())).id();
+    let head = commands.spawn((HeadAnchor, Transform::from_translation(eye), Visibility::default())).id();
     if let Some(root) = xr_root {
         commands.entity(root).insert((EyeCamera, Transform::IDENTITY));
         spawn_background(commands, root, meshes, palette, MAIN_BACKGROUND_LAYER);
@@ -210,7 +209,8 @@ fn update_rig(
     let Ok((a, pos)) = aircraft.single() else { return };
     // Lowest camera height relative to the aircraft origin in external views (1 m above ground).
     let floor = 1.0 - (a.altitude - a.ground_altitude) * crate::world::WU as f32;
-    viewpoint.altitude_wu = a.altitude + EYE_OFFSET.y / crate::world::WU as f32;
+    let eye = settings.aircraft.spec().eye;
+    viewpoint.altitude_wu = a.altitude + eye.y / crate::world::WU as f32;
     let yaw = match state.view {
         View::LookLeft => 90f32.to_radians(),
         View::LookRight => -90f32.to_radians(),
@@ -222,7 +222,7 @@ fn update_rig(
             // Looks are head turns in the cockpit (in VR the headset turns).
             let base_pitch = if state.view == View::Cockpit { COCKPIT_DOWN_PITCH } else { 0.0 };
             let (y, p) = if settings.vr { (0.0, 0.0) } else { (yaw + look.yaw, base_pitch + look.pitch) };
-            *head = Transform::from_translation(EYE_OFFSET).with_rotation(Quat::from_rotation_y(y) * Quat::from_rotation_x(p));
+            *head = Transform::from_translation(eye).with_rotation(Quat::from_rotation_y(y) * Quat::from_rotation_x(p));
             *cam_tf = if settings.vr { offset.scaled(settings.vr_rig_scale()) } else { offset.0 };
         }
         View::Chase => {
@@ -286,6 +286,6 @@ fn orbited(pos: Vec3, target: Vec3, orbit: &Orbit, to_world: Quat, floor: f32) -
 
 /// World position of the eye (for systems that need it without the transform hierarchy).
 #[allow(dead_code)]
-pub fn eye_world(a: &Aircraft, pos: &WorldPos) -> DVec3 {
-    pos.0 + (a.orientation * EYE_OFFSET).as_dvec3()
+pub fn eye_world(a: &Aircraft, pos: &WorldPos, eye: Vec3) -> DVec3 {
+    pos.0 + (a.orientation * eye).as_dvec3()
 }

@@ -1,3 +1,4 @@
+mod aircraft;
 mod asset_path;
 mod autoshot;
 mod camera;

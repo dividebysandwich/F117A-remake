@@ -97,8 +97,11 @@ const OSB_W: f32 = 16.0;
 const OSB_H: f32 = 8.0;
 
 impl PanelLayout {
-    pub fn for_classic(classic: bool) -> Self {
-        if classic { Self::classic() } else { Self::modern() }
+    pub fn for_style(style: PanelStyle) -> Self {
+        match style {
+            PanelStyle::Classic => Self::classic(),
+            PanelStyle::Modern => Self::modern(),
+        }
     }
 
     /// Bezel buttons of an MFD: (slot, cap rectangle); 0..5 above the screen, 5..10 below.

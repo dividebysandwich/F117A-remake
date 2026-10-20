@@ -45,15 +45,13 @@ use super::levers::{CockpitAnchors, Stick, ThrottleLever};
 use super::{CockpitLamp, CockpitMaterials};
 use crate::font::Fonts;
 
-/// The two cockpit models.
+/// The cockpit models of the flyable aircraft, by file stem.
 #[derive(Resource)]
-pub struct CockpitModels {
-    pub modern: Handle<Gltf>,
-    pub classic: Handle<Gltf>,
-}
+pub struct CockpitModels(pub std::collections::HashMap<&'static str, Handle<Gltf>>);
 
 pub(super) fn load_models(mut commands: Commands, server: Res<AssetServer>) {
-    commands.insert_resource(CockpitModels { modern: server.load("models/cockpit_modern.glb"), classic: server.load("models/cockpit_classic.glb") });
+    let files = crate::aircraft::cockpit_files();
+    commands.insert_resource(CockpitModels(files.into_iter().map(|f| (f, server.load(format!("models/{f}.glb")))).collect()));
 }
 
 impl CockpitMaterials {
@@ -334,7 +332,7 @@ mod tests {
             assert!(extras.iter().any(|x| x["anchor"] == "throttle_full"), "{name}: throttle_full anchor");
             assert!(extras.iter().any(|x| x["kind"] == "eject"), "{name}: ejection handle");
             assert!(extras.iter().any(|x| x["control"] == "Action(Menu)"), "{name}: MENU button");
-            let keys: Vec<String> = atlas_faces(&PanelLayout::for_classic(classic)).iter().map(|(f, _)| format!("{f:?}")).collect();
+            let keys: Vec<String> = atlas_faces(&PanelLayout::for_style(if classic { crate::cockpit3d::layout::PanelStyle::Classic } else { crate::cockpit3d::layout::PanelStyle::Modern })).iter().map(|(f, _)| format!("{f:?}")).collect();
             for x in &extras {
                 if let Some(c) = x["control"].as_str() {
                     assert!(parse_effect(c).is_some(), "{name}: control {c}");

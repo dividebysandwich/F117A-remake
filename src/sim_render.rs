@@ -471,8 +471,9 @@ fn world_model_state(
 #[derive(Component)]
 struct OwnShadow;
 
-/// STFLT model of the own shadow.
-const SHADOW_MODEL: i32 = 17;
+
+/// Colour of the original's shadow model (STFLT 17).
+const SHADOW_COLOUR: u8 = 239;
 
 #[allow(clippy::type_complexity)]
 fn own_shadow(
@@ -488,8 +489,36 @@ fn own_shadow(
     let Ok((a, pos)) = player.single() else { return };
     let Ok((mut spos, mut tf, mut vis)) = shadow.single_mut() else {
         let file = library.load(&server, "stflt");
-        if let Some(e) = spawn_model(&mut commands, &assets, &file, SHADOW_MODEL, false) {
-            commands.entity(e).insert((OwnShadow, Visibility::Hidden));
+        let spec = settings.aircraft.spec();
+        match spec.shadow {
+            crate::aircraft::Shadow::Model(m) => {
+                if let Some(e) = spawn_model(&mut commands, &assets, &file, m as i32, false) {
+                    commands.entity(e).insert((OwnShadow, Visibility::Hidden));
+                }
+            }
+            crate::aircraft::Shadow::Flattened => {
+                // The exterior model's outline in the shadow model's colour.
+                let Some(mesh) = assets.flattened(&file, &format!("{}_lod0", spec.model)) else { return };
+                let material = assets.palette.material(SHADOW_COLOUR);
+                let e = commands
+                    .spawn((
+                        OwnShadow,
+                        SimObject,
+                        WorldPos::default(),
+                        Transform::from_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32)),
+                        Visibility::Hidden,
+                        MeshMaterial3d(material),
+                        bevy::mesh::MeshTag(mesh_tag(LEVEL_AIRCRAFT, 0, false)),
+                        bevy::light::NotShadowCaster,
+                    ))
+                    .id();
+                commands.queue(move |world: &mut World| {
+                    let h = world.resource_mut::<Assets<Mesh>>().add(mesh);
+                    if let Ok(mut e) = world.get_entity_mut(e) {
+                        e.insert(Mesh3d(h));
+                    }
+                });
+            }
         }
         return;
     };

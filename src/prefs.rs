@@ -50,6 +50,7 @@ pub struct Prefs {
     pub classic_hud: bool,
     pub classic_flight: bool,
     pub vr_cockpit_scale: f32,
+    pub aircraft: crate::aircraft::AircraftKind,
     /// 0: `vr_cockpit_scale` is relative to life size (before the 70% size became 100%),
     /// 1: relative to `VR_COCKPIT_SCALE_BASE`.
     #[serde(default)]
@@ -77,6 +78,7 @@ impl Default for Prefs {
             classic_hud: false,
             classic_flight: false,
             vr_cockpit_scale: DEFAULT_VR_COCKPIT_SCALE,
+            aircraft: Default::default(),
             vr_scale_version: VR_SCALE_VERSION,
         }
     }
@@ -116,6 +118,7 @@ impl Prefs {
             classic_hud: s.classic_hud,
             classic_flight: s.classic_flight,
             vr_cockpit_scale: s.vr_cockpit_scale,
+            aircraft: s.aircraft,
             vr_scale_version: VR_SCALE_VERSION,
         }
     }
@@ -136,6 +139,9 @@ impl Prefs {
         s.classic_cockpit |= self.classic_cockpit;
         s.classic_hud |= self.classic_hud;
         s.classic_flight |= self.classic_flight;
+        if !std::env::args().any(|a| a == "--aircraft") {
+            s.aircraft = self.aircraft;
+        }
         if !std::env::args().any(|a| a == "--vr-cockpit-scale") {
             s.vr_cockpit_scale = self.vr_cockpit_scale.clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
         }

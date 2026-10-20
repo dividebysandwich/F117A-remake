@@ -6,8 +6,10 @@ theaters. A complete list of keys is in [keys.md](keys.md).
 
 <img src="images/units/ac_f117.png" width="240" alt="F-117A">
 
-The player flies an F-117A. It has four weapon bays (two with *Realistic weapons*), a 20 mm gun
-with 650 rounds, chaff, flares, decoys, an ECM jammer and an IR jammer.
+The player flies an F-117A or an F-16C (chosen in the menu's *Aircraft* section). Both have four
+weapon bays (two with *Realistic weapons*), a 20 mm gun with 650 rounds, chaff, flares, decoys,
+an ECM jammer and an IR jammer. The F-16C is faster (Mach 2 class at altitude), pulls 9 g and
+rolls about twice as fast; the F-117A has a modern and a classic cockpit, the F-16C its own.
 
 ## Contents
 
@@ -40,7 +42,7 @@ the *Cockpit* switch).
 | **Opponents** | Green, Regular, Veteran, Elite. Sets the skill of enemy pilots and SAM crews; Veteran and Elite add ships and patrols. Higher levels also increase radar sensitivity. |
 | **Situation** | *Cold War*: covert peacetime operation, fewer enemy aircraft. *Limited War*: regional conflict, air defences on alert. *Conventional War*: full-scale war, all enemy forces active. The briefing states the exact rules of engagement. |
 | **Mission** | *Strike*: ground target (destroy, photograph or reach), with a primary and a secondary objective. *Air to air*: intercept an enemy aircraft. *Strike training* and *Air training*: practice missions. *Drone defense* (Ukraine only): stop a wave of attack drones, then bomb their launch site (chapter 11). |
-| **Aircraft** | *Realistic weapons*: two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. |
+| **Aircraft** | *F-117A* or *F-16C*: the flown aircraft. *Realistic weapons*: two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. |
 | **Weather** | Random (based on the theater's climate), Clear, Scattered, Broken, Overcast, Storm. *Random cover* off: a slider sets the coverage of the main cloud layer. Clouds block optical seekers and visual identification for both sides; radar sees through clouds. |
 | **Classic / Modern** | *Shaders*: flat original shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: original panel or modern panel (this manual describes the modern panel). *HUD*: the original HUD, or a high-resolution F-16 style HUD in green. *Flight model*: original flight model, or an aerodynamic model with fly-by-wire: the stick commands pitch rate (up to 7 g) and roll rate; released, the nose stays where it was left and, once the flight path has caught up with it, the path is held (also in turns up to 60° of bank). Angle of attack and g limiters only act near the limits. |
 

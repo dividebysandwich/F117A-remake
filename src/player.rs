@@ -26,6 +26,7 @@ impl Plugin for PlayerPlugin {
 /// Distance from the base reference point to the runway start (original: 1800 wu).
 const RUNWAY_OFFSET_WU: f64 = 1800.0;
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_player(
     mut commands: Commands,
     theater: Res<Theater>,
@@ -35,6 +36,7 @@ fn spawn_player(
     palette: Res<crate::palette::Palette>,
     xr_root: Res<crate::camera::XrRoot>,
     mission: Option<Res<crate::mission::ActiveMission>>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let base = setup
         .start_base
@@ -93,7 +95,7 @@ fn spawn_player(
             Visibility::default(),
         ))
         .id();
-    crate::camera::spawn_rig(&mut commands, aircraft, &mut meshes, &palette, xr_root.0);
+    crate::camera::spawn_rig(&mut commands, aircraft, &mut meshes, &palette, xr_root.0, settings.aircraft.spec().eye);
     // Debug text readout of the flight state (opt-in, overlaps the panel).
     if !std::env::args().any(|a| a == "--readout") {
         return;
@@ -162,12 +164,6 @@ fn readout(
 /// Aircraft models (STFLT.3DX) use 1/8 world unit per model unit (F-117 model: 288 units long
 /// = 17.6 m). ASSUMED from model sizes; not confirmed.
 pub const AIRCRAFT_MODEL_SCALE: f64 = crate::world::WU / 8.0;
-/// STFLT model of the player's F-117A in external views (own aircraft = 24).
-const F117_MODEL: &str = "stflt_024";
-/// The aircraft position is the ground contact point, the model's origin is at the belly
-/// (gear down: 10 model units below it). Raised by the gear and clear of the coplanar ground
-/// overlays (lifted up to ~0.7 m, world.rs) so the flat wings are not hidden on the runway.
-const OWN_MODEL_LIFT: f32 = (10.0 * AIRCRAFT_MODEL_SCALE) as f32 + 0.7;
 
 #[derive(Component)]
 pub struct OwnModel;
@@ -177,6 +173,7 @@ fn attach_own_model(
     mut library: ResMut<ModelLibrary>,
     server: Res<AssetServer>,
     assets: ModelAssets,
+    settings: Res<crate::settings::Settings>,
     player: Query<Entity, With<Player>>,
     existing: Query<(), With<OwnModel>>,
 ) {
@@ -184,22 +181,36 @@ fn attach_own_model(
         return;
     }
     let Ok(player) = player.single() else { return };
+    let spec = settings.aircraft.spec();
     let file = library.load(&server, "stflt");
-    if let Some(model) = assets.spawn(&mut commands, &file, F117_MODEL, crate::palette_material::LEVEL_AIRCRAFT, true) {
+    if let Some(model) =
+        assets.spawn_marked(&mut commands, &file, spec.model, crate::palette_material::LEVEL_AIRCRAFT, true, spec.canopy_colours)
+    {
         commands
             .entity(model)
             .insert((
                 OwnModel,
-                Transform::from_xyz(0.0, OWN_MODEL_LIFT, 0.0).with_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32)),
+                Transform::from_xyz(0.0, spec.model_lift, 0.0).with_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32)),
                 Visibility::Hidden,
             ));
         commands.entity(player).add_child(model);
     }
 }
 
-fn own_model_visibility(view: Res<ViewState>, mut q: Query<&mut Visibility, With<OwnModel>>) {
+/// The own model shows in the external views, and from the cockpit of aircraft without a
+/// cockpit shell of their own (without its canopy, which would hide the view).
+fn own_model_visibility(
+    view: Res<ViewState>,
+    settings: Res<crate::settings::Settings>,
+    mut q: Query<&mut Visibility, (With<OwnModel>, Without<crate::models::MarkedPrim>)>,
+    mut canopy: Query<&mut Visibility, (With<crate::models::MarkedPrim>, Without<OwnModel>)>,
+) {
     let external = !matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
+    let shown = external || settings.aircraft.spec().exterior_in_cockpit;
     for mut v in &mut q {
+        v.set_if_neq(if shown { Visibility::Inherited } else { Visibility::Hidden });
+    }
+    for mut v in &mut canopy {
         v.set_if_neq(if external { Visibility::Inherited } else { Visibility::Hidden });
     }
 }

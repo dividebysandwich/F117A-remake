@@ -5,6 +5,7 @@ use bevy_egui::{EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContext
 
 use stealth_mission::{Mission, MissionKind, Sky};
 
+use crate::aircraft::AircraftKind;
 use crate::mission::{ActiveMission, MissionData, clean_text};
 use crate::settings::{AppState, MissionSetup};
 
@@ -123,6 +124,12 @@ fn vr_available() -> bool {
     }
 }
 
+/// Flyable aircraft and their notes.
+const AIRCRAFT: [(AircraftKind, &[&str]); 2] = [
+    (AircraftKind::F117, &["Stealth attack aircraft", "Subsonic, 7 g", "Modern and classic cockpit"]),
+    (AircraftKind::F16, &["Multirole fighter", "Mach 2 class, 9 g, quick roll", "F-16 cockpit with RWR"]),
+];
+
 /// Starts the game again in VR, straight into the menu's mission (OpenXR has to replace the
 /// renderer at startup, so this cannot happen in the running process).
 fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> std::io::Result<()> {
@@ -154,6 +161,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         }
     }
     cmd.args(["--vr-cockpit-scale", &format!("{:.0}", settings.vr_cockpit_scale * 100.0)]);
+    cmd.args(["--aircraft", settings.aircraft.id()]);
     if let Some(key) = &state.career {
         cmd.args(["--career", key]);
     }
@@ -450,6 +458,14 @@ fn menu_ui(
                         }
                     }
                     section(ui, "Aircraft");
+                    let s = settings.bypass_change_detection();
+                    let mut picked = false;
+                    for (kind, f) in AIRCRAFT {
+                        picked |= facts(ui.radio_value(&mut s.aircraft, kind, kind.name()), f).changed();
+                    }
+                    if picked {
+                        settings.set_changed();
+                    }
                     facts(
                         ui.checkbox(&mut state.lockheed, "Realistic weapons"),
                         &["The real aircraft's limits", "2 weapon bays instead of 4", "No AIM-9 or AIM-120 missiles", "No carrier takeoffs or landings"],

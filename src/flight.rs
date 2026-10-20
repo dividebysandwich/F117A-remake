@@ -18,7 +18,7 @@ use crate::input::{Action, ActionEvent, FlightControls};
 use crate::settings::{SetupSet, Settings};
 use crate::world::{Theater, WorldPos, bevy_to_wu, wu_to_bevy};
 
-mod modern;
+pub mod modern;
 
 pub struct FlightPlugin;
 
@@ -39,8 +39,9 @@ impl Plugin for FlightPlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FlightSystems;
 
-/// Crash protection picks the "no crashes" landing skill (before the combat simulation starts).
+/// The flown aircraft's constants; crash protection picks the "no crashes" landing skill (before the combat simulation starts).
 fn apply_settings(settings: Res<Settings>, mut k: ResMut<FlightConstants>) {
+    *k = settings.aircraft.spec().flight();
     k.landing = if settings.no_crashes { 0 } else { 1 };
 }
 
@@ -71,7 +72,7 @@ impl SimTables {
     }
 }
 
-/// F-117A constants (F-15 SE II values in comments).
+/// Flight model constants of the flown aircraft (F-117A defaults, F-15 SE II values in comments).
 #[derive(Resource, Debug, Clone)]
 pub struct FlightConstants {
     /// Gravity term in the target speed: sinMul(pitch, 120) (F-15: 80).
@@ -93,6 +94,11 @@ pub struct FlightConstants {
     pub landing: u8,
     /// Starting fuel (lbs).
     pub fuel: f32,
+    /// Classic model: highest load factor (1/16 g) and roll rate factor.
+    pub max_gees: f32,
+    pub roll_rate: f32,
+    /// Modern model airframe.
+    pub aero: modern::Aero,
 }
 
 impl Default for FlightConstants {
@@ -108,6 +114,26 @@ impl Default for FlightConstants {
             fs: 15.0,
             landing: 1,
             fuel: 10000.0,
+            max_gees: 128.0,
+            roll_rate: 1.0,
+            aero: modern::Aero::F117,
+        }
+    }
+}
+
+impl FlightConstants {
+    /// F-16C: the F-15's gravity term, faster, 9 g and a quicker roll.
+    pub fn f16() -> Self {
+        Self {
+            gravity_term: 80.0,
+            thrust_to_knots: 9.5,
+            max_knots: 1150.0,
+            stall_knots: 110.0,
+            fuel_div: 750.0,
+            max_gees: 144.0,
+            roll_rate: 1.6,
+            aero: modern::Aero::F16,
+            ..default()
         }
     }
 }
@@ -378,7 +404,7 @@ fn step_one(
         // --- stick
         let r = stick_steps(controls.roll);
         let p = stick_steps(controls.pitch);
-        let mut roll_input = (r.abs() + 2.0) * r * 2.0;
+        let mut roll_input = (r.abs() + 2.0) * r * 2.0 * k.roll_rate;
         let mut pitch_input = if p < 0.0 { (6.0 * p / 2.0).trunc() } else { 6.0 * p };
         if !air && pitch_input < 0.0 && pitch_b <= 0.0 {
             pitch_input = 0.0;
@@ -427,9 +453,9 @@ fn step_one(
         if air {
             a.gees += pitch_input;
         }
-        if a.gees > 128.0 {
-            a.gees = 128.0;
-            pitch_input = (128.0 - table_g).clamp(0.0, pitch_input.max(0.0));
+        if a.gees > k.max_gees {
+            a.gees = k.max_gees;
+            pitch_input = (k.max_gees - table_g).clamp(0.0, pitch_input.max(0.0));
         }
 
         // --- speed, drag, stall, lift
@@ -437,7 +463,7 @@ fn step_one(
         let mut cs = k.stall_knots * ((a.altitude / 64.0).floor() + 1024.0) / 1024.0;
         s *= ((vz / 128.0).floor() + 1024.0) / 1024.0;
         s *= (100.0 - (a.fuel / 512.0).floor()) / 90.0;
-        s *= (128.0 - a.gees) / 128.0;
+        s *= (k.max_gees - a.gees) / k.max_gees;
         cs = ((a.gees.max(0.0) * 4.0).sqrt().floor() * cs / 8.0).abs();
         if a.flaps {
             cs -= cs / 4.0;
@@ -616,9 +642,12 @@ mod tests {
 
     /// Flies one model for `secs` (no theater: no runways, ground at 0), with the controls set
     /// by `ctl` every step. Returns the aircraft and the distance flown (wu).
-    fn fly(classic: bool, mut a: Aircraft, secs: f32, landing: u8, mut ctl: impl FnMut(&Aircraft, &mut FlightControls)) -> (Aircraft, f64) {
+    fn fly(classic: bool, a: Aircraft, secs: f32, landing: u8, ctl: impl FnMut(&Aircraft, &mut FlightControls)) -> (Aircraft, f64) {
+        fly_with(FlightConstants { landing, ..default() }, classic, a, secs, ctl)
+    }
+
+    fn fly_with(k: FlightConstants, classic: bool, mut a: Aircraft, secs: f32, mut ctl: impl FnMut(&Aircraft, &mut FlightControls)) -> (Aircraft, f64) {
         let tables = SimTables::load();
-        let k = FlightConstants { landing, ..default() };
         let mut pos = WorldPos(wu_to_bevy(0.0, 0.0, a.view_z() as f64));
         let mut tf = Transform::default();
         let mut c = FlightControls::default();
@@ -710,6 +739,49 @@ mod tests {
             let (a, _) = fly(classic, airborne(5000.0, 400.0, 70.0), 20.0, 1, |_, _| {});
             println!("{name}: 20 s hands off: alt {:.0} pitch {:.1} {:.0} kt", a.altitude, a.euler().1.to_degrees(), a.knots());
         }
+    }
+
+    /// F-16: Mach 1.2 class at sea level, past 1050 kt at 36000 ft (modern), 9 g and a fast roll.
+    #[test]
+    fn f16_performance() {
+        let k = FlightConstants::f16;
+        for classic in [false, true] {
+            let name = if classic { "classic" } else { "modern" };
+            let (a, _) = fly_with(k(), classic, level(airborne(1000.0, 500.0, 100.0)), 240.0, |_, _| {});
+            println!("F-16 {name}: max speed at 1000 ft: {:.0} kt", a.knots());
+            assert!((700.0..840.0).contains(&a.knots()), "{name} sea level {}", a.knots());
+            let (a, _) = fly_with(k(), classic, level(airborne(36000.0, 600.0, 100.0)), 400.0, |_, _| {});
+            println!("F-16 {name}: max speed at 36000 ft: {:.0} kt", a.knots());
+            // The classic model's altitude gain is the original's (about +27% at 36000 ft).
+            assert!(a.knots() > if classic { 900.0 } else { 1050.0 }, "{name} at altitude {}", a.knots());
+            let (a, _) = fly_with(k(), classic, airborne(10000.0, 400.0, 70.0), 1.0, |_, c| c.roll = 1.0);
+            let roll = a.euler().2.to_degrees();
+            println!("F-16 {name}: roll after 1 s full stick {roll:.0} deg");
+        }
+        // Modern: a full pull (wings level) at 500 kt goes well past the F-117A's 7 g towards the
+        // 9 g limit (the limiters close in on it gradually), rolls past 200 deg/s.
+        let a0 = airborne(10000.0, 500.0, 100.0);
+        let mut peak: f32 = 0.0;
+        fly_with(k(), false, a0, 5.0, |a, c| {
+            c.pitch = 1.0;
+            peak = peak.max(a.gees / 16.0);
+        });
+        println!("F-16 modern: peak load {peak:.1} g");
+        assert!((7.6..9.05).contains(&peak), "peak {peak}");
+        let mut turned = 0.0;
+        let mut last = 0.0;
+        fly_with(k(), false, airborne(10000.0, 400.0, 70.0), 1.5, |a, c| {
+            c.roll = 1.0;
+            let r = a.euler().2;
+            let mut d = r - last;
+            if d < -std::f32::consts::PI {
+                d += std::f32::consts::TAU;
+            }
+            turned += d;
+            last = r;
+        });
+        println!("F-16 modern: rolled {:.0} deg in 1.5 s", turned.to_degrees());
+        assert!(turned.to_degrees() > 300.0, "rolled {}", turned.to_degrees());
     }
 
     #[test]

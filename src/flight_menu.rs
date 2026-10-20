@@ -83,9 +83,14 @@ impl Item {
         }
     }
 
-    /// The cockpit size only matters in the headset.
+    /// The cockpit size only matters in the headset, the cockpit style only for aircraft with
+    /// two cockpits.
     fn enabled(self, s: &Settings) -> bool {
-        self != Item::CockpitSize || s.vr
+        match self {
+            Item::CockpitSize => s.vr,
+            Item::Cockpit => s.aircraft.spec().cockpits.len() > 1,
+            _ => true,
+        }
     }
 }
 

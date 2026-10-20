@@ -54,6 +54,8 @@ pub struct Settings {
     /// `--vr-cockpit-scale <percent>`: size of the cockpit (and the world) in the headset,
     /// 100% = `VR_COCKPIT_SCALE_BASE` of life size.
     pub vr_cockpit_scale: f32,
+    /// `--aircraft f117|f16`: the flown aircraft.
+    pub aircraft: crate::aircraft::AircraftKind,
 }
 
 /// Rig scale of the 100% VR cockpit size: 70% of life size looked most realistic in the headset.
@@ -111,6 +113,11 @@ fn get(args: &[String], f: &str) -> Option<String> {
 }
 
 impl Settings {
+    /// The cockpit flown: the classic cockpit only where the aircraft has one.
+    pub fn cockpit(&self) -> (crate::cockpit3d::layout::PanelStyle, &'static str) {
+        self.aircraft.spec().cockpit(self.classic_cockpit)
+    }
+
     /// Scale of the VR rig (head and hand offsets) for the chosen cockpit size.
     pub fn vr_rig_scale(&self) -> f32 {
         self.vr_cockpit_scale * VR_COCKPIT_SCALE_BASE
@@ -140,6 +147,7 @@ impl Settings {
             vr_cockpit_scale: get(&a, "--vr-cockpit-scale")
                 .and_then(|s| s.parse::<f32>().ok())
                 .map_or(DEFAULT_VR_COCKPIT_SCALE, |p| (p / 100.0).clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end())),
+            aircraft: get(&a, "--aircraft").and_then(|s| crate::aircraft::AircraftKind::parse(&s)).unwrap_or_default(),
         }
     }
 }

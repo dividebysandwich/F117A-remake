@@ -19,6 +19,10 @@ with 650 rounds, chaff, flares, decoys, an ECM jammer and an IR jammer.
 6. [Radar, detection and evasion](#6-radar-detection-and-evasion)
 7. [Keyboard shortcuts](#7-keyboard-shortcuts)
 8. [Aircraft, air defences and ships](#8-aircraft-air-defences-and-ships)
+9. [Mission planner](#9-mission-planner)
+10. [Debrief and career](#10-debrief-and-career)
+11. [Drone defense (Ukraine)](#11-drone-defense-ukraine)
+12. [Ejection and rescue](#12-ejection-and-rescue)
 
 ---
 
@@ -35,7 +39,7 @@ the *Cockpit* switch).
 | **Theater** | Libya (1986), Persian Gulf (1984), North Cape, Central Europe, Vietnam, Middle East, Desert Storm, Cuba, Korea, Ukraine (2026). |
 | **Opponents** | Green, Regular, Veteran, Elite. Sets the skill of enemy pilots and SAM crews; Veteran and Elite add ships and patrols. Higher levels also increase radar sensitivity. |
 | **Situation** | *Cold War*: covert peacetime operation, fewer enemy aircraft. *Limited War*: regional conflict, air defences on alert. *Conventional War*: full-scale war, all enemy forces active. The briefing states the exact rules of engagement. |
-| **Mission** | *Strike*: ground target (destroy, photograph or reach), with a primary and a secondary objective. *Air to air*: intercept an enemy aircraft. *Strike training* and *Air training*: practice missions. |
+| **Mission** | *Strike*: ground target (destroy, photograph or reach), with a primary and a secondary objective. *Air to air*: intercept an enemy aircraft. *Strike training* and *Air training*: practice missions. *Drone defense* (Ukraine only): stop a wave of attack drones, then bomb their launch site (chapter 11). |
 | **Aircraft** | *Realistic weapons*: two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. |
 | **Weather** | Random (based on the theater's climate), Clear, Scattered, Broken, Overcast, Storm. *Random cover* off: a slider sets the coverage of the main cloud layer. Clouds block optical seekers and visual identification for both sides; radar sees through clouds. |
 | **Classic / Modern** | *Shaders*: flat original shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: original panel or modern panel (this manual describes the modern panel). *Flight model*: original flight model, or an aerodynamic model with fly-by-wire: the stick commands g and roll rate, and with the stick released the aircraft holds its flight path. |
@@ -44,11 +48,15 @@ The **mission summary** lists theater, situation, mission type, opponents, time 
 departure time, weather, visibility and fuel. The **briefing** below it lists the objectives, the
 departure and landing bases, the weather, the armament and intelligence notes.
 
+The menu remembers its choices and switches for the next start.
+
 | Button | Function |
 |---|---|
 | QUIT | Exit to the desktop. |
 | NEW MISSION | Generate a different mission with the same options. |
 | CONTROLS | Open the input mapping (chapter 2). |
+| CAREER | Pilot records and the tour of duty (chapter 10). |
+| PLAN ROUTE | The mission planner (chapter 9). |
 | FLY IN VR | Restart the game in the VR headset with this mission (requires an OpenXR runtime). |
 | FLY | Start the mission. |
 
@@ -435,10 +443,11 @@ close range.
 |---|---|---|
 | <img src="images/units/ac_mig17.png" width="200"> | **MiG-17 Fresco** | Older fighter. Pulse radar, 50 km. Armament: AA-2 (IR, 14 km) in DS; guns only in CU and KO. |
 | <img src="images/units/ac_mig21.png" width="200"> | **MiG-21 Fishbed** | Light fighter. Pulse radar, 40 km. Armament: AA-2 (IR, 14 km); AA-6 (IR, 50 km) in DS. Theaters: CU, KO, DS. |
-| <img src="images/units/ac_mig23.png" width="200"> | **MiG-23 Flogger** | Fighter, the most common type. Pulse radar, 50 km. Armament: AA-2 (IR, 14 km) in CU, KO, DS, LB, ME; AA-8 (IR rear-aspect, 12 km) in CE, UA; AA-6 (radar or IR, 50 km) in VN. |
-| <img src="images/units/ac_mig25.png" width="200"> | **MiG-25 Foxbat / MiG-31 Foxhound** | Interceptors (same model). MiG-25: pulse radar 70 km, AA-6 (semi-active radar or IR, 50 km); CE, LB, NC, UA. MiG-31: Doppler radar 100 km, AA-9 (semi-active radar, 82 km) in CE, NC, UA; AA-6 in ME. |
-| <img src="images/units/ac_mig29.png" width="200"> | **MiG-29 Fulcrum** | Fighter. Doppler radar, 80 km. Armament: AA-10 (active radar, 64 km) in CE, NC, UA; AA-10 (IR rear-aspect, 64 km) in CU, KO, DS, LB, ME. |
+| <img src="images/units/ac_mig23.png" width="200"> | **MiG-23 Flogger** | Fighter, the most common type. Pulse radar, 50 km. Armament: AA-2 (IR, 14 km) in CU, KO, DS, LB, ME; AA-8 (IR rear-aspect, 12 km) in CE; AA-6 (radar or IR, 50 km) in VN. |
+| <img src="images/units/ac_mig25.png" width="200"> | **MiG-25 Foxbat / MiG-31 Foxhound** | Interceptors (same model). MiG-25: pulse radar 70 km, AA-6 (semi-active radar or IR, 50 km); CE, LB, NC. MiG-31: Doppler radar 100 km, AA-9 (semi-active radar, 82 km) in CE, NC, UA; AA-6 in ME, UA. |
+| <img src="images/units/ac_mig29.png" width="200"> | **MiG-29 Fulcrum** | Fighter. Doppler radar, 80 km. Armament: AA-10 (active radar, 64 km) in CE, NC; AA-10 (IR rear-aspect, 64 km) in CU, KO, DS, LB, ME. |
 | <img src="images/units/ac_su27.png" width="200"> | **Su-27 Flanker** | Fighter. Doppler radar, 80 km. Armament: AA-10 (IR rear-aspect, 64 km). Theaters: CE, KO, NC, UA. |
+| <img src="images/units/ac_su27.png" width="200"> | **Su-34 Fullback / Su-35 Flanker-E** | Ukraine's strike fighter and fighter (drawn with the Su-27 model). Su-34: Doppler radar 80 km, AA-8 (IR rear-aspect, 12 km). Su-35: Doppler radar 100 km, AA-10 (active radar, 64 km). Theater: UA. |
 | <img src="images/units/ac_yak38.png" width="200"> | **Yak-38 Forger** | Carrier-based fighter. Pulse radar, 50 km. Armament: AA-2 (IR, 14 km) in VN; AA-8 (IR rear-aspect, 12 km) in NC. |
 | <img src="images/units/ac_mirage_f1.png" width="200"> | **Mirage F-1** | Fighter (Iraq). Doppler radar, 100 km. Armament: AA-6 (semi-active radar, 50 km). Theater: DS. |
 | <img src="images/units/ac_f5.png" width="200"> | **F-5 Tiger** | Light fighter. Pulse radar, 40 km. Armament: AA-2 (IR, 14 km) in ME; AIM-7 (semi-active radar, 44 km) in PG. |
@@ -446,6 +455,9 @@ close range.
 | <img src="images/units/ac_f14.png" width="200"> | **F-14 Tomcat** | Fighter (Iran). Doppler radar, 80 km. Armament: AIM-9 (IR rear-aspect, 12 km). Theater: PG. |
 | <img src="images/units/ac_il76.png" width="200"> | **IL-76 Mainstay** | Airborne early warning aircraft. Doppler radar, 200 km, sees all around. Armament listed: AA-10 (active radar, 64 km). Theaters: CE, NC, UA. |
 | <img src="images/units/ac_an72.png" width="200"> | **An-72 Coaler** | Transport. No radar, unarmed. All theaters; a typical air-to-air mission target. |
+| | **Mi-24 Hind** | Attack helicopter. Flies low, hovers, guns a low and slow player at close range; hunts a downed pilot (chapter 12). |
+| | **UH-60 Black Hawk** | Friendly rescue helicopter (chapter 12). |
+| | **Geran-2 / Geran-3** | Attack drones (Ukraine). Geran-2: propeller, about 185 km/h, low. Geran-3: jet, about 600 km/h, higher. No radar, unarmed: they fly straight at their target and dive into it. Shown on the TAC display as open deltas. |
 | <img src="images/units/ac_f18.png" width="200"> | **F/A-18 Hornet** | Friendly fighter. No threat. LB, ME, NC, PG, CE, UA. |
 | <img src="images/units/ac_f15.png" width="200"> | **F-15 Eagle** | Friendly fighter. No threat. DS. |
 | <img src="images/units/ac_a10.png" width="200"> | **A-10 Thunderbolt II** | Friendly ground attack aircraft. No threat. DS. |
@@ -465,9 +477,13 @@ determines radar and missile:
 | **SA-5** | Pulse | 350 | Radar command | 150 | CE, CU, KO, DS, LB, ME, NC, VN |
 | **SA-8B** | Pulse | 125 | Semi-active radar | 65 | KO |
 | **SA-10** | Doppler | 320 | Active radar | 125 | CE, KO, NC, UA |
-| **SA-11** | Pulse | 200 | Semi-active radar | 100 | CE, UA |
-| **SA-12** | Doppler | 250 | Active radar | 125 | CE, KO, UA |
-| **SA-13** | Pulse | 125 | IR (rear-aspect) | 65 | CE, UA |
+| **SA-11** | Pulse | 200 | Semi-active radar | 100 | CE |
+| **SA-12** | Doppler | 250 | Active radar | 125 | CE, KO |
+| **SA-13** | Pulse | 125 | IR (rear-aspect) | 65 | CE |
+| **SA-21** (S-400) | Doppler | 400 | Active radar | 200 | UA |
+| **SA-17** (Buk-M2) | Doppler | 250 | Semi-active radar | 110 | UA |
+| **SA-22** (Pantsir) | Doppler | 130 | Semi-active radar | 60 | UA |
+| **SA-15** (Tor-M2) | Doppler | 125 | Semi-active radar | 50 | UA |
 | **Hawk** | Doppler | 175 | Semi-active radar | 125 | PG |
 | **Rapier** | Pulse | 75 | Semi-active radar | 65 | PG |
 | **Tiger** | Pulse | 65 | Radar command | 30 | PG |
@@ -493,3 +509,87 @@ determines radar and missile:
 
 Only the missile boats and patrol boats carry air defences. The other ships have no air defences in
 the game.
+
+## 9. Mission planner
+
+*Plan route* in the menu opens the theater map with the mission's route. The targets and the
+landing base stay where they are; between them you add, move and remove navigation points:
+
+| Action | |
+|---|---|
+| Click a leg | Add a point there (up to 16 points). |
+| Drag a point | Move it. |
+| Right click a point | Remove it. |
+| Drag the map, mouse wheel | Pan, zoom. |
+| RESET | Back to the briefed route. |
+
+Each SAM site shows its missile range as a thin red circle and, filled, where its radar would
+detect you, flown at the selected profile (*Low* 500 ft, *Medium* 5000 ft or *High* 20,000 ft, at
+480 kt with the bay doors shut and wings level; banking, opening the doors, the ECM jammer and
+speed make the circles larger). Sites that are off the air are drawn faint. The panel lists the
+legs with distance and time and how many km of the route a radar would see. In drone defense
+missions the drones' starting points are marked.
+
+In flight the INS and the autopilot follow the planned route. When a target is done, the next
+waypoint is the point after it, so the planned way home is flown as well. The planned route also
+goes along with *Fly in VR*.
+
+## 10. Debrief and career
+
+After every flight the **debrief** shows the result, the statistics, the points and a rating, and
+a timeline of the mission (kills, radar and visual identifications, objectives). Points: primary
+objective 100, secondary 50, each aircraft or ground target 10 (+5 for an aircraft shot down
+before it saw you), each drone 15; −5 for each identification, −10 for each missile hit; landing
++25, crash −50, captured −100. The sum is multiplied by the difficulty (opponents and situation;
+training missions count half).
+
+**Career.** *Career* in the menu keeps pilot records: enlist a pilot by name, then start a
+**tour of duty**, 12 sorties in the theater, situation and opponents chosen in the menu. The menu
+then shows the tour's next sortie; changing an option leaves career mode (*Fly next sortie* in
+the career window returns to it). In a tour:
+
+- What you destroy stays destroyed for the rest of the tour, and new targets are never ones you
+  already hit.
+- Points add up to promotions: First Lieutenant 300, Captain 800, Major 1800, Lieutenant Colonel
+  3500, Colonel 6000. A finished tour earns 200 extra points.
+- A mission can earn the Air Medal (150 points), Distinguished Flying Cross (300), Silver Star
+  (500), Air Force Cross (800) or Medal of Honor (1200); hits taken earn the Purple Heart.
+- A crash or failed ejection ends the career (killed in action); so does being captured after an
+  ejection (prisoner of war).
+
+Single missions from the menu do not count for any pilot.
+
+## 11. Drone defense (Ukraine)
+
+Russian Geran attack drones are on their way to a Ukrainian city or the South Ukraine nuclear power
+plant. They start already in the air and arrive one after another, about 9 to 25 minutes after
+take-off. You take off from the nearest airfield with air-to-air missiles, the gun and two
+Paveways (with *Realistic weapons*: the gun, the Paveways and extra fuel).
+
+- The **primary objective** is met when every drone is down or through and no more than the
+  briefed number got through. A drone that hits the nuclear power plant fails the mission.
+- The **secondary objective** is the launch site the drones came from.
+- The early warning network shows every drone on the TAC display (open deltas) and on the map.
+  They have no radar and do not fight back, but the Geran-2 is small, slow and low: slow down
+  behind it and use the gun or a Sidewinder.
+- Opponents and situation set the size of the wave (4 to 12) and the share of the faster jet
+  Geran-3.
+
+In Ukraine strike missions a few drones may also cross the theater; shooting them down earns points.
+
+## 12. Ejection and rescue
+
+After a good ejection over enemy territory (Shift-F10, or the ejection handle in the cockpit) the
+mission goes on from the ground. The view follows the pilot under the parachute and on the ground,
+and a panel shows the rescue's progress:
+
+- A **UH-60** comes from the nearest friendly airfield's alert area. Close in it cannot find you
+  without a **signal flare** (the flare key, 1): fire one when it is near (you have three).
+- **Mi-24 Hinds** from the nearest enemy airfield search the area. A flare also shows them where you
+  are, and a Hind passing close may spot you. If one gets to you first you are captured.
+- Wait too long (15 minutes against green opponents, 9 against elite ones) and you are captured.
+- Time acceleration (Shift-Z) runs four times faster while you wait.
+
+Picked up: the mission ends like a parachute landing. Over friendly territory or the sea the
+mission ends when the parachute lands, as before.
+

@@ -428,6 +428,13 @@ mod tests {
             assert_eq!(has("stick"), 1, "{name}: stick");
             assert_eq!(has("throttle"), 1, "{name}: throttle");
             assert!(extras.iter().any(|x| x["anchor"] == "throttle_full"), "{name}: throttle_full anchor");
+            // The throttle travels the whole rail: idle (its origin) to full well apart.
+            let pos = |k: &str, v: serde_json::Value| {
+                let n = nodes.iter().find(|n| n["extras"][k] == v).unwrap_or_else(|| panic!("{name}: no {k} node"));
+                n["translation"][2].as_f64().unwrap_or(0.0)
+            };
+            let travel = (pos("throttle", true.into()) - pos("anchor", "throttle_full".into())).abs();
+            assert!(travel > 0.15, "{name}: throttle travel {travel} m");
             assert!(extras.iter().any(|x| x["kind"] == "eject"), "{name}: ejection handle");
             assert!(extras.iter().any(|x| x["control"] == "Action(Menu)"), "{name}: MENU button");
             let keys: Vec<String> = atlas_faces(&PanelLayout::for_style(style)).iter().map(|(f, _)| format!("{f:?}")).collect();

@@ -673,54 +673,61 @@ fn simulate(
     order.sort_by(|a, b| a.0.total_cmp(&b.0));
 
     let n = order.len();
-    if p.batch.is_none() {
-        let mesh = meshes.add(Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default()));
-        let e = commands
-            .spawn((
-                SimObject,
-                Mesh3d(mesh.clone()),
-                MeshMaterial3d(p.material.clone().unwrap()),
-                WorldPos(anchor),
-                Transform::default(),
-                Visibility::Hidden,
-                NoFrustumCulling,
-                bevy::light::NotShadowCaster,
-            ))
-            .id();
-        p.batch = Some((e, mesh));
+    // The batch mesh is created with its first particles (an empty mesh upsets the render
+    // world's mesh allocator) and left alone while there is nothing to draw.
+    let mut drawn = false;
+    if n > 0 {
+        let mut pos = Vec::with_capacity(4 * n);
+        let mut corner = Vec::with_capacity(4 * n);
+        let mut colour = Vec::with_capacity(4 * n);
+        let mut look = Vec::with_capacity(4 * n);
+        let mut idx = Vec::with_capacity(6 * n);
+        for &(_, i) in &order {
+            let f = &p.puffs[i];
+            let t = f.age / f.life;
+            let size = f.size.0 + (f.size.1 - f.size.0) * (1.0 - (1.0 - t).powi(3));
+            let (rgb, a, glow) = f.colour(t);
+            let local = (f.pos - anchor).as_vec3();
+            let k = pos.len() as u32;
+            for (cx, cy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                pos.push(local);
+                corner.push([cx, cy, size, f.rot]);
+                colour.push([rgb.x, rgb.y, rgb.z, a]);
+                look.push([glow, f.seed]);
+            }
+            idx.extend([k, k + 1, k + 2, k, k + 2, k + 3]);
+        }
+        let fill = |m: &mut Mesh| {
+            m.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
+            m.insert_attribute(ATTRIBUTE_CORNER, corner);
+            m.insert_attribute(ATTRIBUTE_COLOUR, colour);
+            m.insert_attribute(ATTRIBUTE_LOOK, look);
+            m.insert_indices(Indices::U32(idx));
+        };
+        match &p.batch {
+            Some((_, mesh)) => drawn = meshes.get_mut(mesh).map(|mut m| fill(&mut m)).is_some(),
+            None => {
+                let mut m = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+                fill(&mut m);
+                let mesh = meshes.add(m);
+                let e = commands
+                    .spawn((
+                        SimObject,
+                        Mesh3d(mesh.clone()),
+                        MeshMaterial3d(p.material.clone().unwrap()),
+                        WorldPos(anchor),
+                        Transform::default(),
+                        Visibility::Inherited,
+                        NoFrustumCulling,
+                        bevy::light::NotShadowCaster,
+                    ))
+                    .id();
+                p.batch = Some((e, mesh));
+                return;
+            }
+        }
     }
-    let Some((batch, mesh)) = p.batch.clone() else { return };
-    let drawn = n > 0
-        && meshes
-            .get_mut(&mesh)
-            .map(|mut m| {
-                let mut pos = Vec::with_capacity(4 * n);
-                let mut corner = Vec::with_capacity(4 * n);
-                let mut colour = Vec::with_capacity(4 * n);
-                let mut look = Vec::with_capacity(4 * n);
-                let mut idx = Vec::with_capacity(6 * n);
-                for &(_, i) in &order {
-                    let f = &p.puffs[i];
-                    let t = f.age / f.life;
-                    let size = f.size.0 + (f.size.1 - f.size.0) * (1.0 - (1.0 - t).powi(3));
-                    let (rgb, a, glow) = f.colour(t);
-                    let local = (f.pos - anchor).as_vec3();
-                    let k = pos.len() as u32;
-                    for (cx, cy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
-                        pos.push(local);
-                        corner.push([cx, cy, size, f.rot]);
-                        colour.push([rgb.x, rgb.y, rgb.z, a]);
-                        look.push([glow, f.seed]);
-                    }
-                    idx.extend([k, k + 1, k + 2, k, k + 2, k + 3]);
-                }
-                m.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
-                m.insert_attribute(ATTRIBUTE_CORNER, corner);
-                m.insert_attribute(ATTRIBUTE_COLOUR, colour);
-                m.insert_attribute(ATTRIBUTE_LOOK, look);
-                m.insert_indices(Indices::U32(idx));
-            })
-            .is_some();
+    let Some((batch, _)) = p.batch else { return };
     if let Ok((mut pos, _, mut v)) = q.get_mut(batch) {
         pos.0 = anchor;
         v.set_if_neq(if drawn { Visibility::Inherited } else { Visibility::Hidden });

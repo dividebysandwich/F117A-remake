@@ -144,3 +144,13 @@ the desktop. `--script` replays timed actions, `--log-flight` / `--log-sim`
 print the state, `--time-scale` speeds runs up, and `--diag --novsync` shows the frame rate.
 Script steps `yaw=`, `throttle=` and `press=Gear` drive the rudder, an absolute throttle and the
 3D cockpit's controls; `--head-look yaw,pitch` turns the 3D cockpit view (degrees).
+
+### Testing on Steam Frame
+`tools/frame.sh` cross-compiles the aarch64 build on an x86-64 Linux PC, copies it to the Frame
+over ssh (host `frame` in `~/.ssh/config`) and starts a VR flight there; Ctrl-C stops it and
+copies the log back. See the script for its options and setup. Environment variables for
+measuring: `SM89_PROFILE=1` logs frame, GPU pass and per-system CPU times every 10 seconds,
+`SM89_MSAA=off|2|4|8` overrides anti-aliasing, `SM89_XR_PIPELINED=1` turns on pipelined
+rendering in VR and `SM89_GPU_PREPROCESS=on|off` overrides GPU mesh preprocessing (off in VR).
+On the Frame, SteamVR's per-app GPU time (printed at the end of each run) is the reliable GPU
+measurement.

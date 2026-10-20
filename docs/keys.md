@@ -3,6 +3,9 @@
 Overlay labels like `<`, `>`
 refer to the unshifted keys `,` and `.` on a US keyboard ("Shift >" = Shift + `.`).
 To be cross-checked against VGAME's keyboard dispatch table (M2).
+Keys are bound by position on the keyboard, so a binding works on any layout. The tables name the
+keys as on a US keyboard; the CONTROLS dialog shows them as your layout prints them (the key at
+the position of QWERTY's W reads Z on AZERTY).
 These are the defaults: the menu's CONTROLS dialog rebinds every key except the stick keys.
 
 | Group | Action | Key |

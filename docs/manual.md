@@ -261,7 +261,7 @@ an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
 | Cockpit | Modern or classic panel (F-117A only). |
 | HUD | Modern (F-16 style) or classic HUD. |
 | Avionics | Modern (F-16 style MFD formats, chapter 4.1) or classic MFD pages. |
-| Cockpit size | VR only: size of the cockpit in the headset (70–150 %, default 100 % = 70 % of life size); left / right or the < > halves. |
+| Cockpit size | VR only: size of the cockpit in the headset (70–150 %; at the default 100 % the F-117A's cockpit looks 60 % and the F-16C's 87 % of life size, which felt right); left / right or the < > halves. |
 | Resume | Closes the menu (as does Esc again). |
 | End mission | Ends the flight and goes to the debrief. |
 

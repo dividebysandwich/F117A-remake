@@ -47,6 +47,9 @@ pub struct AircraftSpec {
     /// Cockpit models (glb stem under `models/`): one, or the modern and the classic one.
     pub cockpits: &'static [(PanelStyle, &'static str)],
     pub shadow: Shadow,
+    /// VR cockpit size at 100% (rig scale: the fraction of life size the cockpit looks in the
+    /// headset), what felt right in each.
+    pub vr_scale: f32,
     /// Modern HUD scale: canvas pixels per unit of the tangent plane (`hud::modern`), set by
     /// the combiner's size.
     pub hud_scale: f32,
@@ -87,6 +90,7 @@ static F117: AircraftSpec = AircraftSpec {
     cockpit_view: None,
     cockpits: &[(PanelStyle::Modern, "cockpit_modern"), (PanelStyle::Classic, "cockpit_classic")],
     shadow: Shadow::Model(17),
+    vr_scale: 0.85 * 0.7,
     hud_scale: crate::hud::modern::SCALE,
     bomb_bay: true,
     flight: FlightConstants::default,
@@ -103,6 +107,7 @@ static F16: AircraftSpec = AircraftSpec {
     shadow: Shadow::Flattened,
     // The symbology (about 920 x 470 canvas pixels) inside the combiner (x +-0.1675, z -0.12 ..
     // 0.095 at 0.70 m in front of the eye, tools/models/build_cockpit_f16.py).
+    vr_scale: 1.25 * 0.7,
     hud_scale: 2080.0,
     bomb_bay: false,
     flight: FlightConstants::f16,

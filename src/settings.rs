@@ -55,14 +55,12 @@ pub struct Settings {
     /// `--no-crashes`: crash protection (auto pull-up, no ground crashes, collisions bounce).
     pub no_crashes: bool,
     /// `--vr-cockpit-scale <percent>`: size of the cockpit (and the world) in the headset,
-    /// 100% = `VR_COCKPIT_SCALE_BASE` of life size.
+    /// 100% = the flown aircraft's `AircraftSpec::vr_scale`.
     pub vr_cockpit_scale: f32,
     /// `--aircraft f117|f16`: the flown aircraft.
     pub aircraft: crate::aircraft::AircraftKind,
 }
 
-/// Rig scale of the 100% VR cockpit size: 70% of life size looked most realistic in the headset.
-pub const VR_COCKPIT_SCALE_BASE: f32 = 0.7;
 /// Default VR cockpit size.
 pub const DEFAULT_VR_COCKPIT_SCALE: f32 = 1.0;
 /// Range of the VR cockpit size.
@@ -129,7 +127,7 @@ impl Settings {
 
     /// Scale of the VR rig (head and hand offsets) for the chosen cockpit size.
     pub fn vr_rig_scale(&self) -> f32 {
-        self.vr_cockpit_scale * VR_COCKPIT_SCALE_BASE
+        self.vr_cockpit_scale * self.aircraft.spec().vr_scale
     }
 
     pub fn from_args() -> Self {

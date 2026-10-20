@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use stealth_mission::{MissionKind, Sky};
 
 use crate::menu::MenuState;
-use crate::settings::{DEFAULT_VR_COCKPIT_SCALE, Settings, VR_COCKPIT_SCALE_BASE, VR_COCKPIT_SCALE_RANGE};
+use crate::settings::{DEFAULT_VR_COCKPIT_SCALE, Settings, VR_COCKPIT_SCALE_RANGE};
 
 /// `<config dir>/stealth-mission-89/<name>`.
 pub fn config_path(name: &str) -> Option<PathBuf> {
@@ -52,13 +52,13 @@ pub struct Prefs {
     pub classic_flight: bool,
     pub vr_cockpit_scale: f32,
     pub aircraft: crate::aircraft::AircraftKind,
-    /// 0: `vr_cockpit_scale` is relative to life size (before the 70% size became 100%),
-    /// 1: relative to `VR_COCKPIT_SCALE_BASE`.
+    /// 0, 1: `vr_cockpit_scale` is relative to life size or to one size for every aircraft,
+    /// 2: relative to the aircraft's own (`AircraftSpec::vr_scale`).
     #[serde(default)]
     pub vr_scale_version: u32,
 }
 
-const VR_SCALE_VERSION: u32 = 1;
+const VR_SCALE_VERSION: u32 = 2;
 
 impl Default for Prefs {
     fn default() -> Self {
@@ -95,10 +95,10 @@ impl Prefs {
         p
     }
 
-    /// Converts a VR cockpit size saved relative to life size.
+    /// A VR cockpit size saved before the sizes were the aircraft's own goes back to 100%.
     fn migrate(&mut self) {
-        if self.vr_scale_version == 0 {
-            self.vr_cockpit_scale /= VR_COCKPIT_SCALE_BASE;
+        if self.vr_scale_version < VR_SCALE_VERSION {
+            self.vr_cockpit_scale = DEFAULT_VR_COCKPIT_SCALE;
             self.vr_scale_version = VR_SCALE_VERSION;
         }
     }
@@ -185,13 +185,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn old_vr_cockpit_size_is_rebased() {
-        let mut p: Prefs = serde_json::from_str(r#"{"vr_cockpit_scale": 0.7}"#).unwrap();
+    fn old_vr_cockpit_size_is_reset() {
+        for old in [r#"{"vr_cockpit_scale": 0.7}"#, r#"{"vr_cockpit_scale": 1.25, "vr_scale_version": 1}"#] {
+            let mut p: Prefs = serde_json::from_str(old).unwrap();
+            p.migrate();
+            assert!((p.vr_cockpit_scale - 1.0).abs() < 1e-6);
+        }
+        let mut p: Prefs = serde_json::from_str(r#"{"vr_cockpit_scale": 0.9, "vr_scale_version": 2}"#).unwrap();
         p.migrate();
-        assert!((p.vr_cockpit_scale - 1.0).abs() < 1e-6);
+        assert!((p.vr_cockpit_scale - 0.9).abs() < 1e-6);
         let mut q: Prefs = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
         q.migrate();
-        assert!((q.vr_cockpit_scale - 1.0).abs() < 1e-6);
+        assert!((q.vr_cockpit_scale - 0.9).abs() < 1e-6, "kept through a save");
         assert_eq!(Prefs::default().vr_scale_version, VR_SCALE_VERSION);
     }
 }

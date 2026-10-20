@@ -563,7 +563,7 @@ fn menu_ui(
                     let slider = egui::Slider::new(&mut pct, (*range.start() * 100.0) as u32..=(*range.end() * 100.0) as u32).suffix("%").text("cockpit scale");
                     if facts(
                         ui.add_enabled(vr.0 || s.vr, slider),
-                        &["Size of the cockpit in the headset", "100% (default): 70% of life size", "Smaller puts more of the panel in view"],
+                        &["Size of the cockpit in the headset", "100% (default): the size that suits the aircraft", "Smaller puts more of the panel in view"],
                     )
                     .changed()
                     {

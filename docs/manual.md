@@ -233,7 +233,7 @@ The attitude indicator (ball) shows pitch and bank. The buttons below it:
 | Button | Key | Function |
 |---|---|---|
 | NVG | F4 | Night vision goggles. |
-| ILS | F9 | Instrument landing system; shows the landing guidance on the right MFD. |
+| ILS | F9 | Instrument landing system: the landing guidance on the right MFD and, approaching a runway, the F-16-style ILS steering bars on the HUD (*ILS* at the bottom left): the localizer bar (upright) and glideslope bar (level) are referenced to the flight path marker; fly the marker to where they cross to be on the centreline and the 3° glide path. Each bar stops at full scale (2.5° off the centreline, 0.7° off the glide path). |
 | TIME | Shift Z / Shift X | Time acceleration on/off. Acceleration ends automatically when a radar detects the aircraft or a weapon is released. |
 | DCLT | V | HUD declutter. |
 | VOL | Alt V | Sound level. |

@@ -237,19 +237,7 @@ struct IlsView {
 /// The nearest runway end the aircraft is approaching (ahead, within 25 km and the approach
 /// cone): the camera looks at the runway centreline abeam its PAPI, as wide as the PAPI needs.
 fn ils_view(sites: &[crate::scenery::PapiSite], eye: bevy::math::DVec3, heading: f32) -> Option<IlsView> {
-    let ac = bevy::math::DVec2::new(eye.x, -eye.z);
-    let forward = bevy::math::DVec2::new(heading.sin() as f64, heading.cos() as f64);
-    let site = sites
-        .iter()
-        .filter_map(|s| {
-            let rel = ac - s.aim;
-            let along = rel.dot(s.toward);
-            let lateral = rel.dot(s.toward.perp()).abs();
-            let ok = (100.0..25_000.0).contains(&along) && lateral < along * 0.4 + 400.0 && forward.dot(-s.toward) > 0.5;
-            ok.then_some((along, s))
-        })
-        .min_by(|a, b| a.0.total_cmp(&b.0))?
-        .1;
+    let (site, _, _) = crate::scenery::approach_to(sites, bevy::math::DVec2::new(eye.x, -eye.z), heading)?;
     let aim = bevy::math::DVec3::new(site.aim.x, 1.0, -site.aim.y);
     let d = aim - eye;
     let range = d.length();

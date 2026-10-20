@@ -146,6 +146,9 @@ fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8,
         }
     }
     weapon_cues(c, f, col);
+    if let Some((loc, gs)) = f.ils {
+        ils_cross(c, f, loc, gs, col);
+    }
     // HUD message at y=20, centred.
     if let Some(m) = &f.message {
         let s = upper(m);
@@ -183,6 +186,16 @@ fn diamond(c: &mut Canvas, x: i32, y: i32, col: u8) {
     c.line(x + 4, y, x, y + 4, col);
     c.line(x, y + 4, x - 4, y, col);
     c.line(x - 4, y, x, y - 4, col);
+}
+
+/// ILS steering bars (as the modern HUD's): the localizer bar upright, the glideslope bar level,
+/// referenced to the flight path marker, 12 pixels out at full scale.
+fn ils_cross(c: &mut Canvas, f: &HudFrame, loc: f32, gs: f32, col: u8) {
+    let (fx, fy) = (CX, CY + (f.fpm >> 6));
+    let x = fx - ((loc / 2.5).clamp(-1.0, 1.0) * 12.0).round() as i32;
+    let y = fy + ((gs / 0.7).clamp(-1.0, 1.0) * 12.0).round() as i32;
+    c.line(x, fy - 11, x, fy + 11, col);
+    c.line(fx - 14, y, fx + 14, y, col);
 }
 
 /// Targeting cues: tracking box and lock oval, CCIP bullseye with

@@ -142,6 +142,7 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     // Lower left: mode, stores, gun.
     let bomb = f.cues.bomb.filter(|_| st.mode == HudMode::Gnd);
     let mode = match st.mode {
+        HudMode::Nav if f.ils.is_some() => "ILS",
         HudMode::Nav => "NAV",
         HudMode::Air => "AA",
         HudMode::Gnd => match bomb {
@@ -184,6 +185,9 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
         HudMode::Gnd => air_to_ground(c, f, fpm, down),
     }
     gun_sight(c, f);
+    if let Some((loc, gs)) = f.ils {
+        ils_bars(c, f.scale, fpm, h, down, loc, gs);
+    }
 
     // Messages and status words.
     if let Some(m) = &f.message {
@@ -410,6 +414,27 @@ fn air_to_air(c: &mut Canvas, f: &HudFrame) {
         }
         launch_zone(c, f);
     }
+}
+
+/// ILS deviations at full scale (degrees): localizer and glideslope.
+const ILS_FULL_SCALE: (f32, f32) = (2.5, 0.7);
+/// Bar offset at full scale and bar half length (units of the tangent plane).
+const ILS_DEFLECTION: f32 = 0.06;
+const ILS_BAR: f32 = 0.055;
+
+/// ILS steering, as the F-16's: the localizer deviation bar (upright) and the glideslope
+/// deviation bar (level), referenced to the flight path marker. Fly the marker to where they
+/// cross; each stops at full-scale deflection.
+fn ils_bars(c: &mut Canvas, scale: f32, fpm: Vec2, h: Vec2, down: Vec2, loc: f32, gs: f32) {
+    let full = ILS_DEFLECTION * scale;
+    let half = ILS_BAR * scale;
+    // Right of the centreline: the course is left. Above the glide path: it is below.
+    let x = -(loc / ILS_FULL_SCALE.0).clamp(-1.0, 1.0) * full;
+    let y = (gs / ILS_FULL_SCALE.1).clamp(-1.0, 1.0) * full;
+    let lb = fpm + h * x;
+    c.stroke(lb - down * half, lb + down * half, PEN, INK);
+    let gb = fpm + down * y;
+    c.stroke(gb - h * half, gb + h * half, PEN, INK);
 }
 
 /// Gun selected: the pipper (where the target has to be for the rounds fired now to hit it),

@@ -385,6 +385,9 @@ pub struct HudFrame {
     /// Lock range of the selected weapon (km), range to the locked target (km).
     pub weapon_range_km: Option<f32>,
     pub target_range_km: Option<f32>,
+    /// ILS on and a runway end ahead: the deviations from its approach (degrees): localizer
+    /// (positive = right of the centreline) and glideslope (positive = above the glide path).
+    pub ils: Option<(f32, f32)>,
 }
 
 #[derive(SystemParam)]
@@ -400,6 +403,8 @@ pub struct HudParams<'w, 's> {
     pub time: Res<'w, Time>,
     pub cam: Option<Res<'w, crate::mfd::TrackCam>>,
     pub settings: Res<'w, crate::settings::Settings>,
+    pub mfd: Option<Res<'w, crate::mfd::MfdState>>,
+    pub papi: Option<Res<'w, crate::scenery::PapiSites>>,
 }
 
 /// (temperature ratio, speed of sound in ft/s) at an altitude in feet (standard atmosphere).
@@ -431,7 +436,15 @@ impl HudParams<'_, '_> {
             let ms = knots * 0.5144;
             ((self.waypoints.current, km, if ms > 1.0 { km * 1000.0 / ms } else { 0.0 }), d.as_vec3())
         });
+        let ils = self.mfd.as_ref().filter(|m| m.ils).zip(self.papi.as_ref()).and_then(|(_, papi)| {
+            let eye = pos.0 + (a.orientation * self.settings.aircraft.spec().eye).as_dvec3();
+            let (_, along, lateral) = crate::scenery::approach_to(&papi.0, bevy::math::DVec2::new(eye.x, -eye.z), h)?;
+            let loc = lateral.atan2(along).to_degrees();
+            let gs = eye.y.max(0.0).atan2(along).to_degrees() - crate::scenery::GLIDE_PATH_DEG;
+            Some((loc as f32, gs as f32))
+        });
         Some(HudFrame {
+            ils,
             scale: self.settings.hud_scale(),
             state: self.state.clone(),
             knots: a.knots() as i32,

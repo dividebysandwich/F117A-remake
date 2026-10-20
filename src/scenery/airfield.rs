@@ -85,6 +85,28 @@ pub struct PapiSite {
     pub half_width: f64,
 }
 
+/// Glide path of the PAPIs (and the HUD's ILS glideslope), degrees.
+pub const GLIDE_PATH_DEG: f64 = 3.0;
+
+/// The runway end an aircraft at `ac` (ground metres) heading `heading` (radians from north) is
+/// approaching: ahead, within 25 km and the approach cone; with the distance to its aim point
+/// along the centreline and the offset from the centreline (metres, positive = right of it
+/// seen from the approach).
+pub fn approach_to(sites: &[PapiSite], ac: DVec2, heading: f32) -> Option<(&PapiSite, f64, f64)> {
+    let forward = DVec2::new(heading.sin() as f64, heading.cos() as f64);
+    sites
+        .iter()
+        .filter_map(|s| {
+            let rel = ac - s.aim;
+            let along = rel.dot(s.toward);
+            // Flying along -toward, its right is toward.perp() (perp turns left).
+            let lateral = rel.dot(s.toward.perp());
+            let ok = (100.0..25_000.0).contains(&along) && lateral.abs() < along * 0.4 + 400.0 && forward.dot(-s.toward) > 0.5;
+            ok.then_some((s, along, lateral))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+}
+
 pub fn papi_sites(a: &Airfield) -> Vec<PapiSite> {
     let ax = Axes::new(&a.runway);
     a.papi

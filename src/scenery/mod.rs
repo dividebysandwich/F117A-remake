@@ -15,7 +15,7 @@
 
 mod airfield;
 
-pub use airfield::PapiSite;
+pub use airfield::{GLIDE_PATH_DEG, PapiSite, approach_to};
 pub use network::Rng;
 mod content;
 mod fields;

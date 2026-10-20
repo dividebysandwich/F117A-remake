@@ -353,6 +353,16 @@ impl ModelAssets<'_> {
     /// file. `level` is the unit level for distance haze (`palette_material::mesh_tag`).
     /// Returns `None` if the file is not loaded yet or the model does not exist.
     pub fn spawn(&self, commands: &mut Commands, file: &Handle<Gltf>, name: &str, level: u32, no_fog: bool) -> Option<Entity> {
+        self.spawn_parts(commands, file, name, level, no_fog, false)
+    }
+
+    /// Spawns only a model's dot lights (with their conditions and detail levels), for an
+    /// aircraft whose exterior is drawn another way (the own aircraft from its cockpit).
+    pub fn spawn_lights(&self, commands: &mut Commands, file: &Handle<Gltf>, name: &str, level: u32, no_fog: bool) -> Option<Entity> {
+        self.spawn_parts(commands, file, name, level, no_fog, true)
+    }
+
+    fn spawn_parts(&self, commands: &mut Commands, file: &Handle<Gltf>, name: &str, level: u32, no_fog: bool, lights_only: bool) -> Option<Entity> {
         let g = self.gltfs.get(file)?;
         let node = g.named_nodes.get(name)?;
         let material_names: HashMap<AssetId<GltfMaterial>, &str> =
@@ -366,10 +376,11 @@ impl ModelAssets<'_> {
             .unwrap_or(0) as u32;
         let tag = MeshTag(mesh_tag(level, attr & 7, no_fog));
         let root = commands.spawn((ModelState::default(), CameraDistance::default(), ModelInfo { attr: attr as u8 })).id();
-        self.spawn_node(commands, node, &material_names, root, Some(root), None, tag);
+        self.spawn_node(commands, node, &material_names, root, Some(root), None, tag, lights_only);
         Some(root)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_node(
         &self,
         commands: &mut Commands,
@@ -379,6 +390,7 @@ impl ModelAssets<'_> {
         reuse: Option<Entity>,
         mut lod: Option<Entity>,
         tag: MeshTag,
+        lights_only: bool,
     ) -> Entity {
         let node = self.nodes.get(handle).expect("glTF node loaded with its file");
         let entity = match reuse {
@@ -447,7 +459,7 @@ impl ModelAssets<'_> {
                         commands.entity(entity).add_child(child);
                     }
                 }
-            } else {
+            } else if !lights_only {
                 for prim in &mesh.primitives {
                     let prim_color =
                         prim.material.as_ref().and_then(|m| material_names.get(&m.id())).and_then(|n| index_from_name(n));
@@ -482,7 +494,7 @@ impl ModelAssets<'_> {
             }
         }
         for c in &node.children {
-            let child = self.spawn_node(commands, c, material_names, root, None, lod, tag.clone());
+            let child = self.spawn_node(commands, c, material_names, root, None, lod, tag.clone(), lights_only);
             commands.entity(entity).add_child(child);
         }
         entity

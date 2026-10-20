@@ -15,7 +15,7 @@ use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player, bam};
 use crate::models::{ModelAssets, ModelGlobals, ModelLibrary, ModelState};
 use crate::palette_material::{FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, mesh_tag};
-use crate::player::{AIRCRAFT_MODEL_SCALE, OwnModel};
+use crate::player::{AIRCRAFT_MODEL_SCALE, OwnLights, OwnModel};
 use crate::settings::AppState;
 use crate::world::{TileObject, WorldPos, wu_to_bevy};
 
@@ -558,7 +558,8 @@ fn sim_missile_model(combat: &Combat, spec: i32) -> i32 {
 }
 
 /// Lights (slots 10/11) for the world and the own aircraft, the antenna angles (15/16) and the
-/// own aircraft's (STFLT 24) gear (5/6), brakes (7) and bay doors (8).
+/// own aircraft's (STFLT 24) gear (5/6), brakes (7), bay doors (8), navigation (12) and
+/// anti-collision lights (18-20, the AI aircraft's rule).
 #[allow(clippy::type_complexity)]
 fn world_model_state(
     time: Res<Time>,
@@ -569,7 +570,7 @@ fn world_model_state(
     mut angles: Local<[f32; 2]>,
     mut gear: Local<f32>,
     mut tiles: ParamSet<(Query<(&TileObject, &mut ModelState)>, Query<(&TileObject, &mut ModelState), Added<TileObject>>)>,
-    mut own: Query<&mut ModelState, (With<OwnModel>, Without<TileObject>)>,
+    mut own: Query<&mut ModelState, (Or<(With<OwnModel>, With<OwnLights>)>, Without<TileObject>)>,
     player: Query<&Aircraft, With<Player>>,
 ) {
     // Slot 15 += 1152 and slot 16 += 1024 per original frame time unit, ~15 per second.
@@ -607,8 +608,21 @@ fn world_model_state(
     *gear = if *gear < target { (*gear + step).min(target) } else { (*gear - step).max(target) };
     let c072 = gear.floor() as i16;
     let brakes = (a.velocity != 0.0 && a.on_ground && a.brakes) as i16;
+    let nav = combat.as_ref().is_some_and(|c| c.sim.player_lights());
+    let [s18, s19, s20] = anticollision(time.elapsed_secs(), 0.0, nav);
     for mut s in &mut own {
-        let v = [(5, (c072 != 0) as i16), (6, c072 - 1), (7, brakes), (8, door), (10, lights as i16), (11, lights as i16)];
+        let v = [
+            (5, (c072 != 0) as i16),
+            (6, c072 - 1),
+            (7, brakes),
+            (8, door),
+            (10, lights as i16),
+            (11, lights as i16),
+            (12, nav as i16),
+            s18,
+            s19,
+            s20,
+        ];
         if v.iter().any(|&(k, x)| s.0[k] != x) {
             for (k, x) in v {
                 s.0[k] = x;

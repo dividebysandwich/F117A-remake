@@ -172,6 +172,11 @@ pub struct OwnModel;
 #[derive(Component)]
 pub struct OwnModelInterior;
 
+/// The own model's lights as seen from the cockpit (inside `OwnModelInterior`), so they show
+/// over the shoulder. Aircraft without a cockpit view show none: they would hang in the air.
+#[derive(Component)]
+pub struct OwnLights;
+
 fn attach_own_model(
     mut commands: Commands,
     mut library: ResMut<ModelLibrary>,
@@ -198,6 +203,10 @@ fn attach_own_model(
     let inside = |v: Vec3| v.cmpge(lo).all() && v.cmple(hi).all();
     let interior = commands.spawn((OwnModelInterior, transform, Visibility::Hidden)).id();
     commands.entity(player).add_child(interior);
+    if let Some(lights) = assets.spawn_lights(&mut commands, &file, spec.model, crate::palette_material::LEVEL_AIRCRAFT, true) {
+        commands.entity(lights).insert((OwnLights, Transform::default(), Visibility::Inherited));
+        commands.entity(interior).add_child(lights);
+    }
     let tag = bevy::mesh::MeshTag(crate::palette_material::mesh_tag(crate::palette_material::LEVEL_AIRCRAFT, 0, true));
     for (colour, tris) in assets.node_triangles(&file, &format!("{}_lod0", spec.model)) {
         if view.canopy_colours.contains(&colour) {

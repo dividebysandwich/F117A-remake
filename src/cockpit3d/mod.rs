@@ -50,7 +50,7 @@ impl Plugin for Cockpit3dPlugin {
             .add_systems(Startup, (setup_materials, initial_look, model::load_models))
             .add_systems(
                 Update,
-                (respawn_on_style_change, spawn_cockpit, sync_materials, cockpit_visibility).chain().run_if(in_state(AppState::Flight)),
+                (respawn_on_style_change, spawn_cockpit, sync_materials, sync_shading, cockpit_visibility).chain().run_if(in_state(AppState::Flight)),
             )
             .add_systems(
                 PreUpdate,
@@ -237,7 +237,19 @@ fn sync_materials(
             && m.base.unlit == lit
         {
             m.base.unlit = !lit;
-            m.extension.unlit = !lit;
+        }
+    }
+}
+
+/// Every cockpit material's shader variant follows its `unlit` and the lighting options (also
+/// materials created later).
+fn sync_shading(settings: Res<Settings>, mut materials: ResMut<Assets<CockpitMaterial>>) {
+    let full = lighting_on(&settings);
+    let stale: Vec<_> = materials.iter().filter(|(_, m)| m.extension.unlit != m.base.unlit || m.extension.full != full).map(|(id, _)| id).collect();
+    for id in stale {
+        if let Some(mut m) = materials.get_mut(id) {
+            m.extension.unlit = m.base.unlit;
+            m.extension.full = full;
         }
     }
 }

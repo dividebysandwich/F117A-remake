@@ -1,8 +1,10 @@
-//! Cockpit materials: `StandardMaterial` with our fragment shader (assets/shaders/cockpit.wgsl),
-//! so an unlit material (the panel picture, screens and labels without the lighting options)
-//! gets a shader without the PBR lighting. `unlit` is only a flag in Bevy's own shader, which
-//! compiles every lighting path in: on the Steam Frame's GPU that shader is about 2700
-//! instructions and needs so many registers that half as many fragments run at once.
+//! Cockpit materials: `StandardMaterial` with our fragment shader (assets/shaders/cockpit.wgsl)
+//! in three variants: unlit materials (the panel picture, screens and labels without the
+//! lighting options) without the PBR lighting, lit ones without the lighting options with only
+//! the sun and the ambient light, and Bevy's full lighting with the options (point lights,
+//! shadows). Bevy's own shader compiles every lighting path in (`unlit` is only a flag): on the
+//! Steam Frame's GPU it is about 2700 instructions and needs so many registers that half as many
+//! fragments run at once.
 
 use bevy::mesh::MeshVertexBufferLayoutRef;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline};
@@ -14,28 +16,34 @@ const SHADER: &str = "shaders/cockpit.wgsl";
 
 pub type CockpitMaterial = ExtendedMaterial<StandardMaterial, CockpitShading>;
 
-/// A cockpit material (keep `extension.unlit` equal to `base.unlit`).
+/// A cockpit material (the shader variant follows `base.unlit` and the lighting options, see
+/// `super::sync_materials`).
 pub fn cockpit_material(base: StandardMaterial) -> CockpitMaterial {
     let unlit = base.unlit;
-    ExtendedMaterial { base, extension: CockpitShading { unlit } }
+    ExtendedMaterial { base, extension: CockpitShading { unlit, full: false } }
 }
 
-/// Picks the shader variant: unlit (no PBR lighting compiled in) or lit.
+/// Picks the shader variant.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Debug, Default)]
 #[bind_group_data(CockpitShadingKey)]
 pub struct CockpitShading {
+    /// `base.unlit`: no PBR lighting compiled in.
     pub unlit: bool,
+    /// The lighting options are on: Bevy's full lighting (point lights, shadows); otherwise
+    /// only the sun and the ambient light.
+    pub full: bool,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct CockpitShadingKey {
     unlit: bool,
+    full: bool,
 }
 
 impl From<&CockpitShading> for CockpitShadingKey {
     fn from(s: &CockpitShading) -> Self {
-        Self { unlit: s.unlit }
+        Self { unlit: s.unlit, full: s.full }
     }
 }
 
@@ -50,10 +58,15 @@ impl MaterialExtension for CockpitShading {
         _layout: &MeshVertexBufferLayoutRef,
         key: MaterialExtensionKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        if key.bind_group_data.unlit
-            && let Some(fragment) = descriptor.fragment.as_mut()
-        {
-            fragment.shader_defs.push("COCKPIT_UNLIT".into());
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            let k = key.bind_group_data;
+            if k.unlit {
+                fragment.shader_defs.push("COCKPIT_UNLIT".into());
+            } else if k.full {
+                fragment.shader_defs.push("COCKPIT_FULL".into());
+            } else {
+                fragment.shader_defs.push("COCKPIT_SIMPLE_LIT".into());
+            }
         }
         Ok(())
     }

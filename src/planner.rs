@@ -70,8 +70,8 @@ pub struct Planner {
     /// View: map centre (map units) and map units per screen point.
     centre: egui::Vec2,
     scale: f32,
-    /// Route point being dragged.
-    drag: Option<usize>,
+    /// Route point being dragged, and its offset from the pointer (screen points).
+    drag: Option<(usize, egui::Vec2)>,
     /// The view was fitted to this route's mission.
     fitted: Option<(String, u8, u32)>,
     profile: Profile,
@@ -407,16 +407,18 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
     }
+    // A drag starts once the pointer has moved a little: what it grabs is where the button went
+    // down (where the grab cursor was shown).
     if resp.drag_started()
-        && let Some(pos) = resp.interact_pointer_pos()
+        && let Some(pos) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos())
     {
-        planner.drag = hit_point(pos).filter(|&i| route.points[i].kind == RouteKind::Nav);
+        planner.drag = hit_point(pos).filter(|&i| route.points[i].kind == RouteKind::Nav).map(|i| (i, pts[i] - pos));
     }
     if resp.dragged() {
         match planner.drag {
-            Some(i) => {
+            Some((i, offset)) => {
                 if let Some(pos) = resp.interact_pointer_pos() {
-                    let p = to_map(pos);
+                    let p = to_map(pos + offset);
                     route.points[i].x = p.x.clamp(0x100 as f32, 0x7F00 as f32) as i32;
                     route.points[i].y = p.y.clamp(0x100 as f32, 0x7F00 as f32) as i32;
                 }

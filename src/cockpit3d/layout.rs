@@ -72,6 +72,9 @@ pub enum Elem {
     Label(&'static str, u8, u8),
     /// Yellow and black warning stripes.
     Hazard,
+    /// Landing gear lights: an aircraft outline with a green lamp at each wheel, lit with the
+    /// gear down.
+    GearLights,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -327,8 +330,9 @@ impl PanelLayout {
     /// it; the wings either side (75 < |x| <= 305, angled towards the pilot) with the MFDs,
     /// the RWR scope top left with the threat lights left of it, over the aircraft system caps,
     /// the countermeasure panel top right over the fuel and thrust readouts; the advisory light
-    /// panel on the right console ahead of the stick (x >= 600, centred on x 700, y 0). No EMV
-    /// gauge: the RWR shows the radars.
+    /// panel on the right console ahead of the stick (600 <= x < 1100, centred on x 700, y 0);
+    /// the gear lights on the left slope from the console up to the panel (x <= -600, centred on
+    /// x -700, y 0; y grows down the slope). No EMV gauge: the RWR shows the radars.
     pub fn f16() -> Self {
         use Effect as E;
         use LampId::*;
@@ -360,7 +364,7 @@ impl PanelLayout {
         .into_iter()
         .enumerate()
         {
-            lamp(id, label, rect(636.0 + 44.0 * (k % 3) as f32, -40.0 + 20.0 * (k / 3) as f32, 40.0, 16.0), None);
+            lamp(id, label, rect(640.0 + 42.0 * (k % 3) as f32, -38.0 + 19.0 * (k / 3) as f32, 36.0, 14.0), None);
         }
         // Countermeasures, top right: release caps, counts, released lights; jammers.
         for (k, (label, action, led, act)) in [
@@ -379,20 +383,22 @@ impl PanelLayout {
         items.push(Placed { elem: Elem::Lamp(Ecm, None), rect: rect(120.0, -93.0, 34.0, 13.0), cap: Some(E::Action(Action::Ecm)) });
         items.push(Placed { elem: Elem::Lamp(Irj, None), rect: rect(158.0, -93.0, 34.0, 13.0), cap: Some(E::Action(Action::IrJammer)) });
         // Aircraft systems down the left edge.
-        // (No bay: the stores hang outside.)
-        for (k, (id, action)) in [(Gear, Action::Gear), (Flaps, Action::Flaps), (Brake, Action::Brakes), (Auto, Action::Autopilot)].into_iter().enumerate() {
+        // (No bay: the stores hang outside; the gear has its handle and lights on the left slope.)
+        for (k, (id, action)) in [(Flaps, Action::Flaps), (Brake, Action::Brakes), (Auto, Action::Autopilot)].into_iter().enumerate() {
             items.push(Placed { elem: Elem::Lamp(id, None), rect: rect(-296.0, -24.0 + 18.0 * k as f32, 40.0, 14.0), cap: Some(E::Action(action)) });
         }
         // Keypad (not working, as in the original's cockpit art) and the readouts.
         const KEYS: [&str; 12] = ["1", "2", "3", "RCL", "4", "5", "6", "ENTR", "7", "8", "9", "0"];
         let mut fixed: Vec<(Elem, PxRect)> =
-            KEYS.iter().enumerate().map(|(k, key)| (Elem::Label(key, 7, 38), rect(-58.0 + 30.0 * (k % 4) as f32, -132.0 + 16.0 * (k / 4) as f32, 26.0, 12.0))).collect();
+            KEYS.iter().enumerate().map(|(k, key)| (Elem::Label(key, 7, 38), rect(-56.0 + 30.0 * (k % 4) as f32, -131.0 + 16.0 * (k / 4) as f32, 22.0, 11.0))).collect();
         fixed.extend([
             (Elem::Label("FUEL", 47, 79), rect(254.0, -40.0, 40.0, 10.0)),
             (Elem::Led(LedId::Fuel), rect(254.0, -28.0, 40.0, 14.0)),
             (Elem::Label("THRUST", 47, 79), rect(254.0, -8.0, 40.0, 10.0)),
             (Elem::Led(LedId::Thrust), rect(254.0, 4.0, 40.0, 14.0)),
             (Elem::Hazard, rect(254.0, 26.0, 40.0, 8.0)),
+            // Left slope, beside the gear handle.
+            (Elem::GearLights, rect(-688.0, -94.0, 36.0, 28.0)),
         ]);
         items.extend(fixed.into_iter().map(|(elem, rect)| Placed { elem, rect, cap: None }));
 

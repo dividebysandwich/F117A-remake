@@ -232,8 +232,10 @@ bearing pointer and distance to the current waypoint) under them, the MFDs low l
 the **RWR** scope top left with the threat lights (TRAK: a radar tracks the aircraft; RAD / IR:
 a radar or infrared guided missile is in the air) left of it and the aircraft system caps below it,
 the countermeasure panel top right with the fuel and thrust readouts below it, and the other
-warning lights on the advisory light panel on the right console, ahead of the stick. The stick is on the right console, the throttle on the left one, with the side panel
-buttons in front of them.
+warning lights on the advisory light panel on the right console, ahead of the stick. The stick is on the right console, the throttle on the left one. Sloped panels rise from the
+consoles to the main panel: the side panel buttons are on them, and on the left one the gear
+handle with the gear lights, an aircraft outline with a green lamp at each wheel while the gear is
+down.
 
 It has no radar bar graph. The **RWR** shows every radar that can see the aircraft, at its bearing
 relative to the nose (up = ahead). Like a real RWR it does not show range: the closer a symbol is to

@@ -31,6 +31,11 @@ PANEL_TILT = math.radians(20.0)  # top of the panel leaning away
 PANEL_CENTRE = Vector((0.0, 0.66, -0.30))
 CONSOLE_TOP = -0.585
 CONSOLE_X = (0.20, 0.36)
+# The consoles end here; sloped panels rise from their ends to the main panel's lower edge
+# (layout x <= -600 left, centred on -700; x >= 1100 right, centred on 1200; y down the slope).
+CONSOLE_END = 0.42
+SLOPE_TOP = (0.60, -0.40)  # (y, z)
+SLOPE_X = (0.17, 0.37)
 SILL = -0.45
 WALL_X = 0.37
 # The panel's wings turn towards the pilot from the centre column's edges.
@@ -61,7 +66,11 @@ NORMAL = Vector((0.0, -math.cos(PANEL_TILT), math.sin(PANEL_TILT)))
 
 
 def section(u):
-    """3 right console, -1 / 1 left / right wing, 0 centre column."""
+    """-4 / 4 left / right slope, 3 right console, -1 / 1 left / right wing, 0 centre column."""
+    if u >= 1100.0:
+        return 4
+    if u <= -CONSOLE_U:
+        return -4
     if u >= CONSOLE_U:
         return 3
     if abs(u) > HINGE:
@@ -77,6 +86,9 @@ def basis(sec):
     if abs(sec) == 1:
         c, n = math.cos(WING_ANGLE), math.sin(WING_ANGLE)
         return RIGHT * c + NORMAL * n * s, NORMAL * c - RIGHT * n * s, UP
+    if abs(sec) == 4:
+        d = Vector((0.0, SLOPE_TOP[0] - CONSOLE_END, SLOPE_TOP[1] - CONSOLE_TOP)).normalized()
+        return RIGHT, Vector((0.0, -d.z, d.y)), d
     # Console: facing up, tilted towards the pilot; up the layout = forward.
     up = Vector((0.0, math.cos(ADVISORY_TILT), math.sin(ADVISORY_TILT)))
     normal = Vector((0.0, -math.sin(ADVISORY_TILT), math.cos(ADVISORY_TILT)))
@@ -96,6 +108,9 @@ def point(u, v, offset=0.0, plane=False):
     elif abs(sec) == 1:
         hinge = PANEL_CENTRE + RIGHT * (s * HINGE / 1000) - UP * (v / 1000)
         p = hinge + d * ((u - s * HINGE) / 1000)
+    elif abs(sec) == 4:
+        mid = Vector((s * sum(SLOPE_X) / 2, (CONSOLE_END + SLOPE_TOP[0]) / 2, (CONSOLE_TOP + SLOPE_TOP[1]) / 2))
+        p = mid + d * ((u - s * (700.0 if s < 0 else 1200.0)) / 1000) - up * (v / 1000)
     else:
         p = ADVISORY_CENTRE + n * 0.004 + d * ((u - 700.0) / 1000) - up * (v / 1000)
     return p + n * offset
@@ -297,8 +312,14 @@ for s in (-1, 1):
     box("panel_grey", "panel_grey", (s * WALL_X, 0.05, (SILL - 1.0) / 2), (0.02, 1.4, 1.0 + SILL))  # walls
     box("frame", "frame", (s * (WALL_X - 0.01), 0.05, SILL), (0.04, 1.4, 0.02))  # canopy sills
     cx = s * sum(CONSOLE_X) / 2
-    box("panel_grey", "panel_grey", (cx, 0.12, (CONSOLE_TOP - 1.0) / 2), (CONSOLE_X[1] - CONSOLE_X[0], 0.86, 1.0 + CONSOLE_TOP))
-    box("dark", "dark", (cx, 0.12, CONSOLE_TOP + 0.002), (CONSOLE_X[1] - CONSOLE_X[0] - 0.01, 0.84, 0.004))
+    y0, y1 = -0.31, CONSOLE_END
+    box("panel_grey", "panel_grey", (cx, (y0 + y1) / 2, (CONSOLE_TOP - 1.0) / 2), (CONSOLE_X[1] - CONSOLE_X[0], y1 - y0, 1.0 + CONSOLE_TOP))
+    box("dark", "dark", (cx, (y0 + y1) / 2, CONSOLE_TOP + 0.002), (CONSOLE_X[1] - CONSOLE_X[0] - 0.01, y1 - y0 - 0.02, 0.004))
+    # Sloped panel from the console's end to the main panel (the side buttons and gear on it).
+    u_mid = -700.0 if s < 0 else 1200.0
+    length = (Vector(SLOPE_TOP) - Vector((CONSOLE_END, CONSOLE_TOP))).length * 1000 + 30.0
+    panel_box("panel_grey", "panel_grey", (u_mid - (SLOPE_X[1] - SLOPE_X[0]) * 500, -length / 2, (SLOPE_X[1] - SLOPE_X[0]) * 1000, length), 0.03, 0.0, -0.03)
+    panel_box("dark", "dark", (u_mid - (SLOPE_X[1] - SLOPE_X[0]) * 500 + 6.0, -length / 2 + 6.0, (SLOPE_X[1] - SLOPE_X[0]) * 1000 - 12.0, length - 12.0), 0.002)
 box("panel_grey", "panel_grey", (0.0, -0.68, -0.55), (2 * WALL_X, 0.03, 0.9))  # rear bulkhead
 # Panel: the wings (bevelled upper outer corners, wells for the MFDs), the centre column and
 # the up-front controls' pedestal standing out of it, the knee well under it.
@@ -361,6 +382,7 @@ plates = [
     (114.0, -150.0, 84.0, 74.0),  # countermeasures
     (-300.0, -28.0, 48.0, 94.0),  # aircraft systems
     (-301.0, -113.0, 30.0, 78.0),  # threat lights
+    (-692.0, -98.0, 44.0, 36.0),  # gear lights
     (250.0, -44.0, 48.0, 84.0),  # fuel, thrust
 ]
 for r in plates:
@@ -410,19 +432,21 @@ recline = Matrix.Translation(hip) @ Matrix.Rotation(math.radians(15.0), 4, "X") 
 for o in root.children:
     if o.name.startswith(("seat_95", "cushion_96", "cushion_97", "metal_98", "metal_99")):
         o.matrix_world = recline @ o.matrix_world
-# Side panel buttons on the console fronts, two columns of three, faces up towards the pilot.
+# Side panel buttons on the slopes, faces up towards the pilot.
 left = ["button_NEAR", "button_DESG", "button_NEXT", "button_NONE", "button_WPN", "button_MENU"]
 right = ["button_NVG", "button_ILS", "button_TIME", "button_DCLT", "button_VOL", "button_DTL"]
 for names, s in ((left, -1), (right, 1)):
     for i, n in enumerate(names):
         o = objs[n]
         col, row = i % 2, i // 2
-        o.location = (s * (0.26 + 0.045 * col), 0.46 - 0.034 * row, CONSOLE_TOP + 0.004)
-        o.rotation_quaternion = Euler((math.radians(-55.0), 0.0, 0.0)).to_quaternion()
+        # Two columns of three on the lower part of the slope (layout y grows down it).
+        u = (-700.0 if s < 0 else 1200.0) + s * (-25.0 + 45.0 * col)
+        o.location = point(u, 15.0 + 34.0 * row, 0.004)
+        o.rotation_quaternion = rotation(u)
 # Gear handle low on the left of the panel.
 g = objs["control_Action_Gear_.001"]
-g.location = point(-276.0, 84.0, 0.0)
-g.rotation_quaternion = rotation(-276.0)
+g.location = point(-760.0, -80.0, 0.002)
+g.rotation_quaternion = rotation(-760.0)
 # HUD glass: a smaller combiner over the up-front controls (its vertices are absolute).
 hud = next(o for o in root.children if o.name.startswith("hud_glass"))
 lo = Vector((min(v.co.x for v in hud.data.vertices), 0.0, min(v.co.z for v in hud.data.vertices)))

@@ -117,6 +117,39 @@ fn hazard(c: &mut Canvas, r: [i32; 4], k: i32) {
     }
 }
 
+/// The gear lights face: an aircraft seen from above, a lamp at the nose wheel and at each main
+/// wheel, green with the gear down.
+fn gear_lights(c: &mut Canvas, r: [i32; 4], down: bool) {
+    let [x, y, w, h] = r;
+    c.fill_rect(x, y, w, h, 38);
+    let (w, h) = (w as f32, h as f32);
+    let p = |u: f32, v: f32| Vec2::new(x as f32 + u * w, y as f32 + v * h);
+    let pen = (h / 40.0).max(1.0);
+    let outline = [
+        p(0.5, 0.06),
+        p(0.56, 0.3),
+        p(0.95, 0.62),
+        p(0.95, 0.7),
+        p(0.57, 0.62),
+        p(0.56, 0.82),
+        p(0.7, 0.94),
+        p(0.3, 0.94),
+        p(0.44, 0.82),
+        p(0.43, 0.62),
+        p(0.05, 0.7),
+        p(0.05, 0.62),
+        p(0.44, 0.3),
+        p(0.5, 0.06),
+    ];
+    c.polyline(&outline, pen, 7);
+    let lamp = if down { 47 } else { 44 };
+    let s = (h * 0.13).max(2.0);
+    for (u, v) in [(0.5, 0.3), (0.32, 0.6), (0.68, 0.6)] {
+        let q = p(u, v);
+        c.fill_rect((q.x - s) as i32, (q.y - s) as i32, (2.0 * s) as i32, (2.0 * s) as i32, lamp);
+    }
+}
+
 /// The panel's run-time materials: the palette swatch for the solid parts, and the instrument
 /// atlas (with its glow twin) holding every lamp, readout, label and bezel button face.
 pub(super) struct PanelMaterials {
@@ -394,6 +427,11 @@ pub(super) fn update_displays(
             Face::Item(Elem::Hazard) => {
                 hazard(c, r, k);
                 false
+            }
+            Face::Item(Elem::GearLights) => {
+                let down = lit[LampId::Gear as usize];
+                gear_lights(c, r, down);
+                down
             }
             // Modern avionics: blank caps, the labels are on the display.
             Face::Osb(..) if d.mfd.state.modern => {

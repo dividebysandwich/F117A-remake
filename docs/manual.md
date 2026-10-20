@@ -42,7 +42,7 @@ the *Cockpit* switch).
 | **Mission** | *Strike*: ground target (destroy, photograph or reach), with a primary and a secondary objective. *Air to air*: intercept an enemy aircraft. *Strike training* and *Air training*: practice missions. *Drone defense* (Ukraine only): stop a wave of attack drones, then bomb their launch site (chapter 11). |
 | **Aircraft** | *Realistic weapons*: two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. |
 | **Weather** | Random (based on the theater's climate), Clear, Scattered, Broken, Overcast, Storm. *Random cover* off: a slider sets the coverage of the main cloud layer. Clouds block optical seekers and visual identification for both sides; radar sees through clouds. |
-| **Classic / Modern** | *Shaders*: flat original shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: original panel or modern panel (this manual describes the modern panel). *HUD*: the original HUD, or a high-resolution F-16 style HUD in green. *Flight model*: original flight model, or an aerodynamic model with fly-by-wire: the stick commands g and roll rate, and with the stick released the aircraft holds its flight path. |
+| **Classic / Modern** | *Shaders*: flat original shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: original panel or modern panel (this manual describes the modern panel). *HUD*: the original HUD, or a high-resolution F-16 style HUD in green. *Flight model*: original flight model, or an aerodynamic model with fly-by-wire: the stick commands pitch rate (up to 7 g) and roll rate; released, the nose stays where it was left and, once the flight path has caught up with it, the path is held (also in turns up to 60° of bank). Angle of attack and g limiters only act near the limits. |
 
 The **mission summary** lists theater, situation, mission type, opponents, time of day and
 departure time, weather, visibility and fuel. The **briefing** below it lists the objectives, the
@@ -194,7 +194,7 @@ The attitude indicator (ball) shows pitch and bank. The buttons below it:
 |---|---|---|
 | BAY | 8 | Weapon bay doors open/close. Weapons can only be released with open bays. |
 | AUTO | 7 | Autopilot: flies to the current waypoint. |
-| FLAPS | 9 | Flaps. |
+| FLAPS | 9 | Flaps: extend over about 3 s; more lift and a higher angle of attack limit, about 20 % lower stall speed. |
 | GEAR | 6 | Landing gear. |
 | BRAKE | 0 | Wheel brakes on the ground, speed brake in the air. |
 | LOW FUEL | – | Lamp: blinks below 1500 lbs of fuel. |

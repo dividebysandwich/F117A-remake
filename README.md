@@ -27,7 +27,7 @@ Command-line options:
 | `--classic-hud` | the original low-resolution HUD instead of the green F-16 style one |
 | `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons) |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |
-| `--classic-flight` | the original game's flight model instead of the modern one (aerodynamic model with fly-by-wire: the stick commands g and roll rate, hands off holds the flight path); `--script` runs default to it, `--modern-flight` overrides |
+| `--classic-flight` | the original game's flight model instead of the modern one (aerodynamic model with fly-by-wire: the stick commands pitch and roll rate, released the nose stays where it was left and the settled flight path is held); `--script` runs default to it, `--modern-flight` overrides |
 | `--no-crashes` | crash protection: automatic pull-up near the ground with the gear up, ground contact and collisions are not fatal |
 | `--lockheed` | realistic weapons: the real aircraft's 2 bays, no air-to-air missiles, no carrier operations |
 | `--vr` | OpenXR headset (without a runtime it runs on the desktop) |

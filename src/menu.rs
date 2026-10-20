@@ -504,7 +504,7 @@ fn menu_ui(
                             &mut flight,
                             "Flight model",
                             &[
-                                "Modern: aerodynamic flight model with fly-by-wire: the stick commands g and roll rate, hands off holds the flight path",
+                                "Modern: aerodynamic flight model with fly-by-wire: the stick commands pitch and roll rate; released, the nose stays put and the flight path is held",
                                 "Classic: the original game's flight model",
                             ][..],
                         ),

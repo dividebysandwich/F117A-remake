@@ -742,6 +742,92 @@ mod tests {
         }
     }
 
+    /// Modern model: pulling and releasing the stick leaves the nose where it was.
+    #[test]
+    fn release_holds_nose() {
+        for kts in [250.0, 450.0] {
+            let mut t = 0.0;
+            let mut at_release = 0.0;
+            let mut lowest = f32::MAX;
+            fly(false, airborne(8000.0, kts, 70.0), 4.0, 1, |a, c| {
+                t += 1.0 / 120.0;
+                let pitch = a.euler().1.to_degrees();
+                if t < 1.5 {
+                    c.pitch = 0.5;
+                    at_release = pitch;
+                } else {
+                    c.pitch = 0.0;
+                    lowest = lowest.min(pitch);
+                }
+            });
+            println!("{kts} kt: pitch at release {at_release:.1}, lowest after {lowest:.1}");
+            assert!(at_release > 3.0, "the pull raised the nose ({at_release:.1})");
+            assert!(lowest > at_release - 1.0, "{kts} kt: nose dropped from {at_release:.1} to {lowest:.1}");
+        }
+    }
+
+    /// Modern model: hands off in a 45 degree bank, the turn stays (nearly) level.
+    #[test]
+    fn banked_turn_holds_altitude() {
+        let mut a0 = airborne(8000.0, 350.0, 80.0);
+        a0.orientation = Aircraft::from_euler(0.0, 0.0, 45f32.to_radians());
+        let (a, _) = fly(false, a0, 10.0, 1, |_, _| {});
+        let (h, _, r) = a.euler();
+        println!("10 s in a 45 deg bank: alt {:.0} heading {:.0} roll {:.0}", a.altitude, h.to_degrees(), r.to_degrees());
+        assert!((a.altitude - 8000.0).abs() < 150.0, "altitude {}", a.altitude);
+        assert!(h.to_degrees() > 20.0, "the aircraft turned");
+    }
+
+    /// Modern model: the flaps lower the stall speed and allow a higher angle of attack, and
+    /// lowering them doesn't pitch the nose down.
+    #[test]
+    fn flaps() {
+        let stall = |flaps: bool| {
+            let mut a0 = airborne(3000.0, 200.0, 30.0);
+            a0.flaps = flaps;
+            let (a, _) = fly(false, a0, 0.5, 1, |_, _| {});
+            a.stall_speed / 27.0
+        };
+        let (clean, flaps) = (stall(false), stall(true));
+        println!("stall speed clean {clean:.0} kt, flaps {flaps:.0} kt");
+        assert!(flaps < clean * 0.85, "flaps {flaps:.0} kt vs clean {clean:.0} kt");
+        // Full pull at low speed: the angle of attack reached.
+        let max_alpha = |flaps: bool| {
+            let mut a0 = airborne(3000.0, 160.0, 100.0);
+            a0.flaps = flaps;
+            let mut m = 0.0f32;
+            fly(false, a0, 4.0, 1, |a, c| {
+                c.pitch = 1.0;
+                m = m.max(bam(a.fpm).to_degrees());
+            });
+            m
+        };
+        let (clean, flaps) = (max_alpha(false), max_alpha(true));
+        println!("max angle of attack clean {clean:.1}, flaps {flaps:.1}");
+        assert!(flaps > clean + 2.0);
+        // Lowering the flaps in level flight, gear down: no nose-down step.
+        let mut a = airborne(3000.0, 220.0, 60.0);
+        a.gear_down = true;
+        let k = FlightConstants { landing: 1, ..default() };
+        let mut pos = WorldPos(wu_to_bevy(0.0, 0.0, a.view_z() as f64));
+        let mut tf = Transform::default();
+        let c = FlightControls::default();
+        let mut start = 0.0;
+        let mut pitch_min = f32::MAX;
+        for step in 0..720 {
+            a.flaps = step >= 60;
+            modern::step(&mut a, &mut pos, &mut tf, 1.0 / 120.0, &c, &k, None);
+            let pitch = a.euler().1.to_degrees();
+            if step == 59 {
+                start = pitch;
+            } else if step > 59 {
+                pitch_min = pitch_min.min(pitch);
+            }
+        }
+        println!("flaps lowered: pitch {start:.1} -> lowest {pitch_min:.1}, alt {:.0}", a.altitude);
+        assert!(pitch_min > start - 1.0, "nose dropped from {start:.1} to {pitch_min:.1} with the flaps");
+    }
+
     #[test]
     fn ground_crash_possible() {
         for classic in [true, false] {

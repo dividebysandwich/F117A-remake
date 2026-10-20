@@ -6,10 +6,15 @@
 //!   (linear up to the stall, falling off past it), drag (parasite, induced, gear, flaps, speed
 //!   brake, bay doors, transonic rise), side force from sideslip and gravity, on a mass that
 //!   lightens as fuel burns.
-//! - Control laws: the stick commands load factor (neutral holds the flight path, also in banks
-//!   up to 60 degrees; full pull 7 g, full push -3 g, squared stick shaping) through an angle of attack limiter just below
-//!   the stall, and roll rate about the flight path; turns are coordinated (sideslip held at 0,
-//!   or set by the rudder). The body rates follow their commands with short lags.
+//! - Control laws (rate command, attitude hold): the stick commands pitch rate (squared stick
+//!   shaping), at most what gives 7 g pulling or -3 g pushing, and roll rate about the flight
+//!   path. Released, the nose stays where it was left (the angle of attack then settles as the
+//!   flight path catches up with it); once the path has settled, it is held, also in banks up
+//!   to 60 degrees. The angle of attack and load factor limiters only act near the limits.
+//!   Turns are coordinated (sideslip held at 0, or set by the rudder). The pitch rate follows its
+//!   command like an airframe (second order, slightly underdamped), roll and yaw with short lags.
+//! - Flaps extend over a few seconds and add lift and stall margin (a higher angle of attack
+//!   limit), so the aircraft flies slower; they don't move the nose by themselves.
 //! - Ground: rolling friction, wheel brakes, nosewheel steering, rotation above about 0.8 of the
 //!   stall speed, carrier catapult and arresting wire; ground contact, landing and crash rules
 //!   are the classic model's.
@@ -38,14 +43,17 @@ const ALPHA_STALL_NEG: f32 = -0.28;
 /// Angle of attack limiter of the control system (rad).
 const ALPHA_LIMIT: f32 = 0.36;
 const ALPHA_LIMIT_NEG: f32 = -0.22;
-/// Lift added by the flaps.
-const CL_FLAPS: f32 = 0.35;
+/// Lift added by the fully extended flaps, and the stall / limiter angles they add (rad).
+const CL_FLAPS: f32 = 0.45;
+const ALPHA_FLAPS: f32 = 0.05;
+/// Seconds the flaps take to extend or retract.
+const FLAP_TIME: f32 = 3.0;
 
 const CD0: f32 = 0.040;
 /// Induced drag factor.
 const CD_K: f32 = 0.16;
 const CD_GEAR: f32 = 0.025;
-const CD_FLAPS: f32 = 0.04;
+const CD_FLAPS: f32 = 0.05;
 const CD_SPEED_BRAKE: f32 = 0.12;
 const CD_BAY: f32 = 0.008;
 /// Side force per radian of sideslip.
@@ -57,15 +65,29 @@ const N_MIN: f32 = -3.0;
 /// Full stick roll rate (rad/s) and the dynamic pressure (psf) below which it fades.
 const ROLL_RATE: f32 = 1.75;
 const ROLL_Q_FULL: f32 = 150.0;
-/// Body pitch / yaw rate limit (rad/s).
+/// Full stick pitch rate (rad/s) where the load factor doesn't limit it, pushing a fraction.
 const PITCH_RATE_MAX: f32 = 0.5;
+const PUSH_RATE: f32 = 0.6;
+/// Yaw rate limit (rad/s).
+const YAW_RATE_MAX: f32 = 0.5;
 /// Full rudder sideslip (rad).
 const BETA_RUDDER: f32 = 0.1;
-/// Lags (s): roll rate, pitch and yaw rate, angle of attack and sideslip corrections.
+/// Lags (s): roll rate, yaw rate, sideslip correction, the limiters' angle of attack correction.
 const TAU_ROLL: f32 = 0.12;
 const TAU_RATE: f32 = 0.05;
-const TAU_ALPHA: f32 = 0.15;
 const TAU_BETA: f32 = 0.3;
+const TAU_LIMIT: f32 = 0.25;
+/// Pitch rate response: natural frequency (rad/s) and damping.
+const PITCH_OMEGA: f32 = 5.0;
+const PITCH_ZETA: f32 = 0.7;
+/// Stick deflection (after shaping) below which the stick counts as released.
+const STICK_FREE: f32 = 0.003;
+/// Flight path hold: earliest and latest seconds after the release it starts, the path rate
+/// (rad/s) below which it may start, and its gain (1/s).
+const HOLD_AFTER: f32 = 1.5;
+const HOLD_LATEST: f32 = 4.0;
+const HOLD_SETTLED: f32 = 0.02;
+const HOLD_GAIN: f32 = 0.5;
 
 /// Ground: rolling friction, wheel brakes (g), nose-up rotation rate (rad/s), tail strike pitch.
 const ROLL_FRICTION: f32 = 0.02;
@@ -83,6 +105,14 @@ pub(super) struct State {
     rates: Vec3,
     /// `vel` has been set up from the scalar speed.
     init: bool,
+    /// Pitch acceleration of the second-order pitch rate response (rad/s^2).
+    q_dot: f32,
+    /// Flap extension 0..1.
+    flap_pos: f32,
+    /// Seconds since the stick was released (0 while it is moved).
+    released: f32,
+    /// Flight path angle held with the stick released (rad).
+    hold: Option<f32>,
 }
 
 impl State {
@@ -104,15 +134,17 @@ fn atmosphere(h: f32) -> (f32, f32) {
 }
 
 fn cl_zero(a: &Aircraft) -> f32 {
-    if a.flaps { CL_FLAPS } else { 0.0 }
+    CL_FLAPS * a.modern.flap_pos
 }
 
 fn alpha_stall(a: &Aircraft) -> f32 {
-    if a.damage.heavy_stall { ALPHA_STALL - 0.06 } else { ALPHA_STALL }
+    let s = ALPHA_STALL + ALPHA_FLAPS * a.modern.flap_pos;
+    if a.damage.heavy_stall { s - 0.06 } else { s }
 }
 
 fn alpha_limit(a: &Aircraft) -> f32 {
-    if a.damage.heavy_stall { ALPHA_LIMIT - 0.06 } else { ALPHA_LIMIT }
+    let l = ALPHA_LIMIT + ALPHA_FLAPS * a.modern.flap_pos;
+    if a.damage.heavy_stall { l - 0.06 } else { l }
 }
 
 /// Lift coefficient: linear to the stall, then falling off to 60% of the peak.
@@ -131,8 +163,8 @@ fn lift_coefficient(a: &Aircraft, alpha: f32) -> f32 {
     }
 }
 
-/// Load factor the stick asks for with the stick neutral: holds the flight path up to 60
-/// degrees of bank, fading to 0 at 90 degrees, -1 g inverted.
+/// Load factor that holds the flight path: up to 60 degrees of bank, fading to 0 at 90 degrees,
+/// -1 g inverted.
 fn neutral_load(gamma: f32, roll: f32) -> f32 {
     let c = roll.cos();
     let f = if c >= 0.5 {
@@ -152,13 +184,31 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
     }
     if !a.modern.init {
         a.modern.init = true;
-        a.modern.vel = a.orientation * Vec3::NEG_Z * (a.velocity / 16.0);
+        a.modern.flap_pos = if a.flaps { 1.0 } else { 0.0 };
+        let speed = a.velocity / 16.0;
+        a.modern.vel = a.orientation * Vec3::NEG_Z * speed;
         if a.on_ground {
             a.modern.vel.y = 0.0;
+        } else {
+            // Airborne start: trimmed, the nose raised above the flight path by the 1 g angle of
+            // attack, and the path held.
+            let (sigma, _) = atmosphere(a.altitude);
+            let per_cl = 0.5 * RHO0 * sigma * speed * speed / (WING_LOADING * (DRY_WEIGHT + a.fuel) / REF_WEIGHT);
+            if per_cl > 1e-3 {
+                let (_, _, roll) = a.euler();
+                let n0 = neutral_load(a.modern.vel.normalize_or_zero().y.clamp(-1.0, 1.0).asin(), roll).max(0.0);
+                let alpha = ((n0 / per_cl - cl_zero(a)) / CL_ALPHA).clamp(0.0, alpha_limit(a));
+                a.orientation = (a.orientation * Quat::from_rotation_x(alpha)).normalize();
+            }
+            a.modern.hold = Some(a.modern.vel.normalize_or_zero().y.clamp(-1.0, 1.0).asin());
+            a.modern.released = HOLD_LATEST;
         }
     }
     let (heading, pitch, roll) = a.euler();
     let air = !a.on_ground;
+    let flaps = if a.flaps { 1.0 } else { 0.0 };
+    let f = &mut a.modern.flap_pos;
+    *f = if *f < flaps { (*f + dt / FLAP_TIME).min(flaps) } else { (*f - dt / FLAP_TIME).max(flaps) };
 
     // --- controls
     let roll_stick = controls.roll.clamp(-1.0, 1.0);
@@ -211,9 +261,7 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
     if a.gear_down {
         cd += CD_GEAR;
     }
-    if a.flaps {
-        cd += CD_FLAPS;
-    }
+    cd += CD_FLAPS * a.modern.flap_pos;
     if a.brakes && air {
         cd += CD_SPEED_BRAKE;
     }
@@ -241,10 +289,32 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
     if air {
         // --- control laws
         let roll_b = to_bam(roll);
-        let mut n_cmd = {
-            let n0 = neutral_load(gamma, roll);
-            if pitch_stick >= 0.0 { n0 + pitch_stick * (N_MAX - n0) } else { n0 + pitch_stick * (n0 - N_MIN) }
+        // Rates that keep the nose with the turning flight path (the angle of attack constant).
+        let a_perp = accel - vhat * accel.dot(vhat);
+        let path_rate = if speed > 1.0 { vhat.cross(a_perp) / speed } else { Vec3::ZERO };
+        let q_path = path_rate.dot(right);
+        let n0 = neutral_load(gamma, roll);
+        let v = speed.max(50.0);
+        // Turn compensation: the body pitch rate of a level turn at this bank (nose held up in
+        // banks to 60 degrees, fading out towards 90).
+        let q_turn = (n0 - gamma.cos() * roll.cos()).max(0.0) * G / v;
+        // Pilot: pitch rate, at most what gives the load factor limits.
+        let q_stick = if pitch_stick >= 0.0 {
+            pitch_stick * PITCH_RATE_MAX.min((N_MAX - n0).max(0.0) * G / v)
+        } else {
+            pitch_stick * (PITCH_RATE_MAX * PUSH_RATE).min((n0 - N_MIN).max(0.0) * G / v)
         };
+        let free = pitch_stick.abs() < STICK_FREE && !a.autopilot();
+        let st = &mut a.modern;
+        st.released = if free { st.released + dt } else { 0.0 };
+        // Flight path hold once the path has caught up with the nose (wings within 60 degrees).
+        let gamma_rate = path_rate.dot(right) * roll.cos();
+        if !free || roll.cos() < 0.5 {
+            st.hold = None;
+        } else if st.hold.is_none() && st.released > HOLD_AFTER && (gamma_rate.abs() < HOLD_SETTLED || st.released > HOLD_LATEST) {
+            st.hold = Some(gamma);
+        }
+        let mut q_cmd = q_turn + q_stick + st.hold.map_or(0.0, |g0| (g0 - gamma) * HOLD_GAIN * roll.cos());
         let mut p_cmd = roll_stick * ROLL_RATE * (qbar / ROLL_Q_FULL).clamp(0.25, 1.0);
         if a.autopilot() {
             // Bank toward the waypoint bearing (at most 30 degrees), hold the altitude.
@@ -252,39 +322,39 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
             let bank = (e * 1.5).clamp(-0.52, 0.52);
             p_cmd = ((bank - roll) * 2.0).clamp(-0.5, 0.5);
             let gamma_cmd = ((a.autopilot_alt - vz) * 0.0005).clamp(-0.17, 0.17);
-            n_cmd = (neutral_load(gamma, roll) + (gamma_cmd - gamma) * speed / G * 0.8).clamp(-0.5, 3.0);
+            q_cmd = q_turn + ((gamma_cmd - gamma) * 0.8).clamp(-0.5 * G / v, 2.0 * G / v);
         }
         // Crash protection: wings level and pull when the ground is less than 3 s away.
         if k.landing == 0 && !a.gear_down && vel.y < 0.0 && a.altitude - a.ground_altitude + vel.y * 3.0 < 150.0 && roll_b.abs() < 24576.0 {
             p_cmd = (-roll * 3.0).clamp(-ROLL_RATE, ROLL_RATE);
-            n_cmd = n_cmd.max(4.0);
+            q_cmd = q_cmd.max(q_path + (4.0 - n0).max(0.0) * G / v);
+            a.modern.hold = None;
         }
-        let n_cmd = n_cmd.clamp(N_MIN, N_MAX);
-        let alpha_cmd = if per_cl > 1e-3 {
-            ((n_cmd / per_cl - cl_zero(a)) / CL_ALPHA).clamp(ALPHA_LIMIT_NEG, alpha_limit(a))
-        } else {
-            0.0
-        };
-        // Rates that keep the nose with the turning flight path, plus the corrections.
-        let a_perp = accel - vhat * accel.dot(vhat);
-        let path_rate = if speed > 1.0 { vhat.cross(a_perp) / speed } else { Vec3::ZERO };
-        let mut q_cmd = path_rate.dot(right) + (alpha_cmd - alpha) / TAU_ALPHA;
+        // Limiters: the angle of attack stays within the limiter angles and the angles that give
+        // the load factor limits (corrected towards them near the limits only).
+        let lo_n = if per_cl > 1e-3 { (N_MIN / per_cl - cl_zero(a)) / CL_ALPHA } else { ALPHA_LIMIT_NEG };
+        let hi_n = if per_cl > 1e-3 { (N_MAX / per_cl - cl_zero(a)) / CL_ALPHA } else { alpha_limit(a) };
+        let hi = alpha_limit(a).min(hi_n);
+        let lo = ALPHA_LIMIT_NEG.max(lo_n).min(hi);
+        q_cmd = q_cmd.min(q_path + (hi - alpha) / TAU_LIMIT).max(q_path + (lo - alpha) / TAU_LIMIT);
         // Past the stall the nose drops.
         if alpha > alpha_stall(a) {
             q_cmd -= (alpha - alpha_stall(a)) * 4.0;
         }
-        let q_cmd = q_cmd.clamp(-PITCH_RATE_MAX, PITCH_RATE_MAX);
-        let r_cmd = (-path_rate.dot(up) + (beta + rudder * BETA_RUDDER) / TAU_BETA).clamp(-PITCH_RATE_MAX, PITCH_RATE_MAX);
+        let r_cmd = (-path_rate.dot(up) + (beta + rudder * BETA_RUDDER) / TAU_BETA).clamp(-YAW_RATE_MAX, YAW_RATE_MAX);
+        // Pitch rate: second-order response to its command.
+        let st = &mut a.modern;
+        st.q_dot += (PITCH_OMEGA * PITCH_OMEGA * (q_cmd - rates.y) - 2.0 * PITCH_ZETA * PITCH_OMEGA * st.q_dot) * dt;
+        rates.y += st.q_dot * dt;
         let r = &mut rates;
         r.x += (p_cmd - r.x) * (dt / TAU_ROLL).min(1.0);
-        r.y += (q_cmd - r.y) * (dt / TAU_RATE).min(1.0);
         r.z += (r_cmd - r.z) * (dt / TAU_RATE).min(1.0);
         let omega = vhat * r.x + right * r.y - up * r.z;
         a.orientation = (Quat::from_scaled_axis(omega * dt) * a.orientation).normalize();
         vel += accel * dt;
         a.gees = ((accel + Vec3::Y * G).dot(up) / G * 16.0).clamp(-128.0, 128.0);
         a.roll_input = r.x / ROLL_RATE * 126.0;
-        a.pitch_input = (n_cmd - 1.0) * 6.0;
+        a.pitch_input = pitch_stick * 42.0;
     } else {
         // --- ground roll along the nose, lift unloading the wheels
         let flat = Vec3::new(heading.sin(), 0.0, -heading.cos());
@@ -326,6 +396,9 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
         let climb = ((n_lift * new_pitch.cos() - 1.0) * G).max(0.0) * dt;
         vel = flat * along + Vec3::Y * climb;
         rates = Vec3::ZERO;
+        a.modern.q_dot = 0.0;
+        a.modern.released = 0.0;
+        a.modern.hold = None;
         a.gees = 16.0;
         a.roll_input = 0.0;
         a.pitch_input = 0.0;

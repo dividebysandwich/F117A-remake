@@ -79,6 +79,11 @@ impl MenuState {
         self.dirty = true;
     }
 
+    /// Realistic weapons: only the F-117A has the real aircraft's limits.
+    pub fn realistic(&self, aircraft: AircraftKind) -> bool {
+        self.lockheed && aircraft == AircraftKind::F117
+    }
+
     /// Generate a new mission next frame.
     pub fn regenerate(&mut self) {
         self.dirty = true;
@@ -147,7 +152,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         cmd.args(["--cloud-cover", &c.to_string()]);
     }
     for (on, flag) in [
-        (state.lockheed, "--lockheed"),
+        (state.realistic(settings.aircraft), "--lockheed"),
         (settings.modern_shading, "--modern"),
         (settings.shadows, "--shadows"),
         (settings.local_lights, "--local-lights"),
@@ -395,7 +400,7 @@ fn menu_ui(
         let pilot = state.career.as_deref().and_then(crate::career::Pilot::load);
         if let Some(p) = pilot {
             // Career: the tour's next sortie, on targets that still stand.
-            match crate::career::next_sortie(&data, &p, state.seed) {
+            match crate::career::next_sortie(&data, &p, state.seed, settings.aircraft) {
                 Some((seed, m)) => {
                     state.seed = seed;
                     state.kind = m.settings.kind;
@@ -405,7 +410,7 @@ fn menu_ui(
             }
         } else {
             state.career = None;
-            let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover);
+            let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.realistic(settings.aircraft), state.weather, state.cloud_cover);
             state.mission = Some(crate::mission::generate(&data, &settings, state.seed).map_err(|e| format!("{e:#}")));
         }
         state.route = state.mission.as_ref().and_then(|m| m.as_ref().ok()).map(crate::mission::PlannedRoute::of);
@@ -420,6 +425,7 @@ fn menu_ui(
     let screen = ctx.content_rect();
     let width = (screen.width() - 32.0).clamp(600.0, 1400.0);
     let before = (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover);
+    let realistic_before = state.realistic(settings.aircraft);
     egui::Window::new("Stealth Mission 89")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .collapsible(false)
@@ -482,10 +488,13 @@ fn menu_ui(
                     if picked {
                         settings.set_changed();
                     }
-                    facts(
-                        ui.checkbox(&mut state.lockheed, "Realistic weapons"),
-                        &["The real aircraft's limits", "2 weapon bays instead of 4", "No AIM-9 or AIM-120 missiles", "No carrier takeoffs or landings"],
-                    );
+                    // The F-16 carries AIM-9s and AIM-120s on its pylons anyway.
+                    if settings.aircraft == AircraftKind::F117 {
+                        facts(
+                            ui.checkbox(&mut state.lockheed, "Realistic weapons"),
+                            &["The real aircraft's limits", "2 weapon bays instead of 4", "No AIM-9 or AIM-120 missiles", "No carrier takeoffs or landings"],
+                        );
+                    }
                     let s = settings.bypass_change_detection();
                     if facts(
                         ui.checkbox(&mut s.no_crashes, "Crash protection"),
@@ -654,6 +663,9 @@ fn menu_ui(
         // Changing the mission's options leaves career mode.
         state.dirty = true;
         state.career = None;
+    } else if realistic_before != state.realistic(settings.aircraft) {
+        // Another aircraft: the same mission with or without the F-117A's limits.
+        state.dirty = true;
     }
     crate::career::career_ui(ctx, &mut career, &mut state);
     crate::prefs::Prefs::save_if_changed(&state, &settings, &mut saved);

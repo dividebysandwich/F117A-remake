@@ -209,7 +209,7 @@ impl Pilot {
 
 /// Generates the next sortie of a pilot's tour: the first seed from `seed` on whose targets
 /// still stand. Mostly strikes, some intercepts, in Ukraine also drone defense.
-pub fn next_sortie(data: &MissionData, pilot: &Pilot, seed: u16) -> Option<(u16, Mission)> {
+pub fn next_sortie(data: &MissionData, pilot: &Pilot, seed: u16, aircraft: crate::aircraft::AircraftKind) -> Option<(u16, Mission)> {
     let t = pilot.tour.as_ref()?;
     let drones = THEATERS.get(t.theater).is_some_and(|(id, _)| *id == "ua");
     for k in 0..SORTIE_TRIES {
@@ -219,7 +219,7 @@ pub fn next_sortie(data: &MissionData, pilot: &Pilot, seed: u16) -> Option<(u16,
             12..=15 if drones => MissionKind::DroneDefense,
             _ => MissionKind::Air,
         };
-        let mut settings = crate::mission::settings(t.theater, t.roe, kind, t.opponents, t.lockheed, None, None);
+        let mut settings = crate::mission::settings(t.theater, t.roe, kind, t.opponents, t.lockheed && aircraft == crate::aircraft::AircraftKind::F117, None, None);
         settings.pilot = pilot.title();
         settings.sorties = pilot.sorties as u16;
         let Ok(m) = stealth_mission::generate(&data.0, &settings, Seed::Srand(s)) else { continue };

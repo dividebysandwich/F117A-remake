@@ -72,14 +72,15 @@ fn entry() -> Option<openxr::Entry> {
 
 /// The default plugins with OpenXR rendering.
 pub fn plugins(plugins: PluginGroupBuilder) -> PluginGroupBuilder {
-    // Pipelined rendering adds a frame of latency to head and hand poses (bevy_mod_openxr
-    // predicts them a frame further ahead), but renders while the next frame updates.
-    // `SM89_XR_PIPELINED=1` turns it on.
-    if std::env::var("SM89_XR_PIPELINED").is_ok_and(|v| v == "1") {
-        info!("OpenXR: pipelined rendering");
-        return add_xr_plugins(plugins);
+    // Pipelined rendering renders a frame while the next one updates: on the Steam Frame the
+    // two took 14 ms one after the other, over its 72 Hz frame. It adds a frame of latency to
+    // the game state and the hands (bevy_mod_openxr predicts the poses a frame further
+    // ahead). `SM89_XR_PIPELINED=0` turns it off.
+    if std::env::var("SM89_XR_PIPELINED").is_ok_and(|v| v == "0") {
+        info!("OpenXR: no pipelined rendering");
+        return add_xr_plugins(plugins.disable::<PipelinedRenderingPlugin>());
     }
-    add_xr_plugins(plugins.disable::<PipelinedRenderingPlugin>())
+    add_xr_plugins(plugins)
 }
 
 pub struct XrPlugin;

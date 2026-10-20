@@ -25,7 +25,7 @@ impl Plugin for CanvasPlugin {
 /// The lower mip levels of the mipmapped canvases uploaded this frame: Bevy rewrites only the
 /// first level of a texture it already has, so these are written after it (`write_canvas_mips`).
 #[derive(Resource, Default, Clone, bevy::render::extract_resource::ExtractResource)]
-struct CanvasMips(Vec<(AssetId<Image>, usize, usize, Vec<u8>)>);
+struct CanvasMips(Vec<(AssetId<Image>, usize, usize, usize, Vec<u8>)>);
 
 fn write_canvas_mips(
     mips: Res<CanvasMips>,
@@ -33,10 +33,10 @@ fn write_canvas_mips(
     queue: Res<bevy::render::renderer::RenderQueue>,
 ) {
     use bevy::render::render_resource::{TexelCopyBufferLayout, TexelCopyTextureInfo};
-    for (id, w, h, data) in &mips.0 {
+    for (id, w, h, levels, data) in &mips.0 {
         let Some(gpu) = images.get(*id) else { continue };
         let mut offset = 0;
-        for (level, (mw, mh)) in mip_sizes(*w, *h).into_iter().enumerate().skip(1) {
+        for (level, (mw, mh)) in mip_sizes(*w, *h, *levels).into_iter().enumerate().skip(1) {
             let len = mw * mh * 4;
             let Some(bytes) = data.get(offset..offset + len) else { break };
             queue.write_texture(
@@ -396,8 +396,8 @@ pub struct CanvasTexture {
     /// Optional per-pixel mask: index 0 is only transparent where the mask is true.
     pub mask: Option<Vec<bool>>,
     pub dirty: bool,
-    /// The texture has a mip chain (built from the canvas on every upload).
-    mips: bool,
+    /// Mip levels of the texture (1: none; the others are built from the canvas on every upload).
+    mips: usize,
     /// The pixels and transparency last uploaded: a redraw that changed nothing (most frames
     /// for the instrument atlas) skips the conversion and the texture upload.
     shown: Option<(Vec<u8>, bool)>,
@@ -413,14 +413,20 @@ impl CanvasTexture {
             RenderAssetUsages::default(),
         );
         image.sampler = ImageSampler::nearest();
-        Self { canvas, image: images.add(image), transparent, mask: None, dirty: true, mips: false, shown: None }
+        Self { canvas, image: images.add(image), transparent, mask: None, dirty: true, mips: 1, shown: None }
     }
 
     /// A texture with mipmaps and trilinear, anisotropic filtering: thin lines stay readable
-    /// on screens seen from further away than one texel per pixel (the modern MFDs).
+    /// on screens and dials seen from further away than one texel per pixel.
     pub fn mipmapped(canvas: Canvas, images: &mut Assets<Image>, transparent: bool) -> Self {
+        Self::mipmapped_levels(canvas, images, transparent, usize::MAX)
+    }
+
+    /// `mipmapped` with at most `max_levels` levels (an atlas: the coarser ones would blend
+    /// neighbouring faces).
+    pub fn mipmapped_levels(canvas: Canvas, images: &mut Assets<Image>, transparent: bool, max_levels: usize) -> Self {
         let (w, h) = (canvas.pw(), canvas.ph());
-        let levels = mip_sizes(w, h);
+        let levels = mip_sizes(w, h, max_levels);
         let mut image = Image::new_fill(
             Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
             TextureDimension::D2,
@@ -431,14 +437,14 @@ impl CanvasTexture {
         image.texture_descriptor.mip_level_count = levels.len() as u32;
         image.data = Some(vec![0; levels.iter().map(|(w, h)| w * h * 4).sum()]);
         image.sampler = ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor { anisotropy_clamp: 4, ..bevy::image::ImageSamplerDescriptor::linear() });
-        Self { canvas, image: images.add(image), transparent, mask: None, dirty: true, mips: true, shown: None }
+        Self { canvas, image: images.add(image), transparent, mask: None, dirty: true, mips: levels.len(), shown: None }
     }
 }
 
-/// Mip level sizes down to 1x1.
-fn mip_sizes(w: usize, h: usize) -> Vec<(usize, usize)> {
+/// Mip level sizes down to 1x1, at most `max` of them.
+fn mip_sizes(w: usize, h: usize, max: usize) -> Vec<(usize, usize)> {
     let mut out = vec![(w, h)];
-    while out.last().is_some_and(|&(w, h)| w > 1 || h > 1) {
+    while out.len() < max && out.last().is_some_and(|&(w, h)| w > 1 || h > 1) {
         let (w, h) = *out.last().unwrap();
         out.push(((w / 2).max(1), (h / 2).max(1)));
     }
@@ -446,9 +452,9 @@ fn mip_sizes(w: usize, h: usize) -> Vec<(usize, usize)> {
 }
 
 /// Fills the mip levels after the first (RGBA, 2x2 box filter) in `data`.
-fn build_mips(data: &mut [u8], w: usize, h: usize) {
+fn build_mips(data: &mut [u8], w: usize, h: usize, levels: usize) {
     let mut start = 0;
-    for pair in mip_sizes(w, h).windows(2) {
+    for pair in mip_sizes(w, h, levels).windows(2) {
         let ((sw, sh), (dw, dh)) = (pair[0], pair[1]);
         let (src, dst) = data[start..].split_at_mut(sw * sh * 4);
         for y in 0..dh {
@@ -512,9 +518,9 @@ fn upload_canvases(palette: Res<Palette>, mut images: ResMut<Assets<Image>>, mut
                 }
             }
         }
-        if ct.mips {
-            build_mips(data, ct.canvas.pw(), ct.canvas.ph());
-            mips.0.push((ct.image.id(), ct.canvas.pw(), ct.canvas.ph(), data[base..].to_vec()));
+        if ct.mips > 1 {
+            build_mips(data, ct.canvas.pw(), ct.canvas.ph(), ct.mips);
+            mips.0.push((ct.image.id(), ct.canvas.pw(), ct.canvas.ph(), ct.mips, data[base..].to_vec()));
         }
         match &mut ct.shown {
             Some((px, t)) => {

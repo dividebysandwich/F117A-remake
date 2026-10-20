@@ -75,6 +75,11 @@ pub(super) struct InstrumentAtlas {
 #[derive(Component)]
 pub(super) struct TrackCamScreen(pub MfdSide);
 
+/// Texels between atlas faces, so the atlas' mip levels (`ATLAS_MIPS`) don't blend neighbours.
+const ATLAS_GAP: i32 = 4;
+/// Mip levels of the instrument atlas: the full size, half and quarter.
+const ATLAS_MIPS: usize = 3;
+
 /// Packs rectangles into the atlas in rows, tallest first (rows of similar heights waste
 /// little); the slots come back in the order of `sizes`.
 fn pack(sizes: &[(i32, i32)]) -> Vec<[i32; 4]> {
@@ -86,12 +91,12 @@ fn pack(sizes: &[(i32, i32)]) -> Vec<[i32; 4]> {
         let (w, h) = sizes[i];
         if x + w > ATLAS as i32 {
             x = 0;
-            y += row + 1;
+            y += row + ATLAS_GAP;
             row = 0;
         }
         assert!(y + h <= ATLAS as i32, "instrument atlas full");
         out[i] = [x, y, w, h];
-        x += w + 1;
+        x += w + ATLAS_GAP;
         row = row.max(h);
     }
     out
@@ -195,8 +200,8 @@ pub(super) fn panel_materials(
         let n = ATLAS as f32;
         (Vec2::new(s[0] as f32 / n, s[1] as f32 / n), Vec2::new((s[0] + s[2]) as f32 / n, (s[1] + s[3]) as f32 / n))
     };
-    let atlas_tex = CanvasTexture::new(Canvas::new(ATLAS, ATLAS), images, false);
-    let glow_tex = CanvasTexture::new(Canvas::new(ATLAS, ATLAS), images, false);
+    let atlas_tex = CanvasTexture::mipmapped_levels(Canvas::new(ATLAS, ATLAS), images, false, ATLAS_MIPS);
+    let glow_tex = CanvasTexture::mipmapped_levels(Canvas::new(ATLAS, ATLAS), images, false, ATLAS_MIPS);
     let atlas = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(atlas_tex.image.clone()),
         emissive_texture: Some(glow_tex.image.clone()),
@@ -260,7 +265,7 @@ pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materi
         CanvasRole::Ded => (if layout.ded.is_some() { Canvas::new(DED_CANVAS.0, DED_CANVAS.1) } else { Canvas::new(8, 8) }, true),
         _ => (Canvas::new(crate::panel::INDEXER_CANVAS.0, crate::panel::INDEXER_CANVAS.1), true),
     };
-    let tex = if canvas.scale > 1 { CanvasTexture::mipmapped(canvas, images, transparent) } else { CanvasTexture::new(canvas, images, transparent) };
+    let tex = CanvasTexture::mipmapped(canvas, images, transparent);
     let material = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(tex.image.clone()),
         emissive_texture: Some(tex.image.clone()),
@@ -292,7 +297,7 @@ pub(super) fn side_label(text: &str, fonts: &Fonts, materials: &mut Assets<Cockp
     canvas.clear(44);
     let w = fonts.text(&mut Canvas::new(64, 16), 0, 0, text.as_bytes(), 47);
     fonts.text(&mut canvas, (28 - w) / 2, 3, text.as_bytes(), 47);
-    let tex = CanvasTexture::new(canvas, images, false);
+    let tex = CanvasTexture::mipmapped(canvas, images, false);
     let m = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(tex.image.clone()),
         emissive_texture: Some(tex.image.clone()),

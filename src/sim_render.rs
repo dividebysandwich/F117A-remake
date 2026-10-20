@@ -50,6 +50,9 @@ const DECOY: u8 = 13;
 const TRACER: u8 = 17;
 const ENEMY_TRACER: u8 = 41;
 const CHUTE: u8 = 15;
+/// The canopy's gores (alternating orange and white) and its suspension lines.
+const CANOPY_COLOURS: [u8; 2] = [0xCC, 0xE0];
+const CANOPY_LINES: u8 = 0xE6;
 const SIGNAL_FLARE: u8 = 41;
 /// Seconds a signal flare burns.
 const SIGNAL_FLARE_LIFE: f32 = 25.0;
@@ -88,6 +91,7 @@ struct SimVisuals {
     bullets: Vec<Entity>,
     wreck: Option<Entity>,
     chute: Option<Entity>,
+    canopy: Option<Entity>,
     /// Signal flares of the downed pilot: (dot, seconds since fired, map x, map y).
     signal_flares: Vec<(Entity, f32, i32, i32)>,
     /// Solid palette-colour materials (word 0xFF00 | index).
@@ -152,6 +156,58 @@ fn spawn_dot(commands: &mut Commands, assets: &ModelAssets, material: Handle<Pal
         commands.entity(parent).add_child(dot);
     }
     parent
+}
+
+/// The parachute canopy over the pilot (origin at their feet, metres): a round canopy of 24
+/// gores in two colours, open underneath, and the suspension lines down to the risers above
+/// the pilot's head.
+fn spawn_canopy(commands: &mut Commands, assets: &ModelAssets) -> Entity {
+    const GORES: usize = 24;
+    const RISERS: f32 = 2.3;
+    const SKIRT: (f32, f32) = (3.4, 8.6);
+    const CROWN: f32 = 2.6;
+    // Rings from the skirt up to the apex vent: (radius, height).
+    let rings: Vec<(f32, f32)> = [0.0f32, 25.0, 50.0, 70.0, 85.0]
+        .iter()
+        .map(|d| (SKIRT.0 * d.to_radians().cos(), SKIRT.1 + CROWN * d.to_radians().sin()))
+        .collect();
+    let point = |(r, h): (f32, f32), k: usize| {
+        let a = k as f32 / GORES as f32 * std::f32::consts::TAU;
+        Vec3::new(r * a.cos(), h, r * a.sin())
+    };
+    let mut gores = [Vec::new(), Vec::new()];
+    for k in 0..GORES {
+        let tris = &mut gores[k % 2];
+        for w in rings.windows(2) {
+            let (a, b, c, d) = (point(w[0], k), point(w[0], k + 1), point(w[1], k + 1), point(w[1], k));
+            // Both sides: it is seen from below as much as from outside.
+            for q in [[a, c, b, a, d, c], [a, b, c, a, c, d]] {
+                tris.extend_from_slice(&q);
+            }
+        }
+    }
+    let lines: Vec<Vec3> = (0..GORES).flat_map(|k| [Vec3::Y * RISERS, point(rings[0], k)]).collect();
+    let root = commands.spawn((SimObject, WorldPos::default(), Transform::default(), Visibility::Hidden)).id();
+    let parts = [
+        (bevy::mesh::PrimitiveTopology::TriangleList, std::mem::take(&mut gores[0]), assets.palette.material(CANOPY_COLOURS[0])),
+        (bevy::mesh::PrimitiveTopology::TriangleList, std::mem::take(&mut gores[1]), assets.palette.material(CANOPY_COLOURS[1])),
+        (bevy::mesh::PrimitiveTopology::LineList, lines, assets.palette.line_material(CANOPY_LINES)),
+    ];
+    for (topology, positions, material) in parts {
+        let part = commands
+            .spawn((Transform::default(), MeshMaterial3d(material), bevy::mesh::MeshTag(mesh_tag(LEVEL_AIRCRAFT, 0, false)), bevy::light::NotShadowCaster))
+            .id();
+        commands.entity(root).add_child(part);
+        commands.queue(move |world: &mut World| {
+            let mut mesh = Mesh::new(topology, bevy::asset::RenderAssetUsages::RENDER_WORLD);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+            let h = world.resource_mut::<Assets<Mesh>>().add(mesh);
+            if let Ok(mut e) = world.get_entity_mut(part) {
+                e.insert(Mesh3d(h));
+            }
+        });
+    }
+    root
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -357,22 +413,30 @@ fn sync_objects(
         explosions.pending.push((map_point(w.x as f64, w.y as f64, 0.0), crate::explosions::Blast::Crash));
     }
 
-    // --- parachute
+    // --- parachute: the pilot as a dot, the canopy over them until they land
     match sim.chute() {
         Some((x, y, alt)) => {
             if vis.chute.is_none() {
                 let material = vis.material(&mut materials, &globals, CHUTE);
-                vis.chute = Some(spawn_dot(&mut commands, &assets, material, &[Vec3::ZERO, Vec3::new(0.0, 3.0, 0.0)]));
+                vis.chute = Some(spawn_dot(&mut commands, &assets, material, &[Vec3::ZERO]));
             }
-            if let Some(e) = vis.chute
-                && let Ok((mut pos, _, _, mut v)) = q.get_mut(e)
+            if alt > 0 && vis.canopy.is_none() {
+                vis.canopy = Some(spawn_canopy(&mut commands, &assets));
+            } else if alt <= 0
+                && let Some(e) = vis.canopy.take()
             {
-                pos.0 = map_point(x as f64 + 0.5, y as f64 + 0.5, alt as f64);
-                *v = Visibility::Inherited;
+                commands.entity(e).try_despawn();
+            }
+            let at = map_point(x as f64 + 0.5, y as f64 + 0.5, alt as f64);
+            for e in [vis.chute, vis.canopy].into_iter().flatten() {
+                if let Ok((mut pos, _, _, mut v)) = q.get_mut(e) {
+                    pos.0 = at;
+                    *v = Visibility::Inherited;
+                }
             }
         }
         None => {
-            if let Some(e) = vis.chute.take() {
+            for e in [vis.chute.take(), vis.canopy.take()].into_iter().flatten() {
                 commands.entity(e).try_despawn();
             }
         }

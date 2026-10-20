@@ -263,7 +263,8 @@ fn update_rig(
             {
                 yaw = -((u.x - x) as f32).atan2((y - u.y) as f32);
             }
-            let world_rot = Quat::from_rotation_y(yaw + orbit.yaw) * Quat::from_rotation_x(0.05 - orbit.pitch * 0.5);
+            // The mouse looks up as far as the canopy overhead.
+            let world_rot = Quat::from_rotation_y(yaw + orbit.yaw) * Quat::from_rotation_x((0.05 - orbit.pitch).clamp(-1.4, 1.5));
             let local = a.orientation.inverse();
             *head = Transform::from_translation(local * (eye - pos.0).as_vec3()).with_rotation(local * world_rot);
             *cam_tf = offset.0;

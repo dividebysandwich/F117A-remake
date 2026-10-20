@@ -327,8 +327,12 @@ fn read_hands(
         }
         let mut grip = None;
         let mut aim = None;
+        hand.aim_raw = None;
         for (s, tf, flags) in &spaces {
             if s.hand == i && flags.pos_valid() && flags.rot_valid() {
+                if s.aim {
+                    hand.aim_raw = Some(*tf);
+                }
                 let t = offset * *tf;
                 if s.aim { aim = Some(t) } else { grip = Some(t) }
             }

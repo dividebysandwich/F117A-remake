@@ -61,7 +61,7 @@ The menu remembers its choices and switches for the next start.
 | CONTROLS | Open the input mapping (chapter 2). |
 | CAREER | Pilot records and the tour of duty (chapter 10). |
 | PLAN ROUTE | Below the mission summary: the mission planner (chapter 9). |
-| FLY IN VR | Restart the game in the VR headset with this mission (requires an OpenXR runtime). |
+| FLY IN VR | Restart the game in the VR headset with this mission (requires an OpenXR runtime). After the mission the debrief and the menu stay in the headset, on a panel in front of you: point a controller at it, pull the trigger to click, push the thumbstick to scroll; the left menu button puts the panel in front of you again. Starting the game with `--vr` opens the menu in the headset too. |
 | FLY | Start the mission. |
 
 ## 2. Controls menu

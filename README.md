@@ -32,7 +32,7 @@ Command-line options:
 | `--classic-flight` | the original game's flight model instead of the modern one (aerodynamic model with fly-by-wire: the stick commands pitch and roll rate, released the nose stays where it was left and the settled flight path is held); `--script` runs default to it, `--modern-flight` overrides |
 | `--no-crashes` | crash protection: automatic pull-up near the ground with the gear up, ground contact and collisions are not fatal |
 | `--lockheed` | realistic weapons: the real aircraft's 2 bays, no air-to-air missiles, no carrier operations |
-| `--vr` | OpenXR headset (without a runtime it runs on the desktop) |
+| `--vr` | OpenXR headset (without a runtime it runs on the desktop); the menu and the debrief are a panel in the headset, operated with a controller |
 | `--viewer [--file stflt --model 24]` | browse the converted models |
 | `--freecam [--at Gutersloh\|primary] [--pos x,z]` | free debug camera |
 

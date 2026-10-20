@@ -100,6 +100,10 @@ pub struct Hand {
     pub finger: Vec3,
     /// Thumbstick deflection (x right, y up).
     pub thumb: Vec2,
+    /// Aim pose in the headset's tracking space (not the cockpit frame; the VR menu's pointer),
+    /// while tracked.
+    #[cfg_attr(not(feature = "xr"), allow(dead_code))]
+    pub aim_raw: Option<Transform>,
     pub squeeze: f32,
     pub trigger: f32,
     pub buttons: u8,

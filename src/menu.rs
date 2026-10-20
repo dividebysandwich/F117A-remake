@@ -104,7 +104,7 @@ impl Default for MenuState {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct MenuCamera;
 
 /// An OpenXR runtime is there, so "Fly in VR" can relaunch the game with `--vr`.
@@ -177,7 +177,22 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
     cmd.spawn().map(|_| ())
 }
 
-fn spawn_menu_camera(mut commands: Commands) {
+fn spawn_menu_camera(
+    mut commands: Commands,
+    settings: Res<crate::settings::Settings>,
+    root: Option<Res<crate::camera::XrRoot>>,
+    mut images: ResMut<Assets<Image>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // In the headset: the menu on a panel in front of the player.
+    #[cfg(feature = "xr")]
+    if settings.vr {
+        let root = root.and_then(|r| r.0);
+        crate::vr_menu::spawn(&mut commands, &mut images, &mut meshes, &mut materials, root, MenuCamera);
+        return;
+    }
+    let _ = (&settings, &root, &mut images, &mut meshes, &mut materials);
     commands.spawn((Camera2d, Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() }, MenuCamera, PrimaryEguiContext));
 }
 

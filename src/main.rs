@@ -48,6 +48,8 @@ mod viewer;
 mod weather;
 mod world;
 #[cfg(feature = "xr")]
+mod vr_menu;
+#[cfg(feature = "xr")]
 mod xr;
 
 use bevy::prelude::*;
@@ -56,9 +58,9 @@ use settings::{MissionSetup, Settings};
 
 fn main() {
     let mut settings = Settings::from_args();
-    // Started into the menu: the menu choices and switches from the last run.
+    // Started into the menu (also in VR): the menu choices and switches from the last run.
     let mut menu_state = menu::MenuState::default();
-    if settings.initial_state == settings::AppState::Menu && !settings.vr {
+    if settings.initial_state == settings::AppState::Menu {
         prefs::Prefs::load().apply(&mut menu_state, &mut settings);
     }
     let mut app = App::new();
@@ -87,7 +89,7 @@ fn main() {
     // --vr: OpenXR replaces the render plugin (the window stays for the menu / mirror).
     #[cfg(feature = "xr")]
     if settings.vr {
-        app.add_plugins(xr::plugins(plugins)).add_plugins(xr::XrPlugin);
+        app.add_plugins(xr::plugins(plugins)).add_plugins((xr::XrPlugin, vr_menu::VrMenuPlugin));
     } else {
         app.add_plugins(plugins);
     }

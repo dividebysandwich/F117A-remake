@@ -5334,14 +5334,14 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stealth-formats"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "stealth-mission"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -5351,7 +5351,7 @@ dependencies = [
 
 [[package]]
 name = "stealth-mission-89"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bevy",
@@ -5373,7 +5373,7 @@ dependencies = [
 
 [[package]]
 name = "stealth-sim"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "serde",

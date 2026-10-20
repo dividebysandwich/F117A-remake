@@ -50,49 +50,57 @@ def mesh_obj(name, g, parent, loc=(0, 0, 0)):
     return ob
 
 
-def delta_wing(span, root_le, root_chord, tip_le_y, tip_chord, z, t=0.05):
+def delta_wing(span, root_le, root_chord, tip_le_y, tip_chord, z, t):
     """Mirrored cropped-delta wing: root leading edge at (0, root_le), tip at +-span/2."""
-    return mklib.wing((0, root_le, z), root_chord, (span / 2, tip_le_y, z), tip_chord, WING, t=t, t_tip=0.03)
+    return mklib.wing((0, root_le, z), root_chord, (span / 2, tip_le_y, z), tip_chord, WING, t=t, t_tip=0.05, peak=0.4)
 
 
-def winglets(span, y, chord, h, z):
+def tip_fins(span, y, chord, up, down, z):
+    """Fins at the wing tips, reaching above and below the wing."""
     g = Geo()
     for sx in (-1, 1):
         x = sx * span / 2
-        g.face2([(x, y, z), (x, y - chord, z), (x, y - chord, z + h), (x, y - chord * 0.35, z + h)], WING)
+        g.face2([(x, y - chord * 0.1, z), (x, y - chord, z), (x, y - chord, z + up), (x, y - chord * 0.45, z + up)], WING)
+        g.face2([(x, y - chord * 0.3, z), (x, y - chord, z), (x, y - chord, z - down), (x, y - chord * 0.6, z - down)], WING)
+    return g
+
+
+# Proportions from photos of the Shahed-136 (3.5 m long, 2.5 m span, about 0.45 m across the
+# nose): a round nose ahead of the wing apex, then a blended wing-body as thick as the wing root.
+LENGTH_NOSE, TAIL = 36, -30
+SPAN = 48
+APEX = 19
+TIP_LE, TIP_CHORD = -19, 10
+
+
+def airframe(nose=LENGTH_NOSE):
+    g = Geo()
+    # Nose and the low spine over the wing (the same height as the wing root behind the apex).
+    g.add(loft([(nose, 0, 0.6, 0.6), (nose - 3, 0, 3.0, 3.0), (nose - 9, 0, 4.2, 4.2), (APEX + 4, 0, 4.2, 3.8),
+                (APEX - 6, 0, 3.2, 2.8), (-12, 0, 2.6, 2.4), (TAIL + 2, 0, 2.2, 2.0), (TAIL, 0, 1.6, 1.4)], BODY, n=8))
+    g.add(delta_wing(SPAN, APEX, APEX - TAIL, TIP_LE, TIP_CHORD, 0, t=0.1))
+    g.add(tip_fins(SPAN, TIP_LE, TIP_CHORD, 8, 4.5, 0))
+    g.line((-SPAN / 2, TIP_LE - TIP_CHORD, 0), (-SPAN / 2, TIP_LE, 0), RED)
+    g.line((SPAN / 2, TIP_LE - TIP_CHORD, 0), (SPAN / 2, TIP_LE, 0), GREEN)
     return g
 
 
 def geran2():
-    """Shahed-136 / Geran-2: cropped delta, short fuselage, pusher propeller, tip fins."""
-    g = Geo()
-    g.add(loft([(36, 0, 0.5, 0.5), (32, 0, 4, 4), (20, 0, 6.5, 6), (-10, 0, 6.5, 6), (-26, 0, 5, 4.5), (-30, 0, 3, 3)], BODY, n=8))
-    g.add(delta_wing(56, 24, 52, -22, 12, 0))
-    g.add(winglets(56, -22, 12, 9, 0))
-    g.add(winglets(56, -22, 12, -7, 0).recolour(WING))
-    # Engine nacelle behind the wing root.
-    g.add(frustum((0, -26, 0), (0, -32, 0), 3.2, 2.2, BELLY, n=8))
-    g.line((-28, -28, 0), (-28, -12, 0), RED)
-    g.line((28, -28, 0), (28, -12, 0), GREEN)
+    """Shahed-136 / Geran-2: piston engine in the tail with a pusher propeller."""
+    g = airframe()
+    g.add(frustum((0, TAIL + 1, 0), (0, TAIL - 3, 0), 2.2, 1.6, BELLY, n=8))
     prop = Geo()
-    # Two-bladed pusher propeller around its hub (the part origin).
+    # Two-bladed pusher propeller around its hub (the part origin), about 0.8 m across.
     for a in (0, math.pi):
         c, s = math.cos(a), math.sin(a)
-        prop.face2([(c * 1.2, 0, s * 1.2), (c * 14, 0.5, s * 14 + 1.8 * c), (c * 14, -0.5, s * 14 - 1.8 * c), (c * 1.2, 0.4, -s * 1.2)], PROP)
-    return g, prop, (0, -33, 0)
+        prop.face2([(c * 1.0, 0, s * 1.0), (c * 7, 0.4, s * 7 + 1.4 * c), (c * 7, -0.4, s * 7 - 1.4 * c), (c * 1.0, 0.3, -s * 1.0)], PROP)
+    return g, prop, (0, TAIL - 4, 0)
 
 
 def geran3():
-    """Geran-3: the jet version, a longer fuselage with a turbojet on the spine."""
-    g = Geo()
-    g.add(loft([(40, 0, 0.5, 0.5), (36, 0, 4.5, 4.5), (22, 0, 7, 6.5), (-14, 0, 7, 6.5), (-30, 0, 5, 4.5), (-34, 0, 2.5, 2.5)], BODY, n=8))
-    g.add(delta_wing(54, 22, 50, -24, 12, -1))
-    g.add(winglets(54, -24, 12, 9, -1))
-    # Turbojet pod on the spine.
-    g.add(loft([(4, 9, 0.5, 0.5), (0, 9, 3.5, 3.5), (-22, 9, 3.8, 3.8), (-34, 9, 3, 3)], NOZZLE, n=8))
-    g.add(frustum((0, -10, 5), (0, -10, 7), 2, 2, BODY, n=6))
-    g.line((-27, -30, -1), (-27, -14, -1), RED)
-    g.line((27, -30, -1), (27, -14, -1), GREEN)
+    """Shahed-238 / Geran-3: the same airframe with a small turbojet on the back of the tail."""
+    g = airframe(LENGTH_NOSE + 2)
+    g.add(loft([(-8, 2.2, 0.4, 0.4), (-10, 2.2, 1.9, 1.9), (-26, 2.2, 2.1, 2.1), (TAIL - 3, 2.2, 1.6, 1.6)], NOZZLE, n=8))
     return g, None, None
 
 

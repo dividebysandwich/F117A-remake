@@ -245,7 +245,8 @@ the air.
 ### 3.8 In-flight settings menu
 
 **Esc** (also Pause, Alt P, the gamepad's Start button or the **MENU** button of the left side
-panel) opens the settings menu in front of the pilot and pauses the flight. In VR, touch an
+panel) opens the settings menu and pauses the flight: in VR a screen in front of the pilot, on
+the desktop over the middle of the window. In VR, touch an
 entry with a fingertip and pull the trigger, or use a thumbstick and A / X. On the desktop, click
 an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
 

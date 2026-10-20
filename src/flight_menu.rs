@@ -10,6 +10,7 @@
 use bevy::audio::{AudioSink, AudioSinkPlayback};
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
+use bevy::ui::RelativeCursorPosition;
 
 use crate::camera::{EyeCamera, View, ViewState};
 use crate::canvas::{Canvas, CanvasTexture};
@@ -172,12 +173,13 @@ fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, u32) {
     (s.modern_shading, s.shadows, s.local_lights, s.classic_cockpit, s.classic_hud, s.classic_avionics, (s.vr_cockpit_scale * 100.0).round() as u32)
 }
 
-/// The menu screen, in front of the pilot in the cockpit (spawned again when the cockpit is
-/// rebuilt, e.g. after switching its style).
+/// The menu screen: in VR in front of the pilot in the cockpit (spawned again when the cockpit
+/// is rebuilt, e.g. after switching its style), on the desktop a 2D overlay.
 fn spawn_screen(
     mut commands: Commands,
     roots: Query<Entity, With<CockpitRoot>>,
     screens: Query<(), With<MenuScreen>>,
+    settings: Res<Settings>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
@@ -189,6 +191,37 @@ fn spawn_screen(
     let tex = CanvasTexture::new(Canvas::new(W, H), &mut images, false);
     if let Some(mut img) = images.get_mut(&tex.image) {
         img.sampler = bevy::image::ImageSampler::linear();
+    }
+    if !settings.vr {
+        // On the desktop a flat overlay in the middle of the window: in front of the eye it
+        // would be cut by the camera's near plane.
+        let image = ImageNode::new(tex.image.clone());
+        let overlay = commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: percent(100),
+                    height: percent(100),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                GlobalZIndex(10),
+                DespawnOnExit(AppState::Flight),
+            ))
+            .id();
+        let screen = commands
+            .spawn((
+                MenuScreen,
+                tex,
+                image,
+                Node { height: vh(70), aspect_ratio: Some(W as f32 / H as f32), ..default() },
+                RelativeCursorPosition::default(),
+                Visibility::Hidden,
+            ))
+            .id();
+        commands.entity(overlay).add_child(screen);
+        return;
     }
     let material = materials.add(StandardMaterial {
         base_color_texture: Some(tex.image.clone()),
@@ -236,6 +269,7 @@ fn navigate(
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform), With<EyeCamera>>,
     screen: Query<(&GlobalTransform, &Transform), With<MenuScreen>>,
+    overlay: Query<&RelativeCursorPosition, With<MenuScreen>>,
     mut time: ResMut<Time<Virtual>>,
     mut block: ResMut<InputBlock>,
     mut actions: MessageWriter<ActionEvent>,
@@ -288,6 +322,17 @@ fn navigate(
 
     // Pointing: the mouse hovers and clicks, a fingertip touches and the trigger presses.
     let mut clicked: Option<(usize, bool)> = None;
+    // Desktop overlay: the cursor's place on it (-0.5 .. 0.5 from its centre).
+    if let Ok(rel) = overlay.single()
+        && rel.cursor_over()
+        && let Some(n) = rel.normalized
+        && let Some(hit) = item_at(Vec2::new((n.x + 0.5) * W as f32, (n.y + 0.5) * H as f32))
+    {
+        menu.cursor = hit.0;
+        if mouse.just_pressed(MouseButton::Left) {
+            clicked = Some(hit);
+        }
+    }
     if let Ok((screen_gtf, screen_tf)) = screen.single() {
         let inv = screen_gtf.affine().inverse();
         if !settings.vr

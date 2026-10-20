@@ -29,7 +29,7 @@ use crate::flight::{Aircraft, FlightConstants, FlightDamage, FlightEnd, FlightSy
 use crate::hud::{Bay, HudCues, HudMessages, HudMode, HudState, Stores, TargetBox, Waypoint, Waypoints};
 use crate::input::{Action, ActionEvent, FlightControls};
 use crate::mfd::{Contact, ContactKind, Contacts, MfdState, MissionClock, MissionOrders, RightMfd, TrackCam};
-use crate::mission::{ActiveMission, clean_text};
+use crate::mission::{ActiveMission, PlannedRoute, clean_text};
 use crate::panel::{Countermeasures, Emv, Warnings};
 use crate::settings::{AppState, MissionSetup, SetupSet, StartPose};
 use crate::world::{TileOverrides, WU, WorldPos, bevy_to_wu, wu_to_bevy};
@@ -172,6 +172,7 @@ fn start_combat(
     mut clock: ResMut<MissionClock>,
     mut wps: ResMut<Waypoints>,
     mut accel: ResMut<TimeAccel>,
+    route: Option<Res<crate::mission::PlannedRoute>>,
 ) {
     accel.on = false;
     let Some(m) = mission else {
@@ -221,14 +222,13 @@ fn start_combat(
     orders.lines = m.orders.lines.iter().map(|l| (l.color, clean_text(&l.text))).collect();
     // 1 clock tick = 2 s after 06:00 / 18:00.
     *clock = MissionClock { start_seconds: m.time.base_hour as f32 * 3600.0 + m.time.tod_ticks as f32 * 2.0, elapsed: Some(0.0) };
+    // The route from the mission planner, else the mission's own waypoints.
+    let route = route.filter(|r| r.fits(m)).map(|r| r.clone()).unwrap_or_else(|| PlannedRoute::of(m));
     *wps = Waypoints {
-        points: m
-            .waypoints
-            .iter()
-            .map(|p| Waypoint { east: p.x as f64 * 32.0, north: (0x8000 - p.y) as f64 * 32.0 })
-            .collect(),
+        points: route.points.iter().map(|p| Waypoint { east: p.x as f64 * 32.0, north: (0x8000 - p.y) as f64 * 32.0 }).collect(),
         current: 0,
         mission_current: 0,
+        anchors: route.anchors(),
     };
     let names = m.world.names.clone();
     commands.insert_resource(Combat {
@@ -698,7 +698,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
 
     // Waypoints: the mission logic switches to the next one when an objective is done.
     if waypoint_changed {
-        let w = (o.waypoint.max(0) as usize).min(wps.points.len().saturating_sub(1));
+        let w = wps.for_mission_waypoint(o.waypoint.max(0) as usize);
         wps.current = w;
         wps.mission_current = w;
     }

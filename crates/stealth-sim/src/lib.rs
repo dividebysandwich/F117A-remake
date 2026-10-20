@@ -16,6 +16,7 @@ mod weapons;
 mod weather;
 
 pub use data::{AircraftKind, AircraftType, MissileType, SimData, TheaterTiles, ThreatType, WeaponType};
+pub use radar::emv;
 pub use rng::Rng;
 pub use types::*;
 

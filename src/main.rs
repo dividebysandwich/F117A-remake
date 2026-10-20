@@ -26,6 +26,7 @@ mod models;
 mod palette;
 mod palette_material;
 mod panel;
+mod planner;
 mod player;
 mod prefs;
 mod scenery;

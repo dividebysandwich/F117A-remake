@@ -22,6 +22,63 @@ impl MissionData {
 #[derive(Resource, Clone)]
 pub struct ActiveMission(pub Mission);
 
+/// What a route point is: a navigation point the player placed (or the mission's midpoint),
+/// or one of the mission's fixed points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum RouteKind {
+    Nav,
+    Primary,
+    Secondary,
+    Land,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RoutePoint {
+    /// Map units (x east, y south).
+    pub x: i32,
+    pub y: i32,
+    pub kind: RouteKind,
+}
+
+/// The route flown (mission planner); the mission's 4 waypoints unless the player changed it.
+#[derive(Resource, Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PlannedRoute {
+    /// The mission it belongs to (theater, kind, seed of the RNG on entry).
+    pub mission: (String, u8, u32),
+    pub points: Vec<RoutePoint>,
+}
+
+impl PlannedRoute {
+    /// The mission's own route: midpoint, primary, secondary, landing base.
+    pub fn of(m: &Mission) -> Self {
+        let kinds = [RouteKind::Nav, RouteKind::Primary, RouteKind::Secondary, RouteKind::Land];
+        Self { mission: Self::key(m), points: m.waypoints.iter().zip(kinds).map(|(p, kind)| RoutePoint { x: p.x, y: p.y, kind }).collect() }
+    }
+
+    pub fn key(m: &Mission) -> (String, u8, u32) {
+        (m.theater_code.clone(), m.settings.kind.id(), m.rng.holdrand_entry)
+    }
+
+    pub fn fits(&self, m: &Mission) -> bool {
+        self.mission == Self::key(m)
+    }
+
+    /// Route index of the mission's waypoint k (0 midpoint/first point, 1 primary, 2 secondary,
+    /// 3 landing base).
+    pub fn anchors(&self) -> Vec<usize> {
+        let find = |kind| self.points.iter().position(|p| p.kind == kind).unwrap_or(0);
+        vec![0, find(RouteKind::Primary), find(RouteKind::Secondary), find(RouteKind::Land)]
+    }
+
+    /// Route length in map units.
+    pub fn length(&self) -> f64 {
+        self.points.windows(2).map(|w| (((w[1].x - w[0].x) as f64).powi(2) + ((w[1].y - w[0].y) as f64).powi(2)).sqrt()).sum()
+    }
+}
+
+/// File the menu hands a planned route to the VR process in (`--route`).
+pub const ROUTE_FILE: &str = "route.json";
+
 /// Menu choices -> generator settings.
 pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockheed: bool, weather: Option<Sky>, cloud_cover: Option<u8>) -> MissionSettings {
     MissionSettings {
@@ -135,6 +192,14 @@ pub fn from_args(app: &mut App) {
             m.night,
             m.weather.describe()
         );
+    }
+    // `--route <file>`: the route planned in the menu (when it is for this mission).
+    if let Some(route) = get("--route")
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<PlannedRoute>(&t).ok())
+        .filter(|r| r.fits(&m))
+    {
+        app.insert_resource(route);
     }
     let mut setup = setup_from_mission(&m, &tables.start_dir);
     setup.freecam = args.iter().any(|a| a == "--freecam");

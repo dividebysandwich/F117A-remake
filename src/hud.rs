@@ -136,9 +136,26 @@ pub struct Waypoints {
     pub current: usize,
     /// Waypoint the mission logic selected last; Shift-F8 returns to it.
     pub mission_current: usize,
+    /// Index of the mission's waypoints 0..3 (midpoint, primary, secondary, landing base) in
+    /// a planned route; empty: the points are the mission's own 4.
+    pub anchors: Vec<usize>,
 }
 
 impl Waypoints {
+    /// Point to fly to when the mission logic selects its waypoint `w` (1 primary next after
+    /// the secondary, 2 secondary next after the primary, 3 home): with a planned route, the
+    /// points after the target just done are flown in order.
+    pub fn for_mission_waypoint(&self, w: usize) -> usize {
+        let a = |k: usize| self.anchors.get(k).copied().unwrap_or(k);
+        let i = match w {
+            1 => a(1),
+            2 => a(1) + 1,
+            3 => a(1).max(a(2)) + 1,
+            _ => 0,
+        };
+        i.min(self.points.len().saturating_sub(1))
+    }
+
     pub fn target(&self) -> Option<Waypoint> {
         self.points.get(self.current).copied()
     }

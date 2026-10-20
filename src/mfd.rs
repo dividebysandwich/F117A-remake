@@ -390,7 +390,7 @@ fn mfd_keys(
 
 /// Flat geometry of one theater model for the map, in model units (x east, y north).
 #[derive(Default, Clone)]
-struct MapModel {
+pub(crate) struct MapModel {
     attr: u8,
     /// Triangles in painter's order (by height).
     tris: Vec<([Vec2; 3], u8)>,
@@ -574,32 +574,17 @@ impl GeometrySource<'_> {
     }
 }
 
-/// Extracts the map geometry of the theater models once they are loaded.
-#[allow(clippy::too_many_arguments)]
-fn build_map_geometry(
-    theater: Option<Res<Theater>>,
-    library: Res<ModelLibrary>,
-    gltfs: Res<Assets<Gltf>>,
-    nodes: Res<Assets<GltfNode>>,
-    meshes: Res<Assets<GltfMesh>>,
-    mesh_data: Res<Assets<Mesh>>,
-    mut raster: ResMut<MapRaster>,
-    terrain: Res<crate::terrain::RefinedTerrain>,
-) {
-    let Some(theater) = theater else { return };
-    if raster.geometry_theater == theater.id || !terrain.ready(&theater.id) {
-        return;
-    }
-    let Some(g) = library.files.get(&theater.id).and_then(|h| gltfs.get(h)) else { return };
+/// Flat map geometry of a theater's models (`<id>_NNN` nodes of its loaded glTF file).
+pub(crate) fn map_models(id: &str, g: &Gltf, nodes: &Assets<GltfNode>, meshes: &Assets<GltfMesh>, mesh_data: &Assets<Mesh>) -> HashMap<u8, MapModel> {
     let src = GeometrySource {
-        nodes: &nodes,
-        meshes: &meshes,
-        mesh_data: &mesh_data,
+        nodes,
+        meshes,
+        mesh_data,
         material_names: g.named_materials.iter().map(|(n, h)| (h.id(), n.to_string())).collect(),
     };
     let mut models = HashMap::new();
     for shape in 0..=255u8 {
-        let name = format!("{}_{:03}", theater.id, shape);
+        let name = format!("{}_{:03}", id, shape);
         let Some(handle) = g.named_nodes.get(name.as_str()) else { continue };
         let attr = nodes
             .get(handle)
@@ -624,6 +609,27 @@ fn build_map_geometry(
             },
         );
     }
+    models
+}
+
+/// Extracts the map geometry of the theater models once they are loaded.
+#[allow(clippy::too_many_arguments)]
+fn build_map_geometry(
+    theater: Option<Res<Theater>>,
+    library: Res<ModelLibrary>,
+    gltfs: Res<Assets<Gltf>>,
+    nodes: Res<Assets<GltfNode>>,
+    meshes: Res<Assets<GltfMesh>>,
+    mesh_data: Res<Assets<Mesh>>,
+    mut raster: ResMut<MapRaster>,
+    terrain: Res<crate::terrain::RefinedTerrain>,
+) {
+    let Some(theater) = theater else { return };
+    if raster.geometry_theater == theater.id || !terrain.ready(&theater.id) {
+        return;
+    }
+    let Some(g) = library.files.get(&theater.id).and_then(|h| gltfs.get(h)) else { return };
+    let models = map_models(&theater.id, g, &nodes, &meshes, &mesh_data);
     if models.is_empty() {
         return;
     }
@@ -724,7 +730,7 @@ fn bevy_to_map(pos: &WorldPos) -> (f64, f64) {
 /// again for the models flagged 0x80 (drawn on top). Only ground-level objects (z = 0) are
 /// drawn. `to_px` maps world units (east, north) to canvas pixels; `visible` is the world
 /// rectangle to cover (centre east, centre north, half width, half height).
-fn rasterise_map(
+pub(crate) fn rasterise_map(
     c: &mut Canvas,
     models: &HashMap<u8, MapModel>,
     theater: &Theater,

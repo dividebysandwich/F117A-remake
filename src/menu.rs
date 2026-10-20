@@ -23,6 +23,9 @@ impl Plugin for MenuPlugin {
             .add_systems(OnExit(AppState::Menu), despawn_menu_camera)
             .add_systems(OnEnter(AppState::Debrief), spawn_menu_camera)
             .add_systems(OnExit(AppState::Debrief), despawn_menu_camera)
+            // `--open-planner`: start in the mission planner (screenshots).
+            .insert_resource(crate::planner::Planner::opened(std::env::args().any(|a| a == "--open-planner")))
+            .add_systems(Update, crate::planner::prepare_map.run_if(in_state(AppState::Menu)))
             .add_systems(EguiPrimaryContextPass, menu_ui.run_if(in_state(AppState::Menu)));
     }
 }
@@ -55,6 +58,8 @@ pub struct MenuState {
     pub cloud_cover: Option<u8>,
     pub seed: u16,
     pub mission: Option<Result<Mission, String>>,
+    /// The route to fly (mission planner); reset with every new mission.
+    pub route: Option<crate::mission::PlannedRoute>,
     dirty: bool,
 }
 
@@ -70,6 +75,7 @@ impl Default for MenuState {
             cloud_cover: None,
             seed: rand::random(),
             mission: None,
+            route: None,
             dirty: true,
         }
     }
@@ -125,6 +131,14 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         }
     }
     cmd.args(["--vr-cockpit-scale", &format!("{:.0}", settings.vr_cockpit_scale * 100.0)]);
+    if let Some(route) = &state.route {
+        match crate::prefs::save_json(crate::mission::ROUTE_FILE, route) {
+            Ok(path) => {
+                cmd.arg("--route").arg(path);
+            }
+            Err(e) => warn!("saving the route: {e}"),
+        }
+    }
     cmd.spawn().map(|_| ())
 }
 
@@ -306,6 +320,7 @@ fn menu_ui(
     hotas: Res<crate::hotas::Hotas>,
     keys: Res<ButtonInput<KeyCode>>,
     mut saved: Local<Option<crate::prefs::Prefs>>,
+    mut planner: ResMut<crate::planner::Planner>,
 ) -> Result {
     // Generator data is loaded on first use.
     let Some(data) = data else {
@@ -319,6 +334,7 @@ fn menu_ui(
         state.dirty = false;
         let settings = crate::mission::settings(state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover);
         state.mission = Some(crate::mission::generate(&data, &settings, state.seed).map_err(|e| format!("{e:#}")));
+        state.route = state.mission.as_ref().and_then(|m| m.as_ref().ok()).map(crate::mission::PlannedRoute::of);
     }
 
     let ctx = contexts.ctx_mut()?;
@@ -338,7 +354,7 @@ fn menu_ui(
         .max_width(width)
         .frame(egui::Frame::window(&ctx.global_style()).inner_margin(16.0))
         .show(ctx, |ui| {
-            if dialog.open {
+            if dialog.open || planner.open {
                 ui.disable();
             }
             ui.horizontal(|ui| {
@@ -488,6 +504,10 @@ fn menu_ui(
                 if facts(ui.add(big_button("CONTROLS")), &["Map keys, joystick and HOTAS axes and buttons", "Saved for the next flights"]).clicked() {
                     dialog.open = true;
                 }
+                let plan = ui.add_enabled(matches!(state.mission, Some(Ok(_))), big_button("PLAN ROUTE"));
+                if facts(plan, &["The theater map with the enemy radar and SAM coverage", "Add, move and remove navigation points", "Targets and the landing base stay fixed"]).clicked() {
+                    planner.open = true;
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let can_fly = matches!(state.mission, Some(Ok(_)));
                     let fly = ui.add_enabled(can_fly, big_button("FLY").fill(DIM));
@@ -496,6 +516,7 @@ fn menu_ui(
                     {
                         *setup = crate::mission::setup_from_mission(m, &tables.start_dir);
                         commands.insert_resource(ActiveMission(m.clone()));
+                        commands.insert_resource(state.route.clone().unwrap_or_else(|| crate::mission::PlannedRoute::of(m)));
                         next.set(AppState::Flight);
                     }
                     // Already in VR: "Fly" flies in the headset.
@@ -516,6 +537,7 @@ fn menu_ui(
             });
         });
     crate::input_dialog::show(ctx, &mut dialog, input_config.bypass_change_detection(), &hotas, &keys);
+    crate::planner::planner_ui(ctx, &mut planner, &mut state);
     if before != (state.theater, state.roe, state.kind, state.opponents, state.lockheed, state.weather, state.cloud_cover) {
         state.dirty = true;
     }

@@ -1,7 +1,7 @@
 //! `--viewer [--file stflt] [--model N] [--yaw deg] [--pitch deg] [--distance d] [--no-label]`:
 //! browse every converted model.
 //! PgUp/PgDn model, Tab file, drag orbit, wheel zoom, P palette, R day/night remap table,
-//! L lights (state slots 10/12), D destroyed variant (slot 1), A animate parts.
+//! L lights (state slots 10/12, flashing 18-20), D destroyed variant (slot 1), A animate parts.
 
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
@@ -127,6 +127,9 @@ fn navigate(
     for mut m in &mut models {
         m.0[10] = state.lights as i16;
         m.0[12] = state.lights as i16;
+        for (k, v) in crate::sim_render::anticollision(time.elapsed_secs(), 0.0, state.lights) {
+            m.0[k] = v;
+        }
         m.0[1] = state.destroyed as i16;
         if state.animate {
             let a = (time.elapsed_secs() * 20000.0) as i32 as i16;

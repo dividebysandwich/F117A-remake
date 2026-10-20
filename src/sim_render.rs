@@ -4,7 +4,7 @@
 //! smoke: explosions.rs). Positions are interpolated between the 15 Hz simulation frames.
 //!
 //! Also drives the model state slots of the world: lights (10/11) from the palette, the turning
-//! antennas (15/16) and the per-object aircraft slots (8, 12, 13, 14).
+//! antennas (15/16) and the per-object aircraft slots (8, 12, 13, 14, 18-20).
 
 use std::collections::{HashMap, HashSet};
 
@@ -149,6 +149,25 @@ pub fn projectile_pose(combat: &Combat, s: usize) -> Option<(bevy::math::DVec3, 
 
 pub fn attitude(heading: i32, pitch: i32, roll: i32) -> Quat {
     Aircraft::from_euler(bam(heading as u16 as f32), bam(pitch as i16 as f32), bam(roll as i16 as f32))
+}
+
+/// Anti-collision lights (tools/models/anticollision.py), each a flash pattern on a state slot:
+/// (slot, period s, flashes as (start s, length s)). White strobes flash once a second
+/// (fighters) or twice in quick succession (transports, like airliner strobes); red beacons at
+/// about 50 a minute, as their rotating mirrors look from outside.
+const ANTICOLLISION: [(usize, f32, &[(f32, f32)]); 3] = [
+    (18, 1.0, &[(0.0, 0.07)]),
+    (19, 1.2, &[(0.0, 0.06), (0.14, 0.06)]),
+    (20, 1.15, &[(0.55, 0.13)]),
+];
+
+/// Anti-collision light slots of an aircraft at `t` seconds, all dark unless `on`. `phase`
+/// (0..1) puts aircraft out of step with each other.
+pub fn anticollision(t: f32, phase: f32, on: bool) -> [(usize, i16); 3] {
+    ANTICOLLISION.map(|(slot, period, flashes)| {
+        let at = (t / period + phase).fract() * period;
+        (slot, (on && flashes.iter().any(|&(start, len)| at >= start && at < start + len)) as i16)
+    })
 }
 
 /// Friendly aircraft: last detail level range multiplier (32769 model units x 40 = 80 km).
@@ -311,14 +330,20 @@ fn sync_objects(
             pos.0 = wu_to_bevy(east, north, alt);
             tf.rotation = rot;
             if let Some(mut s) = state {
-                // Slots 12 (nav lights), 13 (airborne, gear up) and 14 (STFLT 1/10/15).
+                // Slots 12 (nav lights), 13 (airborne, gear up), 14 (STFLT 1/10/15) and
+                // 18-20 (anti-collision lights, with the nav lights).
                 let special = matches!(model, 1 | 10 | 15);
+                let nav = u.flags & 3 != 0;
+                let [s18, s19, s20] = anticollision(time.elapsed_secs(), (i as f32 * 0.618).fract(), nav);
                 let v = [
                     (10, lights as i16),
                     (11, lights as i16),
-                    (12, (u.flags & 3 != 0) as i16),
+                    (12, nav as i16),
                     (13, (!special && u.alt > 12 && u.flags & fflags::DESTROYED == 0) as i16),
                     (14, special as i16),
+                    s18,
+                    s19,
+                    s20,
                 ];
                 if v.iter().any(|&(k, x)| s.0[k] != x) {
                     for (k, x) in v {

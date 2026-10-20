@@ -675,7 +675,7 @@ landing base stay where they are; between them you add, move and remove navigati
 | Drag the map, mouse wheel | Pan, zoom. |
 | RESET | Back to the briefed route. |
 
-Each SAM site shows its missile range as a thin red circle and, filled, where its radar would
+Each SAM site shows its missile range as a dotted red circle and, filled in orange, where its radar would
 detect you, flown at the selected profile (*Low* 500 ft, *Medium* 5000 ft or *High* 20,000 ft, at
 480 kt with the bay doors shut and wings level; banking, opening the doors, the ECM jammer and
 speed make the circles larger). Sites that are off the air are drawn faint. The panel lists the

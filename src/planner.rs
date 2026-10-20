@@ -282,11 +282,13 @@ pub fn planner_ui(ctx: &egui::Context, planner: &mut Planner, state: &mut MenuSt
                     });
                     let detect = exposure(&pts, &rings, |r| r.detect);
                     ui.label(egui::RichText::new(format!("{detect:.0} km of the route detected")).color(if detect > 0.0 { AMBER } else { GREEN }));
-                    ui.label(egui::RichText::new("At 480 kt, doors shut, wings level. Faster, higher, banked or with open doors, the circles grow.").small().color(DIM));
+                    ui.label(egui::RichText::new("Radar coverage assumes 480kt level flight, bay doors closed.").small().color(DIM));
                     section(ui, "Map");
-                    ui.label(egui::RichText::new("Filled: radar detects you").small().color(AMBER));
-                    ui.label(egui::RichText::new("Thin red: missile range").small().color(egui::Color32::from_rgb(255, 70, 50)));
-                    ui.label(egui::RichText::new("x: drones on their way").small().color(egui::Color32::from_rgb(255, 120, 200)));
+                    legend(ui, Legend::Detection, "Radar detection range");
+                    legend(ui, Legend::Missile, "Missile range");
+                    if m.drones.is_some() {
+                        legend(ui, Legend::Drone, "Enemy UAV");
+                    }
                     ui.label(egui::RichText::new("Drag a point to move it, the map to pan. Click a leg to add a point, right click to remove it. Wheel: zoom.").small().color(DIM));
                     ui.add_space(12.0);
                     if ui.add(big_button("RESET")).clicked() {
@@ -334,13 +336,13 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
             painter.text(rect.center(), egui::Align2::CENTER_CENTER, "LOADING MAP...", egui::FontId::monospace(18.0), DIM);
         }
     }
-    let red = egui::Color32::from_rgb(255, 70, 50);
-    // Threat coverage: dashed radar circles, solid missile circles; dim when off the air.
-    let circle = |c: egui::Pos2, r: f32| (0..=64).map(|k| c + egui::Vec2::angled(k as f32 / 64.0 * std::f32::consts::TAU) * r).collect::<Vec<_>>();
+    let red = MISSILE_RED;
+    // Threat coverage: filled radar detection circles, dotted missile range circles; dim when
+    // off the air.
     for ring in rings {
         let c = to_screen(ring.x, ring.y);
         let alpha = if ring.active { 1.0 } else { 0.35 };
-        painter.extend(egui::Shape::dashed_line(&circle(c, ring.launch / scale), egui::Stroke::new(0.8, red.gamma_multiply(alpha * 0.45)), 4.0, 6.0));
+        painter.extend(missile_circle(c, ring.launch / scale, alpha));
         if ring.detect > 0.0 {
             painter.circle(c, ring.detect / scale, AMBER.gamma_multiply(alpha * 0.18), egui::Stroke::new(1.5, AMBER.gamma_multiply(alpha)));
         }
@@ -357,13 +359,11 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
     }
     // Drones on their way (drone defense).
     if let Some(d) = &m.drones {
-        let pink = egui::Color32::from_rgb(255, 120, 200);
         let t = &m.world.objects[d.target as usize];
         for f in m.world.flights.iter().skip(d.first_unit).take(d.count) {
             let p = to_screen(f.x as u16 as f32, f.y as u16 as f32);
-            painter.line_segment([p + egui::vec2(-4.0, -4.0), p + egui::vec2(4.0, 4.0)], egui::Stroke::new(1.5, pink));
-            painter.line_segment([p + egui::vec2(-4.0, 4.0), p + egui::vec2(4.0, -4.0)], egui::Stroke::new(1.5, pink));
-            painter.extend(egui::Shape::dashed_line(&[p, to_screen(t.x as u16 as f32, t.y as u16 as f32)], egui::Stroke::new(0.8, pink.gamma_multiply(0.5)), 3.0, 4.0));
+            drone_cross(&painter, p);
+            painter.extend(egui::Shape::dashed_line(&[p, to_screen(t.x as u16 as f32, t.y as u16 as f32)], egui::Stroke::new(0.8, UAV_PINK.gamma_multiply(0.5)), 3.0, 4.0));
         }
     }
     // The route, from the takeoff base.
@@ -443,4 +443,45 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
     {
         route.points.remove(i);
     }
+}
+
+const MISSILE_RED: egui::Color32 = egui::Color32::from_rgb(255, 70, 50);
+const UAV_PINK: egui::Color32 = egui::Color32::from_rgb(255, 120, 200);
+
+/// A SAM site's missile range: a dotted red circle.
+fn missile_circle(c: egui::Pos2, r: f32, alpha: f32) -> Vec<egui::Shape> {
+    let n = ((r * std::f32::consts::TAU / 2.0) as usize).clamp(24, 720);
+    let pts: Vec<egui::Pos2> = (0..=n).map(|k| c + egui::Vec2::angled(k as f32 / n as f32 * std::f32::consts::TAU) * r).collect();
+    egui::Shape::dashed_line(&pts, egui::Stroke::new(1.4, MISSILE_RED.gamma_multiply(alpha * 0.8)), 3.0, 4.0)
+}
+
+/// A drone on the map: a pink cross.
+fn drone_cross(painter: &egui::Painter, p: egui::Pos2) {
+    let stroke = egui::Stroke::new(1.5, UAV_PINK);
+    painter.line_segment([p + egui::vec2(-4.0, -4.0), p + egui::vec2(4.0, 4.0)], stroke);
+    painter.line_segment([p + egui::vec2(-4.0, 4.0), p + egui::vec2(4.0, -4.0)], stroke);
+}
+
+#[derive(Clone, Copy)]
+enum Legend {
+    Detection,
+    Missile,
+    Drone,
+}
+
+/// A map legend line: the symbol as drawn on the map, then its meaning.
+fn legend(ui: &mut egui::Ui, symbol: Legend, text: &str) {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(18.0, 14.0), egui::Sense::hover());
+        let painter = ui.painter_at(rect.expand(1.0));
+        let c = rect.center();
+        match symbol {
+            Legend::Detection => {
+                painter.circle(c, 6.0, AMBER.gamma_multiply(0.18), egui::Stroke::new(1.5, AMBER));
+            }
+            Legend::Missile => painter.extend(missile_circle(c, 6.0, 1.0)),
+            Legend::Drone => drone_cross(&painter, c),
+        }
+        ui.label(egui::RichText::new(text).small().color(BRIGHT));
+    });
 }

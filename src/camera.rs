@@ -45,6 +45,9 @@ pub enum View {
     Chase,
     Side,
     Tactical,
+    /// After ejecting: the pilot under the chute and on the ground (set by the combat
+    /// simulation; the view keys do nothing until the mission ends).
+    Pilot,
 }
 
 #[derive(Resource, Default)]
@@ -164,7 +167,15 @@ pub fn spawn_rig(
     commands.entity(aircraft).add_child(head).insert(WorldAnchor);
 }
 
-fn switch_view(mut actions: MessageReader<ActionEvent>, mut state: ResMut<ViewState>) {
+fn switch_view(mut actions: MessageReader<ActionEvent>, mut state: ResMut<ViewState>, combat: Option<Res<crate::combat::Combat>>) {
+    if combat.is_some_and(|c| c.sim.chute().is_some()) {
+        actions.clear();
+        state.view = View::Pilot;
+        return;
+    }
+    if state.view == View::Pilot {
+        state.view = View::Cockpit;
+    }
     for ActionEvent(a) in actions.read() {
         match a {
             Action::ViewCockpit | Action::LookAhead => state.view = View::Cockpit,
@@ -193,9 +204,10 @@ fn update_rig(
     mut head: Query<&mut Transform, (With<HeadAnchor>, Without<EyeCamera>)>,
     mut cam: Query<&mut Transform, With<EyeCamera>>,
     mut viewpoint: ResMut<crate::palette::Viewpoint>,
+    combat: Option<Res<crate::combat::Combat>>,
 ) {
     let (Ok(mut head), Ok(mut cam_tf)) = (head.single_mut(), cam.single_mut()) else { return };
-    let Ok((a, _)) = aircraft.single() else { return };
+    let Ok((a, pos)) = aircraft.single() else { return };
     // Lowest camera height relative to the aircraft origin in external views (1 m above ground).
     let floor = 1.0 - (a.altitude - a.ground_altitude) * crate::world::WU as f32;
     viewpoint.altitude_wu = a.altitude + EYE_OFFSET.y / crate::world::WU as f32;
@@ -223,6 +235,24 @@ fn update_rig(
             let d = 40.0 * 2f32.powi(-state.zoom);
             *head = Transform::IDENTITY;
             *cam_tf = orbited(Vec3::new(d, 2.0, 0.0), Vec3::ZERO, &orbit, a.orientation, floor);
+        }
+        View::Pilot => {
+            let Some(sim) = combat.as_ref().map(|c| &c.sim) else { return };
+            let Some((x, y, alt)) = sim.chute() else { return };
+            // Eye height on the ground, just under the canopy in the air.
+            let eye = crate::sim_render::map_point(x as f64 + 0.5, y as f64 + 0.5, alt as f64) + DVec3::Y * 1.7;
+            viewpoint.altitude_wu = (eye.y / crate::world::WU) as f32;
+            // Facing the rescue helicopter once there is one, else north; the mouse looks around.
+            let mut yaw = 0.0;
+            if let Some(c) = sim.csar()
+                && let Some(u) = sim.flights().get(c.rescue)
+            {
+                yaw = -((u.x - x) as f32).atan2((y - u.y) as f32);
+            }
+            let world_rot = Quat::from_rotation_y(yaw + orbit.yaw) * Quat::from_rotation_x(0.05 - orbit.pitch * 0.5);
+            let local = a.orientation.inverse();
+            *head = Transform::from_translation(local * (eye - pos.0).as_vec3()).with_rotation(local * world_rot);
+            *cam_tf = offset.0;
         }
         View::Tactical => {
             // Above and behind in world-up terms: undo the aircraft's roll and pitch.

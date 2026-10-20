@@ -103,7 +103,27 @@ pub fn from_args(app: &mut App) {
     let weather = crate::settings::weather_arg(&args);
     let cloud_cover = crate::settings::cover_arg(&args);
     let data = MissionData::load().expect("mission data");
-    let m = generate(&data, &settings(theater, roe, kind, opponents, lockheed, weather, cloud_cover), seed).expect("mission");
+    let mut m = generate(&data, &settings(theater, roe, kind, opponents, lockheed, weather, cloud_cover), seed).expect("mission");
+    // `--start-base <name>`: take off from another airfield (also an enemy one; for tests).
+    if let Some(name) = get("--start-base") {
+        let w = &m.world;
+        match (0..w.objects.len()).find(|&i| w.objects[i].flags & stealth_mission::world::flags::AIRFIELD != 0 && w.name(w.objects[i].name as i32).eq_ignore_ascii_case(&name)) {
+            Some(i) => {
+                let o = w.objects[i];
+                // The simulation starts at the primary target's base.
+                m.primary.base_index = i as i16;
+                m.takeoff = stealth_mission::Base {
+                    object_index: i as i16,
+                    name: w.name(o.name as i32).into(),
+                    position: stealth_mission::MapPoint { x: o.x as u16 as i32, y: o.y as u16 as i32 },
+                    carrier: o.flags & stealth_mission::world::flags::CARRIER != 0,
+                    neutral: false,
+                    distance: 0,
+                };
+            }
+            None => warn!("--start-base {name}: no such airfield"),
+        }
+    }
     let tables = crate::flight::SimTables::load();
     if args.iter().any(|a| a == "--print-mission") {
         println!(

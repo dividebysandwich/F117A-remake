@@ -92,6 +92,8 @@ pub struct Combat {
     pub alpha: f32,
     /// Explosions of the steps of this frame: (map x, map y, viewZ altitude, kind).
     pub explosions: Vec<(i32, i32, i32, i32)>,
+    /// Signal flares the downed pilot fired in the steps of this frame (map x, map y).
+    pub signal_flares: Vec<(i32, i32)>,
     /// Things destroyed on the ground in the steps of this frame (they burn, fires.rs).
     pub kills: Vec<Kill>,
     /// Map position of the falling wreck (it burns where it lands).
@@ -150,8 +152,10 @@ impl Default for TimeAccel {
     }
 }
 
-fn apply_time_accel(accel: Res<TimeAccel>, mut time: ResMut<Time<Virtual>>) {
-    let want = accel.base * if accel.on { 2.0 } else { 1.0 };
+fn apply_time_accel(accel: Res<TimeAccel>, mut time: ResMut<Time<Virtual>>, combat: Option<Res<Combat>>) {
+    // Waiting on the ground for the rescue goes faster.
+    let fast = if combat.is_some_and(|c| c.sim.csar().is_some()) { 4.0 } else { 2.0 };
+    let want = accel.base * if accel.on { fast } else { 1.0 };
     if time.relative_speed() != want {
         time.set_relative_speed(want);
     }
@@ -237,6 +241,7 @@ fn start_combat(
         quit: false,
         alpha: 0.0,
         explosions: Vec::new(),
+        signal_flares: Vec::new(),
         kills: Vec::new(),
         wreck: None,
         steps: 0,
@@ -404,6 +409,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     let StepParams { time, mut player, controls, hud, mfd, view, mut msgs, mut accel, mut tiles, collision, mut flash, mut sounds } = p;
     let combat = &mut *combat;
     combat.explosions.clear();
+    combat.signal_flares.clear();
     combat.kills.clear();
     combat.steps = 0;
     let Ok((mut a, pos)) = player.single_mut() else { return };
@@ -453,6 +459,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                         combat.kills.push(Kill { x, y, vehicle: true });
                     }
                 }
+                SimEvent::SignalFlare { x, y } => combat.signal_flares.push((x, y)),
                 // A drone that got through sets its target area on fire.
                 SimEvent::DroneImpact { x, y, .. } => combat.kills.push(Kill { x, y, vehicle: false }),
                 SimEvent::TileDestroyed(t) => tiles.set(t.level as usize, t.col, t.row, t.index, t.shape),
@@ -523,6 +530,8 @@ impl EndSource for Option<MissionEnd> {
         match self {
             Some(e) => match (e.outcome, e.landing_type) {
                 (0, 2) => "Ejected - landed by parachute".into(),
+                (0, 4) => "Ejected - rescued by CSAR".into(),
+                (8, _) => "Ejected - captured".into(),
                 (0, _) => "Safe landing".into(),
                 (1, _) => "Crashed".into(),
                 (2, _) => "Collision".into(),

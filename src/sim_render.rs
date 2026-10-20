@@ -48,6 +48,9 @@ const TRACER: u8 = 17;
 const ENEMY_TRACER: u8 = 41;
 const SMOKE: u8 = 8;
 const CHUTE: u8 = 15;
+const SIGNAL_FLARE: u8 = 41;
+/// Seconds a signal flare burns.
+const SIGNAL_FLARE_LIFE: f32 = 25.0;
 /// STFLT model of the falling wreck.
 const WRECK_MODEL: i32 = 11;
 /// The Mi-24's aircraft type points at STFLT 15, a missile shape with a motor flame (the
@@ -96,6 +99,8 @@ struct SimVisuals {
     wreck: Option<Entity>,
     chute: Option<Entity>,
     effects: Vec<Effect>,
+    /// Signal flares of the downed pilot: (dot, seconds since fired, map x, map y).
+    signal_flares: Vec<(Entity, f32, i32, i32)>,
     /// Solid palette-colour materials (word 0xFF00 | index).
     materials: HashMap<u8, Handle<PaletteMaterial>>,
     sphere: Option<Handle<Mesh>>,
@@ -432,6 +437,28 @@ fn sync_objects(
             }
         }
     }
+
+    // --- signal flares: a red star climbing to 150 m, then sinking slowly
+    for &(x, y) in &combat.signal_flares {
+        let material = vis.material(&mut materials, &globals, SIGNAL_FLARE);
+        let e = spawn_dot(&mut commands, &assets, material, &[Vec3::ZERO]);
+        vis.signal_flares.push((e, 0.0, x, y));
+    }
+    vis.signal_flares.retain_mut(|(e, age, x, y)| {
+        *age += dt;
+        if *age > SIGNAL_FLARE_LIFE {
+            commands.entity(*e).try_despawn();
+            return false;
+        }
+        // World units: up at 60 per second to 300, then down at 5 per second.
+        let alt = if *age < 5.0 { *age * 60.0 } else { 300.0 - (*age - 5.0) * 5.0 };
+        if let Ok((mut pos, _, _, mut v)) = q.get_mut(*e) {
+            pos.0 = map_point(*x as f64 + 0.5, *y as f64 + 0.5, alt as f64);
+            v.set_if_neq(Visibility::Inherited);
+        }
+        commands.entity(*e).insert(crate::lighting::LightEmitter { color: Vec3::new(2.0, 0.2, 0.1), range: 400.0 });
+        true
+    });
 
     // --- impact flashes: expanding white -> yellow -> red balls
     for &(x, y, alt, kind) in &combat.explosions {

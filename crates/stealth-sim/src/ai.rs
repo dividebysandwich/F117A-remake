@@ -16,15 +16,17 @@ impl Sim {
                 self.flights[i].mode = 0;
                 continue;
             }
+            let kind = self.ac_type(self.flights[i].spec).kind;
             if self.flights[i].flags & fflags::AIRBORNE == 0 || self.flights[i].speed == 0 {
                 self.flights[i].mode = 0;
                 self.scramble(i);
                 continue;
             }
-            if self.ac_type(self.flights[i].spec).kind == crate::AircraftKind::Drone && self.flights[i].flags & fflags::DESTROYED == 0 {
-                self.fly_drone(i);
-            } else {
-                self.fly(i);
+            let alive = self.flights[i].flags & fflags::DESTROYED == 0;
+            match kind {
+                crate::AircraftKind::Drone if alive => self.fly_drone(i),
+                crate::AircraftKind::Helicopter if alive => self.fly_helo(i),
+                _ => self.fly(i),
             }
         }
     }
@@ -290,7 +292,7 @@ impl Sim {
     }
 
     /// Enemy gun round.
-    fn fire_gun(&mut self, u: &FlightUnit) {
+    pub(crate) fn fire_gun(&mut self, u: &FlightUnit) {
         let slot = self.n_bullets + ((self.frame & 0xC) >> 2) as usize;
         let v = cdiv(224, self.fs);
         let vz = self.trig.sin_mul(s16(-u.pitch), v) << 5;

@@ -604,3 +604,88 @@ fn sidewinder_kills_a_drone() {
     assert_eq!(sim.drones().unwrap().killed, 1, "{:?}", sim.flights()[w.first_unit]);
     assert_eq!(sim.mission_report().drones_killed, 1);
 }
+
+/// Ejects at 2000 ft over map point (x, y) and steps until the chute is down.
+fn eject_at(sim: &mut Sim, x: i32, y: i32) -> PlayerState {
+    let mut p = player_at(x, y, 2000, 0, 250);
+    p.cmd.eject = true;
+    let ev = sim.step(&p, 15);
+    assert!(ev.contains(&SimEvent::Ejected { success: true }), "{ev:?}");
+    p.cmd = Commands::default();
+    for _ in 0..15 * 60 {
+        sim.step(&p, 15);
+        if sim.csar().is_some() || sim.mission_end().is_some() {
+            break;
+        }
+    }
+    p
+}
+
+fn enemy_cell(m: &Mission) -> (i32, i32) {
+    let g = &m.world.grid;
+    let c = (0..256).find(|&i| g[i] & 3 == 0 && g[i] & 0x0C >= 8 && (3..13).contains(&(i % 16)) && (3..13).contains(&(i / 16))).expect("enemy land");
+    (((c % 16) as i32) * 2048 + 1024, ((c / 16) as i32) * 2048 + 1024)
+}
+
+fn disable_airfields(sim: &mut Sim, friendly: bool) {
+    for o in sim.objects_mut().iter_mut() {
+        if o.flags & oflags::AIRFIELD != 0 && (o.flags & oflags::FRIENDLY != 0) == friendly {
+            o.flags |= oflags::DISABLED;
+        }
+    }
+}
+
+/// Down over enemy territory with no Hinds about: the UH-60 comes, the flare brings it in.
+#[test]
+fn csar_rescues_the_pilot() {
+    let d = data();
+    let m = mission(d, 3, 0x2345, 0);
+    let mut sim = Sim::new(&d.sim, &m);
+    disable_airfields(&mut sim, false);
+    let (x, y) = enemy_cell(&m);
+    let mut p = eject_at(&mut sim, x, y);
+    let c = sim.csar().expect("rescue started").clone();
+    assert!(c.hunters.is_empty());
+    let mut flared = false;
+    for _ in 0..15 * 60 * 15 {
+        let r = sim.flights()[c.rescue];
+        p.cmd.flare = !flared && (r.x - x).abs() + (r.y - y).abs() < 0x100;
+        flared |= p.cmd.flare;
+        sim.step(&p, 15);
+        if sim.mission_end().is_some() {
+            break;
+        }
+    }
+    let e = sim.mission_end().expect("mission over");
+    assert_eq!((e.outcome, e.landing_type), (0, 4), "{:?}", sim.csar());
+    assert!(flared);
+    assert_eq!(sim.mission_report().outcome, score::Outcome::Rescued);
+}
+
+/// Down next to an enemy airfield after showing a flare: the Hinds get there first.
+#[test]
+fn csar_hinds_capture_the_pilot() {
+    let d = data();
+    let m = mission(d, 3, 0x2345, 3);
+    let mut sim = Sim::new(&d.sim, &m);
+    let objects = sim.objects().to_vec();
+    let (bx, by) = objects
+        .iter()
+        .filter(|o| o.flags & (oflags::AIRFIELD | oflags::FRIENDLY | oflags::NEUTRAL | oflags::CARRIER) == oflags::AIRFIELD)
+        .map(|o| (o.x, o.y))
+        .find(|&(x, y)| m.world.grid[((y >> 11) * 16 + (x >> 11)) as usize] & 3 == 0)
+        .expect("enemy airfield in enemy territory");
+    let mut p = eject_at(&mut sim, bx + 0x60, by);
+    assert!(!sim.csar().expect("rescue started").hunters.is_empty());
+    p.cmd.flare = true;
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    for _ in 0..15 * 60 * 15 {
+        sim.step(&p, 15);
+        if sim.mission_end().is_some() {
+            break;
+        }
+    }
+    assert_eq!(sim.mission_end().map(|e| e.outcome), Some(8), "{:?}", sim.csar());
+    assert_eq!(sim.mission_report().outcome, score::Outcome::Captured);
+}

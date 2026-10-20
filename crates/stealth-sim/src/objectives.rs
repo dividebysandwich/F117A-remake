@@ -28,9 +28,10 @@ impl Sim {
         true
     }
 
-    /// End the mission with `outcome` (ignored once ended, or after ejection unless 0).
+    /// End the mission with `outcome` (ignored once ended, or after ejection unless 0 or 8,
+    /// captured).
     pub(crate) fn finalize(&mut self, outcome: u8) {
-        if self.ended.is_some() || (self.eject != 0 && outcome != 0) {
+        if self.ended.is_some() || (self.eject != 0 && outcome != 0 && outcome != 8) {
             return;
         }
         if outcome == 0 && self.eject == 0 {
@@ -107,14 +108,18 @@ impl Sim {
                 }
             }
         }
-        // Ejection: chute descent.
+        // Ejection: chute descent, then the rescue over enemy territory.
         if self.eject != 0 {
+            if self.csar.is_some() {
+                self.update_csar(ps);
+                return;
+            }
             self.eject += 1;
             let dz = clamp_q(0x20 - self.eject, cdiv(-0x60, fs), cdiv(0x80, fs));
             self.chute.2 += dz;
             if self.chute.2 <= 0 {
                 self.chute.2 = 0;
-                if self.mission_tick & 7 == 0 {
+                if self.mission_tick & 7 == 0 && !self.start_csar() {
                     self.finalize(0);
                 }
             }

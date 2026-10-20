@@ -330,9 +330,10 @@ impl Default for SimOptions {
 /// Mission end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionEnd {
-    /// 0 safe stop / chute landed, 1 crash, 2 collision, 5 bad landing, 6 ejection failed, 7 quit.
+    /// 0 safe stop / chute landed / rescued, 1 crash, 2 collision, 5 bad landing, 6 ejection
+    /// failed, 7 quit, 8 captured after ejecting.
     pub outcome: u8,
-    /// Landing type: 1 default, 2 ejected, 3 landed.
+    /// Landing type: 1 default, 2 ejected, 3 landed, 4 ejected and rescued.
     pub landing_type: u8,
     /// Final map position.
     pub map_x: i32,
@@ -396,6 +397,8 @@ pub enum SimEvent {
     AircraftDestroyed { unit: usize, spec: i32 },
     AircraftCrashed { unit: usize },
     AircraftTakeoff { unit: usize, base: usize },
+    /// The downed pilot fired a signal flare (map position).
+    SignalFlare { x: i32, y: i32 },
     /// An attack drone reached its target (map position).
     DroneImpact { unit: usize, x: i32, y: i32 },
     /// A world object was destroyed; `shape` = the shape to draw now (`| 0x100` = wreck state).

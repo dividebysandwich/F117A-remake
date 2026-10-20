@@ -12,6 +12,10 @@ pub enum Outcome {
     BadLanding,
     /// Ejected and came down by parachute.
     Ejected,
+    /// Ejected over enemy territory and picked up by the rescue helicopter.
+    Rescued,
+    /// Ejected over enemy territory and taken prisoner.
+    Captured,
     Crashed,
     EjectionFailed,
     Aborted,
@@ -21,6 +25,8 @@ impl Outcome {
     pub fn from_end(e: Option<MissionEnd>) -> Self {
         match e.map(|e| (e.outcome, e.landing_type)) {
             Some((0, 2)) => Self::Ejected,
+            Some((0, 4)) => Self::Rescued,
+            Some((8, _)) => Self::Captured,
             Some((0, _)) => Self::Landed,
             Some((1 | 2, _)) => Self::Crashed,
             Some((5, _)) => Self::BadLanding,
@@ -34,6 +40,8 @@ impl Outcome {
             Self::Landed => "Safe landing",
             Self::BadLanding => "Bad landing",
             Self::Ejected => "Ejected - landed by parachute",
+            Self::Rescued => "Ejected - rescued by CSAR",
+            Self::Captured => "Ejected - captured",
             Self::Crashed => "Crashed",
             Self::EjectionFailed => "Ejection failed",
             Self::Aborted => "Mission aborted",
@@ -192,7 +200,8 @@ impl Sim {
                 match outcome {
                     Outcome::Landed => 25,
                     Outcome::BadLanding => 5,
-                    Outcome::Ejected => 0,
+                    Outcome::Ejected | Outcome::Rescued => 0,
+                    Outcome::Captured => -100,
                     Outcome::Crashed | Outcome::EjectionFailed => -50,
                     Outcome::Aborted => 0,
                 },

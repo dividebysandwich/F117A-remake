@@ -4,6 +4,7 @@ pub mod rng;
 pub mod types;
 
 mod ai;
+pub mod csar;
 pub mod drones;
 mod missiles;
 mod objectives;
@@ -165,6 +166,9 @@ pub struct Sim {
     /// Attack drones of the mission (their flight units follow the mission's own).
     #[serde(default)]
     pub(crate) drones: Option<drones::Drones>,
+    /// Rescue of the pilot after an ejection over enemy territory.
+    #[serde(default)]
+    pub(crate) csar: Option<csar::Csar>,
     /// Apron parking spots for the parked base traffic (not in the original): world x, y and
     /// heading; empty = parked on the base object as in the original.
     #[serde(default)]
@@ -365,6 +369,7 @@ impl Sim {
             traffic_base: -1,
             traffic_toggle: false,
             mission_flights: w.flights.len() - m.drones.as_ref().map_or(0, |d| d.count.min(w.flights.len())),
+            csar: None,
             drones: m.drones.as_ref().map(|d| drones::Drones {
                 defend: d.defend,
                 target: d.target as i32,

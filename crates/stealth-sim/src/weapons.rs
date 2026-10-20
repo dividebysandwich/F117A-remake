@@ -20,13 +20,14 @@ impl Sim {
                 HudMode::Nav => {}
             }
         }
-        if c.flare {
+        // After ejecting, the flare key fires the pilot's signal flares (csar.rs).
+        if c.flare && self.eject == 0 {
             self.release_cm(1);
         }
-        if c.chaff {
+        if c.chaff && self.eject == 0 {
             self.release_cm(2);
         }
-        if c.decoy {
+        if c.decoy && self.eject == 0 {
             self.release_cm(3);
         }
         if c.toggle_irj {

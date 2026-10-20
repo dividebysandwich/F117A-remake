@@ -149,8 +149,6 @@ pub enum TgpMode {
 #[derive(Debug, Clone, Default)]
 pub struct TgpState {
     pub mode: TgpMode,
-    /// Zoom step (0 = 1X .. 3 = 8X); None: by range.
-    pub zoom: Option<u8>,
     /// Seconds since the last slew in area track.
     idle: f32,
     /// The ground point on the pod's line of sight (Bevy world position), when it is up.
@@ -379,14 +377,12 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
             av.tgp.mode = TgpMode::Slaved;
             av.show(Format::Tgp);
         }
-        MfdCmd::TgpZoom => {
-            av.tgp.zoom = match av.tgp.zoom {
-                None => Some(0),
-                Some(z) if z < 3 => Some(z + 1),
-                _ => None,
-            }
+        MfdCmd::TgpCz => {
+            av.tgp.mode = TgpMode::Slaved;
+            state.cam_zoom = None;
         }
-        MfdCmd::TgpCz => av.tgp.mode = TgpMode::Slaved,
+        // Applied before (`mfd::cam_zoom`).
+        MfdCmd::CamZoom(_) | MfdCmd::CamZoomCycle => {}
         MfdCmd::Ils => {
             state.ils = !state.ils;
             if state.ils {
@@ -445,9 +441,9 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
         ),
         (Format::Hsd | Format::Harm | Format::Tgp, 4) => soi,
         (Format::Tgp, 0) => ("FLIR", Cmd(MfdCmd::Flir), s.flir),
-        (Format::Tgp, 1) => (["1X", "2X", "4X", "8X"].get(av.tgp.zoom.unwrap_or(9) as usize).copied().unwrap_or("AUTO"), Cmd(MfdCmd::TgpZoom), false),
-        (Format::Tgp, 2) => ("CZ", Cmd(MfdCmd::TgpCz), false),
-        (Format::Tgp, 3) => (av.tgp.mode.label(), Readout, av.tgp.mode != TgpMode::Slaved),
+        (Format::Tgp, 1) => ("ZM-", Cmd(MfdCmd::CamZoom(-1)), false),
+        (Format::Tgp, 2) => ("ZM+", Cmd(MfdCmd::CamZoom(1)), false),
+        (Format::Tgp, 3) => ("CZ", Cmd(MfdCmd::TgpCz), av.tgp.mode != TgpMode::Slaved || s.cam_zoom.is_some()),
         (Format::Map, 0) if av.map_way => ("WP-", Action(A::LastWaypoint), false),
         (Format::Map, 1) if av.map_way => ("WP+", Action(A::NextWaypoint), false),
         (Format::Map, 2) if av.map_way => ("RST", Action(A::ResetWaypoint), false),
@@ -501,8 +497,9 @@ pub fn draw(p: &MfdParams, side: MfdSide, c: &mut Canvas, art: &CockpitArt, font
             c.clear(if f == Format::Tgp && p.cam.live { 0 } else { BLACK });
             c.copy_rect(&page, 0, 0, page.w as i32, page.h as i32, 0, BAND);
             if f == Format::Tgp {
-                // Crosshair over the picture's centre.
+                // Crosshair over the picture's centre, the pod's mode bottom left of the page.
                 let col = p.camera_text_colour();
+                fonts.text_scaled(c, 6, c.h as i32 - BAND - 42, av.tgp.mode.label().as_bytes(), col, 2);
                 let o = Vec2::new(c.w as f32 / 2.0, c.h as f32 / 2.0);
                 for d in [Vec2::X, Vec2::NEG_X, Vec2::Y, Vec2::NEG_Y] {
                     c.stroke(o + d * 6.0, o + d * 22.0, 1.3, col);
@@ -773,7 +770,7 @@ fn update_pod(
     let soi = state.av.soi_format() == Some(Format::Tgp);
     let looking = camera.single().ok().filter(|_| shown && info.live).map(|t| t.forward().as_vec3());
     let ground_y = crate::world::wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
-    let zoom = state.av.tgp.zoom.unwrap_or(info.zoom.saturating_sub(1));
+    let zoom = state.cam_zoom.unwrap_or(info.zoom.saturating_sub(1));
     let slew = if soi && shown { controls.slew } else { Vec2::ZERO };
     let tgp = &mut state.av.tgp;
     let los = pod_step(tgp, slew, time.delta_secs(), zoom, a.orientation, pos.0, looking, ground_y);
@@ -948,6 +945,30 @@ mod tests {
         assert_eq!(p, Some(q));
         // It stays on that point as the aircraft moves.
         assert!(pod_direction(&tgp, Quat::IDENTITY, origin + DVec3::Z * 500.0).unwrap().z < -0.0);
+    }
+
+    #[test]
+    fn camera_zoom_steps() {
+        use crate::mfd::{CAM_ZOOM_MAX, cam_zoom, cam_zoom_label};
+        let mut s = MfdState::default();
+        // From the range's zoom.
+        cam_zoom(&mut s, MfdCmd::CamZoom(1), 2);
+        assert_eq!(s.cam_zoom, Some(3));
+        for _ in 0..9 {
+            cam_zoom(&mut s, MfdCmd::CamZoom(1), 2);
+        }
+        assert_eq!(s.cam_zoom, Some(CAM_ZOOM_MAX));
+        cam_zoom(&mut s, MfdCmd::CamZoomCycle, 0);
+        assert_eq!((s.cam_zoom, cam_zoom_label(s.cam_zoom)), (None, "AUTO"));
+        cam_zoom(&mut s, MfdCmd::CamZoomCycle, 4);
+        assert_eq!(cam_zoom_label(s.cam_zoom), "1X");
+        cam_zoom(&mut s, MfdCmd::CamZoom(-1), 4);
+        assert_eq!(s.cam_zoom, Some(0));
+        // CZ: slaved, zoom by range.
+        s.modern = true;
+        s.av.tgp.mode = TgpMode::Area { az: 0.1, el: -0.2 };
+        apply(&mut s, &mut MapRaster::default(), MfdCmd::TgpCz);
+        assert_eq!((s.av.tgp.mode, s.cam_zoom), (TgpMode::Slaved, None));
     }
 
     #[test]

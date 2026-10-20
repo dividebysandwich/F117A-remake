@@ -108,6 +108,9 @@ pub enum Action {
     LockCursor,
     /// Modern avionics: the sensor of interest moves to the other MFD (not in the original).
     SwapSoi,
+    /// Tracking camera / targeting pod zoom (not in the original: it zoomed by range).
+    CameraZoomIn,
+    CameraZoomOut,
 }
 
 #[derive(Message, Debug, Clone, Copy)]
@@ -198,6 +201,8 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::Enter, FireWeapon),
         (None, K::NumpadEnter, LockCursor),
         (Alt, K::KeyS, SwapSoi),
+        (None, K::BracketRight, CameraZoomIn),
+        (None, K::BracketLeft, CameraZoomOut),
         (None, K::Digit1, Flare),
         (None, K::Digit2, Chaff),
         (None, K::Digit3, IrJammer),

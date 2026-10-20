@@ -32,6 +32,7 @@ These are the defaults: the menu's CONTROLS dialog rebinds every key except the 
 | Tracking camera (right MFD) | cam ahead / rear / right / left | `/` / `.` / `,` / M |
 | | designate new target / select target | N / B |
 | | nearest target ahead / clear target (remake) | T / Shift B |
+| | camera zoom in / out (remake) | `]` / `[` (also Z / X with the targeting pod the SOI) |
 | Modern avionics (remake) | sensor/cursor slew | keypad 8 / 2 / 4 / 6, diagonals 7 / 9 / 1 / 3 (also the VR left thumbstick and two bindable joystick axes) |
 | | lock the target under the cursor | keypad Enter (VR: left thumbstick click) |
 | | sensor of interest to the other MFD | Alt S |

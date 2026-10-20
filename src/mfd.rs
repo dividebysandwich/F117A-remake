@@ -114,6 +114,8 @@ pub struct MfdState {
     pub ils: bool,
     /// Right page before ILS was switched on (restored when it goes off).
     pub page_before_ils: Option<RightMfd>,
+    /// Tracking camera / targeting pod zoom step (0 = 1X .. 5); None: by range.
+    pub cam_zoom: Option<u8>,
     /// Modern avionics: the MFDs show `av`'s formats.
     pub modern: bool,
     pub av: crate::avionics::AvionicsState,
@@ -132,6 +134,7 @@ impl Default for MfdState {
             hires: true,
             ils: false,
             page_before_ils: None,
+            cam_zoom: None,
             modern: false,
             av: default(),
         }
@@ -184,8 +187,10 @@ pub enum MfdCmd {
     /// SMS page: the ORD (true) or WPN page.
     Sms(bool),
     HarmFilter,
-    /// Targeting pod: next zoom (auto, 1X..8X), back to slaved.
-    TgpZoom,
+    /// Tracking camera zoom step in / out, the next step round (auto, 1X..6X).
+    CamZoom(i8),
+    CamZoomCycle,
+    /// Targeting pod back to slaved, zoom by range.
     TgpCz,
 }
 
@@ -231,8 +236,30 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
         (MfdSide::Right, 6) if s.right == RightMfd::Way => ("WP+", Action(crate::input::Action::NextWaypoint), false),
         (MfdSide::Right, 7) if s.right == RightMfd::Way => ("RST", Action(crate::input::Action::ResetWaypoint), false),
         (MfdSide::Right, 5) if s.right == RightMfd::Wpn => ("SEL", Action(crate::input::Action::SelectWeapon), false),
+        (MfdSide::Right, 9) if s.right == RightMfd::Camera => (cam_zoom_label(s.cam_zoom), cmd(MfdCmd::CamZoomCycle), s.cam_zoom.is_some()),
         _ => return None,
     })
+}
+
+/// Tracking camera zoom steps (as the camera page shows them: step + 1).
+pub const CAM_ZOOM_MAX: u8 = 5;
+
+/// Label of a camera zoom setting.
+pub fn cam_zoom_label(z: Option<u8>) -> &'static str {
+    z.and_then(|z| ["1X", "2X", "3X", "4X", "5X", "6X"].get(z as usize).copied()).unwrap_or("AUTO")
+}
+
+/// Applies a camera zoom command (`auto`: the zoom step the range gives now).
+pub fn cam_zoom(state: &mut MfdState, cmd: MfdCmd, auto: u8) {
+    state.cam_zoom = match cmd {
+        MfdCmd::CamZoom(d) => Some((state.cam_zoom.unwrap_or(auto) as i32 + d as i32).clamp(0, CAM_ZOOM_MAX as i32) as u8),
+        MfdCmd::CamZoomCycle => match state.cam_zoom {
+            None => Some(0),
+            Some(z) if z < CAM_ZOOM_MAX => Some(z + 1),
+            _ => None,
+        },
+        _ => state.cam_zoom,
+    };
 }
 
 /// The key action that does the same as a display command (script `press=` lookups).
@@ -261,7 +288,15 @@ pub fn cmd_action(cmd: MfdCmd) -> Action {
             }
         }
         MfdCmd::HsdCentre | MfdCmd::HarmFilter => Action::Maps,
-        MfdCmd::TgpZoom | MfdCmd::TgpCz => Action::CamAhead,
+        MfdCmd::CamZoom(d) => {
+            if d > 0 {
+                Action::CameraZoomIn
+            } else {
+                Action::CameraZoomOut
+            }
+        }
+        MfdCmd::CamZoomCycle => Action::CameraZoomIn,
+        MfdCmd::TgpCz => Action::CamAhead,
         MfdCmd::MapWay => Action::SelectWaypoint,
         MfdCmd::Sms(true) => Action::MissionOrders,
         MfdCmd::Sms(false) => Action::Ordnance,
@@ -436,7 +471,9 @@ fn mfd_keys(
     mut state: ResMut<MfdState>,
     mut raster: ResMut<MapRaster>,
     settings: Res<crate::settings::Settings>,
+    cam: Res<TrackCam>,
 ) {
+    let auto_zoom = cam.zoom.saturating_sub(1);
     if state.hires != settings.hires_displays() || state.modern == settings.classic_avionics {
         state.hires = settings.hires_displays();
         state.modern = !settings.classic_avionics;
@@ -447,6 +484,11 @@ fn mfd_keys(
         let cmd = match a {
             Action::Maps if state.modern => MfdCmd::Format(MfdSide::Left, crate::avionics::next_left_format(state.av.formats[0])),
             Action::SwapSoi => MfdCmd::SwapSoi,
+            Action::CameraZoomIn => MfdCmd::CamZoom(1),
+            Action::CameraZoomOut => MfdCmd::CamZoom(-1),
+            // Z / X zoom the targeting pod while it is the sensor of interest.
+            Action::Zoom if state.modern && state.av.soi_format() == Some(crate::avionics::Format::Tgp) => MfdCmd::CamZoom(1),
+            Action::Unzoom if state.modern && state.av.soi_format() == Some(crate::avionics::Format::Tgp) => MfdCmd::CamZoom(-1),
             Action::Maps => MfdCmd::LeftPage(if state.left == LeftMfd::Map { LeftMfd::Tac } else { LeftMfd::Map }),
             Action::Zoom | Action::MapZoomIn => MfdCmd::ZoomIn,
             Action::Unzoom | Action::MapZoomOut => MfdCmd::ZoomOut,
@@ -462,10 +504,18 @@ fn mfd_keys(
             Action::Ils => MfdCmd::Ils,
             _ => continue,
         };
-        apply(&mut state, &mut raster, cmd);
+        apply_with_zoom(&mut state, &mut raster, cmd, auto_zoom);
     }
     for MfdCommand(cmd) in commands.read() {
-        apply(&mut state, &mut raster, *cmd);
+        apply_with_zoom(&mut state, &mut raster, *cmd, auto_zoom);
+    }
+}
+
+fn apply_with_zoom(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd, auto_zoom: u8) {
+    if matches!(cmd, MfdCmd::CamZoom(_) | MfdCmd::CamZoomCycle) {
+        cam_zoom(state, cmd, auto_zoom);
+    } else {
+        apply(state, raster, cmd);
     }
 }
 
@@ -1399,14 +1449,17 @@ impl MfdParams<'_, '_> {
             fonts.text_scaled(c, (w - 2 * fonts.width(&s)) / 2, 4 + 12 * k as i32, &s, text, 2);
         }
         if let Some(r) = self.cam.range_km {
-            text2(c, fonts, 6, 152, &format!("RANGE {r:.1} KM"), text);
+            text2(c, fonts, 6, c.h as i32 - 28, &format!("RANGE {r:.1} KM"), text);
         }
         if let Some(b) = self.cam.bearing {
-            text2(c, fonts, 6, 166, &format!("BRG {b}"), text);
+            text2(c, fonts, 6, c.h as i32 - 14, &format!("BRG {b}"), text);
         }
         if self.cam.zoom > 0 {
             let s = format!("{}X", self.cam.zoom);
-            text2(c, fonts, w - 6 - 2 * fonts.width(s.as_bytes()), 166, &s, text);
+            text2(c, fonts, w - 6 - 2 * fonts.width(s.as_bytes()), c.h as i32 - 14, &s, text);
+            if self.state.cam_zoom.is_none() {
+                text2(c, fonts, w - 6 - 2 * fonts.width(b"AUTO"), c.h as i32 - 28, "AUTO", text);
+            }
         }
     }
 

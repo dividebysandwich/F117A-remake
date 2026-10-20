@@ -299,7 +299,8 @@ radar sites, airbases and targets as icons.</td>
 <td><img src="images/mfd_tc.png" alt="TC"><br>
 <b>TC</b> – Tracking camera. Shows the current target with its name, range, bearing and
 zoom factor. AHD / RGT / REAR / LFT (keys / , . M) point the camera ahead, right, rear or left;
-each press also picks the nearest object in that direction.</td>
+each press also picks the nearest object in that direction. The last bottom button sets the zoom
+(AUTO by range, then 1X..6X; also `[` / `]`).</td>
 <td><img src="images/mfd_way.png" alt="WAY"><br>
 <b>WAY</b> – Mission time and waypoint table: distance (km), flight time (minutes) and ETA for
 each waypoint; fuel bar at the bottom. WP- / WP+ (PgUp / PgDn) select the waypoint, RST
@@ -333,7 +334,7 @@ and HARM; F5 / F10 bring up SMS, F6 and the camera keys the TGP, F7 the waypoint
 |---|---|---|
 | HSD | DEP / CEN, RNG-, range, RNG+, SOI | Horizontal situation display, heading up: range rings (the range in km is the outer ring), the route with the current steerpoint ringed, SAM sites with their missile's reach as red threat rings, hostile (red) and friendly (green) aircraft, missiles, the mission targets (cyan diamonds); the locked target is boxed. |
 | HARM | ALL / SAM / AIR, SOI | The radars painting the aircraft, like the RWR: at their bearing, the most dangerous nearest the centre (chapter 3.7). |
-| TGP | FLIR, zoom (AUTO, 1X..8X), CZ, mode (SLV / AREA / PNT), SOI | The targeting pod (tracking camera), see below. |
+| TGP | FLIR, ZM-, ZM+, CZ, SOI | The targeting pod (tracking camera), see below. The pod's mode (SLV / AREA / PNT) is shown bottom left, the zoom bottom right (AUTO: by range). |
 | MAP | NUP / HUP, ZM-, ZM+, WAY | The moving map in muted colours; WAY switches to the waypoint table (WP-, WP+, RST). |
 | SMS | WPN, ORD, SEL | Stores (WPN) and mission orders (ORD). |
 
@@ -350,7 +351,8 @@ camera keys). Z / X change the HSD range while it is the SOI.
 or where the camera keys turn it. Made the SOI, the slew controls turn the pod itself (AREA, slower
 when zoomed in); a moment after the slew stops it holds the ground point it looks at (PNT), wherever
 the aircraft flies. **Lock cursor target** then locks what is at that point (the ground itself if
-nothing is there) and the pod follows the lock again. CZ returns it to SLV. The HSD shows where
+nothing is there) and the pod follows the lock again. CZ returns it to SLV and the zoom to AUTO.
+ZM- / ZM+ (also `[` / `]`, and Z / X while the pod is the SOI) zoom it from 1X to 6X. The HSD shows where
 the pod looks: a green diamond on its ground point with a dashed line from the aircraft.
 
 ## 5. Targeting and weapons
@@ -518,6 +520,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | | Slew the SOI's cursor / lock the target under it / SOI to the other MFD (modern avionics) | keypad 1–9 / keypad Enter / Alt S |
 | | Designate new target / next target / clear target | N / B / Shift B |
 | | Tracking camera ahead / rear / right / left | `/` / `.` / `,` / M |
+| | Tracking camera zoom in / out | `]` / `[` |
 | **Displays** | HUD mode / declutter | F2 / V |
 | | MAP / TAC (left MFD) | F3 |
 | | Map zoom in / out, north up / heading up | Alt Z / Alt X / Alt F3 |

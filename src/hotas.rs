@@ -230,8 +230,8 @@ pub struct InputConfig {
     pub version: u32,
 }
 
-/// 1: the cursor lock (NumpadEnter, left thumbstick click) and SOI keys.
-const VERSION: u32 = 1;
+/// 1: the cursor lock (NumpadEnter, left thumbstick click) and SOI keys. 2: camera zoom keys.
+const VERSION: u32 = 2;
 
 impl Default for InputConfig {
     fn default() -> Self {
@@ -257,32 +257,35 @@ impl InputConfig {
         c
     }
 
-    /// Brings an older saved mapping up to date; true if it changed. Version 1: NumpadEnter
-    /// locks the cursor target instead of firing, new actions get their default keys where
-    /// those are free, the left thumbstick click locks (the decoy moves to the right stick up).
+    /// Brings an older saved mapping up to date; true if it changed. Every version: new actions
+    /// get their default keys where those are free. Version 1: NumpadEnter locks the cursor
+    /// target instead of firing, the left thumbstick click locks (the decoy moves to the right
+    /// stick up).
     fn migrate(&mut self) -> bool {
         if self.version >= VERSION {
             return false;
         }
         use crate::input::{Action, Mods};
-        for k in &mut self.keys {
-            if k.mods == Mods::None && k.key == KeyCode::NumpadEnter && k.target == ButtonTarget::Action(Action::FireWeapon) {
-                k.target = ButtonTarget::Action(Action::LockCursor);
+        if self.version < 1 {
+            for k in &mut self.keys {
+                if k.mods == Mods::None && k.key == KeyCode::NumpadEnter && k.target == ButtonTarget::Action(Action::FireWeapon) {
+                    k.target = ButtonTarget::Action(Action::LockCursor);
+                }
+            }
+            let slot = |c: &Self, hand: VrHand, input: VrInput| c.vr_buttons.iter().position(|m| m.hand == hand && m.input == input);
+            if let Some(i) = slot(self, VrHand::Left, VrInput::ThumbClick)
+                && self.vr_buttons[i].target == ButtonTarget::Action(Action::Decoy)
+            {
+                self.vr_buttons[i].target = ButtonTarget::Action(Action::LockCursor);
+                if slot(self, VrHand::Right, VrInput::ThumbUp).is_none() {
+                    self.vr_buttons.push(VrButtonMapping { hand: VrHand::Right, input: VrInput::ThumbUp, target: ButtonTarget::Action(Action::Decoy) });
+                }
             }
         }
         for d in crate::input::default_key_mappings() {
             let free = !self.keys.iter().any(|k| k.mods == d.mods && k.key == d.key);
             if free && self.keys_for(d.target).next().is_none() {
                 self.keys.push(d);
-            }
-        }
-        let slot = |c: &Self, hand: VrHand, input: VrInput| c.vr_buttons.iter().position(|m| m.hand == hand && m.input == input);
-        if let Some(i) = slot(self, VrHand::Left, VrInput::ThumbClick)
-            && self.vr_buttons[i].target == ButtonTarget::Action(Action::Decoy)
-        {
-            self.vr_buttons[i].target = ButtonTarget::Action(Action::LockCursor);
-            if slot(self, VrHand::Right, VrInput::ThumbUp).is_none() {
-                self.vr_buttons.push(VrButtonMapping { hand: VrHand::Right, input: VrInput::ThumbUp, target: ButtonTarget::Action(Action::Decoy) });
             }
         }
         self.version = VERSION;
@@ -511,7 +514,7 @@ mod tests {
     fn old_mapping_migrates() {
         use crate::input::Mods;
         let mut c = InputConfig { version: 0, ..InputConfig::default() };
-        c.keys.retain(|k| !matches!(k.target, ButtonTarget::Action(Action::LockCursor | Action::SwapSoi)));
+        c.keys.retain(|k| !matches!(k.target, ButtonTarget::Action(Action::LockCursor | Action::SwapSoi | Action::CameraZoomIn | Action::CameraZoomOut)));
         c.keys.push(KeyMapping { target: ButtonTarget::Action(Action::FireWeapon), mods: Mods::None, key: KeyCode::NumpadEnter });
         c.vr_buttons.retain(|m| !(m.hand == VrHand::Right && m.input == VrInput::ThumbUp));
         for m in &mut c.vr_buttons {
@@ -526,6 +529,7 @@ mod tests {
         let key = |t| c.keys_for(ButtonTarget::Action(t)).map(|k| (k.mods, k.key)).collect::<Vec<_>>();
         assert_eq!(key(Action::LockCursor), vec![(Mods::None, KeyCode::NumpadEnter)]);
         assert_eq!(key(Action::SwapSoi), vec![(Mods::Alt, KeyCode::KeyS)]);
+        assert_eq!(key(Action::CameraZoomIn), vec![(Mods::None, KeyCode::BracketRight)]);
         assert_eq!(key(Action::FireWeapon), vec![(Mods::None, KeyCode::Enter)]);
         let vr = |h, i| c.vr_buttons.iter().find(|m| m.hand == h && m.input == i).map(|m| m.target);
         assert_eq!(vr(VrHand::Left, VrInput::ThumbClick), Some(ButtonTarget::Action(Action::LockCursor)));

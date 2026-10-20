@@ -152,7 +152,7 @@ pub(crate) fn update_camera(
         && let Some(dir) = crate::avionics::pod_direction(&mfd.av.tgp, a.orientation, eye)
     {
         let range_m = mfd.av.tgp.los_ground.map(|g| (g - eye).length() as f32);
-        let zoom = mfd.av.tgp.zoom.unwrap_or_else(|| range_m.map_or(0, |r| crate::combat::camera_zoom((r / (32.0 * crate::world::WU as f32)) as i32)));
+        let zoom = mfd.cam_zoom.unwrap_or_else(|| range_m.map_or(0, |r| crate::combat::camera_zoom((r / (32.0 * crate::world::WU as f32)) as i32)));
         *info = TrackCam {
             live: true,
             name: [if matches!(mfd.av.tgp.mode, crate::avionics::TgpMode::Point(_)) { "POINT" } else { "AREA" }.into(), String::new()],
@@ -189,10 +189,8 @@ pub(crate) fn update_camera(
             Vec3::new(yaw.sin() * p.cos(), p.sin(), -yaw.cos() * p.cos())
         }
     };
-    // A manual pod zoom (modern avionics) also when slaved.
-    if mfd.modern
-        && let Some(z) = mfd.av.tgp.zoom
-    {
+    // A manual zoom.
+    if let Some(z) = mfd.cam_zoom {
         info.zoom = z + 1;
     }
     aim(&mut tf, &mut pos, &mut proj, dir, eye, info.zoom.saturating_sub(1));

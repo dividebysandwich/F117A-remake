@@ -196,6 +196,116 @@ impl Canvas {
     }
 }
 
+/// Thick strokes for the high-resolution displays (sub-pixel endpoints, round pens).
+impl Canvas {
+    /// Round pen of width `w` stamped at (x, y).
+    fn dot(&mut self, x: f32, y: f32, w: f32, c: u8) {
+        let r = w * 0.5;
+        let (x0, x1) = ((x - r).round() as i32, (x + r).round() as i32);
+        let (y0, y1) = ((y - r).round() as i32, (y + r).round() as i32);
+        let rr = r * r + 0.25;
+        for yy in y0..=y1 {
+            for xx in x0..=x1 {
+                let (dx, dy) = (xx as f32 + 0.5 - x, yy as f32 + 0.5 - y);
+                if dx * dx + dy * dy <= rr {
+                    self.set(xx, yy, c);
+                }
+            }
+        }
+    }
+
+    /// Line of width `w` from a to b.
+    pub fn stroke(&mut self, a: Vec2, b: Vec2, w: f32, c: u8) {
+        let [x0, y0, x1, y1] = self.clip;
+        let (lo, hi) = (a.min(b) - w, a.max(b) + w);
+        if hi.x < x0 as f32 || hi.y < y0 as f32 || lo.x > x1 as f32 + 1.0 || lo.y > y1 as f32 + 1.0 {
+            return;
+        }
+        let len = a.distance(b);
+        // Far off-canvas endpoints (projected cues): clip the segment to a padded canvas first.
+        let (a, b) = if len > 4.0 * (self.w + self.h) as f32 {
+            match clip_segment(a, b, Vec2::new(x0 as f32 - w, y0 as f32 - w), Vec2::new(x1 as f32 + w, y1 as f32 + w)) {
+                Some(s) => s,
+                None => return,
+            }
+        } else {
+            (a, b)
+        };
+        let len = a.distance(b);
+        let steps = (len / (w * 0.35).max(0.5)).ceil().max(1.0) as i32;
+        for i in 0..=steps {
+            let p = a.lerp(b, i as f32 / steps as f32);
+            self.dot(p.x, p.y, w, c);
+        }
+    }
+
+    /// Polyline of width `w`.
+    pub fn polyline(&mut self, pts: &[Vec2], w: f32, c: u8) {
+        for p in pts.windows(2) {
+            self.stroke(p[0], p[1], w, c);
+        }
+    }
+
+    /// Dashed line: `dash` pixels drawn, `gap` pixels skipped.
+    pub fn dashed(&mut self, a: Vec2, b: Vec2, dash: f32, gap: f32, w: f32, c: u8) {
+        let len = a.distance(b);
+        if len <= 0.0 {
+            return;
+        }
+        let d = (b - a) / len;
+        let mut t = 0.0;
+        while t < len {
+            let e = (t + dash).min(len);
+            self.stroke(a + d * t, a + d * e, w, c);
+            t = e + gap;
+        }
+    }
+
+    /// Circle outline of radius r and width w.
+    pub fn ring(&mut self, centre: Vec2, r: f32, w: f32, c: u8) {
+        self.arc(centre, r, 0.0, std::f32::consts::TAU, w, c);
+    }
+
+    /// Arc from angle a0 to a1 (radians, 0 = right, positive = clockwise on screen).
+    pub fn arc(&mut self, centre: Vec2, r: f32, a0: f32, a1: f32, w: f32, c: u8) {
+        let steps = ((r * (a1 - a0).abs() / 3.0) as i32).clamp(8, 256);
+        let mut prev = centre + Vec2::new(a0.cos(), a0.sin()) * r;
+        for i in 1..=steps {
+            let t = a0 + (a1 - a0) * i as f32 / steps as f32;
+            let p = centre + Vec2::new(t.cos(), t.sin()) * r;
+            self.stroke(prev, p, w, c);
+            prev = p;
+        }
+    }
+
+    /// Rectangle outline (corners a, b) of width w.
+    pub fn frame(&mut self, a: Vec2, b: Vec2, w: f32, c: u8) {
+        let (p, q) = (a.min(b), a.max(b));
+        self.polyline(&[p, Vec2::new(q.x, p.y), q, Vec2::new(p.x, q.y), p], w, c);
+    }
+}
+
+/// Liang-Barsky clip of segment a-b to the box lo..hi.
+fn clip_segment(a: Vec2, b: Vec2, lo: Vec2, hi: Vec2) -> Option<(Vec2, Vec2)> {
+    let d = b - a;
+    let (mut t0, mut t1) = (0.0f32, 1.0f32);
+    for (p, q) in [(-d.x, a.x - lo.x), (d.x, hi.x - a.x), (-d.y, a.y - lo.y), (d.y, hi.y - a.y)] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                t0 = t0.max(r);
+            } else {
+                t1 = t1.min(r);
+            }
+        }
+    }
+    (t0 <= t1).then(|| (a + d * t0, a + d * t1))
+}
+
 /// A canvas shown through a texture. Set `dirty` after drawing.
 #[derive(Component)]
 pub struct CanvasTexture {

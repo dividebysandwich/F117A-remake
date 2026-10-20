@@ -85,6 +85,13 @@ pub(super) struct State {
     init: bool,
 }
 
+impl State {
+    /// Direction of the velocity once the model runs and the aircraft moves.
+    pub(super) fn velocity(&self) -> Option<Vec3> {
+        (self.init && self.vel.length_squared() > 1.0).then(|| self.vel.normalize())
+    }
+}
+
 /// (density ratio, speed of sound ft/s) at an altitude in feet.
 fn atmosphere(h: f32) -> (f32, f32) {
     let h = h.clamp(0.0, 60000.0);

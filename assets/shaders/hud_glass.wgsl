@@ -9,16 +9,17 @@
     view_transformations::position_world_to_clip,
 }
 
-// Original projection (cockpit::FOCAL, VSCALE; cockpit3d::geometry::CX, CY).
-const FOCAL: f32 = 256.0;
-const VSCALE: f32 = 0.75;
-const CX: f32 = 159.5;
-const CY: f32 = 52.0;
-
 // Glass tint where the HUD is blank (rgb, alpha).
 @group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> tint: vec4<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(1) var hud_texture: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(2) var hud_sampler: sampler;
+// Canvas pixel of the boresight (xy), canvas pixels per unit of the tangent plane (zw).
+@group(#{MATERIAL_BIND_GROUP}) @binding(3) var<uniform> proj: vec4<f32>;
+// x: 1 = modern HUD (monochrome ink drawn in HUD green with a glow), y: brightness.
+@group(#{MATERIAL_BIND_GROUP}) @binding(4) var<uniform> style: vec4<f32>;
+
+// Modern HUD green (linear).
+const HUD_GREEN: vec3<f32> = vec3<f32>(0.18, 1.0, 0.32);
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -45,11 +46,31 @@ fn vertex(v: Vertex) -> VertexOutput {
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let z = max(-in.dir.z, 1e-4);
-    let px = CX + FOCAL * in.dir.x / z;
-    let py = CY - VSCALE * FOCAL * in.dir.y / z;
+    let p = vec2<f32>(proj.x + proj.z * in.dir.x / z, proj.y - proj.w * in.dir.y / z);
     let size = vec2<f32>(textureDimensions(hud_texture));
-    let c = textureSampleLevel(hud_texture, hud_sampler, vec2<f32>(px, py) / size, 0.0);
-    let inside = px >= 0.0 && py >= 0.0 && px < size.x && py < size.y;
+    let inside = p.x >= 0.0 && p.y >= 0.0 && p.x < size.x && p.y < size.y;
+    if style.x > 0.5 {
+        // Modern: ink coverage (linear filtered) plus a soft halo from the texels around.
+        let uv = p / size;
+        let texel = 1.0 / size;
+        let core = textureSampleLevel(hud_texture, hud_sampler, uv, 0.0).a;
+        var halo = 0.0;
+        for (var i = 0; i < 8; i++) {
+            let a = f32(i) * 0.785398;
+            halo += textureSampleLevel(hud_texture, hud_sampler, uv + vec2<f32>(cos(a), sin(a)) * texel * 2.5, 0.0).a;
+        }
+        halo = halo / 8.0;
+        let a = select(0.0, clamp(core * 1.2 + halo * 0.35, 0.0, 1.0), inside);
+        if a <= 0.01 {
+            if tint.a <= 0.0 {
+                discard;
+            }
+            return tint;
+        }
+        let rgb = HUD_GREEN * style.y * (0.75 + 0.6 * core);
+        return vec4<f32>(rgb, a);
+    }
+    let c = textureSampleLevel(hud_texture, hud_sampler, p / size, 0.0);
     if inside && c.a > 0.5 {
         return vec4<f32>(c.rgb, 1.0);
     }

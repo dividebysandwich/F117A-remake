@@ -59,7 +59,7 @@ impl Plugin for Cockpit3dPlugin {
             )
             .add_systems(
                 PostUpdate,
-                (set_projection, displays::update_displays, controls::animate, levers::animate_levers, update_hand_proxies, damage_flash, cockpit_lamps)
+                (set_projection, displays::restyle_hud, displays::update_displays, controls::animate, levers::animate_levers, update_hand_proxies, damage_flash, cockpit_lamps)
                     .after(crate::camera::RigSystems)
                     .before(TransformSystems::Propagate)
                     .run_if(in_state(AppState::Flight)),
@@ -293,7 +293,7 @@ fn spawn_cockpit(
     commands.entity(aircraft).add_child(root);
 
     let faces = displays::spawn_panel(&mut commands, root, &layout, &mats, &mut meshes, &mut materials, &mut images, tc_image.as_deref());
-    displays::spawn_hud(&mut commands, root, &mut meshes, &mut hud_materials, &mut images);
+    displays::spawn_hud(&mut commands, root, &mut meshes, &mut hud_materials, &mut images, settings.classic_hud);
     displays::spawn_approach_indexer(&mut commands, root, &mut meshes, &mut materials, &mut images);
     displays::spawn_structure(&mut commands, root, &mats, &mut meshes);
     controls::spawn_controls(&mut commands, root, &layout, &faces, &mats, &mut meshes, &mut materials, &mut images, &fonts);

@@ -44,6 +44,8 @@ pub struct Settings {
     /// `--classic-cockpit`: the original instrument panel layout and 77x60 displays instead
     /// of the modern panel with high-resolution displays and bezel buttons.
     pub classic_cockpit: bool,
+    /// `--classic-hud`: the original's low-resolution HUD instead of the F-16 style one.
+    pub classic_hud: bool,
     /// `--classic-flight`: the original's flight model instead of the modern aerodynamic one
     /// (the default for `--script` runs unless `--modern-flight` is given).
     pub classic_flight: bool,
@@ -125,6 +127,7 @@ impl Settings {
             shadows: has("--shadows"),
             local_lights: has("--local-lights"),
             classic_cockpit: has("--classic-cockpit"),
+            classic_hud: has("--classic-hud"),
             classic_flight: has("--classic-flight") || (has("--script") && !has("--modern-flight")),
             no_crashes: has("--no-crashes"),
             vr_cockpit_scale: get(&a, "--vr-cockpit-scale")

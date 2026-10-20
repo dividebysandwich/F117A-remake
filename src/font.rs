@@ -182,6 +182,117 @@ pub fn draw_text_scaled(c: &mut Canvas, f: &Font, mut x: i32, y: i32, s: &[u8], 
     x
 }
 
+/// Vector stroke font of the high-resolution HUD: each glyph is polylines on a 4 x 6 grid
+/// (y down), separated by `|`.
+const STROKES: &[(char, &str)] = &[
+    ('0', "0,0 4,0 4,6 0,6 0,0"),
+    ('1', "1,1 2,0 2,6|1,6 3,6"),
+    ('2', "0,0 4,0 4,3 0,3 0,6 4,6"),
+    ('3', "0,0 4,0 4,6 0,6|1,3 4,3"),
+    ('4', "0,0 0,3 4,3|4,0 4,6"),
+    ('5', "4,0 0,0 0,3 4,3 4,6 0,6"),
+    ('6', "4,0 0,0 0,6 4,6 4,3 0,3"),
+    ('7', "0,0 4,0 4,1 2,6"),
+    ('8', "0,0 4,0 4,6 0,6 0,0|0,3 4,3"),
+    ('9', "4,3 0,3 0,0 4,0 4,6 0,6"),
+    ('A', "0,6 0,2 2,0 4,2 4,6|0,3.5 4,3.5"),
+    ('B', "0,0 3,0 4,1 4,2 3,3 0,3|3,3 4,4 4,5 3,6 0,6 0,0"),
+    ('C', "4,0 0,0 0,6 4,6"),
+    ('D', "0,0 3,0 4,1 4,5 3,6 0,6 0,0"),
+    ('E', "4,0 0,0 0,6 4,6|0,3 3,3"),
+    ('F', "4,0 0,0 0,6|0,3 3,3"),
+    ('G', "4,0 0,0 0,6 4,6 4,3 2,3"),
+    ('H', "0,0 0,6|4,0 4,6|0,3 4,3"),
+    ('I', "1,0 3,0|2,0 2,6|1,6 3,6"),
+    ('J', "4,0 4,6 0,6 0,4"),
+    ('K', "0,0 0,6|4,0 0,3 4,6"),
+    ('L', "0,0 0,6 4,6"),
+    ('M', "0,6 0,0 2,3 4,0 4,6"),
+    ('N', "0,6 0,0 4,6 4,0"),
+    ('O', "0,0 4,0 4,6 0,6 0,0"),
+    ('P', "0,6 0,0 4,0 4,3 0,3"),
+    ('Q', "0,0 4,0 4,6 0,6 0,0|2.5,4.5 4,6"),
+    ('R', "0,6 0,0 4,0 4,3 0,3 4,6"),
+    ('S', "4,0 0,0 0,3 4,3 4,6 0,6"),
+    ('T', "0,0 4,0|2,0 2,6"),
+    ('U', "0,0 0,6 4,6 4,0"),
+    ('V', "0,0 2,6 4,0"),
+    ('W', "0,0 1,6 2,3 3,6 4,0"),
+    ('X', "0,0 4,6|4,0 0,6"),
+    ('Y', "0,0 2,3 4,0|2,3 2,6"),
+    ('Z', "0,0 4,0 0,6 4,6"),
+    ('-', "1,3 3,3"),
+    ('+', "1,3 3,3|2,2 2,4"),
+    ('.', "2,5.7 2,6"),
+    (',', "2,5 1.5,7"),
+    (':', "2,1.7 2,2|2,4.3 2,4.6"),
+    ('/', "0,6 4,0"),
+    ('>', "0,0 4,3 0,6"),
+    ('<', "4,0 0,3 4,6"),
+    ('(', "3,0 1,2 1,4 3,6"),
+    (')', "1,0 3,2 3,4 1,6"),
+    ('=', "1,2 3,2|1,4 3,4"),
+    ('\'', "2,0 2,1.5"),
+    ('!', "2,0 2,4|2,5.7 2,6"),
+    ('?', "0,1 1,0 3,0 4,1 4,2 2,3 2,4|2,5.7 2,6"),
+    ('%', "0,6 4,0|0,0 1,0 1,1 0,1 0,0|3,5 4,5 4,6 3,6 3,5"),
+    ('#', "1,0 1,6|3,0 3,6|0,2 4,2|0,4 4,4"),
+    ('*', "2,1 2,5|0,2 4,4|0,4 4,2"),
+];
+
+/// Advance of the stroke font in grid units (4 wide + 2 apart).
+const STROKE_ADVANCE: f32 = 6.0;
+
+/// Width in pixels of `s` drawn with [`stroke_text`] at glyph height `h`.
+pub fn stroke_width(s: &str, h: f32) -> f32 {
+    let n = s.chars().count() as f32;
+    if n == 0.0 { 0.0 } else { (n * STROKE_ADVANCE - 2.0) * h / 6.0 }
+}
+
+/// Draws `s` (upper-cased) with the stroke font, top-left at (x, y), glyph height `h`, pen
+/// width `w`. Returns the x after the text.
+pub fn stroke_text(c: &mut Canvas, x: f32, y: f32, s: &str, h: f32, w: f32, col: u8) -> f32 {
+    let u = h / 6.0;
+    let mut x = x;
+    for ch in s.chars().map(|ch| ch.to_ascii_uppercase()) {
+        if let Some((_, g)) = STROKES.iter().find(|(k, _)| *k == ch) {
+            for poly in g.split('|') {
+                let pts: Vec<Vec2> = poly
+                    .split(' ')
+                    .filter_map(|p| p.split_once(','))
+                    .map(|(a, b)| Vec2::new(x + a.parse::<f32>().unwrap_or(0.0) * u, y + b.parse::<f32>().unwrap_or(0.0) * u))
+                    .collect();
+                if pts.len() == 1 {
+                    c.stroke(pts[0], pts[0], w, col);
+                }
+                c.polyline(&pts, w, col);
+            }
+        }
+        x += STROKE_ADVANCE * u;
+    }
+    x
+}
+
+/// Horizontal anchor of [`stroke_text_at`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Align {
+    Left,
+    Centre,
+    Right,
+}
+
+/// [`stroke_text`] anchored at (x, y): x by `align`, y at the text's vertical middle.
+#[allow(clippy::too_many_arguments)]
+pub fn stroke_text_at(c: &mut Canvas, x: f32, y: f32, s: &str, h: f32, w: f32, col: u8, align: Align) -> f32 {
+    let width = stroke_width(s, h);
+    let x0 = match align {
+        Align::Left => x,
+        Align::Centre => x - width / 2.0,
+        Align::Right => x - width,
+    };
+    stroke_text(c, x0, y - h / 2.0, s, h, w, col)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +309,12 @@ mod tests {
         assert_ne!(f.glyph(b'+').unwrap().rows, f.glyph(b'-').unwrap().rows);
         assert_eq!(f.glyph(b'a').unwrap().rows, f.glyph(b'A').unwrap().rows);
         assert_eq!(fonts.width(b"ZM+"), 12);
+    }
+
+    #[test]
+    fn stroke_font_covers_hud_text() {
+        for ch in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-+.,:/><()=".chars() {
+            assert!(STROKES.iter().any(|(k, _)| *k == ch), "no stroke glyph for {ch:?}");
+        }
     }
 }

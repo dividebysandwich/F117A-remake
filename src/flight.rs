@@ -231,6 +231,16 @@ impl Aircraft {
         self.autopilot_alt > 0.0
     }
 
+    /// Direction of flight (Bevy frame, unit vector): the modern model's velocity, or for the
+    /// classic model the nose lowered by the angle of attack trim.
+    pub fn path_dir(&self) -> Vec3 {
+        if let Some(v) = self.modern.velocity() {
+            return v;
+        }
+        let (h, p, _) = self.euler();
+        Self::from_euler(h, p - bam(self.trim), 0.0) * Vec3::NEG_Z
+    }
+
     /// Compressed altitude used for rendering, AI and detection.
     pub fn view_z(&self) -> f32 {
         view_z(self.altitude)

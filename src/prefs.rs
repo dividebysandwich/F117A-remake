@@ -47,6 +47,7 @@ pub struct Prefs {
     pub shadows: bool,
     pub local_lights: bool,
     pub classic_cockpit: bool,
+    pub classic_hud: bool,
     pub classic_flight: bool,
     pub vr_cockpit_scale: f32,
 }
@@ -67,6 +68,7 @@ impl Default for Prefs {
             shadows: false,
             local_lights: false,
             classic_cockpit: false,
+            classic_hud: false,
             classic_flight: false,
             vr_cockpit_scale: DEFAULT_VR_COCKPIT_SCALE,
         }
@@ -94,6 +96,7 @@ impl Prefs {
             shadows: s.shadows,
             local_lights: s.local_lights,
             classic_cockpit: s.classic_cockpit,
+            classic_hud: s.classic_hud,
             classic_flight: s.classic_flight,
             vr_cockpit_scale: s.vr_cockpit_scale,
         }
@@ -113,6 +116,7 @@ impl Prefs {
         s.shadows |= self.shadows;
         s.local_lights |= self.local_lights;
         s.classic_cockpit |= self.classic_cockpit;
+        s.classic_hud |= self.classic_hud;
         s.classic_flight |= self.classic_flight;
         if !std::env::args().any(|a| a == "--vr-cockpit-scale") {
             s.vr_cockpit_scale = self.vr_cockpit_scale.clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());

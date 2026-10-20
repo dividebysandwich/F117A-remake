@@ -642,6 +642,14 @@ pub fn project_cockpit(a: &Aircraft, pos: &WorldPos, east: f64, north: f64, alt:
     (sx.abs() < 10000.0 && sy.abs() < 10000.0).then_some((sx as i32, sy as i32))
 }
 
+/// Direction from the cockpit eye to a world point (wu east, north, viewZ) in the aircraft
+/// frame (x right, y up, -z forward), normalised.
+pub fn direction_cockpit(a: &Aircraft, pos: &WorldPos, east: f64, north: f64, alt: f64) -> Option<Vec3> {
+    let eye = pos.0 + (a.orientation * EYE_OFFSET).as_dvec3();
+    let d: DVec3 = wu_to_bevy(east, north, alt) - eye;
+    (a.orientation.inverse() * d.as_vec3()).try_normalize()
+}
+
 fn on_hud(p: Option<(i32, i32)>) -> Option<(i32, i32)> {
     p.filter(|&(x, y)| (0..320).contains(&x) && (0..91).contains(&y))
 }
@@ -694,6 +702,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                 count: count.max(0) as u32,
                 picture: wt.picture.max(0) as usize,
                 air_to_air: wt.spec > 0 && data.missile(wt.spec as i32).class == 7,
+                range_km: if wt.spec > 0 { data.missile(wt.spec as i32).lock_range.max(0) as f32 } else { 0.0 },
             }
         })
         .collect();
@@ -815,6 +824,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         info.zoom = camera_zoom(t.range) + 1;
         let (east, north) = map_wu(ob.x, ob.y);
         if cockpit && hud.mode == HudMode::Gnd && t.box_size > 0 {
+            new_cues.target_dir = direction_cockpit(&a, pos, east, north, 0.0);
             new_cues.target_box = on_hud(project_cockpit(&a, pos, east, north, 0.0)).map(|(x, y)| TargetBox {
                 x,
                 y,
@@ -828,6 +838,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             // Flight-path guide: 128 map units beyond the target along the heading, own altitude.
             let hr = bam(heading as f32);
             let (qx, qy) = (ob.x as f64 + hr.sin() as f64 * 128.0, ob.y as f64 - hr.cos() as f64 * 128.0);
+            new_cues.diamond_dir = direction_cockpit(&a, pos, qx * 32.0, (0x8000 as f64 - qy) * 32.0, player_view.view_z as f64);
             new_cues.diamond =
                 on_hud(project_cockpit(&a, pos, qx * 32.0, (0x8000 as f64 - qy) * 32.0, player_view.view_z as f64));
         }
@@ -843,6 +854,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         info.bearing = Some(((brg as u16) as u32 * 360 / 65536) as i32);
         info.zoom = camera_zoom(range_mu) + 1;
         if cockpit && hud.mode == HudMode::Air {
+            new_cues.target_dir = direction_cockpit(&a, pos, east, north, alt);
             new_cues.target_box = on_hud(project_cockpit(&a, pos, east, north, alt)).map(|(x, y)| TargetBox {
                 x,
                 y,
@@ -856,9 +868,12 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     if cockpit {
         if let Some((x, y)) = t.ccip {
             let (east, north) = map_wu(x, y);
+            new_cues.ccip_dir = direction_cockpit(&a, pos, east, north, 0.0);
             new_cues.ccip = Some(on_hud(project_cockpit(&a, pos, east, north, 0.0)).unwrap_or((0xA0, 0x5A)));
         }
         new_cues.ranging_bar = t.ranging_bar;
+        new_cues.lock = t.lock_valid;
+        new_cues.in_range = t.in_range;
     }
     *cam = info;
     *cues = new_cues;

@@ -145,6 +145,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.shadows, "--shadows"),
         (settings.local_lights, "--local-lights"),
         (settings.classic_cockpit, "--classic-cockpit"),
+        (settings.classic_hud, "--classic-hud"),
         (settings.classic_flight, "--classic-flight"),
         (settings.no_crashes, "--no-crashes"),
     ] {
@@ -487,6 +488,7 @@ fn menu_ui(
                     let mut toggled = false;
                     let s = settings.bypass_change_detection();
                     let mut cockpit = !s.classic_cockpit;
+                    let mut hud = !s.classic_hud;
                     let mut flight = !s.classic_flight;
                     for (modern, name, f) in [
                         (&mut s.modern_shading, "Shaders", &["Modern: MSAA anti-aliasing, subtle directional shading, smooth distance haze", "Classic: the original's flat shading"][..]),
@@ -497,6 +499,7 @@ fn menu_ui(
                             "Cockpit",
                             &["Modern: high-resolution displays with bezel buttons", "Classic: the original instrument panel layout and 77x60 displays"][..],
                         ),
+                        (&mut hud, "HUD", &["Modern: high-resolution F-16 style HUD in green with NAV, AA and AG modes", "Classic: the original HUD"][..]),
                         (
                             &mut flight,
                             "Flight model",
@@ -509,6 +512,7 @@ fn menu_ui(
                         toggled |= facts(slide_switch(ui, name, modern), f).changed();
                     }
                     s.classic_cockpit = !cockpit;
+                    s.classic_hud = !hud;
                     s.classic_flight = !flight;
                     section(ui, "VR");
                     // Read every frame by the rig: no change detection needed.

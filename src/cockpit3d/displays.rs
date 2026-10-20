@@ -332,9 +332,16 @@ pub(super) fn spawn_panel(
 }
 
 /// HUD: a transparent canvas seen through the combiner glass, collimated to infinity.
-pub(super) fn spawn_hud(commands: &mut Commands, root: Entity, meshes: &mut Assets<Mesh>, materials: &mut Assets<HudGlassMaterial>, images: &mut Assets<Image>) {
-    let hud_tex = CanvasTexture::new(Canvas::new(320, 200), images, true);
-    let material = materials.add(HudGlassMaterial { tint: Vec4::ZERO, image: hud_tex.image.clone() });
+pub(super) fn spawn_hud(
+    commands: &mut Commands,
+    root: Entity,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<HudGlassMaterial>,
+    images: &mut Assets<Image>,
+    classic: bool,
+) {
+    let (hud_tex, proj, style) = hud_canvas(images, classic);
+    let material = materials.add(HudGlassMaterial { tint: Vec4::ZERO, image: hud_tex.image.clone(), proj, style });
     // Flat glass in the plane z = -COMBINER_DEPTH (a fan around the centre).
     let corners: Vec<Vec3> = COMBINER.iter().map(|&(x, y)| pixel_dir(x, y) * COMBINER_DEPTH).collect();
     let centre = corners.iter().sum::<Vec3>() / corners.len() as f32;
@@ -349,6 +356,42 @@ pub(super) fn spawn_hud(commands: &mut Commands, root: Entity, meshes: &mut Asse
         .spawn((CanvasRole::Hud, hud_tex, Mesh3d(meshes.add(mesh)), MeshMaterial3d(material), Transform::default(), NoFrustumCulling, NotShadowCaster))
         .id();
     commands.entity(root).add_child(hud);
+}
+
+/// The HUD canvas for the classic (320x200 palette picture) or the modern HUD (large
+/// monochrome mask, filtered), with the glass projection and style.
+fn hud_canvas(images: &mut Assets<Image>, classic: bool) -> (CanvasTexture, Vec4, Vec4) {
+    let ((w, h), proj, style) = HudGlassMaterial::layout(classic);
+    let tex = CanvasTexture::new(Canvas::new(w, h), images, true);
+    if !classic && let Some(mut img) = images.get_mut(&tex.image) {
+        img.sampler = bevy::image::ImageSampler::linear();
+    }
+    (tex, proj, style)
+}
+
+/// Switches the HUD canvas between the classic and the modern HUD when the setting changes.
+pub(super) fn restyle_hud(
+    settings: Res<crate::settings::Settings>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<HudGlassMaterial>>,
+    mut q: Query<(&CanvasRole, &mut CanvasTexture, &MeshMaterial3d<HudGlassMaterial>)>,
+) {
+    if !settings.is_changed() {
+        return;
+    }
+    let classic = settings.classic_hud;
+    for (role, mut tex, mat) in &mut q {
+        if *role != CanvasRole::Hud || (tex.canvas.w == 320) == classic {
+            continue;
+        }
+        let (new, proj, style) = hud_canvas(&mut images, classic);
+        if let Some(mut m) = materials.get_mut(&mat.0) {
+            m.image = new.image.clone();
+            m.proj = proj;
+            m.style = style;
+        }
+        *tex = new;
+    }
 }
 
 /// Approach indexer beside the left combiner post (where the original draws it, pixels
@@ -486,7 +529,11 @@ pub(super) fn update_displays(
             CanvasRole::Hud => {
                 tex.canvas.px.fill(0);
                 if let Some(frame) = d.hud.frame(d.mfd.state.right == crate::mfd::RightMfd::Camera) {
-                    crate::hud::draw(&mut tex.canvas, &art, &fonts, &frame);
+                    if tex.canvas.w == 320 {
+                        crate::hud::draw(&mut tex.canvas, &art, &fonts, &frame);
+                    } else {
+                        crate::hud::modern::draw(&mut tex.canvas, &frame);
+                    }
                 }
             }
             _ => d.panel.draw_approach(&mut tex.canvas, &art),

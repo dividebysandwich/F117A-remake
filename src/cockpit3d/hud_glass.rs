@@ -17,6 +17,26 @@ pub struct HudGlassMaterial {
     #[texture(1)]
     #[sampler(2)]
     pub image: Handle<Image>,
+    /// Canvas pixel of the boresight (xy) and canvas pixels per unit of the tangent plane
+    /// (zw, horizontal and vertical).
+    #[uniform(3)]
+    pub proj: Vec4,
+    /// x: 1 = modern HUD (every set texel drawn in HUD green with a glow), y: brightness.
+    #[uniform(4)]
+    pub style: Vec4,
+}
+
+impl HudGlassMaterial {
+    /// Canvas size, projection and style of the classic or the modern HUD.
+    pub fn layout(classic: bool) -> ((usize, usize), Vec4, Vec4) {
+        use crate::hud::modern;
+        if classic {
+            let f = crate::cockpit::FOCAL;
+            ((320, 200), Vec4::new(159.5, 52.0, f, f * crate::cockpit::VSCALE), Vec4::new(0.0, 1.0, 0.0, 0.0))
+        } else {
+            ((modern::WIDTH, modern::HEIGHT), Vec4::new(modern::CX, modern::CY, modern::SCALE, modern::SCALE), Vec4::new(1.0, 1.0, 0.0, 0.0))
+        }
+    }
 }
 
 impl Material for HudGlassMaterial {

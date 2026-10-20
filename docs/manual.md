@@ -42,7 +42,7 @@ the *Cockpit* switch).
 | **Mission** | *Strike*: ground target (destroy, photograph or reach), with a primary and a secondary objective. *Air to air*: intercept an enemy aircraft. *Strike training* and *Air training*: practice missions. *Drone defense* (Ukraine only): stop a wave of attack drones, then bomb their launch site (chapter 11). |
 | **Aircraft** | *Realistic weapons*: two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. |
 | **Weather** | Random (based on the theater's climate), Clear, Scattered, Broken, Overcast, Storm. *Random cover* off: a slider sets the coverage of the main cloud layer. Clouds block optical seekers and visual identification for both sides; radar sees through clouds. |
-| **Classic / Modern** | *Shaders*: flat original shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: original panel or modern panel (this manual describes the modern panel). *Flight model*: original flight model, or an aerodynamic model with fly-by-wire: the stick commands g and roll rate, and with the stick released the aircraft holds its flight path. |
+| **Classic / Modern** | *Shaders*: flat original shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: original panel or modern panel (this manual describes the modern panel). *HUD*: the original HUD, or a high-resolution F-16 style HUD in green. *Flight model*: original flight model, or an aerodynamic model with fly-by-wire: the stick commands g and roll rate, and with the stick released the aircraft holds its flight path. |
 
 The **mission summary** lists theater, situation, mission type, opponents, time of day and
 departure time, weather, visibility and fuel. The **briefing** below it lists the objectives, the
@@ -103,9 +103,35 @@ The rest of this manual describes the modern cockpit.
 
 ### 3.1 HUD and HUD mode buttons
 
-The HUD shows heading (top), g load (top left), airspeed in knots (left scale), altitude in feet
-(right scale), the pitch ladder, the selected weapon (bottom left) and the gun rounds (bottom
-right). Messages such as "*Dessau detected*" appear at the top.
+The modern HUD is drawn in green in the style of the F-16's:
+
+![Modern HUD](images/hud_modern.png)
+
+* **Top:** heading tape (tens of degrees) with the caret of the current steerpoint.
+* **Top left:** g load, Mach number and the highest g of the flight.
+* **Left / right:** airspeed scale (knots) and altitude scale ("1,5" = 1,500 ft) with the boxed
+  readouts; climb rate in feet per minute above the altitude box, radar altitude ("R") below it
+  under 5,000 ft.
+* **Centre:** gun cross at the boresight and the flight path marker (the circle with wings: where
+  the aircraft is going). The pitch ladder is centred on the flight path marker: a rung every
+  5°, solid above the horizon, dashed and bent below it. With the gear down, the bracket left of
+  the marker shows the approach angle of attack: marker in the middle of the bracket = on speed,
+  high = fast, low = slow.
+* **Bottom:** bank angle scale; mode, selected weapon and gun rounds (left); steerpoint number,
+  distance and time to go (right). Messages such as "*Dessau detected*" appear at the top.
+
+The modes add their own symbols:
+
+* **NAV:** a diamond on the steerpoint on the ground.
+* **AA:** the target designator box with the missile diamond once locked, the range below it;
+  with an air-to-air missile selected the steering circle and dot, *SHOOT* in range, and the
+  launch zone scale (maximum and minimum range, target range caret); otherwise the gun pipper.
+* **AG:** the target designator box (*IN RNG* in range); for bombs the CCIP pipper with the bomb
+  fall line, and for guided release the azimuth steering line with the release cue that slides
+  down to the flight path marker.
+
+The **classic HUD** (menu: *HUD: Classic*) is the original's low-resolution HUD, as in the
+classic cockpit picture above.
 
 ![HUD mode buttons](images/panel_hud_caps.png)
 

@@ -453,7 +453,7 @@ fn mouse_look(
             *look = HeadLook::default();
             state.magnify = 1.0;
         }
-        if matches!(a, Action::ViewChase | Action::ViewSlot | Action::ViewSide | Action::ViewTactical | Action::ViewInverseTactical) {
+        if matches!(a, Action::ViewChase | Action::ViewSlot | Action::ViewSide | Action::ViewTactical | Action::ViewInverseTactical | Action::ViewMissile) {
             *orbit = Orbit::default();
             state.wheel_zoom = 0.0;
         }

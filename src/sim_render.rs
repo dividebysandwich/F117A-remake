@@ -124,6 +124,24 @@ pub fn map_point(x: f64, y: f64, alt: f64) -> bevy::math::DVec3 {
     wu_to_bevy(x * 32.0, (0x8000 as f64 - y) * 32.0, alt)
 }
 
+/// A projectile's position (Bevy world) and attitude as drawn: interpolated between the last two
+/// simulation frames. None when the slot is free.
+pub fn projectile_pose(combat: &Combat, s: usize) -> Option<(bevy::math::DVec3, Quat)> {
+    let m = *combat.sim.projectiles().get(s)?;
+    if m.ttl == 0 {
+        return None;
+    }
+    let p = combat.prev_proj[s];
+    let (mut x, mut y, mut z) = (m.x as f64, m.y as f64, m.alt as f64);
+    if p.ttl != 0 && p.spec == m.spec && (p.x - m.x).abs() < 0x400 && (p.y - m.y).abs() < 0x400 {
+        let t = combat.alpha as f64;
+        x = p.x as f64 + (x - p.x as f64) * t;
+        y = p.y as f64 + (y - p.y as f64) * t;
+        z = p.alt as f64 + (z - p.alt as f64) * t;
+    }
+    Some((map_point(x + 0.5, y + 0.5, z), attitude(m.heading, m.pitch, m.roll)))
+}
+
 pub fn attitude(heading: i32, pitch: i32, roll: i32) -> Quat {
     Aircraft::from_euler(bam(heading as u16 as f32), bam(pitch as i16 as f32), bam(roll as i16 as f32))
 }
@@ -318,17 +336,9 @@ fn sync_objects(
             vis.proj[s] = Some((e, m.spec));
         }
         let Some((e, _)) = vis.proj[s] else { continue };
-        let p = combat.prev_proj[s];
-        let (mut x, mut y, mut z) = (m.x as f64, m.y as f64, m.alt as f64);
-        if p.ttl != 0 && p.spec == m.spec && (p.x - m.x).abs() < 0x400 && (p.y - m.y).abs() < 0x400 {
-            let t = alpha as f64;
-            x = p.x as f64 + (x - p.x as f64) * t;
-            y = p.y as f64 + (y - p.y as f64) * t;
-            z = p.alt as f64 + (z - p.alt as f64) * t;
-        }
-        if let Ok((mut pos, mut tf, _, _)) = q.get_mut(e) {
-            pos.0 = map_point(x + 0.5, y + 0.5, z);
-            tf.rotation = attitude(m.heading, m.pitch, m.roll);
+        if let (Ok((mut pos, mut tf, _, _)), Some((p, rot))) = (q.get_mut(e), projectile_pose(&combat, s)) {
+            pos.0 = p;
+            tf.rotation = rot;
         }
     }
 
@@ -587,7 +597,7 @@ fn own_shadow(
         return;
     };
     // With real shadows the visible own model casts its own (external views).
-    let external = matches!(view.view, crate::camera::View::Chase | crate::camera::View::Side | crate::camera::View::Tactical);
+    let external = matches!(view.view, crate::camera::View::Chase | crate::camera::View::Side | crate::camera::View::Tactical | crate::camera::View::Weapon);
     let show = a.altitude < 1000.0 && !assets.palette.lights_on() && !(settings.shadows && external);
     vis.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     if show {

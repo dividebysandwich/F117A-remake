@@ -22,6 +22,17 @@ impl Plugin for CameraPlugin {
             .init_resource::<Orbit>()
             .init_resource::<RigOffset>()
             .init_resource::<XrRoot>()
+            .init_resource::<WeaponCam>()
+            // The weapon view after the combat step, on the weapon's pose drawn this frame.
+            .add_systems(
+                Update,
+                (track_weapon, place_weapon_camera)
+                    .chain()
+                    .after(RigSystems)
+                    .after(crate::combat::CombatSystems)
+                    .before(crate::sim_render::SimRenderSystems)
+                    .run_if(in_state(crate::settings::AppState::Flight)),
+            )
             .add_systems(Update, (switch_view, update_rig).chain().in_set(RigSystems).after(crate::flight::FlightSystems).run_if(in_state(crate::settings::AppState::Flight)));
     }
 }
@@ -45,7 +56,40 @@ pub enum View {
     /// After ejecting: the pilot under the chute and on the ground (set by the combat
     /// simulation; the view keys do nothing until the mission ends).
     Pilot,
+    /// Behind one of the player's missiles or bombs in flight, then on its impact point
+    /// (`WeaponCam`).
+    Weapon,
 }
+
+/// The weapon followed in `View::Weapon`.
+#[derive(Resource, Default)]
+pub struct WeaponCam {
+    /// Projectile slot and missile table entry of the weapon in flight.
+    slot: Option<(usize, i32)>,
+    /// Its last position and flight direction (Bevy world).
+    last: Option<(DVec3, DVec3)>,
+    /// After impact: the impact point, the flight direction and the seconds since.
+    impact: Option<(DVec3, DVec3, f32)>,
+    /// The explosion's position when it is not where the weapon was last seen (a proximity
+    /// fuze, a bomb's last frame above the ground): where the impact point was, and since when
+    /// the view glides over (seconds after the impact).
+    moved_from: Option<(DVec3, f32)>,
+    /// The view to return to afterwards.
+    back_to: View,
+}
+
+/// The player's projectile slots (the enemy's are below).
+const PLAYER_SLOTS: std::ops::Range<usize> = 8..stealth_sim::N_PROJ;
+/// Seconds the camera stays on the impact point, pulling back.
+const IMPACT_SECONDS: f32 = 10.0;
+/// Seconds the view takes to glide from where the weapon was last seen to its explosion.
+const GLIDE_SECONDS: f32 = 0.6;
+/// Distance behind and above the weapon in flight, and how far back and up the camera pulls
+/// after the impact (m).
+const WEAPON_CAM: (f32, f32) = (6.0, 1.0);
+const PULL_BACK: (f32, f32) = (140.0, 45.0);
+/// Where the camera goes first after the impact, out of the fireball (m back and up).
+const IMPACT_CAM: (f32, f32) = (30.0, 8.0);
 
 #[derive(Resource)]
 pub struct ViewState {
@@ -209,8 +253,8 @@ pub fn spawn_rig(
     commands.entity(aircraft).add_child(head).insert(WorldAnchor);
 }
 
-fn switch_view(mut actions: MessageReader<ActionEvent>, mut state: ResMut<ViewState>, combat: Option<Res<crate::combat::Combat>>) {
-    if combat.is_some_and(|c| c.sim.chute().is_some()) {
+fn switch_view(mut actions: MessageReader<ActionEvent>, mut state: ResMut<ViewState>, mut weapon: ResMut<WeaponCam>, combat: Option<Res<crate::combat::Combat>>) {
+    if combat.as_ref().is_some_and(|c| c.sim.chute().is_some()) {
         actions.clear();
         state.view = View::Pilot;
         return;
@@ -227,12 +271,151 @@ fn switch_view(mut actions: MessageReader<ActionEvent>, mut state: ResMut<ViewSt
             Action::ViewChase | Action::ViewSlot => state.view = View::Chase,
             Action::ViewSide => state.view = View::Side,
             Action::ViewTactical | Action::ViewInverseTactical => state.view = View::Tactical,
+            Action::ViewMissile => follow_next_weapon(&mut state, &mut weapon, combat.as_deref()),
             Action::Zoom => state.zoom = (state.zoom + 1).min(3),
             Action::Unzoom => state.zoom = (state.zoom - 1).max(-3),
             Action::WideAngle => state.wide = !state.wide,
             _ => {}
         }
     }
+}
+
+/// The weapon view key: follows the newest of the player's weapons in flight, or, already
+/// following one, the next one (in slot order). Nothing in flight: no change.
+fn follow_next_weapon(state: &mut ViewState, weapon: &mut WeaponCam, combat: Option<&crate::combat::Combat>) {
+    let Some(combat) = combat else { return };
+    let projs = combat.sim.projectiles();
+    let live: Vec<usize> = PLAYER_SLOTS.filter(|&s| projs[s].ttl != 0).collect();
+    let current = weapon.slot.map(|(s, _)| s).filter(|_| state.view == View::Weapon);
+    let next = match current {
+        Some(c) => live.iter().copied().find(|&s| s > c).or(live.first().copied()),
+        // The newest has the most time to live left.
+        None => live.iter().copied().max_by_key(|&s| projs[s].ttl),
+    };
+    let Some(s) = next else { return };
+    if state.view != View::Weapon {
+        weapon.back_to = state.view;
+    }
+    *weapon = WeaponCam { slot: Some((s, projs[s].spec)), last: None, impact: None, moved_from: None, back_to: weapon.back_to };
+    state.view = View::Weapon;
+}
+
+/// Follows the weapon: its position while it flies, then the impact (where it was last seen) for
+/// `IMPACT_SECONDS`, then back to the previous view.
+fn track_weapon(time: Res<Time>, mut state: ResMut<ViewState>, mut weapon: ResMut<WeaponCam>, combat: Option<Res<crate::combat::Combat>>) {
+    if state.view != View::Weapon {
+        return;
+    }
+    if let (Some((s, spec)), Some(combat)) = (weapon.slot, combat.as_deref()) {
+        let pose = crate::sim_render::projectile_pose(combat, s)
+            .filter(|_| combat.sim.projectiles()[s].spec == spec)
+            // A new weapon in the same slot (fired in the same frame the last one hit).
+            .filter(|(p, _)| weapon.last.is_none_or(|(q, _)| p.distance(q) < 2000.0));
+        match pose {
+            Some((p, rot)) => {
+                // The direction it moves (bombs fall away from where they point); before it
+                // has moved, its attitude.
+                let dir = match weapon.last {
+                    Some((q, d)) => (p - q).try_normalize().filter(|_| p.distance(q) > 0.05).unwrap_or(d),
+                    None => (rot * Vec3::NEG_Z).as_dvec3(),
+                };
+                weapon.last = Some((p, dir));
+            }
+            None => {
+                weapon.slot = None;
+                weapon.impact = weapon.last.map(|(p, d)| (p, d, 0.0));
+            }
+        }
+    }
+    if let Some((_, _, t)) = &mut weapon.impact {
+        *t += time.delta_secs();
+    }
+    // The explosion of the impact, once it shows up (the first second after the impact).
+    if let (Some((point, d, t)), None, Some(combat)) = (weapon.impact, weapon.moved_from, combat.as_deref())
+        && t < 1.0
+        && let Some(blast) = combat
+            .explosions
+            .iter()
+            .map(|&(x, y, alt, _)| crate::sim_render::map_point(x as f64 + 0.5, y as f64 + 0.5, alt.max(0) as f64))
+            .filter(|b| b.distance(point) < 1500.0)
+            .min_by(|a, b| a.distance(point).total_cmp(&b.distance(point)))
+    {
+        weapon.moved_from = Some((point, t));
+        weapon.impact = Some((blast, d, t));
+    }
+    let done = weapon.impact.is_some_and(|(_, _, t)| t >= IMPACT_SECONDS);
+    if done || (weapon.slot.is_none() && weapon.impact.is_none()) {
+        weapon.impact = None;
+        state.view = weapon.back_to;
+    }
+}
+
+/// The weapon view's eye, look-at point and up direction (Bevy world): behind the weapon along
+/// its flight path (above a falling bomb), or after the impact on the impact point, pulling
+/// back and up behind it (eased out). The mouse orbit and zoom apply.
+fn weapon_eye(weapon: &WeaponCam, state: &ViewState, orbit: &Orbit) -> Option<(DVec3, DVec3, Vec3)> {
+    let zoom = 2f32.powf(-state.external_zoom());
+    let (centre, offset, target, along) = match (weapon.impact, weapon.last) {
+        (Some((p, d, t)), _) => {
+            let e = (t / IMPACT_SECONDS).clamp(0.0, 1.0);
+            let k = 1.0 - (1.0 - e) * (1.0 - e);
+            // Gliding over to the explosion.
+            let p = match weapon.moved_from {
+                Some((from, t0)) => {
+                    let g = ((t - t0) / GLIDE_SECONDS).clamp(0.0, 1.0);
+                    from.lerp(p, (g * g * (3.0 - 2.0 * g)) as f64)
+                }
+                None => p,
+            };
+            // Pulling back level behind the flight path (to the south after a vertical drop):
+            // first quickly out of the fireball, then slowly.
+            let flat = Vec3::new(d.x as f32, 0.0, d.z as f32).try_normalize().unwrap_or(Vec3::NEG_Z);
+            let q = (t / GLIDE_SECONDS).clamp(0.0, 1.0);
+            let q = q * q * (3.0 - 2.0 * q);
+            let back = (WEAPON_CAM.0 + (IMPACT_CAM.0 - WEAPON_CAM.0) * q + PULL_BACK.0 * k) * zoom;
+            let up = WEAPON_CAM.1 + (IMPACT_CAM.1 - WEAPON_CAM.1) * q + PULL_BACK.1 * k;
+            (p, -flat * back + Vec3::Y * up, p, d.as_vec3())
+        }
+        (None, Some((p, d))) => {
+            let d = d.as_vec3();
+            (p, -d * WEAPON_CAM.0 * zoom + Vec3::Y * WEAPON_CAM.1, p + (d * 10.0).as_dvec3(), d)
+        }
+        _ => return None,
+    };
+    // Orbit about the vertical and about the axis across the flight path.
+    let right = along.cross(Vec3::Y).try_normalize().unwrap_or(Vec3::X);
+    let offset = Quat::from_rotation_y(orbit.yaw) * Quat::from_axis_angle(right, orbit.pitch) * offset;
+    let eye = centre + offset.as_dvec3();
+    // Looking (nearly) straight down or up: the flight direction across the screen is up.
+    let view = (target - eye).as_vec3().normalize_or_zero();
+    let up = if view.y.abs() > 0.98 { Vec3::new(along.x, 0.0, along.z).try_normalize().unwrap_or(Vec3::NEG_Z) } else { Vec3::Y };
+    Some((eye, target, up))
+}
+
+/// The weapon view's camera: placed relative to the aircraft (the rig's parent) at `weapon_eye`.
+#[allow(clippy::too_many_arguments)]
+fn place_weapon_camera(
+    state: Res<ViewState>,
+    weapon: Res<WeaponCam>,
+    orbit: Res<Orbit>,
+    aircraft: Query<(&Aircraft, &WorldPos), With<Player>>,
+    mut head: Query<&mut Transform, (With<HeadAnchor>, Without<EyeCamera>)>,
+    mut cam: Query<&mut Transform, With<EyeCamera>>,
+    mut viewpoint: ResMut<crate::palette::Viewpoint>,
+) {
+    if state.view != View::Weapon {
+        return;
+    }
+    let (Ok(mut head), Ok(mut cam_tf), Ok((a, pos))) = (head.single_mut(), cam.single_mut(), aircraft.single()) else { return };
+    let Some((mut eye, target, up)) = weapon_eye(&weapon, &state, &orbit) else { return };
+    // At least 2 m above the ground (the ground under the aircraft).
+    let ground = crate::world::wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
+    eye.y = eye.y.max(ground + 2.0);
+    viewpoint.altitude_wu = (eye.y / crate::world::WU) as f32;
+    let world_rot = Transform::IDENTITY.looking_to((target - eye).as_vec3(), up).rotation;
+    let local = a.orientation.inverse();
+    *head = Transform::from_translation(local * (eye - pos.0).as_vec3()).with_rotation(local * world_rot);
+    *cam_tf = Transform::IDENTITY;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -298,6 +481,8 @@ fn update_rig(
             *head = Transform::from_translation(local * (eye - pos.0).as_vec3()).with_rotation(local * world_rot);
             *cam_tf = offset.0;
         }
+        // Placed by `place_weapon_camera`.
+        View::Weapon => {}
         View::Tactical => {
             // Above and behind in world-up terms: undo the aircraft's roll and pitch.
             let d = 120.0 * 2f32.powf(-state.external_zoom());
@@ -333,3 +518,4 @@ fn orbited(pos: Vec3, target: Vec3, orbit: &Orbit, to_world: Quat, floor: f32) -
 pub fn eye_world(a: &Aircraft, pos: &WorldPos, eye: Vec3) -> DVec3 {
     pos.0 + (a.orientation * eye).as_dvec3()
 }
+

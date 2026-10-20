@@ -416,6 +416,11 @@ the gun pipper. Backspace fires the gun whatever is selected. The rounds leave a
 at 1050 m/s plus your airspeed and drop under gravity. The real F-117A has no gun: with
 *Realistic weapons* there is none.
 
+**Weapon view:** Shift F4 follows your newest missile or bomb in flight from behind (above a
+falling bomb); pressed again it switches to your next weapon in flight. After the impact the camera
+stays on the explosion and slowly pulls back for 10 seconds, then returns to the view you came
+from. The right mouse button orbits around the weapon and the mouse wheel zooms.
+
 Ground targets under cloud cannot be designated (*Target obscured*). IR and optical seekers
 (AIM-9, Maverick, laser-guided bombs) need a clear line of sight.
 
@@ -571,7 +576,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | | Previous / next waypoint | PgUp / PgDn |
 | **Views** | Cockpit | F1 |
 | | Look ahead / rear / left / right | Shift `/` / Shift `.` / Shift `,` / Shift M |
-| | Slot / chase / side / missile / tactical / inverse tactical | Shift F1 … Shift F6 |
+| | Slot / chase / side / weapon / tactical / inverse tactical | Shift F1 … Shift F6 |
 | | Zoom / unzoom / wide angle | Z / X / C |
 | | Look around (cockpit) / orbit (external views) | Right mouse button |
 | | Zoom in and out (cockpit: up to 6x; external views: the camera distance) | Mouse wheel with the right mouse button held |

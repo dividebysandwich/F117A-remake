@@ -50,6 +50,7 @@ mod sky;
 mod sound;
 mod stage;
 mod tacview;
+mod tacview_real_time;
 mod terrain;
 mod trackcam;
 mod trails;
@@ -161,6 +162,7 @@ fn main() {
             flight_menu::FlightMenuPlugin,
             kneeboard::KneeboardPlugin,
             recon::ReconPlugin,
+            tacview_real_time::TacviewRealTimePlugin,
         ))
         .add_plugins((
             sky::SkyPlugin,

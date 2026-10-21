@@ -33,6 +33,7 @@ Command-line options:
 | `--realistic-guidance` | realistic missile guidance: proportional navigation, motors that burn out (the missiles glide on, smoke only while burning), lofted SAM shots, the AIM-120 flying straight for 3 s so it can be lobbed |
 | `--realistic-damage` | realistic weapon damage: missile hits can destroy the aircraft, start fires that burn out or blow it up, and bend control surfaces (out of trim, oscillating) |
 | `--no-crashes` | crash protection: automatic pull-up near the ground with the gear up, ground contact and collisions are not fatal |
+| `--tacview-real-time [--tacview-address <ip[:port]>] [--tacview-password <text>]` | Tacview real-time telemetry: the flight is shown in Tacview (*Record > Real-Time Telemetry*) while it is flown; hosted on 127.0.0.1:42674 by default, `0.0.0.0` lets another computer join |
 | `--lockheed` | realistic weapons: the real aircraft's 2 bays, no air-to-air missiles, no carrier operations |
 | `--vr` | OpenXR headset (without a runtime it runs on the desktop); the menu and the debrief are a panel in the headset, operated with a controller |
 | `--viewer [--file stflt --model 24]` | browse the converted models |

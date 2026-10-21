@@ -195,11 +195,18 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.realistic_damage, "--realistic-damage"),
         (settings.realistic_guidance, "--realistic-guidance"),
         (settings.tacview, "--tacview"),
+        (settings.tacview_real_time, "--tacview-real-time"),
         (settings.air_defence, "--air-defence"),
     ] {
         if on {
             cmd.arg(flag);
         }
+    }
+    if settings.tacview_address != crate::tacview_real_time::DEFAULT_ADDRESS {
+        cmd.args(["--tacview-address", &settings.tacview_address.to_string()]);
+    }
+    if let Some(p) = &settings.tacview_password {
+        cmd.args(["--tacview-password", p]);
     }
     cmd.args(["--vr-cockpit-scale", &format!("{:.0}", settings.vr_cockpit_scale * 100.0)]);
     cmd.args(["--aircraft", settings.aircraft.id()]);
@@ -727,6 +734,15 @@ fn menu_ui(
                     if facts(
                         ui.checkbox(&mut s.tacview, "Tacview export"),
                         &["Saves each flight as a Tacview recording (.acmi)", "In the game's data folder, under tacview"],
+                    )
+                    .changed()
+                    {
+                        settings.set_changed();
+                    }
+                    let s = settings.bypass_change_detection();
+                    if facts(
+                        ui.checkbox(&mut s.tacview_real_time, "Tacview real-time telemetry"),
+                        &["Sends the flight to Tacview while you fly", "In Tacview: Record > Real-Time Telemetry", "Address 127.0.0.1, port 42674 (--tacview-address)"],
                     )
                     .changed()
                     {

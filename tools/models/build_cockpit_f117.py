@@ -8,8 +8,8 @@
 #
 # Kept (with their materials, labels and control properties): the seat and the ejection
 # handle, the stick and the throttle with its rails, the gear handle and five side panel
-# buttons (the target buttons), the floor, the HUD glass and its frame, the approach indexer
-# and the flood lamps. Everything else is built here, low-poly: the panel
+# buttons (the target buttons), the floor, the HUD glass, the approach indexer and the flood
+# lamps (the HUD glass gets a new frame along its outline). Everything else is built here, low-poly: the panel
 # with the faces and displays of `PanelLayout::modern` (src/cockpit3d/layout.rs; the layout JSON
 # is written by `UPDATE_LAYOUT=1 cargo test layout_files`): its wings' upper edges falling
 # steeply outwards under the canopy's long front frames, the up-front display standing out
@@ -75,8 +75,8 @@ SLOPE_X = (0.19, 0.358)
 SLOPE_BEVEL = 40.0
 # The coaming reaches forward to here, level with the top of the up-front display at the back.
 COAMING_BACK = 0.714
-# HUD frame posts (kept) stand on the coaming here.
-HUD_POST = (0.245, 0.544)
+# The HUD frame's bars (square, the cockpit's scale), round the glass from the coaming up.
+HUD_BAR = 0.012
 # Segments of the round parts (bezels, buttons, knobs): low-poly.
 ROUND = 16
 KNOB = 8
@@ -147,8 +147,7 @@ def rect_point(r, offset=0.0):
 # --- keep, drop
 KEEP = (
     "seat_", "cushion_", "metal_98", "metal_99", "control_Action_Eject_", "stick", "throttle",
-    "black_549", "metal_550", "metal_551", "rubber_543", "dark_83", "frame_84", "frame_85",
-    "frame_86", "frame_87", "frame_88", "hud_glass", "approach", "lamp", "control_Action_Gear_.001",
+    "black_549", "metal_550", "metal_551", "rubber_543", "dark_83", "hud_glass", "approach", "lamp", "control_Action_Gear_.001",
     "button_NEAR", "button_NEXT", "button_NONE", "button_WPN", "button_DTL",
 )
 
@@ -764,8 +763,6 @@ for s, y in ((-1, 0.20), (1, 0.06)):
     for dz in (-0.03, 0.03):
         box("yellow", "yellow", (s * (CONSOLE_X[0] - 0.011), y, CONSOLE_TOP - 0.07 + dz), (0.022, 0.01, 0.01))
 
-# Approach indexer's housing behind it (the indexer is kept).
-box("dark", "dark", (-0.2585, 0.550, -0.0805), (0.026, 0.01, 0.066))
 
 # --- the new parts to the F-117A cockpit's size: positions and meshes scaled about the eye,
 # the controls' sizes with them
@@ -807,17 +804,33 @@ g = objs["control_Action_Gear_.001"]
 g.location = point(-668.0, -94.0, 0.002) * SCALE
 g.rotation_mode = "QUATERNION"
 g.rotation_quaternion = rotation(-668.0)
-# HUD frame posts down to the coaming.
-for n in ("frame_84", "frame_85"):
-    o = objs[n]
-    mw = o.matrix_world
-    inv = mw.inverted()
-    lowest = min((mw @ v.co).z for v in o.data.vertices)
-    target = coaming_z(math.copysign(HUD_POST[0], mw.translation.x), HUD_POST[1]) * SCALE
-    for v in o.data.vertices:
-        w = mw @ v.co
-        if abs(w.z - lowest) < 1e-4:
-            v.co = inv @ Vector((w.x, w.y, target))
+# HUD frame (the cockpit's scale): bars along the glass's outline (its posts, chamfered top
+# corners and top), outside it by half a bar, the posts standing on the coaming; each bar
+# overlaps the next by half a bar so the joints close.
+hud = next(o for o in root.children if o.name.startswith("hud_glass"))
+glass = [hud.matrix_world @ v.co for v in hud.data.vertices]
+hud_y = sum(v.y for v in glass) / len(glass)
+half_x = max(abs(v.x) for v in glass)
+top = max(v.z for v in glass)
+# The chamfers: from the posts' tops (the highest glass corner at the side) to the top's ends.
+shoulder = max(v.z for v in glass if abs(abs(v.x) - half_x) < 0.01)
+top_x = min(abs(v.x) for v in glass if abs(v.z - top) < 0.002)
+post_x = half_x + HUD_BAR / 2
+bottom = [coaming_z(s * post_x / SCALE, hud_y / SCALE) * SCALE for s in (-1, 1)]
+outline = [
+    Vector((-post_x, bottom[0])), Vector((-post_x, shoulder)),
+    Vector((-top_x, top + HUD_BAR / 2)), Vector((top_x, top + HUD_BAR / 2)),
+    Vector((post_x, shoulder)), Vector((post_x, bottom[1])),
+]
+for a, b in zip(outline, outline[1:]):
+    d = b - a
+    centre = (a + b) / 2
+    rot = Euler((0.0, -math.atan2(d.y, d.x), 0.0))
+    box("frame", "frame", (centre.x, hud_y, centre.y), (d.length + HUD_BAR, HUD_BAR, HUD_BAR), rot)
+# The approach indexer just outside the left post, in a housing behind it.
+ind = next(o for o in root.children if o.name.startswith("approach"))
+ind.location.x = -(post_x + HUD_BAR / 2 + 0.018)
+box("dark", "dark", (ind.location.x, hud_y + 0.009, ind.location.z), (0.040, 0.014, 0.097))
 
 bpy.data.orphans_purge(do_recursive=True)
 bpy.ops.wm.save_as_mainfile(filepath=out)

@@ -33,7 +33,8 @@ root = bpy.data.objects["cockpit"]
 # The canopy is narrow (+-0.37 m at its sill): the cockpit stays inside that.
 PANEL_TILT = math.radians(20.0)  # top of the panel leaning away
 PANEL_CENTRE = Vector((0.0, 0.66, -0.30))
-CONSOLE_TOP = -0.585
+# Low enough for the VR hands on the stick and throttle to stay clear of the arm rests.
+CONSOLE_TOP = -0.685
 CONSOLE_X = (0.20, 0.36)
 # The consoles end here; sloped panels rise from their ends to the main panel's lower edge
 # (layout x <= -600 left, centred on -700; x >= 1100 right, centred on 1200; y down the slope).
@@ -60,7 +61,7 @@ BEVEL = 55.0
 # Advisory light panel on the right console ahead of the stick (layout x >= CONSOLE_U, its
 # middle at x 700, y 0), tilted towards the pilot.
 CONSOLE_U = 600.0
-ADVISORY_CENTRE = Vector((0.28, 0.33, -0.585))
+ADVISORY_CENTRE = Vector((0.28, 0.33, CONSOLE_TOP))
 ADVISORY_TILT = math.radians(15.0)
 TOP = -160.0
 WING_BOTTOM = 125.0
@@ -711,9 +712,9 @@ for rows, rect in (
 # its emergency release right).
 for s, y in ((-1, 0.30), (1, 0.12)):
     x = s * (CONSOLE_X[0] - 0.022)
-    box("yellow", "yellow", (x, y, -0.66), (0.012, 0.012, 0.08))
+    box("yellow", "yellow", (x, y, CONSOLE_TOP - 0.075), (0.012, 0.012, 0.08))
     for dz in (-0.03, 0.03):
-        box("yellow", "yellow", (s * (CONSOLE_X[0] - 0.011), y, -0.66 + dz), (0.022, 0.01, 0.01))
+        box("yellow", "yellow", (s * (CONSOLE_X[0] - 0.011), y, CONSOLE_TOP - 0.075 + dz), (0.022, 0.01, 0.01))
 
 # --- centre pedestal between the legs, under the panel's centre column, and air vents in the
 # knee wall either side of it
@@ -786,8 +787,8 @@ for x in (-0.311, -0.249):
     box("dark", "dark", (x, 0.215, CONSOLE_FACE + 0.012), (0.008, 0.31, 0.024))
 for y in (0.125, 0.265, 0.30):
     box("metal", "metal", (-0.311, y, CONSOLE_FACE + 0.0245), (0.009, 0.003, 0.002))
-throttle = empty("throttle", (-0.28, 0.125, -0.50), props={"throttle": True})
-empty("throttle_full", (-0.28, 0.30, -0.50), props={"anchor": "throttle_full"})
+throttle = empty("throttle", (-0.28, 0.125, CONSOLE_TOP + 0.085), props={"throttle": True})
+empty("throttle_full", (-0.28, 0.30, CONSOLE_TOP + 0.085), props={"anchor": "throttle_full"})
 mesh_object("dark", box_mesh("dark", (0.05, 0.075, 0.03), "dark", (0.0, 0.0, -0.07)), (0, 0, 0), parent=throttle)
 mesh_object("metal", loft_mesh("metal", [(Z * -0.056, X * 0.013, Y * 0.017), (Z * -0.012, X * 0.010, Y * 0.012)], "metal"), (0, 0, 0), parent=throttle)
 # The grip along x (inboard), its rings (x, half depth, half height), rising inboard.

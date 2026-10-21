@@ -50,7 +50,7 @@ SILL_REAR = -0.40
 # VR hands on the stick and throttle to stay clear of the arm rests).
 CONSOLE_X = (0.19, 0.354)
 CONSOLE_Y = (-0.269, 0.241)
-CONSOLE_TOP = -0.578
+CONSOLE_TOP = -0.646
 # The kept stick and throttle with their rails and boot, moved with the consoles' top; the
 # stick's pivot stands this far over it (the cockpit's scale).
 LEVERS = ("stick", "throttle", "throttle_full", "black_549", "metal_550", "metal_551", "rubber_543")

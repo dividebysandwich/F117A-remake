@@ -9,6 +9,8 @@
 //! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.flac) register under id NN, and a
 //!   requested id with no sample stays silent, so speech can be added later by dropping files in.
 //! - Radar warning tones come from `sounds/rwr/` instead of the original sounds 8 and 9.
+//! - A fire on board sounds the fire warning siren (`fire_siren.flac`, tools/gen_fire_siren.py)
+//!   without a break until the fire is out (or the pilot has ejected).
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
 //!   ejection, explosions and flares, and on the ground the emergency beacon (`beacon.flac`, two
 //!   chirps every 3 s at half volume) until the rescue ends.
@@ -41,7 +43,7 @@ impl Plugin for SoundPlugin {
             .add_systems(Startup, load_bank)
             .add_systems(
                 Update,
-                (flight_sounds, play_sounds, engine_drone, beacon)
+                (flight_sounds, play_sounds, engine_drone, beacon, fire_siren)
                     .chain()
                     .run_if(in_state(AppState::Flight)),
             )
@@ -102,6 +104,9 @@ const ENGINE_VOLUME: f32 = 0.8;
 /// The sounds still heard after ejecting: impact, explosion, the ejection, signal flare.
 const EJECTED_SOUNDS: [u8; 4] = [4, 5, 0x14, 0x1C];
 
+/// Fire warning siren volume.
+const SIREN_VOLUME: f32 = 0.35;
+
 /// Emergency beacon interval (real seconds) and volume.
 const BEACON_INTERVAL: f32 = 3.0;
 const BEACON_VOLUME: f32 = 0.5;
@@ -129,6 +134,7 @@ struct SoundBank {
     /// Engine loops by recorded airspeed.
     engine: Vec<(f32, Handle<AudioSource>)>,
     beacon: Option<Handle<AudioSource>>,
+    siren: Option<Handle<AudioSource>>,
     jet: Option<Handle<AudioSource>>,
     helicopter: Option<Handle<AudioSource>>,
 }
@@ -139,6 +145,10 @@ struct OneShot(u8);
 
 #[derive(Component)]
 struct Beacon;
+
+/// The fire warning siren's loop.
+#[derive(Component)]
+struct FireSiren;
 
 /// The loop of another aircraft heard by the downed pilot.
 #[derive(Component)]
@@ -191,6 +201,7 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
             .then(|| server.load(format!("sounds/{name}")))
     };
     bank.beacon = optional("beacon.flac");
+    bank.siren = optional("fire_siren.flac");
     bank.jet = optional("jet.flac");
     bank.helicopter = optional("helicopter.flac");
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -414,6 +425,49 @@ fn beacon(
     }
 }
 
+/// The fire warning: a siren sounding without a break while the aircraft is on fire (held while
+/// the flight is paused).
+fn fire_siren(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    combat: Option<Res<crate::combat::Combat>>,
+    player: Query<&Aircraft, With<Player>>,
+    virt: Res<Time<Virtual>>,
+    siren: Query<(Entity, Option<&AudioSink>), With<FireSiren>>,
+) {
+    let burning = combat.as_deref().is_some_and(|c| {
+        c.sim.damage_effects().bits & stealth_sim::dmg::FIRE != 0 && c.end.is_none()
+    }) && !has_ejected(combat.as_deref())
+        && player.single().is_ok_and(|a| a.ended.is_none())
+        && level.0 > 0;
+    let Some(handle) = bank.as_ref().and_then(|b| b.siren.clone()).filter(|_| burning) else {
+        for (e, _) in &siren {
+            commands.entity(e).despawn();
+        }
+        return;
+    };
+    match siren.single() {
+        Ok((_, Some(sink))) => {
+            if virt.is_paused() != sink.is_paused() {
+                if virt.is_paused() { sink.pause() } else { sink.play() }
+            }
+        }
+        Ok(_) => {}
+        Err(_) => {
+            commands.spawn((
+                AudioPlayer(handle),
+                PlaybackSettings {
+                    mode: PlaybackMode::Loop,
+                    volume: Volume::Linear(SIREN_VOLUME),
+                    ..default()
+                },
+                FireSiren,
+            ));
+        }
+    }
+}
+
 /// The aircraft around the pilot, out of the cockpit (under the chute and on the ground): each
 /// one's loop plays from its position, panned by its direction from the eye (the ears follow the
 /// head) and shifted by its closing speed; out of range or beyond the nearest few, it stops.
@@ -545,7 +599,8 @@ fn unit_pitch(unit: usize) -> f32 {
     0.92 + 0.16 * (unit as f32 * 0.618).fract()
 }
 
-type FlightSound = Or<(With<OneShot>, With<EngineDrone>, With<Beacon>, With<DistantAircraft>)>;
+type FlightSound =
+    Or<(With<OneShot>, With<EngineDrone>, With<Beacon>, With<FireSiren>, With<DistantAircraft>)>;
 
 fn stop_all(mut commands: Commands, q: Query<Entity, FlightSound>) {
     for e in &q {

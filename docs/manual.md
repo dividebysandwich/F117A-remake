@@ -204,6 +204,9 @@ The lamps are dark when inactive. Their layout from top to bottom:
 | 4 | **BD** bay door damage (doors stay open) · **AV** avionics damage · (unused) |
 | 5 | **RAD** radar-guided missile in flight · **IR** infrared missile in flight · **TRAK** enemy radar tracking the aircraft |
 
+A fire on board also sounds the fire warning siren until the fire is out. A damaged aircraft
+trails smoke (grey, black when badly hit), and flames while it burns.
+
 | Control | Key | Function |
 |---|---|---|
 | CHAFF | 2 | Release chaff. The counter shows the remaining stock; the lamp on the right lights on release. |

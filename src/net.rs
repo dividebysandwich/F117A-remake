@@ -56,7 +56,8 @@ impl Plugin for NetPlugin {
         app.init_resource::<NetInbox>().init_resource::<Notice>().add_systems(
             Update,
             pump_client.before(crate::combat::CombatSystems).run_if(resource_exists::<NetLink>),
-        );
+        )
+        .add_systems(Last, goodbye.run_if(resource_exists::<NetLink>));
     }
 }
 
@@ -86,4 +87,16 @@ fn pump_client(mut link: ResMut<NetLink>, mut inbox: ResMut<NetInbox>) {
         });
     }
     client.flush(now);
+}
+
+/// The game quits: the server learns at once that the player left (a listen server tells its
+/// players), rather than after the timeout.
+fn goodbye(mut exit: MessageReader<AppExit>, mut link: ResMut<NetLink>) {
+    if exit.read().next().is_none() {
+        return;
+    }
+    match &mut *link {
+        NetLink::Client(client) => client.leave(),
+        NetLink::Host(server) => server.shutdown("The host left the game"),
+    }
 }

@@ -27,6 +27,7 @@ has a modern and a classic cockpit, the F-16C its own.
 10. [Debrief and career](#10-debrief-and-career)
 11. [Drone defense (Ukraine)](#11-drone-defense-ukraine)
 12. [Ejection and rescue](#12-ejection-and-rescue)
+13. [Multiplayer](#13-multiplayer)
 
 ---
 
@@ -40,7 +41,7 @@ returns to it.
 | SINGLE MISSION | One mission with the options below. |
 | CAREER | Pilot records and the tour of duty, with the tour's options (chapter 10). |
 | DYNAMIC CAMPAIGN | Start or continue a dynamic campaign, with the theater, situation, opponents, aircraft, realism and classic / modern options. |
-| MULTIPLAYER | Not available yet. |
+| MULTIPLAYER | Coop in the dynamic campaign: join a server or host a campaign and fly in it (chapter 13). |
 | CONTROLS | The input mapping (chapter 2). |
 | QUIT | Exit to the desktop. |
 
@@ -925,4 +926,83 @@ on the ground your emergency beacon chirps every few seconds.
 
 Picked up: the mission ends like a parachute landing. Over friendly territory or the sea the
 mission ends when the parachute lands, as before.
+
+## 13. Multiplayer
+
+Up to eight players fly the dynamic campaign together (coop: everybody is on the friendly side).
+One computer runs the war, the **server**: either a player's game (HOST A GAME) or a dedicated
+server without a game of its own. The others join it over UDP.
+
+### Your name
+
+The MULTIPLAYER screen asks for your name first; the other players know you by it, and the
+campaign keeps your sorties under it: join again under the same name and they are yours again. In
+the headset, click a text field with the laser pointer and a keyboard opens under it; press its
+keys with the trigger and DONE when finished. The career's pilot name uses the same field.
+
+### Joining
+
+JOIN A GAME takes the server's IP address or host name, with the port after a colon if it is not
+the default 28989 (`192.168.1.20`, `sm89.example.org:29000`, `[2001:db8::1]:28989`). CONNECT
+brings you to the campaign's Ops screen; your aircraft waits at a friendly base.
+
+### Hosting
+
+HOST A GAME serves a new campaign (theater, opponents, situation) or one of your saved ones, and
+you fly in it. Choose the UDP port and how many players may join; to play over the internet,
+forward that UDP port to your computer in your router. The campaign is saved on your computer as
+when you play alone.
+
+### Who decides what
+
+The server decides how the war is fought, for everybody: realistic damage, realistic guidance, no
+crashes, time of day (moonlit nights shorten the enemy's visual range) and realistic F-117A
+weapons, and of course the campaign's own options. Each player keeps his own cockpit (classic or
+modern), flight model, avionics, HUD, shaders, shadows and lights, and picks his aircraft (F-117A
+or F-16) for each sortie on the briefing's LOADOUT page.
+
+### On the Ops screen
+
+- **PLAYERS** lists everybody in the campaign: who is on the mission board, who flies what, the
+  sorties flown and objectives achieved, and each player's ping.
+- **SAVE & EXIT** (top right, under the clock) leaves the campaign; as the host it also ends the
+  game for the others. On a server that is not yours the button reads **DISCONNECT**: the war goes
+  on on the server, and nothing is saved on your computer.
+- Every player takes his own missions from the board and may order insertions. Kills and
+  objectives count for the player whose weapon it was. Players taking off from the same base line
+  up in a staggered formation on the runway: the first in the middle, far enough down the runway
+  for the others, then rows of two behind him.
+
+If your connection drops during a sortie, your aircraft waits for you for 30 seconds: join again
+under the same name and fly on. After that the sortie ends as aborted.
+
+### Dedicated server
+
+The game's executable runs a server without a window with `--dedicated`:
+
+```
+stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 28989 --realistic-guidance
+```
+
+| Switch | |
+|---|---|
+| `--name <text>` | Server name, shown to the players. |
+| `--port <n>` | UDP port (default 28989). |
+| `--max-players <n>` | 1 to 8 (default 8). |
+| `--theater <code>` | ce, cu, ko, ku, lb, me, nc, pg, ua, vn. Default: the saved campaign's, else ce. |
+| `--roe <0..2>`, `--opponents <0..3>`, `--seed <n>`, `--start-hour <h>` | A new campaign's options. |
+| `--sky-ratio <x>` | The sky runs x times faster than real time (default 24: a day per hour). |
+| `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`, `--realistic-weapons` | The rules. |
+| `--save <file>` | The campaign file (default `campaigns/dedicated.json` in the game's data directory). |
+| `--plain` | Log lines instead of the console screen. |
+
+The server saves the campaign (which side holds which place, what is destroyed, the players'
+records) every minute and when it stops, and goes on from the save when it starts again. Started
+with another `--theater` than the saved campaign's, it begins a new campaign and keeps the old
+save next to it (`dedicated.json.<theater>.bak.json`).
+
+In a terminal the server shows a console screen: its uptime, the places and airfields each side
+holds, the players and what they do, and the recent events with their times (UTC). **q**, Esc or
+Ctrl-C stops it (it saves first). Without a terminal (a service, `--plain`) it writes the events
+as log lines; SIGTERM or Ctrl-C stops it the same way.
 

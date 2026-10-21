@@ -318,7 +318,7 @@ impl ActiveCampaign {
             name: st.player_name(self.me).unwrap_or("Pilot").to_string(),
             status,
             ping: 0,
-            host: self.role != Role::Client,
+            host: self.role == Role::Host,
         }]
     }
 }

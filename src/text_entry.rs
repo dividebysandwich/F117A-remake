@@ -39,9 +39,15 @@ const KEY: egui::Vec2 = egui::vec2(46.0, 42.0);
 const KEY_FILL: egui::Color32 = egui::Color32::from_rgb(8, 28, 13);
 
 fn key(ui: &mut egui::Ui, label: &str, width: f32, lit: bool) -> bool {
+    key_enabled(ui, label, width, lit, true)
+}
+
+/// A key; one the field does not take is greyed out.
+fn key_enabled(ui: &mut egui::Ui, label: &str, width: f32, lit: bool, enabled: bool) -> bool {
     let text =
         egui::RichText::new(label).monospace().size(18.0).color(if lit { BG } else { GREEN });
-    ui.add(
+    ui.add_enabled(
+        enabled,
         egui::Button::new(text)
             .fill(if lit { GREEN } else { KEY_FILL })
             .stroke(egui::Stroke::new(1.0, DIM))
@@ -61,7 +67,11 @@ pub fn text_entry(
     hint: &str,
 ) -> egui::Response {
     let kid = egui::Id::new(("text_entry_keyboard", id));
-    let mut kb: Keyboard = ui.data(|d| d.get_temp(kid)).unwrap_or_default();
+    // Test aid: `--open-keyboard` starts with the keyboards open (screenshots).
+    let mut kb: Keyboard = ui.data(|d| d.get_temp(kid)).unwrap_or(Keyboard {
+        open: std::env::args().any(|a| a == "--open-keyboard"),
+        shift: false,
+    });
     let field = egui::TextEdit::singleline(text)
         .id(egui::Id::new(("text_entry", id)))
         .char_limit(max)
@@ -87,8 +97,7 @@ pub fn text_entry(
                         ui.add_space(r as f32 * 10.0);
                         for c in row.chars() {
                             let c = if kb.shift { c } else { c.to_ascii_lowercase() };
-                            if key(ui, &c.to_string(), KEY.x, false)
-                                && charset.allows(c)
+                            if key_enabled(ui, &c.to_string(), KEY.x, false, charset.allows(c))
                                 && text.chars().count() < max
                             {
                                 text.push(c);
@@ -116,7 +125,7 @@ pub fn text_entry(
                     {
                         text.push(' ');
                     }
-                    if key(ui, "\u{232B}", KEY.x * 1.5, false) {
+                    if key(ui, "DEL", KEY.x * 1.5, false) {
                         text.pop();
                     }
                     if key(ui, "CLEAR", KEY.x * 1.5, false) {

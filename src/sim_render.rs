@@ -403,7 +403,7 @@ fn spawn_model(
 #[derive(Resource, Default)]
 struct AaaVisuals {
     units: Vec<Entity>,
-    tracers: Vec<(Entity, Entity)>,
+    tracers: Vec<Entity>,
     material: Option<Handle<PaletteMaterial>>,
 }
 
@@ -419,7 +419,8 @@ fn bam16(a: f32) -> i16 {
 }
 
 /// The guns and MANPADS teams turn towards the player as they aim (each placed at its own
-/// heading), show their wreck once destroyed; the Shilkas' shells are tracers.
+/// heading), show their wreck once destroyed; the Shilkas' shells are yellow tracer streaks like
+/// the player's gun rounds, without a dot at the head.
 #[allow(clippy::too_many_arguments)]
 fn sync_aaa(
     mut commands: Commands,
@@ -482,7 +483,7 @@ fn sync_aaa(
             let globals = assets.palette.globals.clone();
             materials.add(PaletteMaterial {
                 params: PaletteParams {
-                    word: 0xFF00 | ENEMY_TRACER as u32,
+                    word: 0xFF00 | TRACER as u32,
                     flags: FLAG_LINE,
                     ..default()
                 },
@@ -491,30 +492,24 @@ fn sync_aaa(
         })
         .clone();
     while av.tracers.len() < shells.len() {
-        let dot = spawn_dot(&mut commands, &assets, material.clone(), &[Vec3::ZERO]);
         let line = spawn_tracer(&mut commands, material.clone());
-        av.tracers.push((dot, line));
+        av.tracers.push(line);
     }
     let dt = 1.0 / crate::combat::FS as f64;
     let back = (1.0 - combat.alpha as f64) * dt;
-    for (k, &(dot, line)) in av.tracers.iter().enumerate() {
-        let shell = shells.get(k);
-        for e in [dot, line] {
-            let Ok((mut pos, mut tf, _, mut vis)) = q.get_mut(e) else { continue };
-            let Some(s) = shell else {
-                vis.set_if_neq(Visibility::Hidden);
-                continue;
-            };
-            let at = |t: f64| aaa_point(std::array::from_fn(|a| s.pos[a] - s.vel[a] * t));
-            let head = at(back);
-            pos.0 = head;
-            if e == line {
-                let streak = (at(back + TRACER_FRAMES * dt) - head).as_vec3();
-                tf.rotation = Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
-                tf.scale = Vec3::new(1.0, 1.0, streak.length().max(0.01));
-            }
-            vis.set_if_neq(Visibility::Inherited);
-        }
+    for (k, &line) in av.tracers.iter().enumerate() {
+        let Ok((mut pos, mut tf, _, mut vis)) = q.get_mut(line) else { continue };
+        let Some(s) = shells.get(k) else {
+            vis.set_if_neq(Visibility::Hidden);
+            continue;
+        };
+        let at = |t: f64| aaa_point(std::array::from_fn(|a| s.pos[a] - s.vel[a] * t));
+        let head = at(back);
+        pos.0 = head;
+        let streak = (at(back + TRACER_FRAMES * dt) - head).as_vec3();
+        tf.rotation = Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
+        tf.scale = Vec3::new(1.0, 1.0, streak.length().max(0.01));
+        vis.set_if_neq(Visibility::Inherited);
     }
 }
 

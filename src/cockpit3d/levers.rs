@@ -7,7 +7,7 @@
 //! released, with a haptic tick every 10 %.
 //! The controller buttons are mapped in the input mapping (`InputConfig::vr_buttons`); a trigger
 //! only counts while its hand holds the stick or throttle.
-//! The ejection handle is pulled up with either hand.
+//! The ejection handle is pulled up with either hand. A hand carrying the kneeboard grabs none.
 //! Without VR both animate from the keyboard/gamepad controls.
 
 use bevy::prelude::*;
@@ -165,6 +165,7 @@ pub(super) fn grab_levers(
             right.haptic = right.haptic.max(0.2);
         }
     } else if grabs.stick.is_none()
+        && !right.carrying
         && right.squeeze > 0.6
         && right.grip.translation.distance(grip_centre) < GRAB_REACH
     {
@@ -200,6 +201,7 @@ pub(super) fn grab_levers(
             left.haptic = left.haptic.max(0.2);
         }
     } else if grabs.throttle.is_none()
+        && !left.carrying
         && left.squeeze > 0.6
         && left.grip.translation.distance(handle) < GRAB_REACH
     {
@@ -300,6 +302,7 @@ pub(super) fn grab_levers(
             }
             None if h.active
                 && !is_grabbing_other
+                && !h.carrying
                 && h.squeeze > 0.6
                 && h.grip.translation.distance(handle) < 0.07 =>
             {
@@ -309,6 +312,8 @@ pub(super) fn grab_levers(
             _ => {}
         }
     }
+    left.lever = grabs.throttle.is_some() || grabs.eject.is_some_and(|(who, _)| who == 0);
+    right.lever = grabs.stick.is_some() || grabs.eject.is_some_and(|(who, _)| who == 1);
 }
 
 /// Stick and throttle follow the controls (whatever the input source).

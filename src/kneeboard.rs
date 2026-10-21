@@ -1,7 +1,8 @@
 //! Kneeboard: the briefing, the route, a map and the target area on a board strapped to the
 //! pilot's left thigh in the 3D cockpit (look down; in VR touch a tab with a fingertip, or click
 //! one on the desktop). On the desktop K also shows it large over the view and turns its pages
-//! (after the last page it goes away); in VR the action shows or hides the board.
+//! (after the last page it goes away); in VR the action shows or hides the board, and squeezing
+//! the grip on it picks it up: it floats wherever it is let go.
 
 use bevy::light::NotShadowCaster;
 use bevy::math::DVec2;
@@ -30,7 +31,7 @@ impl Plugin for KneeboardPlugin {
             })
             .add_systems(
                 Update,
-                (toggle, spawn, place, interact, prepare_maps, draw)
+                (toggle, spawn, carry, interact, prepare_maps, draw)
                     .chain()
                     .run_if(in_state(AppState::Flight)),
             );
@@ -38,9 +39,10 @@ impl Plugin for KneeboardPlugin {
 }
 
 /// Board size (metres) and where it lies in the cockpit frame (the eye at the origin): on top of
-/// the left thigh, from the ejection handle at the front of the seat between the knees.
+/// the left thigh, from the ejection handle at the front of the seat between the knees (inboard
+/// enough to clear the F-16's throttle grip over its whole travel).
 const SIZE: Vec2 = Vec2::new(0.15, 0.20);
-const FROM_EJECT: Vec3 = Vec3::new(-0.14, 0.11, 0.06);
+const FROM_EJECT: Vec3 = Vec3::new(-0.12, 0.11, 0.06);
 /// Canvas pixels.
 const W: usize = 768;
 const H: usize = 1024;
@@ -63,6 +65,9 @@ const CRUISE_KTS: f64 = 480.0;
 /// A VR fingertip touches the board from this far in front of it to this far behind it.
 const TOUCH_FRONT: f32 = 0.04;
 const TOUCH_BEHIND: f32 = 0.06;
+/// A VR grip picks the board up from this far beyond its edges and in front of or behind it.
+const GRAB_MARGIN: f32 = 0.04;
+const GRAB_DEPTH: f32 = 0.08;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Page {
@@ -118,6 +123,10 @@ pub struct Kneeboard {
     target_map: Option<MapPicture>,
     /// Tab each fingertip was on last frame.
     touched: [Option<usize>; 2],
+    /// VR: where the board was let go (cockpit frame); on the thigh until then.
+    placed: Option<Transform>,
+    /// VR: the hand carrying the board and the board in that hand's grip frame.
+    held: Option<(usize, Transform)>,
 }
 
 #[derive(Component)]
@@ -218,16 +227,52 @@ fn spawn(
     }
 }
 
-/// The board on the thigh of the cockpit model's seat, facing the eye, its top towards the knee.
-fn place(
+/// Whether a hand's grip is on the board (in the board's local frame).
+fn within_reach(local: Vec3) -> bool {
+    local.x.abs() < SIZE.x / 2.0 + GRAB_MARGIN
+        && local.y.abs() < SIZE.y / 2.0 + GRAB_MARGIN
+        && local.z.abs() < GRAB_DEPTH
+}
+
+/// The board on the thigh of the cockpit model's seat, facing the eye, its top towards the knee;
+/// in VR a free hand squeezing its grip on the board carries it, and it stays where let go.
+fn carry(
     anchors: Res<crate::cockpit3d::levers::CockpitAnchors>,
+    mut kb: ResMut<Kneeboard>,
+    mut hands: ResMut<Hands>,
     mut boards: Query<&mut Transform, With<Board>>,
 ) {
+    let Ok(mut t) = boards.single_mut() else { return };
     let at = anchors.eject + FROM_EJECT;
-    let tf = Transform::from_translation(at).looking_to(at, Vec3::Y);
-    for mut t in &mut boards {
-        t.set_if_neq(tf);
+    let rest = kb.placed.unwrap_or(Transform::from_translation(at).looking_to(at, Vec3::NEG_Z));
+    if let Some((i, _)) = kb.held {
+        let h = &mut hands.hands[i];
+        if kb.hidden || !h.active || h.squeeze < 0.4 {
+            kb.held = None;
+            kb.placed = Some(*t);
+            h.haptic = h.haptic.max(0.2);
+        }
+    } else if !kb.hidden {
+        let local_from_cockpit = rest.compute_affine().inverse();
+        if let Some((i, h)) = hands.hands.iter_mut().enumerate().find(|(_, h)| {
+            h.active
+                && !h.lever
+                && h.squeeze > 0.6
+                && within_reach(local_from_cockpit.transform_point3(h.grip.translation))
+        }) {
+            let in_grip = h.grip.to_matrix().inverse() * rest.to_matrix();
+            kb.held = Some((i, Transform::from_matrix(in_grip)));
+            h.haptic = h.haptic.max(0.4);
+        }
     }
+    for (i, h) in hands.hands.iter_mut().enumerate() {
+        h.carrying = kb.held.is_some_and(|(k, _)| k == i);
+    }
+    let tf = match kb.held {
+        Some((i, in_grip)) => hands.hands[i].grip * in_grip,
+        None => kb.placed.unwrap_or(rest),
+    };
+    t.set_if_neq(tf);
 }
 
 /// Canvas pixel of a point in the board's local frame (None off the board).
@@ -293,7 +338,7 @@ fn interact(
         let local_from_cockpit = tf.compute_affine().inverse();
         for (k, hand) in hands.hands.iter_mut().enumerate().take(2) {
             let l = local_from_cockpit.transform_point3(hand.finger);
-            let tab = (hand.active && l.z < TOUCH_FRONT && l.z > -TOUCH_BEHIND)
+            let tab = (hand.active && !hand.carrying && l.z < TOUCH_FRONT && l.z > -TOUCH_BEHIND)
                 .then(|| to_canvas(l))
                 .flatten()
                 .and_then(tab_at);

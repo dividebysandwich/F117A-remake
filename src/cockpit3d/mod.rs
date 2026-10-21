@@ -134,6 +134,10 @@ pub struct Hand {
     pub haptic: f32,
     /// The fingertip touches a cockpit control (its trigger presses that control).
     pub touching: bool,
+    /// Holds the stick, the throttle or the ejection handle (`levers`).
+    pub lever: bool,
+    /// Carries the kneeboard (the levers are not grabbed meanwhile).
+    pub carrying: bool,
 }
 
 impl Hand {

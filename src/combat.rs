@@ -100,6 +100,8 @@ pub struct Combat {
     /// Flight units and projectiles before the last step, for render interpolation.
     pub prev_flights: Vec<FlightUnit>,
     pub prev_proj: [Projectile; N_PROJ],
+    /// Classic missiles' smoothed paths as drawn (`sim_render::smooth_projectiles`).
+    pub proj_smooth: [Option<crate::sim_render::Smoothed>; N_PROJ],
     /// Fraction of a sim frame elapsed since the last step (0..1).
     pub alpha: f32,
     /// Explosions of the steps of this frame: (map x, map y, viewZ altitude, kind).
@@ -309,6 +311,7 @@ fn start_combat(
         prior_tiles,
         prev_flights: sim.flights().to_vec(),
         prev_proj: *sim.projectiles(),
+        proj_smooth: [None; N_PROJ],
         sim,
         data,
         accum: 0.0,
@@ -632,6 +635,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         }
     }
     combat.alpha = (combat.accum / dt).clamp(0.0, 1.0);
+    crate::sim_render::smooth_projectiles(combat, time.delta_secs());
     // The flight model can end the flight on its own (its ground and runway model differs in
     // detail); if the simulation does not follow within 3 s, end the mission anyway.
     // After an ejection the pilotless aircraft may crash: the parachute and the rescue go on.

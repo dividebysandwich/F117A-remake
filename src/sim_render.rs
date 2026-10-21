@@ -8,6 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use bevy::math::DVec3;
 use bevy::prelude::*;
 use stealth_sim::{N_PROJ, fflags};
 
@@ -140,23 +141,172 @@ pub fn map_point(x: f64, y: f64, alt: f64) -> bevy::math::DVec3 {
 }
 
 /// A projectile's position (Bevy world) and attitude as drawn: interpolated between the last two
-/// simulation frames. None when the slot is free.
-pub fn projectile_pose(combat: &Combat, s: usize) -> Option<(bevy::math::DVec3, Quat)> {
+/// simulation frames, a classic missile on its smoothed path. None when the slot is free.
+pub fn projectile_pose(combat: &Combat, s: usize) -> Option<(DVec3, Quat)> {
     let m = *combat.sim.projectiles().get(s)?;
     if m.ttl == 0 {
         return None;
     }
-    let p = combat.prev_proj[s];
-    // Ballistic bombs at their exact point, the others at their map unit.
-    let (mut x, mut y, mut z) = m.map_pos();
-    if p.ttl != 0 && p.spec == m.spec && (p.x - m.x).abs() < 0x400 && (p.y - m.y).abs() < 0x400 {
-        let t = combat.alpha as f64;
-        let (px, py, pz) = p.map_pos();
-        x = px + (x - px) * t;
-        y = py + (y - py) * t;
-        z = pz + (z - pz) * t;
+    if let Some(sm) = combat.proj_smooth[s] {
+        let v = sm.vel;
+        let rot = if v.length() > 1.0 {
+            let heading = v.x.atan2(-v.z);
+            let pitch = v.y.atan2(v.x.hypot(v.z));
+            Aircraft::from_euler(heading as f32, pitch as f32, 0.0)
+        } else {
+            attitude(m.heading, m.pitch, 0)
+        };
+        return Some((sm.pos, rot));
     }
-    Some((map_point(x, y, z), attitude(m.heading, m.pitch, m.roll)))
+    let p = combat.prev_proj[s];
+    let mut at = drawn_point(combat, s, &m);
+    if p.ttl != 0 && p.spec == m.spec && (p.x - m.x).abs() < 0x400 && (p.y - m.y).abs() < 0x400 {
+        let before = drawn_point(combat, s, &p);
+        at = before.lerp(at, combat.alpha as f64);
+    }
+    Some((at, attitude(m.heading, m.pitch, m.roll)))
+}
+
+/// A classic missile as drawn. The simulation moves it in whole map units (32 world units, some
+/// 8 of them a frame) and turns it a step at a time, rolling it by twice each correction: its
+/// raw path zigzags by several degrees and it rocks from side to side. It is drawn on a
+/// smoothed path instead (position and velocity following the simulation's, without lag at a
+/// steady velocity), pointing along it with its wings level. Only the picture changes: where
+/// the simulation has it, its locks and its fuse stay as they are.
+#[derive(Clone, Copy, Debug)]
+pub struct Smoothed {
+    pos: DVec3,
+    vel: DVec3,
+}
+
+/// Smoothing time constants (s) of the drawn position and velocity.
+const SMOOTH_POS: f64 = 0.12;
+const SMOOTH_VEL: f64 = 0.3;
+/// Drawn this far (m) from the simulation's point, a missile starts its smoothed path afresh.
+const SMOOTH_RESET: f64 = 300.0;
+/// Enemy missiles: from this far (m) to this close, their altitude goes from the launcher's
+/// frame to the player's (see `drawn_point`).
+const TRUE_ALT_FROM: f64 = 8000.0;
+const TRUE_ALT_TO: f64 = 1000.0;
+
+/// Missiles under the original's guidance are drawn smoothed.
+fn smoothed(m: &stealth_sim::Projectile) -> bool {
+    m.flight.is_none() && m.fall.is_none() && crate::trails::is_missile(m.spec)
+}
+
+/// Where a projectile record is drawn (Bevy world). The simulation flies everything at viewZ,
+/// its compressed altitude, and draws the aircraft at that number, but the player flies at the
+/// true altitude: above 8192 ft an enemy missile would fly below the player and the hit would
+/// show beneath it. Closing on the player, its altitude goes over to the true one.
+fn drawn_point(combat: &Combat, s: usize, m: &stealth_sim::Projectile) -> DVec3 {
+    let (x, y, mut z) = m.map_pos();
+    if s < 8 && m.flight.is_none() && z > 8192.0 {
+        let p = combat.sim.player();
+        let d = (x - p.mx as f64).hypot(y - p.my as f64) * 32.0 * crate::world::WU;
+        let w = ((TRUE_ALT_FROM - d) / (TRUE_ALT_FROM - TRUE_ALT_TO)).clamp(0.0, 1.0);
+        let w = w * w * (3.0 - 2.0 * w);
+        z += (true_altitude(z) - z) * w;
+    }
+    map_point(x, y, z)
+}
+
+/// The altitude (ft) of a viewZ (`stealth_sim::math::view_z` inverted).
+fn true_altitude(z: f64) -> f64 {
+    if z < 8192.0 {
+        z
+    } else if z < 12288.0 {
+        8192.0 + (z - 8192.0) * 2.0
+    } else {
+        16384.0 + (z - 12288.0) * 4.0
+    }
+}
+
+/// Moves the classic missiles' smoothed paths on by `dt` seconds (after the simulation steps).
+pub fn smooth_projectiles(combat: &mut Combat, dt: f32) {
+    let dt = dt as f64;
+    for s in 0..N_PROJ {
+        let m = combat.sim.projectiles()[s];
+        if m.ttl == 0 || !smoothed(&m) {
+            combat.proj_smooth[s] = None;
+            continue;
+        }
+        let p = combat.prev_proj[s];
+        let mut target = drawn_point(combat, s, &m);
+        let fresh = p.ttl == 0 || p.spec != m.spec;
+        // The simulation's velocity: its last step, else the record's speed along its nose.
+        let raw_vel = if fresh {
+            attitude(m.heading, m.pitch, 0).as_dquat()
+                * DVec3::NEG_Z
+                * (m.speed as f64 * 128.0 * crate::world::WU)
+        } else {
+            let before = drawn_point(combat, s, &p);
+            target = before.lerp(target, combat.alpha as f64);
+            (drawn_point(combat, s, &m) - before) * crate::combat::FS as f64
+        };
+        let sm = match combat.proj_smooth[s] {
+            Some(sm) if !fresh && sm.pos.distance(target) < SMOOTH_RESET => sm,
+            _ => Smoothed { pos: target, vel: raw_vel },
+        };
+        combat.proj_smooth[s] = Some(sm.step(target, raw_vel, dt));
+    }
+}
+
+impl Smoothed {
+    /// `dt` seconds on: the velocity follows the simulation's, the position moves with it and
+    /// is drawn toward the simulation's point.
+    fn step(self, target: DVec3, raw_vel: DVec3, dt: f64) -> Self {
+        let vel = self.vel + (raw_vel - self.vel) * (1.0 - (-dt / SMOOTH_VEL).exp());
+        let pos = self.pos + vel * dt;
+        Self { pos: pos + (target - pos) * (1.0 - (-dt / SMOOTH_POS).exp()), vel }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A missile flying straight at 10 degrees off a map axis at 1200 m/s, the simulation's
+    /// way (whole 15.6 m map units at 15 Hz), drawn at 60 Hz: the raw interpolated path changes
+    /// direction by degrees from one simulation frame to the next, the smoothed one by a
+    /// fraction of that, staying as close to the true path as the simulation's points.
+    #[test]
+    fn smoothed_missile_path_is_straight() {
+        let unit = 32.0 * crate::world::WU;
+        let dir = DVec3::new(10f64.to_radians().sin(), 0.0, -10f64.to_radians().cos());
+        let sim_at = |k: i32| {
+            let p = dir * 1200.0 * k as f64 / 15.0;
+            DVec3::new((p.x / unit).floor() * unit, 0.0, (p.z / unit).floor() * unit)
+        };
+        let angle = |a: DVec3, b: DVec3| a.angle_between(b).to_degrees();
+        let (mut sm, mut raw_prev, mut sm_prev) =
+            (Smoothed { pos: DVec3::ZERO, vel: dir * 1200.0 }, None, None);
+        let off = |p: DVec3| (p - dir * p.dot(dir)).length();
+        let (mut raw_turn, mut sm_turn, mut raw_off, mut sm_off): (f64, f64, f64, f64) =
+            (0.0, 0.0, 0.0, 0.0);
+        for f in 0..60 * 4 {
+            let k = f / 4;
+            let alpha = (f % 4) as f64 / 4.0;
+            let raw = sim_at(k).lerp(sim_at(k + 1), alpha);
+            let raw_vel = (sim_at(k + 1) - sim_at(k)) * 15.0;
+            sm = sm.step(raw, raw_vel, 1.0 / 60.0);
+            if f > 30 {
+                if let Some(v) = raw_prev {
+                    raw_turn = raw_turn.max(angle(v, raw_vel));
+                }
+                if let Some(v) = sm_prev {
+                    sm_turn = sm_turn.max(angle(v, sm.vel));
+                }
+                raw_off = raw_off.max(off(raw));
+                sm_off = sm_off.max(off(sm.pos));
+            }
+            raw_prev = Some(raw_vel);
+            sm_prev = Some(sm.vel);
+        }
+        assert!(raw_turn > 3.0, "the raw path zigzags: {raw_turn}");
+        assert!(sm_turn < raw_turn / 5.0, "smoothed {sm_turn} raw {raw_turn}");
+        // No farther off the true path than the simulation's own whole map units.
+        assert!(sm_off <= raw_off, "off the true path: smoothed {sm_off} m, raw {raw_off} m");
+    }
 }
 
 pub fn attitude(heading: i32, pitch: i32, roll: i32) -> Quat {

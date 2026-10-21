@@ -6307,6 +6307,7 @@ dependencies = [
  "dirs",
  "embed-resource",
  "gilrs",
+ "image",
  "libc",
  "openxr",
  "rand 0.9.5",

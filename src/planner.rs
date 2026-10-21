@@ -154,6 +154,63 @@ pub fn prepare_map(
     planner.texture = Some((id, tex, context));
 }
 
+/// `--export-maps`: the theaters still to write, the one loading, and where to.
+#[derive(Resource)]
+pub struct MapExport {
+    dir: std::path::PathBuf,
+    next: usize,
+    loading: Option<(Theater, Handle<Gltf>)>,
+}
+
+impl MapExport {
+    pub fn new(dir: String) -> Self {
+        Self { dir: dir.into(), next: 0, loading: None }
+    }
+}
+
+/// Side of an exported map picture (pixels).
+const EXPORT_PX: u32 = 512;
+
+/// Writes each theater's map picture as `<dir>/<id>.png`, then exits.
+#[allow(clippy::too_many_arguments)]
+pub fn export_maps(
+    mut export: ResMut<MapExport>,
+    mut library: ResMut<ModelLibrary>,
+    server: Res<AssetServer>,
+    gltfs: Res<Assets<Gltf>>,
+    nodes: Res<Assets<GltfNode>>,
+    meshes: Res<Assets<GltfMesh>>,
+    mesh_data: Res<Assets<Mesh>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let theaters = stealth_host::theater::THEATERS;
+    if export.loading.is_none() {
+        let Some((id, _)) = theaters.get(export.next) else {
+            exit.write(AppExit::Success);
+            return;
+        };
+        export.loading = Some((Theater::load(id), library.load(&server, id)));
+    }
+    let Some((theater, handle)) = export.loading.as_ref() else { return };
+    let Some(g) = gltfs.get(handle) else { return };
+    let models = map_models(&theater.id, g, &nodes, &meshes, &mesh_data);
+    let image = render_theater(theater, &models);
+    let rgba: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+    let path = export.dir.join(format!("{}.png", theater.id));
+    let saved = image::RgbaImage::from_raw(MAP_PX as u32, MAP_PX as u32, rgba)
+        .map(|i| {
+            image::imageops::resize(&i, EXPORT_PX, EXPORT_PX, image::imageops::FilterType::Triangle)
+        })
+        .ok_or_else(|| "bad picture".to_string())
+        .and_then(|i| i.save(&path).map_err(|e| e.to_string()));
+    match saved {
+        Ok(()) => info!("map picture {}", path.display()),
+        Err(e) => error!("map picture {}: {e}", path.display()),
+    }
+    export.loading = None;
+    export.next += 1;
+}
+
 /// The whole theater top-down in the day palette (the MFD map's colours).
 fn render_theater(theater: &Theater, models: &HashMap<u8, MapModel>) -> egui::ColorImage {
     let mut c = Canvas::new(MAP_PX, MAP_PX);

@@ -1,10 +1,35 @@
-//! The server list as a web page (no scripts): a row per server with its name and players,
-//! opened for the theater, the campaign's clock and settings, the places each side holds and
-//! who plays.
+//! The server list as a web page: a row per server with its name and players, opened for the
+//! theater, the campaign's clock and settings, the places each side holds, who plays and the
+//! live map (the places and the flying players over the theater's picture). A server's own
+//! page (`/server/<id>`) shows it opened with a bigger map. A little script fetches the page
+//! again every few seconds and swaps in what changed (without it, the page reloads).
 
 use std::fmt::Write;
 
-use stealth_master_proto::ServerEntry;
+use stealth_master_proto::{MapPos, ServerEntry};
+
+/// The theaters' map pictures (`--export-maps` in the game), 0..0x8000 map units both ways.
+const MAPS: [(&str, &[u8]); 10] = [
+    ("lb", include_bytes!("../maps/lb.png")),
+    ("pg", include_bytes!("../maps/pg.png")),
+    ("nc", include_bytes!("../maps/nc.png")),
+    ("ce", include_bytes!("../maps/ce.png")),
+    ("vn", include_bytes!("../maps/vn.png")),
+    ("me", include_bytes!("../maps/me.png")),
+    ("ku", include_bytes!("../maps/ku.png")),
+    ("cu", include_bytes!("../maps/cu.png")),
+    ("ko", include_bytes!("../maps/ko.png")),
+    ("ua", include_bytes!("../maps/ua.png")),
+];
+/// Map units across the theater.
+const THEATER: f32 = 32768.0;
+/// Seconds between the page's looks for news.
+const POLL_MS: u32 = 5000;
+
+/// Theater `id`'s map picture.
+pub fn map_picture(id: &str) -> Option<&'static [u8]> {
+    MAPS.iter().find(|m| m.0 == id).map(|m| m.1)
+}
 
 /// Text for HTML.
 fn esc(s: &str) -> String {
@@ -84,6 +109,18 @@ li .what { color: var(--dim); }
 .addr { font: 13px ui-monospace, Menlo, Consolas, monospace; color: var(--dim); }
 .empty { background: var(--panel); border: 1px dashed var(--line); border-radius: 6px;
   padding: 28px 16px; text-align: center; color: var(--dim); }
+.map { grid-column: 1 / -1; }
+.map svg { display: block; width: 100%; height: auto; aspect-ratio: 1; background: #06160b;
+  border: 1px solid var(--line); border-radius: 4px; }
+.map svg text { font-family: ui-monospace, Menlo, Consolas, monospace; paint-order: stroke;
+  stroke: #000; stroke-linejoin: round; }
+.map .caption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin-top: 6px; color: var(--dim); font-size: 13px; }
+.map .caption a { color: var(--accent); }
+.key { display: inline-flex; gap: 12px; flex-wrap: wrap; }
+.key i { font-style: normal; }
+.single main { max-width: 1100px; }
+.back { color: var(--accent); text-decoration: none; font-size: 14px; }
 footer { margin-top: 24px; color: var(--dim); font-size: 13px; }
 footer code { font-size: 12px; }
 @media (max-width: 560px) {
@@ -100,9 +137,9 @@ pub fn render(servers: &[ServerEntry]) -> String {
         h,
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
-         <meta http-equiv=\"refresh\" content=\"30\">\
+         <noscript><meta http-equiv=\"refresh\" content=\"30\"></noscript>\
          <title>Stealth Mission 89 servers</title><style>{STYLE}</style></head><body><main>\
-         <header><h1>Stealth Mission <span>89</span> servers</h1>\
+         <div id=\"live\"><header><h1>Stealth Mission <span>89</span> servers</h1>\
          <div class=\"summary\"><b>{}</b> server{} &middot; <b>{players}</b> pilot{} flying coop</div>\
          </header>",
         servers.len(),
@@ -117,26 +154,87 @@ pub fn render(servers: &[ServerEntry]) -> String {
              <div class=\"list\">",
         );
         for s in servers {
-            server(&mut h, s);
+            server(&mut h, s, false);
         }
         h.push_str("</div>");
     }
     h.push_str(
-        "<footer>Join from the game: MULTIPLAYER, JOIN A GAME. The list refreshes every 30 \
-         seconds; game servers report to <code>/api/servers</code>.</footer></main></body></html>",
+        "</div><footer>Join from the game: MULTIPLAYER, JOIN A GAME. The list and the maps \
+         follow the servers' reports live; game servers report to <code>/api/servers</code>.\
+         </footer></main>",
     );
+    script(&mut h);
+    h.push_str("</body></html>");
     h
 }
 
-fn server(h: &mut String, s: &ServerEntry) {
+/// A server's own page: it opened, with a big live map (or a note while it is not listed).
+pub fn server_page(entry: Option<&ServerEntry>) -> String {
+    let title = entry.map_or("Server".to_string(), |e| esc(&e.report.name));
+    let mut h = String::new();
+    let _ = write!(
+        h,
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <noscript><meta http-equiv=\"refresh\" content=\"30\"></noscript>\
+         <title>{title} - Stealth Mission 89</title><style>{STYLE}</style></head>\
+         <body class=\"single\"><main><a class=\"back\" href=\"/\">&larr; All servers</a>\
+         <div id=\"live\"><header><h1>{title}</h1>",
+    );
+    match entry {
+        Some(e) => {
+            let n = e.report.players.len();
+            let flying = e.report.players.iter().filter(|p| p.pos.is_some()).count();
+            let _ = write!(
+                h,
+                "<div class=\"summary\"><b>{n}</b>/{} pilot{} &middot; <b>{flying}</b> in the air\
+                 </div></header><div class=\"list\">",
+                e.report.max_players,
+                if n == 1 { "" } else { "s" },
+            );
+            server(&mut h, e, true);
+            h.push_str("</div>");
+        }
+        None => h.push_str(
+            "</header><div class=\"empty\">This server is not on the list right now. The page \
+             shows it again as soon as it reports.</div>",
+        ),
+    }
+    h.push_str("</div></main>");
+    script(&mut h);
+    h.push_str("</body></html>");
+    h
+}
+
+/// Fetches the page again now and then and swaps in its live part, keeping the opened servers
+/// open.
+fn script(h: &mut String) {
+    let _ = write!(
+        h,
+        "<script>(()=>{{const tick=async()=>{{try{{\
+         const r=await fetch(location.pathname,{{cache:'no-store'}});\
+         const doc=new DOMParser().parseFromString(await r.text(),'text/html');\
+         const fresh=doc.getElementById('live'),live=document.getElementById('live');\
+         if(!fresh||!live)return;\
+         const open=new Set([...live.querySelectorAll('details')].filter(d=>d.open).map(d=>d.dataset.id));\
+         const known=new Set([...live.querySelectorAll('details')].map(d=>d.dataset.id));\
+         fresh.querySelectorAll('details').forEach(d=>{{if(known.has(d.dataset.id))d.open=open.has(d.dataset.id);}});\
+         live.replaceWith(document.adoptNode(fresh));}}catch(e){{}}}};\
+         setInterval(tick,{POLL_MS});}})();</script>"
+    );
+}
+
+fn server(h: &mut String, s: &ServerEntry, open: bool) {
     let r = &s.report;
     let n = r.players.len();
     let full = r.max_players > 0 && n >= r.max_players as usize;
     let _ = write!(
         h,
-        "<details><summary><span class=\"name\">{}{}</span>\
+        "<details data-id=\"{}\"{}><summary><span class=\"name\">{}{}</span>\
          <span class=\"count{}\">{n}/{}</span><span class=\"theater\">{}</span></summary>\
          <div class=\"body\">",
+        esc(&s.id),
+        if open { " open" } else { "" },
         esc(&r.name),
         if r.dedicated { "<span class=\"tag\">DEDICATED</span>" } else { "" },
         if full { " full" } else { "" },
@@ -194,5 +292,145 @@ fn server(h: &mut String, s: &ServerEntry) {
         }
         h.push_str("</ul>");
     }
-    h.push_str("</section></div></details>");
+    h.push_str("</section>");
+    map(h, s, open);
+    h.push_str("</div></details>");
+}
+
+/// A side's colour on the map.
+fn side_colour(side: &str) -> &'static str {
+    match side {
+        "Friendly" => "#5aa0ff",
+        "Enemy" => "#ff4632",
+        _ => "#b4b0a0",
+    }
+}
+
+/// The live map: the theater's picture around the places and the flying players.
+fn map(h: &mut String, s: &ServerEntry, own_page: bool) {
+    let Some(m) = &s.report.map else { return };
+    let Some(theater) = MAPS.iter().find(|t| t.0 == m.theater).map(|t| t.0) else { return };
+    let pilots: Vec<(&str, MapPos)> =
+        s.report.players.iter().filter_map(|p| Some((p.name.as_str(), p.pos?))).collect();
+    // The view: a square around everything, inside the theater.
+    let pts = m.places.iter().map(|p| (p.x, p.y)).chain(pilots.iter().map(|p| (p.1.x, p.1.y)));
+    let (mut lo, mut hi) = ((f32::MAX, f32::MAX), (f32::MIN, f32::MIN));
+    for (x, y) in pts {
+        let (x, y) = (x as f32, y as f32);
+        lo = (lo.0.min(x), lo.1.min(y));
+        hi = (hi.0.max(x), hi.1.max(y));
+    }
+    let (side, x0, y0) = if lo.0 > hi.0 {
+        (THEATER, 0.0, 0.0)
+    } else {
+        let side = ((hi.0 - lo.0).max(hi.1 - lo.1) * 1.2).clamp(4096.0, THEATER);
+        let at = |lo: f32, hi: f32| ((lo + hi - side) / 2.0).clamp(0.0, THEATER - side);
+        (side, at(lo.0, hi.0), at(lo.1, hi.1))
+    };
+    let u = side / 100.0;
+    let _ = write!(
+        h,
+        "<section class=\"map\"><h2>Live map</h2>\
+         <svg viewBox=\"{x0:.0} {y0:.0} {side:.0} {side:.0}\" role=\"img\" \
+         aria-label=\"Map of the campaign with the flying players\">\
+         <image href=\"/maps/{theater}.png\" x=\"0\" y=\"0\" width=\"{THEATER}\" \
+         height=\"{THEATER}\" style=\"image-rendering:pixelated\"/>\
+         <rect x=\"0\" y=\"0\" width=\"{THEATER}\" height=\"{THEATER}\" fill=\"#000\" \
+         opacity=\"0.3\"/>",
+    );
+    // The places: airfields squares, the others rings.
+    let font = u * 1.6;
+    for p in &m.places {
+        let col = side_colour(&p.side);
+        let (x, y) = (p.x as f32, p.y as f32);
+        if p.airfield {
+            let a = u * 0.9;
+            let _ = write!(
+                h,
+                "<rect x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" fill=\"{col}\" \
+                 fill-opacity=\"0.45\" stroke=\"{col}\" stroke-width=\"{:.0}\"/>",
+                x - a,
+                y - a,
+                2.0 * a,
+                2.0 * a,
+                u * 0.3,
+            );
+        } else {
+            let _ = write!(
+                h,
+                "<circle cx=\"{x:.0}\" cy=\"{y:.0}\" r=\"{:.0}\" fill=\"{col}\" \
+                 fill-opacity=\"0.45\" stroke=\"{col}\" stroke-width=\"{:.0}\"/>",
+                u * 0.8,
+                u * 0.3,
+            );
+        }
+        let _ = write!(
+            h,
+            "<text x=\"{:.0}\" y=\"{:.0}\" font-size=\"{font:.0}\" fill=\"{col}\" \
+             stroke-width=\"{:.0}\">{}</text>",
+            x + u * 1.3,
+            y - u * 0.6,
+            font * 0.25,
+            esc(&p.name),
+        );
+    }
+    // The players in the air: an arrowhead along the heading, name and altitude.
+    for (name, p) in &pilots {
+        let a = u * 1.6;
+        let _ = write!(
+            h,
+            "<g transform=\"translate({} {}) rotate({})\"><polygon points=\"0,{:.0} {:.0},{:.0} \
+             0,{:.0} {:.0},{:.0}\" fill=\"#ffd34d\" stroke=\"#000\" stroke-width=\"{:.0}\"/></g>\
+             <text x=\"{:.0}\" y=\"{:.0}\" font-size=\"{:.0}\" font-weight=\"700\" \
+             fill=\"#ffd34d\" stroke-width=\"{:.0}\">{}<tspan font-weight=\"400\" \
+             fill=\"#fff3c4\"> {} ft</tspan></text>",
+            p.x,
+            p.y,
+            p.heading,
+            -a,
+            a * 0.7,
+            a * 0.8,
+            a * 0.35,
+            -a * 0.7,
+            a * 0.8,
+            u * 0.25,
+            p.x as f32 + a,
+            p.y as f32 + a * 0.4,
+            font * 1.15,
+            font * 0.3,
+            esc(name),
+            thousands(p.alt.max(0)),
+        );
+    }
+    h.push_str(
+        "</svg><div class=\"caption\"><span class=\"key\">\
+        <i style=\"color:#5aa0ff\">&#9632; friendly</i><i style=\"color:#ff4632\">&#9632; enemy</i>\
+        <i style=\"color:#b4b0a0\">&#9632; neutral</i><i>&#9632; airfield &#9679; town</i>\
+        <i style=\"color:#e0a63a\">&#9650; player in the air</i></span>",
+    );
+    let _ = write!(h, "<span>Reported {}</span>", ago(s.age));
+    if !own_page {
+        let _ = write!(h, "<a href=\"/server/{}\">Open the live map page</a>", esc(&s.id));
+    }
+    h.push_str("</div></section>");
+}
+
+/// "12,400".
+fn thousands(n: i32) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn ago(secs: u64) -> String {
+    match secs {
+        0..=1 => "just now".into(),
+        s => format!("{s} s ago"),
+    }
 }

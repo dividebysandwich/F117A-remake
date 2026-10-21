@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 use stealth_campaign::Side;
 use stealth_host::Host;
 use stealth_master_proto::{
-    REPORT_EVERY, Registered, ReportPlayer, ServerEntry, ServerReport, SideHolding,
+    LiveMap, MapPlace, MapPos, REPORT_EVERY, Registered, ReportPlayer, ServerEntry, ServerReport,
+    SideHolding,
 };
 use stealth_sim::Sim;
 
@@ -23,7 +24,7 @@ pub use stealth_master_proto::DEFAULT_MASTER;
 const TIMEOUT: u64 = 10;
 /// After a failed report, the next try.
 const RETRY: u64 = 60;
-/// Seconds at least between reports when the players change.
+/// Seconds at least between reports when the players change (or move: the live map).
 const SOON: u64 = 10;
 
 const SITUATIONS: [&str; 3] = ["Cold War", "Limited War", "Conventional War"];
@@ -106,7 +107,7 @@ fn run(url: &str, rx: &Receiver<Msg>, log: &Mutex<Vec<String>>) {
         let wait = next.saturating_duration_since(Instant::now());
         match rx.recv_timeout(if latest.is_some() { wait } else { Duration::from_secs(3600) }) {
             Ok(Msg::Report(r)) => {
-                // Somebody came or went: the list learns soon, not at the next report.
+                // Somebody came, went or flew on: the list learns soon, not at the next report.
                 let changed = listed
                     && r.players != sent_players
                     && sent_at.elapsed() >= Duration::from_secs(SOON);
@@ -191,7 +192,9 @@ pub fn held(host: &Host, side: Side) -> (usize, usize) {
 /// The server's report for the list.
 pub fn report(server: &Server, host: &Host, sim: &Sim, dedicated: bool) -> ServerReport {
     let setup = &host.state.setup;
-    let sides = [(Side::Blue, "Friendly"), (Side::Red, "Enemy"), (Side::Neutral, "Neutral")]
+    const SIDES: [(Side, &str); 3] =
+        [(Side::Blue, "Friendly"), (Side::Red, "Enemy"), (Side::Neutral, "Neutral")];
+    let sides = SIDES
         .into_iter()
         .map(|(side, name)| {
             let (places, airfields) = held(host, side);
@@ -202,6 +205,15 @@ pub fn report(server: &Server, host: &Host, sim: &Sim, dedicated: bool) -> Serve
         .roster(host, sim)
         .into_iter()
         .map(|p| ReportPlayer {
+            pos: matches!(p.status, PlayerStatus::Flying { .. })
+                .then(|| sim.pilot_view(p.id.0))
+                .flatten()
+                .map(|v| MapPos {
+                    x: v.mx,
+                    y: v.my,
+                    heading: ((v.heading as u16 as u32 * 360 + 32768) / 65536 % 360) as u16,
+                    alt: v.alt,
+                }),
             status: match p.status {
                 PlayerStatus::Ops => "On the mission board".into(),
                 PlayerStatus::Flying { title, aircraft } => {
@@ -227,5 +239,20 @@ pub fn report(server: &Server, host: &Host, sim: &Sim, dedicated: bool) -> Serve
         rules: rules_list(&host.rules),
         sides,
         players,
+        map: Some(LiveMap {
+            theater: setup.theater_code.to_ascii_lowercase(),
+            places: host
+                .state
+                .places
+                .iter()
+                .map(|p| MapPlace {
+                    name: p.name.clone(),
+                    x: p.x,
+                    y: p.y,
+                    side: SIDES.iter().find(|s| s.0 == p.owner).map_or("Neutral", |s| s.1).into(),
+                    airfield: p.airfield.is_some(),
+                })
+                .collect(),
+        }),
     }
 }

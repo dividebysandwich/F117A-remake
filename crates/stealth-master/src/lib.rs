@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
-use stealth_master_proto::{EXPIRE_AFTER, REPORT_EVERY, Registered, ServerEntry, ServerReport};
+use stealth_master_proto::{
+    EXPIRE_AFTER, REPORT_EVERY, Registered, ServerEntry, ServerReport, server_id,
+};
 
 mod page;
 
@@ -20,13 +22,22 @@ pub const MAX_BODY: usize = 64 * 1024;
 pub struct Response {
     pub status: u16,
     pub content_type: &'static str,
-    pub body: String,
+    pub body: Vec<u8>,
 }
 
 impl Response {
     fn json<T: serde::Serialize>(status: u16, v: &T) -> Self {
-        let body = serde_json::to_string(v).unwrap_or_else(|_| "{}".into());
+        let body = serde_json::to_vec(v).unwrap_or_else(|_| b"{}".to_vec());
         Response { status, content_type: "application/json", body }
+    }
+
+    fn html(status: u16, body: String) -> Self {
+        Response { status, content_type: "text/html; charset=utf-8", body: body.into_bytes() }
+    }
+
+    /// The body as text.
+    pub fn text(&self) -> std::borrow::Cow<'_, str> {
+        String::from_utf8_lossy(&self.body)
     }
 
     fn error(status: u16, why: &str) -> Self {
@@ -59,12 +70,30 @@ impl List {
         self.expire(now);
         let path = path.split('?').next().unwrap_or("");
         match (method, path.trim_end_matches('/')) {
-            ("GET", "" | "/index.html") => Response {
-                status: 200,
-                content_type: "text/html; charset=utf-8",
-                body: page::render(&self.entries(now)),
-            },
+            ("GET", "" | "/index.html") => Response::html(200, page::render(&self.entries(now))),
             ("GET", "/api/servers") => Response::json(200, &self.entries(now)),
+            ("GET", p) if p.starts_with("/api/server/") => {
+                match self.entry(&p["/api/server/".len()..], now) {
+                    Some(e) => Response::json(200, &e),
+                    None => Response::error(404, "not on the list"),
+                }
+            }
+            ("GET", p) if p.starts_with("/server/") => {
+                let entry = self.entry(&p["/server/".len()..], now);
+                Response::html(
+                    if entry.is_some() { 200 } else { 404 },
+                    page::server_page(entry.as_ref()),
+                )
+            }
+            ("GET", p) if p.starts_with("/maps/") => {
+                let id = p["/maps/".len()..].trim_end_matches(".png");
+                match page::map_picture(id) {
+                    Some(png) => {
+                        Response { status: 200, content_type: "image/png", body: png.to_vec() }
+                    }
+                    None => Response::error(404, "no such map"),
+                }
+            }
             ("POST", "/api/servers") => self.report(body, from, now),
             ("DELETE", p) if p.starts_with("/api/servers/") => {
                 match p["/api/servers/".len()..].parse::<u16>() {
@@ -113,12 +142,18 @@ impl List {
         self.servers.retain(|_, l| now.duration_since(l.seen) < after);
     }
 
+    /// The server with this id.
+    fn entry(&self, id: &str, now: Instant) -> Option<ServerEntry> {
+        self.entries(now).into_iter().find(|e| e.id == id)
+    }
+
     /// The servers, the most players first.
     pub fn entries(&self, now: Instant) -> Vec<ServerEntry> {
         let mut out: Vec<ServerEntry> = self
             .servers
             .iter()
             .map(|(addr, l)| ServerEntry {
+                id: server_id(&l.report.name, &addr.ip().to_string()),
                 addr: addr.to_string(),
                 age: now.duration_since(l.seen).as_secs(),
                 report: l.report.clone(),
@@ -163,11 +198,11 @@ mod tests {
         let mut l = List::default();
         let t = Instant::now();
         let r = l.handle("POST", "/api/servers", &report("Alpha", 28989, 1), A, t);
-        assert_eq!(r.status, 200, "{}", r.body);
+        assert_eq!(r.status, 200, "{}", r.text());
         let r = l.handle("POST", "/api/servers", &report("Bravo", 29000, 3), B, t);
         assert_eq!(r.status, 200);
         let r = l.handle("GET", "/api/servers", b"", A, t);
-        let list: Vec<ServerEntry> = serde_json::from_str(&r.body).unwrap();
+        let list: Vec<ServerEntry> = serde_json::from_slice(&r.body).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].report.name, "Bravo", "the most players first");
         assert_eq!(list[0].addr, "[2001:db8::1]:29000");
@@ -180,7 +215,7 @@ mod tests {
         assert_eq!(r.status, 200);
         // Bravo was not heard of for 90 s: gone.
         let r = l.handle("GET", "/api/servers", b"", A, t + Duration::from_secs(95));
-        let list: Vec<ServerEntry> = serde_json::from_str(&r.body).unwrap();
+        let list: Vec<ServerEntry> = serde_json::from_slice(&r.body).unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].report.players.len(), 2);
     }
@@ -208,8 +243,43 @@ mod tests {
         l.handle("POST", "/api/servers", &report("<b>Evil</b> & co", 28989, 2), A, t);
         let r = l.handle("GET", "/", b"", A, t);
         assert_eq!(r.content_type, "text/html; charset=utf-8");
-        assert!(r.body.contains("&lt;b&gt;Evil&lt;/b&gt; &amp; co"));
-        assert!(!r.body.contains("<b>Evil"));
-        assert!(r.body.contains("P1"));
+        assert!(r.text().contains("&lt;b&gt;Evil&lt;/b&gt; &amp; co"));
+        assert!(!r.text().contains("<b>Evil"));
+        assert!(r.text().contains("P1"));
+    }
+
+    #[test]
+    fn a_server_has_a_page_with_its_live_map() {
+        let mut l = List::default();
+        let t = Instant::now();
+        let mut r: ServerReport = serde_json::from_slice(&report("Alpha", 28989, 2)).unwrap();
+        r.map = Some(stealth_master_proto::LiveMap {
+            theater: "ce".into(),
+            places: vec![stealth_master_proto::MapPlace {
+                name: "Fulda".into(),
+                x: 12000,
+                y: 15000,
+                side: "Enemy".into(),
+                airfield: true,
+            }],
+        });
+        r.players[0].pos =
+            Some(stealth_master_proto::MapPos { x: 11000, y: 16000, heading: 45, alt: 500 });
+        l.handle("POST", "/api/servers", &serde_json::to_vec(&r).unwrap(), A, t);
+        let id = l.entries(t)[0].id.clone();
+        assert_eq!(id, server_id("Alpha", "203.0.113.5"));
+        let page = l.handle("GET", &format!("/server/{id}"), b"", A, t);
+        assert_eq!(page.status, 200);
+        assert!(page.text().contains("/maps/ce.png"));
+        assert!(page.text().contains("Fulda"));
+        assert!(page.text().contains("rotate(45"));
+        let one = l.handle("GET", &format!("/api/server/{id}"), b"", A, t);
+        let e: ServerEntry = serde_json::from_slice(&one.body).unwrap();
+        assert_eq!(e.report.players[0].pos.unwrap().x, 11000);
+        assert!(l.handle("GET", "/", b"", A, t).text().contains(&format!("/server/{id}")));
+        assert_eq!(l.handle("GET", "/server/0000", b"", A, t).status, 404);
+        let png = l.handle("GET", "/maps/ce.png", b"", A, t);
+        assert_eq!((png.status, png.content_type), (200, "image/png"));
+        assert_eq!(l.handle("GET", "/maps/xx.png", b"", A, t).status, 404);
     }
 }

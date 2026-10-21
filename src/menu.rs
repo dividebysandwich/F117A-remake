@@ -44,6 +44,11 @@ impl Plugin for MenuPlugin {
                     .run_if(in_state(AppState::Menu).or_else(in_state(AppState::Debrief))),
             )
             .add_systems(EguiPrimaryContextPass, menu_ui.run_if(in_state(AppState::Menu)));
+        // `--export-maps <dir>`: write every theater's map picture (the master server's) and exit.
+        if let Some(dir) = std::env::args().skip_while(|a| a != "--export-maps").nth(1) {
+            app.insert_resource(crate::planner::MapExport::new(dir))
+                .add_systems(Update, crate::planner::export_maps);
+        }
     }
 }
 

@@ -148,6 +148,14 @@ fn a_player_joins_flies_and_returns() {
     assert_eq!(live(&w.mirror), live(&w.sim));
     let r = roster.expect("roster");
     assert!(matches!(r[0].status, PlayerStatus::Flying { aircraft: Aircraft::F16, .. }), "{r:?}");
+    // The server list's live map: where he flies, and the campaign's places.
+    let report = stealth_net::master::report(&w.server, &w.host, &w.sim, true);
+    let p = report.players.iter().find(|p| p.name == "Maverick").expect("on the report");
+    let at = w.sim.pilot_view(me.0).unwrap();
+    assert_eq!(p.pos.map(|p| (p.x, p.y, p.alt)), Some((at.mx, at.my, 2000)));
+    let map = report.map.expect("map");
+    assert_eq!(map.theater, "ce");
+    assert_eq!(map.places.len(), w.host.state.places.len());
     let fast = encode(&ToClient::Fast {
         step: 0,
         world: w.sim.world_fast(),

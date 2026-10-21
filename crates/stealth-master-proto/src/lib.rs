@@ -6,7 +6,10 @@
 //!   report's UDP port.
 //! * `DELETE /api/servers/<port>`: the game server at the request's address goes.
 //! * `GET /api/servers`: the servers there now, as [`ServerEntry`]s.
-//! * `GET /`: the same as a web page.
+//! * `GET /api/server/<id>`: one of them by its [`ServerEntry::id`].
+//! * `GET /`: the same as a web page; `GET /server/<id>`: one server's page with its live map.
+//! * `GET /maps/<theater>.png`: a theater's map picture (the whole theater, map units
+//!   `0..0x8000` both ways, north up).
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +21,7 @@ pub const EXPIRE_AFTER: u64 = 90;
 /// Limits on what a report may carry.
 pub const MAX_TEXT: usize = 64;
 pub const MAX_PLAYERS: usize = 64;
+pub const MAX_PLACES: usize = 256;
 
 /// A game server's state.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -42,6 +46,38 @@ pub struct ServerReport {
     /// Places (and airfields among them) each side holds.
     pub sides: Vec<SideHolding>,
     pub players: Vec<ReportPlayer>,
+    /// The campaign's map (none from an older game).
+    pub map: Option<LiveMap>,
+}
+
+/// The campaign's map: the theater and its places. Map units: x east, y south, `0..0x8000`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LiveMap {
+    /// Theater id ("ce"): its picture is `/maps/<theater>.png`.
+    pub theater: String,
+    pub places: Vec<MapPlace>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MapPlace {
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
+    /// "Friendly", "Enemy" or "Neutral".
+    pub side: String,
+    pub airfield: bool,
+}
+
+/// Where a flying player is: map units, heading in degrees (0 north, clockwise), feet.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MapPos {
+    pub x: i32,
+    pub y: i32,
+    pub heading: u16,
+    pub alt: i32,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -59,6 +95,8 @@ pub struct ReportPlayer {
     /// "On the mission board", "Flying Strike Tabor (F-16)", ...
     pub status: String,
     pub host: bool,
+    /// In the air: where.
+    pub pos: Option<MapPos>,
 }
 
 /// The master server's answer to a report: when to report again.
@@ -72,6 +110,9 @@ pub struct Registered {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ServerEntry {
+    /// The server's page: `/server/<id>` (from its name and address, so it stays while the
+    /// server does).
+    pub id: String,
     pub addr: String,
     pub age: u64,
     pub report: ServerReport,
@@ -104,6 +145,24 @@ impl ServerReport {
             cut(&mut p.name);
             cut(&mut p.status);
         }
+        if let Some(m) = &mut self.map {
+            m.theater.retain(|c| c.is_ascii_alphanumeric());
+            cut(&mut m.theater);
+            m.places.truncate(MAX_PLACES);
+            for p in &mut m.places {
+                cut(&mut p.name);
+                cut(&mut p.side);
+            }
+        }
         self
     }
+}
+
+/// A server's id: FNV-1a (64 bit) of its name and IP address, in hex.
+pub fn server_id(name: &str, ip: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in name.bytes().chain([0]).chain(ip.bytes()) {
+        h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}")
 }

@@ -77,17 +77,20 @@ fn serve(mut req: Request, list: &Mutex<List>) {
         stealth_master::Response {
             status: 400,
             content_type: "application/json",
-            body: "{\"error\":\"unreadable\"}".into(),
+            body: b"{\"error\":\"unreadable\"}".to_vec(),
         }
     };
     if r.status >= 400 && r.status != 404 {
-        eprintln!("{from} {method} {url}: {} {}", r.status, r.body);
+        eprintln!("{from} {method} {url}: {} {}", r.status, r.text());
     }
     let header = |k: &str, v: &str| Header::from_bytes(k.as_bytes(), v.as_bytes()).ok();
-    let mut resp = Response::from_string(r.body).with_status_code(r.status);
+    // The map pictures never change while the master server runs.
+    let cache = if r.content_type == "image/png" { "public, max-age=86400" } else { "no-store" };
+    let content_type = r.content_type;
+    let mut resp = Response::from_data(r.body).with_status_code(r.status);
     for h in [
-        header("Content-Type", r.content_type),
-        header("Cache-Control", "no-store"),
+        header("Content-Type", content_type),
+        header("Cache-Control", cache),
         header("Access-Control-Allow-Origin", "*"),
         header("X-Content-Type-Options", "nosniff"),
     ]

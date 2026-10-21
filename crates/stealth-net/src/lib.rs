@@ -5,8 +5,11 @@
 //! * [`transport`]: connections on UDP with a reliable and an unreliable channel.
 //! * [`protocol`]: the messages and their encoding.
 //! * [`server`]: the host's side, [`client`]: a player's.
+//! * [`dedicated`]: the server without a game of its own.
 
 pub mod client;
+pub mod console;
+pub mod dedicated;
 pub mod protocol;
 pub mod server;
 pub mod transport;

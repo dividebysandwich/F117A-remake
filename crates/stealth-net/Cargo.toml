@@ -6,9 +6,11 @@ description = "Stealth Mission 89 coop networking: UDP transport, protocol, camp
 
 [dependencies]
 stealth-sim = { path = "../stealth-sim" }
+stealth-mission = { path = "../stealth-mission" }
 stealth-campaign = { path = "../stealth-campaign" }
 stealth-host = { path = "../stealth-host" }
 serde.workspace = true
 anyhow.workspace = true
 ciborium = "0.2.2"
+ratatui = "0.30.2"
 lz4_flex = { version = "0.11.6", default-features = false, features = ["std", "safe-encode", "safe-decode"] }

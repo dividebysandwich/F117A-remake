@@ -34,6 +34,8 @@ stealth-formats.workspace = true
 stealth-mission = { path = "crates/stealth-mission" }
 stealth-sim = { path = "crates/stealth-sim" }
 stealth-campaign = { path = "crates/stealth-campaign" }
+stealth-host = { path = "crates/stealth-host" }
+stealth-net = { path = "crates/stealth-net" }
 bevy_fast_clouds = { path = "crates/bevy_fast_clouds" }
 anyhow.workspace = true
 rand = "0.9"

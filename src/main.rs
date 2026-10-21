@@ -12,6 +12,7 @@ mod combat;
 mod crash_log;
 mod csar_view;
 mod debrief;
+mod dedicated;
 mod dots;
 mod explosions;
 mod fires;
@@ -69,6 +70,8 @@ use bevy::prelude::*;
 use settings::{MissionSetup, Settings};
 
 fn main() {
+    // `--dedicated`: the coop server, in the console it was started from.
+    dedicated::run_if_asked();
     #[cfg(windows)]
     win_console::leave_explorer_console();
     let mut settings = Settings::from_args();

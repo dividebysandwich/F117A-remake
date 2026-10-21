@@ -43,3 +43,8 @@ pub fn game_data() -> Result<GameData> {
 pub fn theater_index(code: &str) -> Option<usize> {
     stealth_formats::ALL_THEATERS.iter().position(|t| t.eq_ignore_ascii_case(code))
 }
+
+/// The theater codes, lower case.
+pub fn codes() -> Vec<String> {
+    stealth_formats::ALL_THEATERS.iter().map(|t| t.to_ascii_lowercase()).collect()
+}

@@ -68,6 +68,13 @@ pub struct Settings {
     pub realistic_guidance: bool,
     /// `--tacview`: the flight is saved as a Tacview ACMI file when it ends.
     pub tacview: bool,
+    /// `--tacview-real-time`: the flight is sent to Tacview while it is flown
+    /// (tacview_real_time.rs).
+    pub tacview_real_time: bool,
+    /// `--tacview-address <ip[:port]|port>`: where the Tacview session is hosted.
+    pub tacview_address: std::net::SocketAddr,
+    /// `--tacview-password <text>`: the password Tacview must give to join.
+    pub tacview_password: Option<String>,
     /// `--air-defence`: low-level air defences (`stealth_sim::SimOptions::air_defence`).
     pub air_defence: bool,
     /// `--head-tracking`: TrackIR-style head tracking through OpenTrack (desktop, `headtrack`).
@@ -194,6 +201,11 @@ impl Settings {
             realistic_damage: has("--realistic-damage"),
             realistic_guidance: has("--realistic-guidance"),
             tacview: has("--tacview"),
+            tacview_real_time: has("--tacview-real-time"),
+            tacview_address: get(&a, "--tacview-address")
+                .and_then(|s| crate::tacview_real_time::parse_address(&s))
+                .unwrap_or(crate::tacview_real_time::DEFAULT_ADDRESS),
+            tacview_password: get(&a, "--tacview-password").filter(|p| !p.is_empty()),
             air_defence: has("--air-defence"),
             head_tracking: has("--head-tracking"),
             vr_cockpit_scale: get(&a, "--vr-cockpit-scale")

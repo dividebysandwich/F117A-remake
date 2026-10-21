@@ -47,6 +47,7 @@ pub struct Prefs {
     pub realistic_damage: bool,
     pub realistic_guidance: bool,
     pub tacview: bool,
+    pub tacview_real_time: bool,
     pub air_defence: bool,
     pub head_tracking: bool,
     pub modern_shading: bool,
@@ -91,6 +92,7 @@ impl Default for Prefs {
             realistic_damage: false,
             realistic_guidance: false,
             tacview: false,
+            tacview_real_time: false,
             air_defence: true,
             head_tracking: false,
             // New players: modern shaders and time of day; classic shadows and lighting;
@@ -147,6 +149,7 @@ impl Prefs {
             realistic_damage: s.realistic_damage,
             realistic_guidance: s.realistic_guidance,
             tacview: s.tacview,
+            tacview_real_time: s.tacview_real_time,
             air_defence: s.air_defence,
             head_tracking: s.head_tracking,
             modern_shading: s.modern_shading,
@@ -193,6 +196,7 @@ impl Prefs {
         s.realistic_damage |= self.realistic_damage;
         s.realistic_guidance |= self.realistic_guidance;
         s.tacview |= self.tacview;
+        s.tacview_real_time |= self.tacview_real_time;
         s.air_defence |= self.air_defence;
         s.head_tracking |= self.head_tracking;
         s.modern_shading |= self.modern_shading;

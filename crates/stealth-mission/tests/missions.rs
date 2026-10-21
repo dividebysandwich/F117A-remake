@@ -36,6 +36,25 @@ fn central_europe_reference_briefing() {
     assert_eq!(handoff_block(&back), handoff_block(&m));
 }
 
+/// A chosen start hour sets the clock and day or night, and leaves the rest of the mission.
+#[test]
+fn chosen_start_hour() {
+    let data = data();
+    let input =
+        GenInput { holdrand: 0x5A41C429, weapon_unavailable: [0; 20], stale_special_start: 0 };
+    let base = MissionSettings { theater: 3, roe: 2, ..Default::default() };
+    let rolled = generate_exact(data, &base, &input).unwrap();
+    for (hour, night) in [(13, false), (23, true), (5, true)] {
+        let s = MissionSettings { start_hour: Some(hour), ..base.clone() };
+        let m = generate_exact(data, &s, &input).unwrap();
+        assert_eq!((m.time.base_hour, m.time.tod_ticks, m.night), (hour, 0, night));
+        assert_eq!(m.time.depart, format!("{hour:02}:00"));
+        assert!(m.briefing.depart_line.contains(&m.time.depart), "{}", m.briefing.depart_line);
+        assert_eq!(m.orders.primary, rolled.orders.primary);
+        assert_eq!(m.primary.object_index, rolled.primary.object_index);
+    }
+}
+
 /// 200 random missions per theater with random settings must generate without panics.
 #[test]
 fn random_missions_do_not_panic() {
@@ -59,6 +78,7 @@ fn random_missions_do_not_panic() {
                 pilot: "Capt. Test".into(),
                 weather: if i % 3 == 0 { None } else { Some(stealth_mission::Sky::Clear) },
                 cloud_cover: None,
+                start_hour: None,
             };
             let seed = if i % 2 == 0 { Seed::Srand(next() as u16) } else { Seed::Holdrand(next()) };
             let m = generate(data, &s, seed).unwrap_or_else(|e| panic!("{s:?} {seed:?}: {e}"));

@@ -108,6 +108,10 @@ pub struct MissionSettings {
     /// Coverage (percent) of the weather's main cloud layer; `None` rolls it.
     #[serde(default)]
     pub cloud_cover: Option<u8>,
+    /// Hour (0-23) the mission starts at; `None`: the original's 06:00-08:00 by day or
+    /// 18:00-20:00 by night, rolled from the seed. Not part of the original game.
+    #[serde(default)]
+    pub start_hour: Option<u8>,
 }
 
 fn clear_sky() -> Option<Sky> {
@@ -126,6 +130,7 @@ impl Default for MissionSettings {
             pilot: "Pilot".into(),
             weather: clear_sky(),
             cloud_cover: None,
+            start_hour: None,
         }
     }
 }
@@ -287,7 +292,7 @@ pub struct SpecialAircraft {
 pub struct MissionTime {
     /// Ticks after the 06:00 / 18:00 base at mission start.
     pub tod_ticks: i32,
-    /// 6 or 18.
+    /// 6 or 18, or the chosen start hour.
     pub base_hour: u8,
     /// Briefing time strings (rounded down to 5 min): departure, deadline, deadline + 15 min.
     pub depart: String,
@@ -406,6 +411,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
         input.weapon_unavailable,
         input.stale_special_start,
     )
+    .start_hour(s.start_hour)
     .run();
     let mut avail = input.weapon_unavailable;
     avail[0] = lockheed as u8;
@@ -500,7 +506,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
         weapon_unavailable: avail.to_vec(),
         time: MissionTime {
             tod_ticks: g.tod,
-            base_hour: if g.night { 18 } else { 6 },
+            base_hour: g.base_hour as u8,
             depart: g.depart.clone(),
             deadline: g.deadline.clone(),
             deadline_plus_15: g.deadline2.clone(),

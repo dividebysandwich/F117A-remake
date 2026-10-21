@@ -107,6 +107,10 @@ pub(crate) struct GenResult {
     pub weapon_qty: [i32; 4],
     pub fuel: i32,
     pub night: bool,
+    /// Clock hour at tod 0: 6 or 18, or the chosen start hour.
+    pub base_hour: i32,
+    /// A chosen start hour: the clock wraps at 24 h (the original's does not).
+    pub clock_wraps: bool,
     pub depart: String,
     pub deadline: String,
     pub deadline2: String,
@@ -127,6 +131,7 @@ pub(crate) struct Gen<'a> {
     avail: [u8; 20],
     /// The special aircraft's start object; a stale global between missions.
     special_start: i32,
+    start_hour: Option<u8>,
 }
 
 /// Roll which weapons are out of stock. Quirk kept: it tests `avail[map[r]]` but sets
@@ -183,7 +188,15 @@ impl<'a> Gen<'a> {
             realism: realism as i32,
             avail,
             special_start: special_start as i32,
+            start_hour: None,
         }
+    }
+
+    /// Starts the mission at this hour instead of the rolled time (the roll still happens, so
+    /// the rest of the mission is the seed's).
+    pub fn start_hour(mut self, hour: Option<u8>) -> Self {
+        self.start_hour = hour;
+        self
     }
 
     // --- object access (Python-style negative indexing for stale/invalid indices) ----------
@@ -389,21 +402,15 @@ impl<'a> Gen<'a> {
         }
     }
 
-    /// Time formatter: ticks after 06:00 (day) / 18:00 (night), rounded down to
-    /// 5 minutes, no 24 h wrap.
-    fn fmt_time(night: bool, t: i32) -> String {
-        let night = night as i32;
-        let mut c = [b'0' as i32 + night, b'0' as i32, b':' as i32, b'0' as i32, b'0' as i32];
-        c[1] += cdiv(t, 1800) % 10;
-        c[1] += if night != 0 { 8 } else { 6 };
-        if c[1] > b'9' as i32 {
-            c[1] -= 10;
-            c[0] += 1;
+    /// Time formatter: ticks after `base` o'clock (06:00 by day, 18:00 by night), rounded
+    /// down to 5 minutes, no 24 h wrap unless `wraps`.
+    fn fmt_time(base: i32, wraps: bool, t: i32) -> String {
+        let mut h = base + cdiv(t, 1800) % 10;
+        if wraps {
+            h %= 24;
         }
         let m = (cdiv(t, 30) % 60) / 5 * 5;
-        c[3] += m / 10;
-        c[4] += m % 10;
-        c.iter().map(|&v| (v as u8) as char).collect()
+        format!("{h:02}:{m:02}")
     }
 
     // --- generator main loop ---------------------------------------------------------------
@@ -871,17 +878,24 @@ impl<'a> Gen<'a> {
             wt[3] = if fuel > 10000 { 0x11 } else { 0 };
         }
         let weapon_qty = wt.map(|v| self.x.weapon_qty.get(v as usize).copied().unwrap_or(0) as i32);
-        let tod = ((t[1].num + t[0].num) & 0xF) << 8;
-        let night = if t[0].ty == 4 || t[1].ty == 4 {
+        let mut tod = ((t[1].num + t[0].num) & 0xF) << 8;
+        let mut night = if t[0].ty == 4 || t[1].ty == 4 {
             true
         } else if self.realism != 0 {
             self.r.r(10) != 0
         } else {
             self.r.r(10) > 2
         };
-        let depart = Self::fmt_time(night, tod);
-        let deadline = Self::fmt_time(night, mtime + tod);
-        let deadline2 = Self::fmt_time(night, mtime + tod + 450); // deadline + 15 min
+        let mut base_hour = if night { 18 } else { 6 };
+        if let Some(h) = self.start_hour {
+            base_hour = h as i32 % 24;
+            night = !(6..18).contains(&base_hour);
+            tod = 0;
+        }
+        let wraps = self.start_hour.is_some();
+        let depart = Self::fmt_time(base_hour, wraps, tod);
+        let deadline = Self::fmt_time(base_hour, wraps, mtime + tod);
+        let deadline2 = Self::fmt_time(base_hour, wraps, mtime + tod + 450); // deadline + 15 min
         mtime -= (mtime + tod) % 150;
 
         // ---- generator tail: hand-off values --------------------------------------------
@@ -929,6 +943,8 @@ impl<'a> Gen<'a> {
             weapon_qty,
             fuel,
             night,
+            base_hour,
+            clock_wraps: wraps,
             depart,
             deadline,
             deadline2,

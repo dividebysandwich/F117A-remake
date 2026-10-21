@@ -328,7 +328,7 @@ impl TextCtx<'_> {
         s
     }
 
-    /// Mission clock: `t + tod` as "HH:MM:SS" from 06:00 / 18:00.
+    /// Mission clock: `t + tod` as "HH:MM:SS" from 06:00 / 18:00 (or the chosen start hour).
     pub fn vgame_time(&self, t: i32) -> String {
         fn two(buf: &mut Vec<u8>, v: i32) {
             let r = s16(v) % 60;
@@ -338,17 +338,11 @@ impl TextCtx<'_> {
             buf.extend(r.to_string().bytes());
         }
         let t = (t + self.g.tod) as u16;
-        let mut buf = Vec::new();
-        two(&mut buf, (t / 1800) as i32);
-        let night = self.g.night as u8;
-        buf[0] = buf[0].wrapping_add(night);
-        if buf.len() > 1 {
-            buf[1] = buf[1].wrapping_add(if night != 0 { 8 } else { 6 });
-            if buf[1] > b'9' {
-                buf[1] -= 10;
-                buf[0] += 1;
-            }
+        let mut h = self.g.base_hour + s16(t as i32 / 1800) % 60;
+        if self.g.clock_wraps {
+            h %= 24;
         }
+        let mut buf = format!("{h:02}").into_bytes();
         buf.push(b':');
         two(&mut buf, (t / 30) as i32);
         buf.push(b':');

@@ -20,6 +20,7 @@ mod flight;
 mod flight_menu;
 mod font;
 mod freecam;
+mod headtrack;
 mod hotas;
 mod hud;
 mod input;
@@ -149,6 +150,7 @@ fn main() {
         .add_plugins((
             world::WorldPlugin,
             freecam::FreeCamPlugin,
+            headtrack::HeadTrackPlugin,
             input::InputPlugin,
             keyboard_layout::KeyboardLayoutPlugin,
             cockpit::CockpitPlugin,

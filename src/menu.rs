@@ -259,6 +259,7 @@ fn settings_args(cmd: &mut std::process::Command, settings: &crate::settings::Se
         (settings.realistic_guidance, "--realistic-guidance"),
         (settings.tacview, "--tacview"),
         (settings.air_defence, "--air-defence"),
+        (settings.head_tracking, "--head-tracking"),
     ] {
         if on {
             cmd.arg(flag);
@@ -785,8 +786,14 @@ pub(crate) fn weather_options(
     }
 }
 
-/// The classic / modern switches and the VR cockpit size.
-pub(crate) fn classic_modern_options(ui: &mut egui::Ui, settings: &mut SettingsMut, vr: bool) {
+/// The classic / modern switches, the VR cockpit size and head tracking (`head`: the input
+/// heard).
+pub(crate) fn classic_modern_options(
+    ui: &mut egui::Ui,
+    settings: &mut SettingsMut,
+    vr: bool,
+    head: Option<crate::headtrack::Source>,
+) {
     section(ui, "Classic / Modern");
     // Only mark the settings changed when a switch is flipped.
     let mut toggled = false;
@@ -889,6 +896,22 @@ pub(crate) fn classic_modern_options(ui: &mut egui::Ui, settings: &mut SettingsM
     .changed()
     {
         s.vr_cockpit_scale = pct as f32 / 100.0;
+    }
+    section(ui, "Head/eye tracking");
+    // Read every frame by `headtrack`: no change detection needed.
+    facts(
+        ui.add_enabled(!s.vr, egui::Checkbox::new(&mut s.head_tracking, "Head/Eye Tracking")),
+        &[
+            "Your head turns and moves the view in the cockpit (desktop; in VR the headset does)",
+            "Tracking program (OpenTrack...): FreeTrack output, or UDP to 127.0.0.1 port 4242",
+            "Home: the current head position becomes the centre",
+        ],
+    );
+    if s.head_tracking && !s.vr {
+        match head {
+            Some(src) => ui.colored_label(GREEN, format!("Tracking ({})", src.name())),
+            None => ui.colored_label(AMBER, "No tracker heard: start the tracking program"),
+        };
     }
     if toggled {
         settings.set_changed();
@@ -1004,7 +1027,7 @@ fn menu_ui(
     mut settings: ResMut<crate::settings::Settings>,
     mut next: ResMut<NextState<AppState>>,
     mut exit: MessageWriter<AppExit>,
-    vr: Res<VrAvailable>,
+    (vr, head): (Res<VrAvailable>, Res<crate::headtrack::HeadTrack>),
     mut dialog: ResMut<crate::input_dialog::InputDialog>,
     mut input_config: ResMut<crate::hotas::InputConfig>,
     hotas: Res<crate::hotas::Hotas>,
@@ -1138,7 +1161,7 @@ fn menu_ui(
                         ui.set_width(200.0);
                         let state = &mut *state;
                         weather_options(ui, &mut state.weather, &mut state.cloud_cover);
-                        classic_modern_options(ui, &mut settings, vr.0);
+                        classic_modern_options(ui, &mut settings, vr.0, head.source);
                     });
                 }
                 // Mission summary in big type, the full briefing below in small type.
@@ -1254,7 +1277,7 @@ fn menu_ui(
         // Another aircraft: the same mission with or without the F-117A's limits.
         state.dirty = true;
     }
-    crate::career::career_ui(ctx, &mut career, &mut state, &mut settings, vr.0);
+    crate::career::career_ui(ctx, &mut career, &mut state, &mut settings, vr.0, head.source);
     crate::prefs::Prefs::save_if_changed(&state, &settings, &mut saved);
     Ok(())
 }

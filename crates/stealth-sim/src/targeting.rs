@@ -92,7 +92,8 @@ impl Sim {
             return;
         }
         let mut best = -1;
-        let mut best_r = 100 << (6 - self.night as i32);
+        let base_r = 100 << (6 - self.night as i32);
+        let mut best_r = self.spot_range(base_r);
         let prev = if self.gnd_lock != -1 { self.gnd_lock - 0x80 } else { -0x100 };
         let mut prev_r = 0;
         if self.gnd_lock != -1 {
@@ -108,6 +109,9 @@ impl Sim {
                 continue;
             }
             if i as i32 == prev || o.flags & oflags::DESTROYED != 0 || !(r < best_r && r > prev_r) {
+                continue;
+            }
+            if r >= base_r && !self.has_intel(i) {
                 continue;
             }
             if self.hud_mode != HudMode::Gnd && (o.flags & 0x501) <= 1 {
@@ -131,6 +135,12 @@ impl Sim {
         } else {
             self.gnd_lock = best;
         }
+    }
+
+    /// Farthest ground target the player can pick: recon intelligence doubles the range for
+    /// its objects (campaign).
+    fn spot_range(&self, base: i32) -> i32 {
+        if self.campaign.is_some() { base * 2 } else { base }
     }
 
     /// Air target selection.
@@ -217,11 +227,13 @@ impl Sim {
                 self.air_lock = best;
             }
         } else {
-            let mut best_r = 100 << (6 - self.night as i32);
+            let base_r = 100 << (6 - self.night as i32);
+            let mut best_r = self.spot_range(base_r);
             for i in 0..self.objects.len() {
                 let o = self.objects[i];
                 let (r, b) = self.range_bearing(o.x, o.y);
                 if o.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) != 0
+                    || (r >= base_r && !self.has_intel(i))
                     || (i == 0 && (o.x == 0 || o.y == 0 || o.shape == 0))
                     || r >= best_r
                     || self.cam_off(b) >= 0x2000

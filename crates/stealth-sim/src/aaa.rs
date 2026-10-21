@@ -120,7 +120,7 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 /// Smallest distance from the origin to the segment a .. a + d.
-fn closest(a: [f64; 3], d: [f64; 3]) -> f64 {
+pub(crate) fn closest(a: [f64; 3], d: [f64; 3]) -> f64 {
     let k = (-dot(a, d) / dot(d, d).max(1e-9)).clamp(0.0, 1.0);
     len(add(a, mul(d, k)))
 }
@@ -274,7 +274,7 @@ impl Sim {
         let mut manpads: Vec<usize> = Vec::new();
         let mut rwr: Option<RwrTone> = None;
         for (i, u) in units.iter_mut().enumerate() {
-            if u.destroyed {
+            if u.destroyed || self.aaa_blue(i) {
                 continue;
             }
             u.cooldown = (u.cooldown - 1).max(0);
@@ -500,7 +500,7 @@ impl Sim {
     pub(crate) fn aaa_emitters(&self, out: &mut Vec<Emitter>) {
         let (px, py) = (self.p.mx, self.p.my);
         for (i, u) in self.aaa.iter().enumerate() {
-            if u.kind != AaaKind::Zsu || u.destroyed {
+            if u.kind != AaaKind::Zsu || u.destroyed || self.aaa_blue(i) {
                 continue;
             }
             let range = approx(s16(px - u.x), s16(py - u.y)) >> 6;

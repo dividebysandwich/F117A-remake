@@ -109,6 +109,21 @@ impl Sim {
         detect(sx, sy, salt, typ, th, &self.detect_ctx())
     }
 
+    /// Campaign `detect` of site `i`: recon intelligence shortens its detection range.
+    fn detect_site(&mut self, i: usize) -> (i32, i32, i32) {
+        let o = self.objects[i];
+        let tenths = self.detection_tenths(i);
+        let th = self
+            .threat_type(o.unit_type)
+            .map(|t| ((t.lethality as i32 * tenths / 10).max(1), t.tier as i32, t.flags as i32));
+        let r = detect(o.x, o.y, 0, o.unit_type, th, &self.detect_ctx());
+        let pre = if self.lockheed { r.0 * 2 } else { r.0 };
+        if pre + self.emv > 100 {
+            self.emit(SimEvent::CancelTimeAccel);
+        }
+        r
+    }
+
     /// `detect` with its side effect (time acceleration off when detected).
     pub(crate) fn detect(&mut self, sx: i32, sy: i32, salt: i32, typ: i32) -> (i32, i32, i32) {
         let r = self.detect_pure(sx, sy, salt, typ);
@@ -205,7 +220,11 @@ impl Sim {
     /// Radar sweep of ground site `i`.
     fn site_sweep(&mut self, i: usize) {
         let o = self.objects[i];
-        let (score, brg, range) = self.detect(o.x, o.y, 0, o.unit_type);
+        let (score, brg, range) = if self.campaign.is_some() {
+            self.detect_site(i)
+        } else {
+            self.detect(o.x, o.y, 0, o.unit_type)
+        };
         let emv = self.emv;
         let doppler = self.threat_type(o.unit_type).is_some_and(|t| t.flags & 1 != 0);
         if score > 0 {
@@ -316,6 +335,9 @@ impl Sim {
 
     /// Aircraft radar.
     pub(crate) fn radar_sweep(&mut self, i: usize) {
+        if self.player_absent() {
+            return;
+        }
         let u = self.flights[i];
         let rt = self.ac_type(u.spec).radar as i32;
         let (mut score, brg, range) = self.detect(u.x, u.y, u.alt, rt);
@@ -490,7 +512,7 @@ impl Sim {
             })
         };
         let mut out = Vec::new();
-        let mut push = |source,
+        let mut push = |source: EmitterSource,
                         x: i32,
                         y: i32,
                         alt: i32,
@@ -501,7 +523,11 @@ impl Sim {
             let Some(t) = self.threat_type(radar_type) else { return };
             let (dx, dy) = (s16(px - x), s16(py - y));
             let range = approx(dx, dy) >> 6;
-            if range >= t.lethality as i32 {
+            let tenths = match source {
+                EmitterSource::Site(i) => self.detection_tenths(i),
+                _ => 10,
+            };
+            if range >= t.lethality as i32 * tenths / 10 {
                 return;
             }
             // Bearing from the player to the emitter.

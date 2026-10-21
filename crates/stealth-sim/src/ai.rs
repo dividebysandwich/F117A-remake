@@ -66,10 +66,20 @@ impl Sim {
                 ty = self.ref_y;
                 tz = self.ref_alt;
             }
+        } else if let Some((ex, ey, ez)) = self.campaign_pursuit(i) {
+            // Campaign: going for an aircraft of the other side.
+            mode = 4;
+            tx = ex;
+            ty = ey;
+            tz = ez;
         } else {
             mode = 3;
             let (mut x, mut y, mut z);
-            if u.flags & fflags::ESCORT != 0
+            if let Some((gx, gy)) = self.campaign_goal(i, &u) {
+                x = gx;
+                y = gy;
+                z = clamp_q(u.alt, 6000, 16000);
+            } else if u.flags & fflags::ESCORT != 0
                 && self.escort_leader >= 0
                 && (self.escort_leader as usize) < nf
             {
@@ -288,7 +298,8 @@ impl Sim {
             u.flags |= fflags::RTB;
             let mut best = (u.wp, 0x7FFF);
             for (k, o) in self.objects.iter().enumerate().take(self.woc).skip(3) {
-                if o.flags & 0x101 == 1 {
+                // A campaign may have taken the airfield (friendly now).
+                if o.flags & 0x101 == 1 && o.flags & oflags::FRIENDLY == 0 {
                     let d = approx(o.x - u.x, o.y - u.y);
                     if d < best.1 {
                         best = (k as i32, d);
@@ -356,7 +367,7 @@ impl Sim {
     }
 
     /// Put flight unit `i` on the runway (or carrier deck) of base object `b`.
-    fn spawn(&mut self, i: usize, b: usize) {
+    pub(crate) fn spawn(&mut self, i: usize, b: usize) {
         let o = self.objects[b];
         let t = self.ac_type(self.flights[i].spec).clone();
         let ns = self.ns;

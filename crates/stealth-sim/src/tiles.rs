@@ -186,7 +186,7 @@ impl Sim {
     }
 
     /// Record a new shape for a tile object in the damage list.
-    fn set_tile_shape(&mut self, t: TileHit, shape: i32) {
+    pub(crate) fn set_tile_shape(&mut self, t: TileHit, shape: i32) {
         if t.level == 0 {
             return;
         }

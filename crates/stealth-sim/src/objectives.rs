@@ -39,6 +39,20 @@ impl Sim {
         if outcome == 0 && self.eject == 0 {
             self.landing_type = 3;
         }
+        if self.campaign.is_some() {
+            if !self.player_absent() {
+                let e = MissionEnd {
+                    outcome,
+                    landing_type: self.landing_type,
+                    map_x: self.p.mx,
+                    map_y: self.p.my,
+                    damage: self.damage,
+                    hits: self.hits,
+                };
+                self.finalize_sortie(e);
+            }
+            return;
+        }
         let e = MissionEnd {
             outcome,
             landing_type: self.landing_type,
@@ -146,7 +160,8 @@ impl Sim {
             self.chute.2 += dz;
             if self.chute.2 <= 0 {
                 self.chute.2 = 0;
-                if self.mission_tick & 7 == 0 && !self.start_csar() {
+                // A campaign has no rescue (and no capture): the sortie just ends.
+                if self.mission_tick & 7 == 0 && (self.campaign.is_some() || !self.start_csar()) {
                     self.finalize(0);
                 }
             }
@@ -221,6 +236,13 @@ impl Sim {
                         self.sound(0x2B, 2);
                     }
                     if cdiv(16, fs) < self.armed_landing {
+                        // Campaign: on a friendly base the sortie goes on (rearm, or end it).
+                        if self.campaign.is_some() {
+                            self.armed_landing = 0;
+                            let object = self.nearest_base.max(0) as usize;
+                            self.emit(SimEvent::LandedAtBase { object });
+                            return;
+                        }
                         self.finalize(0);
                         return;
                     }

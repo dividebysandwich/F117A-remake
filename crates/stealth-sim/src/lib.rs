@@ -1,5 +1,6 @@
 pub mod aaa;
 pub mod ballistics;
+pub mod campaign;
 pub mod data;
 pub mod math;
 pub mod rng;
@@ -217,6 +218,9 @@ pub struct Sim {
     /// heading; empty = parked on the base object as in the original.
     #[serde(default)]
     pub(crate) parking: Vec<(i32, i32, i32)>,
+    /// Realtime dynamic campaign (`SimOptions::campaign`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) campaign: Option<Box<campaign::CampaignSim>>,
     /// Lamp timers: chaff / flare / EMV.
     pub(crate) chaff_lamp: i32,
     pub(crate) flare_lamp: i32,
@@ -438,6 +442,7 @@ impl Sim {
                 ..Default::default()
             }),
             parking: Vec::new(),
+            campaign: None,
             chaff_lamp: 0,
             flare_lamp: 0,
             emv_lamp: 0,
@@ -489,7 +494,10 @@ impl Sim {
             sim.door_anim = 2;
             sim.pflags |= pflags::BAY_OPEN;
         }
-        if sim.opts.air_defence {
+        if sim.opts.campaign {
+            let st = data.stores_init.map(|v| v as i32);
+            sim.init_campaign(st, data.gun_ammo_init as i32);
+        } else if sim.opts.air_defence {
             sim.place_aaa(m);
         }
         let st = sim.start_state();
@@ -718,6 +726,9 @@ impl Sim {
         if fs as i32 != self.fs {
             self.set_fs(fs as i32);
         }
+        if self.player_absent() {
+            return self.step_absent();
+        }
         self.ingest(ps);
         // Key commands and per-frame systems.
         self.handle_keys(ps);
@@ -745,6 +756,9 @@ impl Sim {
             self.update_aaa();
         }
         self.update_aircraft();
+        if self.campaign.is_some() {
+            self.update_campaign();
+        }
         self.update_missiles();
         self.update_cm_timers();
         self.update_bullets(ps);

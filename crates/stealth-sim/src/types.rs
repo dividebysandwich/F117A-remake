@@ -478,6 +478,11 @@ pub struct SimOptions {
     /// and targets, MANPADS in the towns ([`crate::aaa`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub air_defence: bool,
+    /// Realtime dynamic campaign (not in the original, [`crate::campaign`]): the simulation
+    /// runs for the whole session, the player comes and goes between sorties, places change
+    /// hands and the AI fights the AI.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub campaign: bool,
 }
 
 impl Default for SimOptions {
@@ -491,6 +496,7 @@ impl Default for SimOptions {
             realistic_damage: false,
             realistic_guidance: false,
             air_defence: false,
+            campaign: false,
         }
     }
 }
@@ -679,6 +685,28 @@ pub enum SimEvent {
     CollisionBounce,
     MissionEnd(MissionEnd),
     Log(LogEvent),
+    /// Campaign: the player's sortie is over (the simulation goes on without him).
+    SortieEnded(MissionEnd),
+    /// Campaign: the player came to a stop on a friendly runway (rearm, or end the sortie).
+    LandedAtBase {
+        object: usize,
+    },
+    /// Campaign: a tile object is intact again (repaired, or a captured place).
+    TileRestored(TileDamage),
+    /// Campaign: an aircraft the campaign launched was destroyed (by the player, else by the
+    /// AI).
+    CampaignFlightDestroyed {
+        unit: usize,
+        tag: u32,
+        by_player: bool,
+    },
+    /// Campaign: an aircraft the campaign launched landed (map position).
+    CampaignFlightLanded {
+        unit: usize,
+        tag: u32,
+        x: i32,
+        y: i32,
+    },
 }
 
 /// Cockpit lights driven by the threat / weapon code.

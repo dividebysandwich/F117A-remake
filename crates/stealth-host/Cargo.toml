@@ -1,0 +1,16 @@
+[package]
+name = "stealth-host"
+version.workspace = true
+edition.workspace = true
+description = "Stealth Mission 89 campaign host: the dynamic campaign driving the combat simulation, without the renderer"
+
+[dependencies]
+stealth-formats.workspace = true
+stealth-mission = { path = "../stealth-mission" }
+stealth-sim = { path = "../stealth-sim" }
+stealth-campaign = { path = "../stealth-campaign" }
+serde.workspace = true
+ron.workspace = true
+anyhow.workspace = true
+serde_json = "1"
+dirs = "6"

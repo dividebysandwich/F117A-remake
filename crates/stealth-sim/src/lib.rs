@@ -13,6 +13,7 @@ pub mod drones;
 pub mod guidance;
 pub mod lights;
 mod missiles;
+pub mod net;
 mod objectives;
 mod pilot;
 mod radar;
@@ -43,7 +44,7 @@ pub const PILOT_SLOTS: usize = N_PROJ - ENEMY_SLOTS;
 pub const MAX_PILOTS: usize = 8;
 
 /// Player-derived values of the current frame (in the original game's units).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayerView {
     /// World units, y north.
     pub wx: i32,
@@ -208,6 +209,19 @@ pub struct Sim {
     /// Per event: the pilot whose weapon caused it.
     #[serde(skip)]
     pub(crate) event_credit: Vec<Option<u8>>,
+    /// A client's copy of a host's simulation (`net`), with the other pilots as the host
+    /// sees them.
+    #[serde(skip)]
+    pub(crate) mirror: bool,
+    #[serde(skip)]
+    pub(crate) remote: Vec<net::RemotePilot>,
+    /// A host's: the shells fired since they were last taken.
+    #[serde(skip)]
+    pub(crate) record_shells: bool,
+    #[serde(skip)]
+    pub(crate) new_shells: Vec<aaa::Shell>,
+    #[serde(skip)]
+    pub(crate) new_ai_shells: Vec<aaa::Shell>,
 }
 
 impl Sim {
@@ -436,6 +450,11 @@ impl Sim {
             events: Vec::new(),
             event_pilot: Vec::new(),
             event_credit: Vec::new(),
+            mirror: false,
+            remote: Vec::new(),
+            record_shells: false,
+            new_shells: Vec::new(),
+            new_ai_shells: Vec::new(),
         };
         sim.set_fs(15);
         if let Some(d) = sim.opts.prior_damage.clone() {

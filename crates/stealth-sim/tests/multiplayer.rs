@@ -197,3 +197,64 @@ fn pilots_keep_their_own_state() {
     assert_eq!(sim.pilot_view(1).map(|p| p.alt), Some(3000));
     assert_ne!(sim.bays().0.first(), Some(&(0, 2)), "pilot 1's stores are his");
 }
+
+#[test]
+fn a_mirror_follows_the_host() {
+    let (mut host, mut inputs, _) = site_engages_pilot_one();
+    host.record_shells(true);
+    let d = data();
+    let s = MissionSettings {
+        theater: 3,
+        roe: 2,
+        opponents: 1,
+        kind: MissionKind::Strike,
+        ..Default::default()
+    };
+    let mut m = stealth_mission::generate(&d.gdata, &s, Seed::Srand(77)).unwrap();
+    m.world = d.gdata.theaters[3].world.clone();
+    m.weather = Default::default();
+    let mut mirror =
+        Sim::with_options(&d.sim, &m, SimOptions { campaign: true, ..Default::default() });
+    mirror.make_mirror(1);
+    let mut base = stealth_sim::net::SlowBase::default();
+    for f in 0..15 * 20 {
+        if f == 30 {
+            inputs[1].1.cmd.flare = true;
+        }
+        host.step_pilots(&inputs, 15);
+        inputs[1].1.cmd = Commands::default();
+        let mut slow = host.world_slow(&mut base);
+        (slow.shells, slow.ai_shells) = host.take_new_shells();
+        let fast: stealth_sim::net::WorldFast =
+            serde_json::from_str(&serde_json::to_string(&host.world_fast()).unwrap()).unwrap();
+        let slow: stealth_sim::net::WorldSlow =
+            serde_json::from_str(&serde_json::to_string(&slow).unwrap()).unwrap();
+        let mine: stealth_sim::net::PilotSnap =
+            serde_json::from_str(&serde_json::to_string(&host.pilot_snap(1)).unwrap()).unwrap();
+        mirror.set_local_player(&inputs[1].1);
+        mirror.apply_world_slow(&slow);
+        mirror.apply_world_fast(&fast);
+        mirror.apply_pilot_snap(&mine);
+        mirror.mirror_frame();
+        let (emitters, lights, targeting, damage, stores) = host.as_pilot(1, |s| {
+            (s.emitters(), s.lights(), s.targeting(), s.damage_effects(), s.stores())
+        });
+        assert_eq!(mirror.emitters(), emitters, "frame {f}");
+        assert_eq!(mirror.lights(), lights);
+        assert_eq!(mirror.targeting(), targeting);
+        assert_eq!(mirror.damage_effects(), damage);
+        assert_eq!(mirror.stores(), stores);
+        assert_eq!(mirror.flights(), host.flights());
+        assert_eq!(mirror.objects()[1..], host.objects()[1..]);
+        let enemy = |s: &Sim| -> Vec<_> {
+            s.active_projectiles().into_iter().filter(|p| p.0 < 8).collect()
+        };
+        assert_eq!(enemy(&mirror), enemy(&host));
+        assert_eq!(mirror.countermeasures(), &host.as_pilot(1, |s| *s.countermeasures()));
+        assert_eq!(mirror.aaa_units().len(), host.aaa_units().len());
+        let others = mirror.remote_pilots();
+        assert_eq!(others.len(), 1);
+        assert_eq!(others[0].id, 0);
+    }
+    assert!(mirror.stores().0 < 12, "the flare went");
+}

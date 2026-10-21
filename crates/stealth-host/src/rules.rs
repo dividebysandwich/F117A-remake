@@ -1,0 +1,42 @@
+//! The settings that decide how the war is fought: the host's, for everybody in a session.
+
+use serde::{Deserialize, Serialize};
+use stealth_campaign::Aircraft;
+use stealth_sim::{LandingMode, SimOptions};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Rules {
+    /// Missile hits can destroy the aircraft outright, fires, damaged control surfaces.
+    pub realistic_damage: bool,
+    /// Proportional navigation, burnt-out motors, lofted SAM shots.
+    pub realistic_guidance: bool,
+    /// Collisions bounce the aircraft off, crashes do not end the flight.
+    pub no_crashes: bool,
+    /// The sun and the moon move: moonlight sets how far enemy pilots see at night.
+    pub continuous_time: bool,
+    /// The F-117A as it was: no cannon, only two bays.
+    pub realistic_weapons: bool,
+}
+
+impl Rules {
+    /// The simulation's options for a campaign under these rules.
+    pub fn sim_options(&self) -> SimOptions {
+        SimOptions {
+            landing: if self.no_crashes { LandingMode::NoCrashes } else { LandingMode::Easy },
+            realistic_damage: self.realistic_damage,
+            realistic_guidance: self.realistic_guidance,
+            air_defence: true,
+            campaign: true,
+            ..Default::default()
+        }
+    }
+
+    /// An aircraft's simulation traits under these rules: (the real F-117A without a cannon,
+    /// weapons outside).
+    pub fn airframe(&self, aircraft: Aircraft) -> (bool, bool) {
+        match aircraft {
+            Aircraft::F117 => (self.realistic_weapons, false),
+            Aircraft::F16 => (false, true),
+        }
+    }
+}

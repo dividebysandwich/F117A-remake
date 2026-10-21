@@ -269,6 +269,7 @@ pub fn ops_ui(
             id: 0,
             offer: o.clone(),
             base: o.base,
+            aircraft: Default::default(),
             started: 0.0,
             progress: Default::default(),
         };
@@ -555,6 +556,7 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, s: &mut Session, width: f32)
                 id: 0,
                 offer: o.clone(),
                 base: chosen,
+                aircraft: Default::default(),
                 started: 0.0,
                 progress: Default::default(),
             };
@@ -831,6 +833,7 @@ fn briefing(
         id: 0,
         offer: o.clone(),
         base: b.base,
+        aircraft: Default::default(),
         started: 0.0,
         progress: Default::default(),
     };
@@ -904,7 +907,7 @@ fn briefing(
             });
         });
     if take_off {
-        let cmd = stealth_campaign::Command::TakeMission { offer: o.id, base: Some(b.base) };
+        let cmd = stealth_campaign::Command::TakeMission { offer: o.id, base: Some(b.base), aircraft: Default::default() };
         c.take_loadout = Some(b.loadout.clone());
         c.take_route = b.route.clone();
         match c.state.apply(ME, cmd) {

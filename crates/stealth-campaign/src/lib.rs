@@ -104,7 +104,12 @@ pub enum Report {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Command {
     /// Fly a mission from the board, from a friendly base (None: the offer's base).
-    TakeMission { offer: u32, base: Option<ObjectId> },
+    TakeMission {
+        offer: u32,
+        base: Option<ObjectId>,
+        #[serde(default)]
+        aircraft: Aircraft,
+    },
     /// Send helicopters with troops against an enemy place.
     OrderInsertion { place: PlaceId },
     /// The player's sortie is over (landed and done, crashed, ejected, aborted).
@@ -178,7 +183,9 @@ impl CampaignState {
     /// Carry out a player's command.
     pub fn apply(&mut self, player: PlayerId, cmd: Command) -> Result<Vec<CampaignEvent>, String> {
         match cmd {
-            Command::TakeMission { offer, base } => self.take_mission(player, offer, base),
+            Command::TakeMission { offer, base, aircraft } => {
+                self.take_mission(player, offer, base, aircraft)
+            }
             Command::OrderInsertion { place } => self.order_insertion(Some(player), place),
             Command::EndSortie { end } => Ok(self.end_sortie(player, end).into_iter().collect()),
         }
@@ -221,7 +228,7 @@ impl CampaignState {
             }
         }
         self.patrols.clear();
-        self.board_at = f64::NEG_INFINITY;
+        self.board_at = f64::MIN;
         let players: Vec<PlayerId> =
             self.players.iter().filter(|p| p.sortie.is_some()).map(|p| p.id).collect();
         players.into_iter().filter_map(|p| self.end_sortie(p, SortieEnd::Aborted)).collect()

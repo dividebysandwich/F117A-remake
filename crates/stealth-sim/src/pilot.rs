@@ -217,12 +217,13 @@ impl Sim {
     }
 
     /// Adds pilot `id` (campaign): absent until his first sortie, flying the mission's aircraft.
+    /// A pilot already there (a returning player) stays as he is.
     pub fn add_pilot(&mut self, id: u8) {
         let id = id as usize;
         if self.parked.len() <= id {
             self.parked.resize_with(id + 1, Pilot::default);
         }
-        if id == self.pl.id as usize {
+        if id == self.pl.id as usize || self.parked[id].id as usize == id {
             return;
         }
         let mut p = self.template_pilot();
@@ -265,10 +266,25 @@ impl Sim {
         self.end_sortie_pilot(id, 7);
     }
 
+    /// `f` on the simulation as pilot `id` sees it (his lights, locks, warnings).
+    pub fn as_pilot<R>(&mut self, id: u8, f: impl FnOnce(&Self) -> R) -> R {
+        let back = self.pl.id as usize;
+        self.activate(id as usize);
+        let r = f(self);
+        self.activate(back);
+        r
+    }
+
     /// Pilot `id`'s view of the world (position, attitude) while he is in it.
     pub fn pilot_view(&self, id: u8) -> Option<PlayerView> {
         let p = self.pilot_ref(id as usize);
         (p.id == id && !p.absent).then_some(p.p)
+    }
+
+    /// Pilot `id`'s last report from his flight model.
+    pub fn pilot_input(&self, id: u8) -> PlayerState {
+        let p = self.pilot_ref(id as usize);
+        if p.id == id { p.last_input.clone() } else { PlayerState::default() }
     }
 
     /// Which pilot an enemy missile in slot `s` (0..7) goes for.

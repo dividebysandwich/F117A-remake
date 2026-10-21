@@ -875,16 +875,17 @@ impl Sim {
             let dir = [a.sin() * e.cos(), a.cos() * e.cos(), e.sin()];
             let ttl = if flak { time } else { reach * 1.3 / v0 };
             if c.shells.len() < MAX_SHELLS {
-                c.shells.push(AiShell {
-                    shell: Shell {
-                        pos: add(from, [0.0, 0.0, 1.5]),
-                        vel: mul(dir, v0),
-                        ttl: ((ttl * fs as f64) as i32).max(1),
-                        flak,
-                        pilot: 0,
-                    },
-                    target: j,
-                });
+                let shell = Shell {
+                    pos: add(from, [0.0, 0.0, 1.5]),
+                    vel: mul(dir, v0),
+                    ttl: ((ttl * fs as f64) as i32).max(1),
+                    flak,
+                    pilot: 0,
+                };
+                if self.record_shells {
+                    self.new_ai_shells.push(shell);
+                }
+                c.shells.push(AiShell { shell, target: j });
             }
         }
         c.rng = rng;

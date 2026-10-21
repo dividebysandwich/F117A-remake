@@ -2137,6 +2137,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
+name = "ciborium"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
+dependencies = [
+ "ciborium-io",
+ "half",
+]
+
+[[package]]
 name = "claxon"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3775,6 +3802,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "lz4_flex"
+version = "0.11.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
+
+[[package]]
 name = "mach2"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5380,6 +5413,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "stealth-host"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "ron",
+ "serde",
+ "serde_json",
+ "stealth-campaign",
+ "stealth-formats",
+ "stealth-mission",
+ "stealth-sim",
+]
+
+[[package]]
 name = "stealth-mission"
 version = "0.3.0"
 dependencies = [
@@ -5413,6 +5461,19 @@ dependencies = [
  "stealth-mission",
  "stealth-sim",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "stealth-net"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "ciborium",
+ "lz4_flex",
+ "serde",
+ "stealth-campaign",
+ "stealth-host",
+ "stealth-sim",
 ]
 
 [[package]]

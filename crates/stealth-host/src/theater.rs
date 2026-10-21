@@ -1,0 +1,45 @@
+//! Theater data the simulation needs, without the renderer.
+
+use anyhow::{Context, Result};
+use serde::Deserialize;
+use stealth_formats::terrain::{Grid, TileSets};
+use stealth_mission::GameData;
+use stealth_sim::{SimData, TheaterTiles};
+
+/// The part of a remake theater's file (`assets/theaters/<code>.ron`) the simulation uses.
+#[derive(Deserialize)]
+struct TheaterFile {
+    grid: Grid,
+    tiles: TileSets,
+    #[serde(default)]
+    model_attr: Vec<u8>,
+}
+
+/// Tile data of a remake theater.
+pub fn load_tiles(code: &str) -> Result<TheaterTiles> {
+    let path = crate::assets::asset(&format!("theaters/{}.ron", code.to_ascii_lowercase()));
+    let text = std::fs::read_to_string(&path).with_context(|| path.display().to_string())?;
+    let t: TheaterFile = ron::from_str(&text).with_context(|| path.display().to_string())?;
+    Ok(TheaterTiles::from_tilesets(&t.grid, &t.tiles, &t.model_attr))
+}
+
+/// The simulation's tables, with the tiles of theater `index` (`code`) if they are not among
+/// the original's.
+pub fn sim_data(index: usize, code: &str) -> Result<SimData> {
+    let d = SimData::load_json(&crate::assets::asset("sim"))?;
+    if d.theaters.get(index).is_some() {
+        return Ok(d);
+    }
+    let tiles = load_tiles(code)?;
+    Ok(d.with_theater(index, || tiles))
+}
+
+/// The mission generator's tables.
+pub fn game_data() -> Result<GameData> {
+    GameData::load_json(&crate::assets::asset("mission"))
+}
+
+/// Index of a theater code ("ce").
+pub fn theater_index(code: &str) -> Option<usize> {
+    stealth_formats::ALL_THEATERS.iter().position(|t| t.eq_ignore_ascii_case(code))
+}

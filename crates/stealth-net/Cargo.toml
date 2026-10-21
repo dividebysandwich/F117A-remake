@@ -1,0 +1,14 @@
+[package]
+name = "stealth-net"
+version.workspace = true
+edition.workspace = true
+description = "Stealth Mission 89 coop networking: UDP transport, protocol, campaign server and client sessions"
+
+[dependencies]
+stealth-sim = { path = "../stealth-sim" }
+stealth-campaign = { path = "../stealth-campaign" }
+stealth-host = { path = "../stealth-host" }
+serde.workspace = true
+anyhow.workspace = true
+ciborium = "0.2.2"
+lz4_flex = { version = "0.11.6", default-features = false, features = ["std", "safe-encode", "safe-decode"] }

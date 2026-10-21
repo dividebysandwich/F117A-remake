@@ -141,7 +141,7 @@ impl CampaignState {
             (INSERTION_LEAD / 60.0).round()
         );
         self.note(text.clone());
-        self.board_at = f64::NEG_INFINITY;
+        self.board_at = f64::MIN;
         Ok(vec![CampaignEvent::Message(text)])
     }
 

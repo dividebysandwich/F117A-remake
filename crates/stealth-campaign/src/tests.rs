@@ -143,8 +143,12 @@ fn a_recon_sortie_gives_intelligence() {
     c.tick(1.0, &WorldView::default(), &[]);
     let offer = c.board.iter().find(|o| o.kind == MissionKind::Recon).unwrap().clone();
     let Objective::Recon { place, object } = offer.objective else { unreachable!() };
-    c.apply(P0, Command::TakeMission { offer: offer.id, base: None }).expect("take");
-    assert!(c.apply(P0, Command::TakeMission { offer: offer.id, base: None }).is_err());
+    c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F117 })
+        .expect("take");
+    assert!(
+        c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F117 })
+            .is_err()
+    );
     let ev = c.tick(1.0, &WorldView::default(), &[Report::PhotoTaken { player: P0, object }]);
     assert!(ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { .. })));
     assert!(
@@ -166,7 +170,8 @@ fn strikes_stop_and_repairs_restore_an_airfield() {
     c.tick(1.0, &WorldView::default(), &[]);
     let offer = c.board.iter().find(|o| o.kind == MissionKind::Strike).unwrap().clone();
     let Objective::Strike { airfield, .. } = offer.objective else { unreachable!() };
-    c.apply(P0, Command::TakeMission { offer: offer.id, base: None }).unwrap();
+    c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F117 })
+        .unwrap();
     let ev = c.tick(
         1.0,
         &WorldView::default(),
@@ -186,7 +191,8 @@ fn an_escort_is_settled_by_its_insertion() {
     c.apply(P0, Command::OrderInsertion { place }).unwrap();
     c.tick(1.0, &WorldView::default(), &[]);
     let escort = c.board.iter().find(|o| o.kind == MissionKind::Escort).unwrap().clone();
-    c.apply(P0, Command::TakeMission { offer: escort.id, base: None }).unwrap();
+    c.apply(P0, Command::TakeMission { offer: escort.id, base: None, aircraft: Aircraft::F117 })
+        .unwrap();
     // The escort lands before the helicopters get there: pending.
     let ev = c.apply(P0, Command::EndSortie { end: SortieEnd::Landed }).unwrap();
     let CampaignEvent::SortieFinished { record, .. } = &ev[0] else { panic!() };

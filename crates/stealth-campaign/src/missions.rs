@@ -10,6 +10,7 @@ impl CampaignState {
         player: PlayerId,
         offer: u32,
         base: Option<ObjectId>,
+        aircraft: Aircraft,
     ) -> Result<Vec<CampaignEvent>, String> {
         let Some(o) = self.board.iter().find(|o| o.id == offer).cloned() else {
             return Err("That mission is no longer on the board".into());
@@ -28,6 +29,7 @@ impl CampaignState {
             id: self.id(),
             offer: o.clone(),
             base,
+            aircraft,
             started: self.clock,
             progress: Progress::default(),
         };
@@ -66,6 +68,7 @@ impl CampaignState {
             ground_kills: (s.progress.sites_destroyed.len() + s.progress.aaa_destroyed.len())
                 as u32,
             insertion,
+            aircraft: s.aircraft,
         };
         let verdict = match result {
             SortieResult::Success => "objective achieved",

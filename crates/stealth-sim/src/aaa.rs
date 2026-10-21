@@ -31,9 +31,10 @@ pub const SA14: i32 = 0x21;
 /// Launcher of a MANPADS missile (fire and forget: no launcher radar to keep its lock).
 pub const MANPADS_LAUNCHER: i32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AaaKind {
     /// ZSU-23-4 Shilka: four 23 mm guns, Gun Dish radar.
+    #[default]
     Zsu,
     /// S-60: 57 mm gun with timed shells, optically laid.
     S60,
@@ -60,7 +61,7 @@ impl AaaKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct AaaUnit {
     pub kind: AaaKind,
     /// Map units (x east, y south).
@@ -418,7 +419,11 @@ impl Sim {
             self.emit(SimEvent::Rwr(tone));
         }
         let room = MAX_SHELLS.saturating_sub(self.aaa_shells.len());
-        self.aaa_shells.extend(fired.into_iter().take(room));
+        fired.truncate(room);
+        if self.record_shells {
+            self.new_shells.extend_from_slice(&fired);
+        }
+        self.aaa_shells.extend(fired);
         for i in manpads {
             self.activate(self.aaa_pilot[i] as usize);
             self.launch_manpads(i);

@@ -560,7 +560,7 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
         let flown: Vec<u32> =
             c.state.board.iter().filter(|o| !o.kind.ai_flown()).map(|o| o.id).collect();
         if let Some(&offer) = flown.get(n.min(flown.len().saturating_sub(1))) {
-            match c.state.apply(ME, Command::TakeMission { offer, base: None }) {
+            match c.state.apply(ME, Command::TakeMission { offer, base: None, aircraft: Default::default() }) {
                 Ok(ev) => apply(c, &mut s, ev),
                 Err(e) => warn!("--campaign-take: {e}"),
             }

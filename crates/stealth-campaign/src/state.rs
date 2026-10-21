@@ -29,6 +29,23 @@ impl Side {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PlayerId(pub u8);
 
+/// The aircraft a sortie is flown in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum Aircraft {
+    #[default]
+    F117,
+    F16,
+}
+
+impl Aircraft {
+    pub fn name(self) -> &'static str {
+        match self {
+            Aircraft::F117 => "F-117A",
+            Aircraft::F16 => "F-16",
+        }
+    }
+}
+
 /// Object index into the theater's world objects (stable for a theater).
 pub type ObjectId = u16;
 /// Index into [`CampaignState::places`].
@@ -258,6 +275,8 @@ pub struct Sortie {
     pub id: u32,
     pub offer: MissionOffer,
     pub base: ObjectId,
+    #[serde(default)]
+    pub aircraft: Aircraft,
     pub started: f64,
     pub progress: Progress,
 }
@@ -285,6 +304,8 @@ pub struct SortieRecord {
     pub ground_kills: u32,
     /// The escorted insertion (its result settles a pending escort).
     pub insertion: Option<u32>,
+    #[serde(default)]
+    pub aircraft: Aircraft,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -331,7 +352,8 @@ pub struct CampaignState {
     pub log: Vec<LogEntry>,
     pub next_id: u32,
     pub rng: Rng,
-    /// When the board was last rebuilt, the last enemy patrol and automatic insertion.
+    /// When the board was last rebuilt (f64::MIN: never; JSON has no infinity), the last
+    /// enemy patrol and automatic insertion.
     pub board_at: f64,
     pub patrol_at: f64,
     pub auto_insert_at: f64,
@@ -451,7 +473,7 @@ impl CampaignState {
             history: Vec::new(),
             log: Vec::new(),
             next_id: 1,
-            board_at: f64::NEG_INFINITY,
+            board_at: f64::MIN,
             patrol_at: 0.0,
             auto_insert_at: 0.0,
             patrols: Vec::new(),
@@ -517,6 +539,33 @@ impl CampaignState {
     /// The sortie a player is flying.
     pub fn sortie(&self, player: PlayerId) -> Option<&Sortie> {
         self.players.iter().find(|p| p.id == player).and_then(|p| p.sortie.as_ref())
+    }
+
+    /// A player joining under `name`: his slot (and record) if he played before, else a new
+    /// one.
+    pub fn join(&mut self, name: &str) -> PlayerId {
+        if let Some(p) = self.players.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
+            return p.id;
+        }
+        let id = (0..=u8::MAX).map(PlayerId).find(|id| self.players.iter().all(|p| p.id != *id));
+        let id = id.unwrap_or(PlayerId(u8::MAX));
+        self.slot_mut(id).name = name.to_string();
+        id
+    }
+
+    /// Renames a player (the local pilot's name).
+    pub fn rename(&mut self, player: PlayerId, name: &str) {
+        self.slot_mut(player).name = name.to_string();
+    }
+
+    /// A player's name.
+    pub fn player_name(&self, player: PlayerId) -> Option<&str> {
+        self.players.iter().find(|p| p.id == player).map(|p| p.name.as_str())
+    }
+
+    /// A player's finished sorties (oldest first).
+    pub fn records(&self, player: PlayerId) -> impl Iterator<Item = &SortieRecord> {
+        self.history.iter().filter(move |r| r.player == player)
     }
 
     pub(crate) fn slot_mut(&mut self, player: PlayerId) -> &mut PlayerSlot {

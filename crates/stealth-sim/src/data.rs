@@ -167,6 +167,18 @@ impl SimData {
         &self.weapons[(i.max(0) as usize).min(self.weapons.len() - 1)]
     }
 
+    /// This data with tiles for theater `theater` if the exported data has none (remake
+    /// theaters).
+    pub fn with_theater(&self, theater: usize, tiles: impl FnOnce() -> TheaterTiles) -> Self {
+        let mut d = self.clone();
+        if d.theaters.get(theater).is_none() {
+            let t = tiles();
+            d.theaters.resize(theater, t.clone());
+            d.theaters.push(t);
+        }
+        d
+    }
+
     /// Weapon-vs-category effectiveness given the category directly.
     pub fn compat_cat(&self, w: i32, cat: i32) -> i32 {
         self.compat.get(w.max(0) as usize).map_or(0, |r| r[(cat & 0xF) as usize] as i32)
@@ -174,6 +186,25 @@ impl SimData {
 }
 
 impl TheaterTiles {
+    /// A theater's tile data from its terrain (remake theaters, which the exported original
+    /// data does not have).
+    pub fn from_tilesets(
+        grid: &terrain::Grid,
+        tiles: &terrain::TileSets,
+        model_attr: &[u8],
+    ) -> Self {
+        let level = |l: usize| -> Vec<Vec<(i16, i16, u8)>> {
+            tiles
+                .tiles
+                .get(l)
+                .map(|v| {
+                    v.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect()
+                })
+                .unwrap_or_default()
+        };
+        Self { grid: grid.clone(), objects: [level(1), level(2)], model_attr: model_attr.to_vec() }
+    }
+
     /// LOD1/LOD2 tile type at (col, row) (row counted north-up), -1 outside the grid.
     pub fn cell(&self, level: usize, col: i32, row: i32) -> i32 {
         let dim = terrain::GRID_DIM[level];

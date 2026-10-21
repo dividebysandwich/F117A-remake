@@ -263,20 +263,26 @@ returns to NAV, pressing A-G again switches the bombsight between CCIP and CCRP)
 **DCLT** (HUD declutter) and **NVG** right of them. The **DED** (data entry display) right of the
 up-front controls shows a CNI-style page in amber: the radio channels, the current steerpoint and
 the target, the clock, the bearing, distance and ETA to the steerpoint, and the time on target
-(or the fuel). Under the up-front controls the round flight instruments: airspeed, the attitude
-indicator and the altimeter, then the AOA indicator, the **HSI** (heading, bearing pointer and
-distance to the current waypoint) and the vertical velocity indicator, and the clock (local
-time) under the HSI. The MFDs are left and right of them. Top left the flap, brake and
-autopilot caps, the threat lights (TRAK: a radar tracks the aircraft; RAD / IR: a radar or
-infrared guided missile is in the air) with the master caution and stall lights, and the
-**RWR** scope next to the up-front controls. Down the right edge
-the engine instruments (oil pressure and nozzle position over the right MFD, RPM, FTIT and fuel
-beside it). The other warning lights are on the advisory light panel on the right console, ahead
-of the stick. Sloped panels rise from the consoles to the main panel: the countermeasure panel
-(chaff, flare and decoy with their counts, ECM and IRJ) is on the right one; on the left one the
-gear handle with the gear lights left of it (an aircraft outline with a green lamp at each wheel
-while the gear is down) and, below them ahead of the throttle, the target buttons (NEAR, NEXT,
-NONE, WPN, DTL). The side stick is on the right console, the throttle on the left one.
+(or the fuel). Under the up-front controls the flight instruments, as in the real one: the
+airspeed indicator and the altimeter at the upper corners of the **attitude indicator** (a blue
+and brown ball with a pitch ladder, a bank scale and a small fixed aircraft symbol), the AOA
+tape (the approach band green) left of it and the vertical velocity tape right of it, the
+**HSI** (heading, bearing pointer and distance to the current waypoint) under it. The MFDs are
+left and right of them, each in a raised bezel with twenty buttons (the top and bottom rows
+work) and rocker switches at its corners. Top left the master caution light under the glare
+shield with the stall light and the game's TRACK (a radar tracks the aircraft) and IR (an
+infrared guided missile is in the air) lights under it, the threat warning prime buttons, whose
+**LAUNCH** light comes on when a radar guided missile is in the air, the **RWR** scope next to
+the up-front controls, and the miscellaneous panel with the **AUTO** (autopilot) cap. Top right
+the warning lights (ENG FIRE, ENGINE, FLCS) and down the right edge the engine instruments (oil
+pressure, nozzle position, RPM, FTIT) and the fuel quantity. The other warning lights are on the
+caution light panel on the right console, ahead of the stick. Sloped panels rise from the
+consoles to the main panel: the clock (local time) and the countermeasure panel (chaff, flare
+and decoy with their counts, ECM and IRJ) are on the right one; on the left one the gear handle
+with the gear lights left of it (an aircraft outline with a green lamp at each wheel while the
+gear is down), the **FLAPS** and **BRAKE** caps under them and, below them ahead of the
+throttle, the target buttons (NEAR, NEXT, NONE, WPN, DTL). The side stick is on the right
+console, the throttle on the left one.
 
 The **AOA indexer** left of the HUD lights its symbols for the angle of attack, as the real one:
 the red top chevron when the aircraft is slow (two or more degrees above the approach angle of

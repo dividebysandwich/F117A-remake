@@ -79,8 +79,9 @@ pub enum Elem {
     Dial(Dial),
 }
 
-/// The F-16's needle instruments: flight instruments either side of the attitude indicator
-/// and HSI, engine instruments and fuel on the right.
+/// The F-16's needle instruments: flight instruments round the attitude indicator and HSI (the
+/// AOA and vertical velocity indicators are vertical tapes), engine instruments and fuel on
+/// the right, the clock on the right console.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dial {
     Airspeed,
@@ -130,8 +131,8 @@ pub struct PanelLayout {
 /// Bezel button cap size (panel pixels; millimetres on the F-16 panel).
 const OSB_W: f32 = 16.0;
 const OSB_H: f32 = 8.0;
-const F16_OSB_W: f32 = 14.0;
-const F16_OSB_H: f32 = 9.0;
+const F16_OSB_W: f32 = 12.0;
+const F16_OSB_H: f32 = 10.0;
 
 impl PanelLayout {
     pub fn for_style(style: PanelStyle) -> Self {
@@ -513,65 +514,105 @@ impl PanelLayout {
         );
         put(Elem::Label("WX", KEY.0, KEY.1), rect(15.0, -92.0, 20.0, 16.0), None, false);
         put(Elem::Label("FLIR", KEY.0, KEY.1), rect(15.0, -72.0, 20.0, 16.0), None, false);
-        // Flight instruments round the attitude indicator and HSI.
-        put(Elem::Dial(Dial::Airspeed), rect(-84.0, -38.0, 46.0, 46.0), None, true);
-        put(Elem::Dial(Dial::Altimeter), rect(38.0, -38.0, 46.0, 46.0), None, true);
-        put(Elem::Dial(Dial::Aoa), rect(-84.0, 54.0, 44.0, 44.0), None, true);
-        put(Elem::Dial(Dial::Vvi), rect(40.0, 54.0, 44.0, 44.0), None, true);
-        // Threat warnings: square lights left of the RWR (tracking, radar and IR missile
-        // launch); master caution and stall light right of them, under the glare shield.
-        for (k, id) in [Trak, Rad, Ir].into_iter().enumerate() {
-            put(
-                Elem::Lamp(id, None),
-                rect(-262.0, -150.0 + 25.0 * k as f32, 24.0, 22.0),
-                None,
-                false,
-            );
+        // Flight instruments as in the F-16C: airspeed and altimeter over the attitude
+        // indicator's upper corners, the AOA and vertical velocity tapes either side of it, the
+        // HSI under it.
+        put(Elem::Dial(Dial::Airspeed), rect(-84.0, -44.0, 42.0, 42.0), None, true);
+        put(Elem::Dial(Dial::Altimeter), rect(42.0, -44.0, 42.0, 42.0), None, true);
+        put(Elem::Dial(Dial::Aoa), rect(-58.0, 2.0, 18.0, 52.0), None, false);
+        put(Elem::Dial(Dial::Vvi), rect(40.0, 2.0, 18.0, 52.0), None, false);
+        // Unlit legends of the warning lights the game doesn't drive (red and amber).
+        const WARN: (u8, u8) = (54, 55);
+        const CAUTION: (u8, u8) = (16, 43);
+        // Left eyebrow under the glare shield: master caution, the stall warning and the
+        // game's radar track and IR launch warnings.
+        put(Elem::Lamp(Mw, Some("MASTER\nCAUTION")), rect(-262.0, -154.0, 50.0, 20.0), None, false);
+        put(Elem::Lamp(Stall, None), rect(-262.0, -131.0, 50.0, 11.0), None, false);
+        put(Elem::Lamp(Trak, Some("TRACK")), rect(-262.0, -117.0, 24.0, 11.0), None, false);
+        put(Elem::Lamp(Ir, Some("IR")), rect(-236.0, -117.0, 24.0, 11.0), None, false);
+        // Threat warning prime: a column of six push-lights left of the RWR (LAUNCH lights
+        // with a radar missile launch).
+        for (k, elem) in [
+            Elem::Label("HAND\nOFF", WARN.0, WARN.1),
+            Elem::Lamp(Rad, Some("LAUNCH")),
+            Elem::Label("PRI\nMODE", WARN.0, WARN.1),
+            Elem::Label("UNK", WARN.0, WARN.1),
+            Elem::Label("SYS\nTEST", WARN.0, WARN.1),
+            Elem::Label("TGT\nSEP", WARN.0, WARN.1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            put(elem, rect(-206.0, -154.0 + 12.8 * k as f32, 22.0, 11.0), None, false);
         }
-        put(Elem::Lamp(Mw, Some("MASTER\nCAUTION")), rect(-234.0, -150.0, 46.0, 20.0), None, false);
-        put(Elem::Lamp(Stall, None), rect(-234.0, -126.0, 46.0, 14.0), None, false);
-        // Aircraft systems at the left edge, level with the lower half of the RWR.
+        // Miscellaneous panel at the upper left: the autopilot (its switches are modelled).
+        put(
+            Elem::Lamp(Auto, None),
+            rect(-326.0, -92.0, 32.0, 14.0),
+            Some(E::Action(Action::Autopilot)),
+            false,
+        );
+        // Gear lights left of the gear handle on the left slope (the landing gear panel), the
+        // flaps and brakes under them.
+        put(Elem::GearLights, rect(-746.0, -104.0, 40.0, 32.0), None, false);
         for (k, (id, action)) in
-            [(Flaps, Action::Flaps), (Brake, Action::Brakes), (Auto, Action::Autopilot)]
-                .into_iter()
-                .enumerate()
+            [(Flaps, Action::Flaps), (Brake, Action::Brakes)].into_iter().enumerate()
         {
             put(
                 Elem::Lamp(id, None),
-                rect(-316.0, -102.0 + 18.0 * k as f32, 40.0, 14.0),
+                rect(-764.0, -62.0 + 18.0 * k as f32, 38.0, 14.0),
                 Some(E::Action(action)),
                 false,
             );
         }
-        // Clock under the HSI.
-        put(Elem::Dial(Dial::Clock), rect(-22.0, 116.0, 44.0, 44.0), None, true);
-        // Gear lights left of the gear handle on the left slope.
-        put(Elem::GearLights, rect(-746.0, -104.0, 40.0, 32.0), None, false);
-        // Engine instruments: oil and nozzle right of the DED, RPM, FTIT and fuel down the
-        // right edge.
-        put(Elem::Dial(Dial::Oil), rect(222.0, -134.0, 40.0, 40.0), None, true);
-        put(Elem::Dial(Dial::Nozzle), rect(268.0, -134.0, 40.0, 40.0), None, true);
-        put(Elem::Dial(Dial::Rpm), rect(270.0, -88.0, 48.0, 48.0), None, true);
-        put(Elem::Dial(Dial::Ftit), rect(270.0, -36.0, 48.0, 48.0), None, true);
-        put(Elem::Dial(Dial::Fuel), rect(270.0, 16.0, 48.0, 48.0), None, true);
-        // The other warnings on the advisory light panel on the right console (layout
-        // x >= 600, see the doc).
-        for (k, (id, label)) in [
-            (Fire, None),
-            (Eng, None),
-            (Fc, None),
-            (Fuel, None),
-            (LowFuel, Some("LOW\nFUEL")),
-            (Jam, None),
-            (Av, None),
-            (EmvWarn, Some("EMV")),
-            (Blank, None),
+        // Clock at the top of the right slope (the right auxiliary console).
+        put(Elem::Dial(Dial::Clock), rect(1150.0, -136.0, 44.0, 44.0), None, true);
+        // Right eyebrow under the glare shield: the engine fire, engine and flight control
+        // warnings among the F-16's others.
+        for (k, elem) in [
+            Elem::Lamp(Fire, Some("ENG\nFIRE")),
+            Elem::Lamp(Eng, Some("ENGINE")),
+            Elem::Label("HYD/OIL\nPRESS", WARN.0, WARN.1),
+            Elem::Lamp(Fc, Some("FLCS")),
+            Elem::Label("DBU\nON", WARN.0, WARN.1),
+            Elem::Label("TO/LDG\nCONFIG", WARN.0, WARN.1),
+            Elem::Label("CANOPY", WARN.0, WARN.1),
+            Elem::Label("OXY\nLOW", WARN.0, WARN.1),
         ]
         .into_iter()
         .enumerate()
         {
             put(
-                Elem::Lamp(id, label),
+                elem,
+                rect(220.0 + 25.0 * (k % 2) as f32, -154.0 + 13.0 * (k / 2) as f32, 23.0, 11.5),
+                None,
+                false,
+            );
+        }
+        // Engine instruments down the right edge (oil pressure, nozzle position, RPM, FTIT),
+        // fuel quantity under them.
+        for (k, dial) in
+            [Dial::Oil, Dial::Nozzle, Dial::Rpm, Dial::Ftit, Dial::Fuel].into_iter().enumerate()
+        {
+            put(Elem::Dial(dial), rect(273.0, -127.0 + 45.0 * k as f32, 42.0, 42.0), None, true);
+        }
+        // The caution light panel on the right console (layout x >= 600, see the doc).
+        for (k, elem) in [
+            Elem::Label("ELEC\nSYS", CAUTION.0, CAUTION.1),
+            Elem::Label("SEAT NOT\nARMED", CAUTION.0, CAUTION.1),
+            Elem::Label("ANTI\nSKID", CAUTION.0, CAUTION.1),
+            Elem::Lamp(Fuel, None),
+            Elem::Lamp(LowFuel, Some("LOW\nFUEL")),
+            Elem::Lamp(Jam, None),
+            Elem::Lamp(Av, None),
+            Elem::Lamp(EmvWarn, Some("EMV")),
+            Elem::Lamp(Blank, None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            put(
+                elem,
                 rect(640.0 + 42.0 * (k % 3) as f32, -38.0 + 19.0 * (k / 3) as f32, 36.0, 14.0),
                 None,
                 false,
@@ -615,13 +656,13 @@ impl PanelLayout {
         Self {
             style: PanelStyle::F16,
             items,
-            adi: rect(-36.0, -40.0, 72.0, 72.0),
+            adi: rect(-34.0, -30.0, 68.0, 68.0),
             mfds: [
                 MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: true },
                 MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: true },
             ],
             rwr: Some(rect(-176.0, -154.0, 76.0, 76.0)),
-            hsi: Some(rect(-36.0, 40.0, 72.0, 72.0)),
+            hsi: Some(rect(-34.0, 44.0, 68.0, 68.0)),
             ded: Some(rect(95.0, -152.0, DED_W, DED_W * DED_CANVAS.1 as f32 / DED_CANVAS.0 as f32)),
         }
     }

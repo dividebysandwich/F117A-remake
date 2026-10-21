@@ -846,6 +846,10 @@ impl PanelParams<'_, '_> {
 /// short one for the thousands and a digital readout; the clock hour, minute and second hands.
 pub fn draw_dial(c: &mut Canvas, r: [i32; 4], dial: Dial, value: f32) {
     use crate::font::{Align, stroke_text_at};
+    if matches!(dial, Dial::Aoa | Dial::Vvi) {
+        draw_tape(c, r, dial, value);
+        return;
+    }
     let [x, y, w, h] = r;
     c.fill_rect(x, y, w, h, 5);
     let centre = Vec2::new(x as f32 + w as f32 / 2.0, y as f32 + h as f32 / 2.0);
@@ -949,6 +953,77 @@ pub fn draw_dial(c: &mut Canvas, r: [i32; 4], dial: Dial, value: f32) {
     let d = dir(start + sweep * t.clamp(0.0, 1.0));
     c.stroke(centre - d * rad * 0.12, centre + d * rad * 0.8, pen * 1.5, 15);
     c.circle(centre.x, centre.y, pen * 2.0, 7);
+}
+
+/// A vertical tape instrument into the rectangle r of an instrument atlas (the F-16's AOA and
+/// vertical velocity indicators): the scale moving behind a fixed yellow index across the
+/// middle, on black. AOA in degrees, the approach band green and from 25 degrees red; vertical
+/// velocity in feet per minute, labelled in thousands, "UP" over and "DN" under the index.
+fn draw_tape(c: &mut Canvas, r: [i32; 4], dial: Dial, value: f32) {
+    use crate::font::{Align, stroke_text_at};
+    let [x, y, w, h] = r;
+    c.fill_rect(x, y, w, h, 5);
+    let (x0, y0, w, h) = (x as f32, y as f32, w as f32, h as f32);
+    let mid = y0 + h / 2.0;
+    let pen = (w / 24.0).max(1.0);
+    // Scale step (units per tick), units per tape height, labelled every `every` ticks, the
+    // label for a value and the scale's limits.
+    let (step, span, every, lo, hi): (f32, f32, i32, f32, f32) = match dial {
+        Dial::Aoa => (1.0, 16.0, 5, -5.0, 35.0),
+        _ => (500.0, 4000.0, 2, -6000.0, 6000.0),
+    };
+    let v = value.clamp(lo, hi);
+    let to_y = |u: f32| mid - (u - v) / span * h;
+    c.set_clip(x, y, x + r[2] - 1, y + r[3] - 1);
+    if dial == Dial::Aoa {
+        let mut band = |a: f32, b: f32, colour: u8| {
+            let (ya, yb) = (to_y(b), to_y(a));
+            c.fill_rect(
+                x + r[2] - (w * 0.3) as i32,
+                ya as i32,
+                (w * 0.3) as i32,
+                (yb - ya) as i32,
+                colour,
+            );
+        };
+        let ap = crate::hud::modern::APPROACH_AOA;
+        band(ap - 2.0, ap + 2.0, 47);
+        band(25.0, hi, 41);
+    }
+    let first = ((v - span / 2.0) / step).floor() as i32;
+    let last = ((v + span / 2.0) / step).ceil() as i32;
+    for i in first..=last {
+        let u = i as f32 * step;
+        if u < lo || u > hi {
+            continue;
+        }
+        let ty = to_y(u);
+        let major = i % every == 0;
+        let len = if major { w * 0.3 } else { w * 0.18 };
+        c.stroke(Vec2::new(x0, ty), Vec2::new(x0 + len, ty), pen, 15);
+        if major {
+            let label = match dial {
+                Dial::Aoa => format!("{}", u as i32),
+                _ => format!("{}", (u / 1000.0).abs() as i32),
+            };
+            stroke_text_at(c, x0 + w * 0.55, ty, &label, w * 0.28, pen, 15, Align::Centre);
+        }
+    }
+    if dial == Dial::Vvi {
+        stroke_text_at(c, x0 + w / 2.0, y0 + h * 0.07, "UP", w * 0.22, pen, 7, Align::Centre);
+        stroke_text_at(c, x0 + w / 2.0, y0 + h * 0.93, "DN", w * 0.22, pen, 7, Align::Centre);
+    }
+    // The index: a yellow line across with a pointer from the left.
+    c.stroke(Vec2::new(x0, mid), Vec2::new(x0 + w, mid), pen * 1.4, 17);
+    c.triangle(
+        [
+            Vec2::new(x0 + w * 0.3, mid),
+            Vec2::new(x0, mid - w * 0.18),
+            Vec2::new(x0, mid + w * 0.18),
+        ],
+        17,
+    );
+    c.reset_clip();
 }
 
 /// The approach indexer into its canvas (`INDEXER_CANVAS`): on black, the top chevron

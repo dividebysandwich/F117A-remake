@@ -270,9 +270,9 @@
       "kind": null,
       "rect": [
         -84.0,
-        -38.0,
-        46.0,
-        46.0
+        -44.0,
+        42.0,
+        42.0
       ],
       "round": true
     },
@@ -281,10 +281,10 @@
       "key": "Item(Dial(Altimeter))",
       "kind": null,
       "rect": [
-        38.0,
-        -38.0,
-        46.0,
-        46.0
+        42.0,
+        -44.0,
+        42.0,
+        42.0
       ],
       "round": true
     },
@@ -293,12 +293,12 @@
       "key": "Item(Dial(Aoa))",
       "kind": null,
       "rect": [
-        -84.0,
-        54.0,
-        44.0,
-        44.0
+        -58.0,
+        2.0,
+        18.0,
+        52.0
       ],
-      "round": true
+      "round": false
     },
     {
       "control": null,
@@ -306,45 +306,9 @@
       "kind": null,
       "rect": [
         40.0,
-        54.0,
-        44.0,
-        44.0
-      ],
-      "round": true
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Trak, None))",
-      "kind": null,
-      "rect": [
-        -262.0,
-        -150.0,
-        24.0,
-        22.0
-      ],
-      "round": false
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Rad, None))",
-      "kind": null,
-      "rect": [
-        -262.0,
-        -125.0,
-        24.0,
-        22.0
-      ],
-      "round": false
-    },
-    {
-      "control": null,
-      "key": "Item(Lamp(Ir, None))",
-      "kind": null,
-      "rect": [
-        -262.0,
-        -100.0,
-        24.0,
-        22.0
+        2.0,
+        18.0,
+        52.0
       ],
       "round": false
     },
@@ -353,9 +317,9 @@
       "key": "Item(Lamp(Mw, Some(\"MASTER\\nCAUTION\")))",
       "kind": null,
       "rect": [
-        -234.0,
-        -150.0,
-        46.0,
+        -262.0,
+        -154.0,
+        50.0,
         20.0
       ],
       "round": false
@@ -365,34 +329,106 @@
       "key": "Item(Lamp(Stall, None))",
       "kind": null,
       "rect": [
-        -234.0,
-        -126.0,
-        46.0,
-        14.0
+        -262.0,
+        -131.0,
+        50.0,
+        11.0
       ],
       "round": false
     },
     {
-      "control": "Action(Flaps)",
-      "key": "Button(Flaps, None)",
-      "kind": "cap",
+      "control": null,
+      "key": "Item(Lamp(Trak, Some(\"TRACK\")))",
+      "kind": null,
       "rect": [
-        -316.0,
-        -102.0,
-        40.0,
-        14.0
+        -262.0,
+        -117.0,
+        24.0,
+        11.0
       ],
       "round": false
     },
     {
-      "control": "Action(Brakes)",
-      "key": "Button(Brake, None)",
-      "kind": "cap",
+      "control": null,
+      "key": "Item(Lamp(Ir, Some(\"IR\")))",
+      "kind": null,
       "rect": [
-        -316.0,
-        -84.0,
-        40.0,
-        14.0
+        -236.0,
+        -117.0,
+        24.0,
+        11.0
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"HAND\\nOFF\", 54, 55))",
+      "kind": null,
+      "rect": [
+        -206.0,
+        -154.0,
+        22.0,
+        11.0
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Rad, Some(\"LAUNCH\")))",
+      "kind": null,
+      "rect": [
+        -206.0,
+        -141.1999969482422,
+        22.0,
+        11.0
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"PRI\\nMODE\", 54, 55))",
+      "kind": null,
+      "rect": [
+        -206.0,
+        -128.39999389648438,
+        22.0,
+        11.0
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"UNK\", 54, 55))",
+      "kind": null,
+      "rect": [
+        -206.0,
+        -115.5999984741211,
+        22.0,
+        11.0
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"SYS\\nTEST\", 54, 55))",
+      "kind": null,
+      "rect": [
+        -206.0,
+        -102.80000305175781,
+        22.0,
+        11.0
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"TGT\\nSEP\", 54, 55))",
+      "kind": null,
+      "rect": [
+        -206.0,
+        -90.0,
+        22.0,
+        11.0
       ],
       "round": false
     },
@@ -401,24 +437,12 @@
       "key": "Button(Auto, None)",
       "kind": "cap",
       "rect": [
-        -316.0,
-        -66.0,
-        40.0,
+        -326.0,
+        -92.0,
+        32.0,
         14.0
       ],
       "round": false
-    },
-    {
-      "control": null,
-      "key": "Item(Dial(Clock))",
-      "kind": null,
-      "rect": [
-        -22.0,
-        116.0,
-        44.0,
-        44.0
-      ],
-      "round": true
     },
     {
       "control": null,
@@ -433,14 +457,146 @@
       "round": false
     },
     {
+      "control": "Action(Flaps)",
+      "key": "Button(Flaps, None)",
+      "kind": "cap",
+      "rect": [
+        -764.0,
+        -62.0,
+        38.0,
+        14.0
+      ],
+      "round": false
+    },
+    {
+      "control": "Action(Brakes)",
+      "key": "Button(Brake, None)",
+      "kind": "cap",
+      "rect": [
+        -764.0,
+        -44.0,
+        38.0,
+        14.0
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Dial(Clock))",
+      "kind": null,
+      "rect": [
+        1150.0,
+        -136.0,
+        44.0,
+        44.0
+      ],
+      "round": true
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Fire, Some(\"ENG\\nFIRE\")))",
+      "kind": null,
+      "rect": [
+        220.0,
+        -154.0,
+        23.0,
+        11.5
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Eng, Some(\"ENGINE\")))",
+      "kind": null,
+      "rect": [
+        245.0,
+        -154.0,
+        23.0,
+        11.5
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"HYD/OIL\\nPRESS\", 54, 55))",
+      "kind": null,
+      "rect": [
+        220.0,
+        -141.0,
+        23.0,
+        11.5
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Lamp(Fc, Some(\"FLCS\")))",
+      "kind": null,
+      "rect": [
+        245.0,
+        -141.0,
+        23.0,
+        11.5
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"DBU\\nON\", 54, 55))",
+      "kind": null,
+      "rect": [
+        220.0,
+        -128.0,
+        23.0,
+        11.5
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"TO/LDG\\nCONFIG\", 54, 55))",
+      "kind": null,
+      "rect": [
+        245.0,
+        -128.0,
+        23.0,
+        11.5
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"CANOPY\", 54, 55))",
+      "kind": null,
+      "rect": [
+        220.0,
+        -115.0,
+        23.0,
+        11.5
+      ],
+      "round": false
+    },
+    {
+      "control": null,
+      "key": "Item(Label(\"OXY\\nLOW\", 54, 55))",
+      "kind": null,
+      "rect": [
+        245.0,
+        -115.0,
+        23.0,
+        11.5
+      ],
+      "round": false
+    },
+    {
       "control": null,
       "key": "Item(Dial(Oil))",
       "kind": null,
       "rect": [
-        222.0,
-        -134.0,
-        40.0,
-        40.0
+        273.0,
+        -127.0,
+        42.0,
+        42.0
       ],
       "round": true
     },
@@ -449,10 +605,10 @@
       "key": "Item(Dial(Nozzle))",
       "kind": null,
       "rect": [
-        268.0,
-        -134.0,
-        40.0,
-        40.0
+        273.0,
+        -82.0,
+        42.0,
+        42.0
       ],
       "round": true
     },
@@ -461,10 +617,10 @@
       "key": "Item(Dial(Rpm))",
       "kind": null,
       "rect": [
-        270.0,
-        -88.0,
-        48.0,
-        48.0
+        273.0,
+        -37.0,
+        42.0,
+        42.0
       ],
       "round": true
     },
@@ -473,10 +629,10 @@
       "key": "Item(Dial(Ftit))",
       "kind": null,
       "rect": [
-        270.0,
-        -36.0,
-        48.0,
-        48.0
+        273.0,
+        8.0,
+        42.0,
+        42.0
       ],
       "round": true
     },
@@ -485,16 +641,16 @@
       "key": "Item(Dial(Fuel))",
       "kind": null,
       "rect": [
-        270.0,
-        16.0,
-        48.0,
-        48.0
+        273.0,
+        53.0,
+        42.0,
+        42.0
       ],
       "round": true
     },
     {
       "control": null,
-      "key": "Item(Lamp(Fire, None))",
+      "key": "Item(Label(\"ELEC\\nSYS\", 16, 43))",
       "kind": null,
       "rect": [
         640.0,
@@ -506,7 +662,7 @@
     },
     {
       "control": null,
-      "key": "Item(Lamp(Eng, None))",
+      "key": "Item(Label(\"SEAT NOT\\nARMED\", 16, 43))",
       "kind": null,
       "rect": [
         682.0,
@@ -518,7 +674,7 @@
     },
     {
       "control": null,
-      "key": "Item(Lamp(Fc, None))",
+      "key": "Item(Label(\"ANTI\\nSKID\", 16, 43))",
       "kind": null,
       "rect": [
         724.0,
@@ -737,10 +893,10 @@
       "key": "Osb(Left, 0)",
       "kind": "osb",
       "rect": [
-        -234.0,
-        -20.5,
-        14.0,
-        9.0
+        -233.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -749,10 +905,10 @@
       "key": "Osb(Left, 1)",
       "kind": "osb",
       "rect": [
-        -208.0,
-        -20.5,
-        14.0,
-        9.0
+        -207.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -761,10 +917,10 @@
       "key": "Osb(Left, 2)",
       "kind": "osb",
       "rect": [
-        -182.0,
-        -20.5,
-        14.0,
-        9.0
+        -181.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -773,10 +929,10 @@
       "key": "Osb(Left, 3)",
       "kind": "osb",
       "rect": [
-        -156.0,
-        -20.5,
-        14.0,
-        9.0
+        -155.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -785,10 +941,10 @@
       "key": "Osb(Left, 4)",
       "kind": "osb",
       "rect": [
-        -130.0,
-        -20.5,
-        14.0,
-        9.0
+        -129.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -797,10 +953,10 @@
       "key": "Osb(Left, 5)",
       "kind": "osb",
       "rect": [
-        -234.0,
+        -233.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -809,10 +965,10 @@
       "key": "Osb(Left, 6)",
       "kind": "osb",
       "rect": [
-        -208.0,
+        -207.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -821,10 +977,10 @@
       "key": "Osb(Left, 7)",
       "kind": "osb",
       "rect": [
-        -182.0,
+        -181.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -833,10 +989,10 @@
       "key": "Osb(Left, 8)",
       "kind": "osb",
       "rect": [
-        -156.0,
+        -155.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -845,10 +1001,10 @@
       "key": "Osb(Left, 9)",
       "kind": "osb",
       "rect": [
-        -130.0,
+        -129.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -857,10 +1013,10 @@
       "key": "Osb(Right, 0)",
       "kind": "osb",
       "rect": [
-        116.0,
-        -20.5,
-        14.0,
-        9.0
+        117.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -869,10 +1025,10 @@
       "key": "Osb(Right, 1)",
       "kind": "osb",
       "rect": [
-        142.0,
-        -20.5,
-        14.0,
-        9.0
+        143.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -881,10 +1037,10 @@
       "key": "Osb(Right, 2)",
       "kind": "osb",
       "rect": [
-        168.0,
-        -20.5,
-        14.0,
-        9.0
+        169.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -893,10 +1049,10 @@
       "key": "Osb(Right, 3)",
       "kind": "osb",
       "rect": [
-        194.0,
-        -20.5,
-        14.0,
-        9.0
+        195.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -905,10 +1061,10 @@
       "key": "Osb(Right, 4)",
       "kind": "osb",
       "rect": [
-        220.0,
-        -20.5,
-        14.0,
-        9.0
+        221.0,
+        -21.5,
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -917,10 +1073,10 @@
       "key": "Osb(Right, 5)",
       "kind": "osb",
       "rect": [
-        116.0,
+        117.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -929,10 +1085,10 @@
       "key": "Osb(Right, 6)",
       "kind": "osb",
       "rect": [
-        142.0,
+        143.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -941,10 +1097,10 @@
       "key": "Osb(Right, 7)",
       "kind": "osb",
       "rect": [
-        168.0,
+        169.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -953,10 +1109,10 @@
       "key": "Osb(Right, 8)",
       "kind": "osb",
       "rect": [
-        194.0,
+        195.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     },
@@ -965,20 +1121,20 @@
       "key": "Osb(Right, 9)",
       "kind": "osb",
       "rect": [
-        220.0,
+        221.0,
         92.79869842529297,
-        14.0,
-        9.0
+        12.0,
+        10.0
       ],
       "round": false
     }
   ],
   "screens": {
     "adi": [
-      -36.0,
-      -40.0,
-      72.0,
-      72.0
+      -34.0,
+      -30.0,
+      68.0,
+      68.0
     ],
     "ded": [
       95.0,
@@ -987,10 +1143,10 @@
       49.864864349365234
     ],
     "hsi": [
-      -36.0,
-      40.0,
-      72.0,
-      72.0
+      -34.0,
+      44.0,
+      68.0,
+      68.0
     ],
     "left": [
       -240.0,

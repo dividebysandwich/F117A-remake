@@ -57,8 +57,6 @@ ICP_DEPTH = 0.055
 CENTRE_DEPTH = 0.0
 # The wings' upper outer corners are bevelled (layout mm along the top and down the side).
 BEVEL = 55.0
-# The MFDs sit back in wells: their bezels this far behind the panel surface (m).
-MFD_WELL = 0.010
 # Advisory light panel on the right console ahead of the stick (layout x >= CONSOLE_U, its
 # middle at x 700, y 0), tilted towards the pilot.
 CONSOLE_U = 600.0
@@ -320,11 +318,12 @@ def bezel(r, offset, height=0.008, lip=0.003):
     x, y, w, h = r
     me = cylinder_mesh("black", min(w, h) / 2000 + lip, height, "black", n=ROUND)
     mesh_object("black", me, rect_point(r, offset), rotation(x + w / 2))
-    # The instrument's case behind it: an octagon, flats 2 mm outside the bezel.
+    # The instrument's case behind it, from the panel's surface: an octagon, flats 2 mm outside
+    # the bezel.
     flat = min(w, h) / 2000 + lip + 0.002
-    me = cylinder_mesh("dark", flat / math.cos(math.pi / 8), 0.004, "dark", n=8)
+    me = cylinder_mesh("dark", flat / math.cos(math.pi / 8), offset + 0.003, "dark", n=8)
     me.transform(Matrix.Rotation(math.pi / 8, 4, "Y"))
-    mesh_object("dark", me, rect_point(r, offset - 0.001), rotation(x + w / 2))
+    mesh_object("dark", me, rect_point(r, 0.0), rotation(x + w / 2))
 
 
 def face(key, r, offset, round=False):
@@ -543,16 +542,17 @@ for k in range(9):
 PLATE = 0.004
 plates = [
     ("black", (-80.0, -159.0, 160.0, 111.0)),  # up-front controls
-    ("dark", (-320.0, -106.0, 48.0, 56.0)),  # aircraft systems
-    ("dark", (-266.0, -154.0, 32.0, 78.0)),  # threat lights
-    ("dark", (-238.0, -154.0, 54.0, 46.0)),  # master caution, stall
+    ("dark", (-265.0, -157.0, 56.0, 51.0)),  # left eyebrow: master caution
+    ("dark", (-209.0, -157.0, 28.0, 81.0)),  # threat warning prime
+    ("black", (-332.0, -100.0, 124.0, 52.0)),  # miscellaneous panel
+    ("dark", (217.0, -157.0, 54.0, 56.0)),  # right eyebrow: warning lights
     ("dark", (-750.0, -108.0, 48.0, 40.0)),  # gear lights (left slope)
-    ("black", (90.0, -157.0, 130.0, 60.0)),  # data entry display
+    ("dark", (-768.0, -66.0, 46.0, 36.0)),  # flaps and brakes under them
+    ("black", (90.0, -157.0, 126.0, 60.0)),  # data entry display
     ("dark", (1146.0, -74.0, 80.0, 75.0)),  # countermeasures (right slope)
     ("black", (1146.0, 24.0, 110.0, 70.0)),  # switches under them
     ("black", (-326.0, 14.0, 52.0, 110.0)),  # switches low on the left wing
-    ("dark", (-84.0, -44.0, 168.0, 206.0)),  # flight instruments
-    ("dark", (218.0, -136.0, 102.0, 202.0)),  # engine instruments
+    ("dark", (-84.0, -46.0, 168.0, 212.0)),  # flight instruments
 ]
 for mat, r in plates:
     panel_box(mat, mat, r, PLATE)
@@ -573,39 +573,78 @@ for v in (30.0, 56.0, 82.0):
     toggle(-312.0, v, PLATE, up=(v != 56.0))
     toggle(-288.0, v, PLATE, up=(v == 56.0))
 knob(-300.0, 108.0, 0.007, 0.012, offset=PLATE)
-# The master arm switch's red guard over the top left one, hinged at its top.
+# A red guard over the top left one, hinged at its top.
 mesh_object("red", box_mesh("red", (0.014, 0.012, 0.022), "red", (0.0, -0.006, -0.002)), point(-312.0, 30.0, PLATE), rotation(-312.0))
-# MFDs in their wells, the bezel's face MFD_WELL behind the panel surface, with fixed side
-# bezel buttons (the game uses the top and bottom rows). The bezel plate overlaps the well's
-# walls, so nothing shows through round it.
-for key in ("left", "right"):
-    x, y, w, h = scr[key]
-    wx, wy, ww, wh = wells[key]
-    panel_box("dark", "dark", (wx - 2.0, wy - 2.0, ww + 4.0, wh + 4.0), 0.008, 0.0, -MFD_WELL - 0.008)
-    for k in range(5):
-        for bx in (x - 9.0, x + w + 9.0):
-            by = y + h * (k + 0.5) / 5
-            panel_box("dark", "dark", (bx - 5.0, by - 4.0, 10.0, 8.0), 0.005, 0.0, -MFD_WELL)
+# Miscellaneous panel: master arm, laser arm and RF switches, the alternate release button;
+# the autopilot pitch and roll switches, the advanced mode and TFR buttons.
+for u in (-280.0, -258.0, -220.0):
+    toggle(u, -84.0, PLATE, up=(u != -220.0))
+for u in (-304.0, -282.0):
+    toggle(u, -62.0, PLATE, up=(u == -304.0))
+for u, v in ((-238.0, -84.0), (-258.0, -62.0), (-236.0, -62.0)):
+    mesh_object("dark", cylinder_mesh("dark", 0.005, 0.005, "dark", n=KNOB), point(u, v, PLATE), rotation(u))
 # Rims standing out of the panel down the wings' outer edges and along their lower edges.
 for s_ in (-1, 1):
     panel_box("dark", "dark", (s_ * (WING - 6.0) - 6.0, TOP + BEVEL, 12.0, WING_BOTTOM - TOP - BEVEL), 0.007)
     panel_box("dark", "dark", (HINGE if s_ > 0 else -WING, WING_BOTTOM - 6.0, WING - HINGE, 6.0), 0.007)
-# MFD bezels: side rims along the screen (thin ones over and under it, between it and the
-# buttons) and the four rocker switches (GAIN, SYM, BRT, CON) at the bezel's corners.
+# MFDs: a housing standing out of the well to the bezel's face (BEZEL off the panel), the
+# screen back in a black recess; twenty push buttons round it with ridges between them (the
+# game uses the top and bottom rows; the side buttons are fixed) and the rocker switches (GAIN,
+# SYM, BRT, CON) at its corners.
+BEZEL = 0.006
+
+
+def frame(mat, outer, inner, d0, d1):
+    """A rectangular frame (layout mm, outer and inner rectangles) from d0 to d1 m off the
+    panel plane."""
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    for r in ((ox, oy, ow, iy - oy), (ox, iy + ih, ow, oy + oh - iy - ih), (ox, iy, ix - ox, ih), (ix + iw, iy, ox + ow - ix - iw, ih)):
+        plane_box(mat, mat, r, d0, d1)
+
+
 for key in ("left", "right"):
     x, y, w, h = scr[key]
-    for r in ((x - 4.0, y - 1.5, 4.0, h + 3.0), (x + w, y - 1.5, 4.0, h + 3.0), (x, y - 1.5, w, 1.5), (x, y + h, w, 1.5)):
-        panel_box("black", "black", r, 0.004, 0.0, -MFD_WELL)
+    wx, wy, ww, wh = wells[key]
+    hole = (x - 3.0, y - 3.0, w + 6.0, h + 6.0)
+    frame("dark", (wx - 3.0, wy - 3.0, ww + 6.0, wh + 6.0), hole, -0.03, BEZEL - 0.002)
+    frame("black", (wx + 1.0, wy + 1.0, ww - 2.0, wh - 2.0), hole, BEZEL - 0.002, BEZEL)
+    frame("black", hole, (x - 0.5, y - 0.5, w + 1.0, h + 1.0), -0.006, BEZEL - 0.001)
+    for k in range(5):
+        by = y + h * (k + 0.5) / 5
+        for bx in (x - 9.0, x + w + 9.0):
+            panel_box("dark", "dark", (bx - 5.0, by - 6.0, 10.0, 12.0), 0.005, 0.0, BEZEL)
+    for k in range(1, 5):
+        for bx in (x - 9.0, x + w + 9.0):
+            panel_box("black", "black", (bx - 4.0, y + h * k / 5 - 1.0, 8.0, 2.0), 0.003, 0.0, BEZEL)
+        for by in (y - 16.5, y + h + 6.5):
+            panel_box("black", "black", (x + w * k / 5 - 1.0, by - 4.0, 2.0, 8.0), 0.003, 0.0, BEZEL)
     for bx in (x - 9.0, x + w + 9.0):
-        for by in (y - 18.0, y + h + 10.0):
-            panel_box("dark", "dark", (bx - 5.0, by, 10.0, 16.0), 0.004, 0.0, -MFD_WELL)
-            panel_box("black", "black", (bx - 1.5, by + 2.0, 3.0, 12.0), 0.003, 0.0, -MFD_WELL + 0.004)
-# Setting knobs at instrument corners: airspeed and altimeter (barometric setting), the ADI
-# (pitch trim), the HSI (heading and course) and the clock.
-for u, v in ((-82.0, 6.0), (82.0, 6.0), (34.0, 30.0), (-34.0, 110.0), (34.0, 110.0), (20.0, 158.0)):
+        for by in (y - 16.0, y + h + 16.0):
+            panel_box("dark", "dark", (bx - 4.5, by - 6.5, 9.0, 13.0), 0.003, 0.0, BEZEL)
+            panel_box("black", "black", (bx - 1.5, by - 5.0, 3.0, 10.0), 0.003, 0.0, BEZEL + 0.003)
+# Setting knobs at instrument corners: airspeed and altimeter (index and barometric setting),
+# the ADI (pitch trim), the HSI (heading and course) and the clock.
+faces = {f["key"]: f["rect"] for f in layout["faces"]}
+
+
+def corner(r, sx, sy, inset=3.0):
+    x, y, w, h = r
+    return (x + w - inset if sx > 0 else x + inset, y + h - inset if sy > 0 else y + inset)
+
+
+for r, sx, sy in (
+    (faces["Item(Dial(Airspeed))"], 1, 1),
+    (faces["Item(Dial(Altimeter))"], -1, 1),
+    (scr["adi"], 1, 1),
+    (scr["hsi"], -1, 1),
+    (scr["hsi"], 1, 1),
+    (faces["Item(Dial(Clock))"], 1, -1),
+):
+    u, v = corner(r, sx, sy)
     knob(u, v, 0.0045, 0.009, "dark", offset=PLATE)
-screen("screen_left", scr["left"], -MFD_WELL + 0.0035, "trackcam_left")
-screen("screen_right", scr["right"], -MFD_WELL + 0.0035, "trackcam")
+screen("screen_left", scr["left"], -0.004, "trackcam_left")
+screen("screen_right", scr["right"], -0.004, "trackcam")
 screen("adi", scr["adi"], 0.0, round=True)
 screen("hsi", scr["hsi"], 0.0, round=True)
 screen("screen_rwr", scr["rwr"], 0.0, round=True)
@@ -613,8 +652,12 @@ screen("ded", scr["ded"], PLATE + 0.0005)
 for f in layout["faces"]:
     if f["control"] is None:
         face(f["key"], f["rect"], PLATE + 0.0005, f["round"])
+        if f["key"].startswith("Item(Dial(") and not f["round"]:
+            # The tapes' black window frames.
+            x, y, w, h = f["rect"]
+            frame("black", (x - 3.0, y - 3.0, w + 6.0, h + 6.0), (x, y, w, h), 0.0, PLATE + 0.005)
     elif f["kind"] == "osb":
-        control(f["key"], f["rect"], -MFD_WELL, f["control"], "osb")
+        control(f["key"], f["rect"], BEZEL, f["control"], "osb")
     else:
         control(f["key"], f["rect"], PLATE, f["control"], f["kind"], f["round"])
 

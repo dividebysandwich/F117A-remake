@@ -53,11 +53,13 @@ pub struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<NetInbox>().init_resource::<Notice>().add_systems(
-            Update,
-            pump_client.before(crate::combat::CombatSystems).run_if(resource_exists::<NetLink>),
-        )
-        .add_systems(Last, goodbye.run_if(resource_exists::<NetLink>));
+        app.init_resource::<NetInbox>()
+            .init_resource::<Notice>()
+            .add_systems(
+                Update,
+                pump_client.before(crate::combat::CombatSystems).run_if(resource_exists::<NetLink>),
+            )
+            .add_systems(Last, goodbye.run_if(resource_exists::<NetLink>));
     }
 }
 

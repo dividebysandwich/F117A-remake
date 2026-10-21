@@ -545,18 +545,13 @@ impl PanelLayout {
         {
             put(elem, rect(-206.0, -154.0 + 12.8 * k as f32, 22.0, 11.0), None, false);
         }
-        // Miscellaneous panel at the upper left: the autopilot (its switches are modelled).
-        put(
-            Elem::Lamp(Auto, None),
-            rect(-326.0, -92.0, 32.0, 14.0),
-            Some(E::Action(Action::Autopilot)),
-            false,
-        );
         // Gear lights left of the gear handle on the left slope (the landing gear panel), the
-        // flaps and brakes under them.
+        // flaps, brakes and autopilot under them.
         put(Elem::GearLights, rect(-746.0, -104.0, 40.0, 32.0), None, false);
         for (k, (id, action)) in
-            [(Flaps, Action::Flaps), (Brake, Action::Brakes)].into_iter().enumerate()
+            [(Flaps, Action::Flaps), (Brake, Action::Brakes), (Auto, Action::Autopilot)]
+                .into_iter()
+                .enumerate()
         {
             put(
                 Elem::Lamp(id, None),

@@ -273,16 +273,16 @@ work) and rocker switches at its corners. Top left the master caution light unde
 shield with the stall light and the game's TRACK (a radar tracks the aircraft) and IR (an
 infrared guided missile is in the air) lights under it, the threat warning prime buttons, whose
 **LAUNCH** light comes on when a radar guided missile is in the air, the **RWR** scope next to
-the up-front controls, and the miscellaneous panel with the **AUTO** (autopilot) cap. Top right
+the up-front controls, and the miscellaneous panel's switches. Top right
 the warning lights (ENG FIRE, ENGINE, FLCS) and down the right edge the engine instruments (oil
 pressure, nozzle position, RPM, FTIT) and the fuel quantity. The other warning lights are on the
 caution light panel on the right console, ahead of the stick. Sloped panels rise from the
 consoles to the main panel: the clock (local time) and the countermeasure panel (chaff, flare
 and decoy with their counts, ECM and IRJ) are on the right one; on the left one the gear handle
 with the gear lights left of it (an aircraft outline with a green lamp at each wheel while the
-gear is down), the **FLAPS** and **BRAKE** caps under them and, below them ahead of the
-throttle, the target buttons (NEAR, NEXT, NONE, WPN, DTL). The side stick is on the right
-console, the throttle on the left one.
+gear is down), the **FLAPS**, **BRAKE** and **AUTO** (autopilot) caps under them and, below
+them ahead of the throttle, the target buttons (NEAR, NEXT, NONE, WPN, DTL). The side stick is
+on the right console, the throttle on the left one.
 
 The **AOA indexer** left of the HUD lights its symbols for the angle of attack, as the real one:
 the red top chevron when the aircraft is slow (two or more degrees above the approach angle of

@@ -547,7 +547,7 @@ plates = [
     ("black", (-332.0, -100.0, 124.0, 52.0)),  # miscellaneous panel
     ("dark", (217.0, -157.0, 54.0, 56.0)),  # right eyebrow: warning lights
     ("dark", (-750.0, -108.0, 48.0, 40.0)),  # gear lights (left slope)
-    ("dark", (-768.0, -66.0, 46.0, 36.0)),  # flaps and brakes under them
+    ("dark", (-768.0, -66.0, 46.0, 54.0)),  # flaps, brakes and autopilot under them
     ("black", (90.0, -157.0, 126.0, 60.0)),  # data entry display
     ("dark", (1146.0, -74.0, 80.0, 75.0)),  # countermeasures (right slope)
     ("black", (1146.0, 24.0, 110.0, 70.0)),  # switches under them

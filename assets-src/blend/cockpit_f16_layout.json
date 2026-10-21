@@ -433,18 +433,6 @@
       "round": false
     },
     {
-      "control": "Action(Autopilot)",
-      "key": "Button(Auto, None)",
-      "kind": "cap",
-      "rect": [
-        -326.0,
-        -92.0,
-        32.0,
-        14.0
-      ],
-      "round": false
-    },
-    {
       "control": null,
       "key": "Item(GearLights)",
       "kind": null,
@@ -475,6 +463,18 @@
       "rect": [
         -764.0,
         -44.0,
+        38.0,
+        14.0
+      ],
+      "round": false
+    },
+    {
+      "control": "Action(Autopilot)",
+      "key": "Button(Auto, None)",
+      "kind": "cap",
+      "rect": [
+        -764.0,
+        -26.0,
         38.0,
         14.0
       ],

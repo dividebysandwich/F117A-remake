@@ -1,0 +1,11 @@
+[package]
+name = "stealth-campaign"
+version.workspace = true
+edition.workspace = true
+description = "Stealth Mission 89 realtime dynamic campaign: ownership, mission board, insertions"
+
+[dependencies]
+stealth-mission = { path = "../stealth-mission" }
+serde.workspace = true
+anyhow.workspace = true
+serde_json = "1"

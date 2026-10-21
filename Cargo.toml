@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/bevy_fast_clouds", "crates/stealth-formats", "crates/stealth-mission", "crates/stealth-sim"]
+members = [".", "crates/bevy_fast_clouds", "crates/stealth-campaign", "crates/stealth-formats", "crates/stealth-mission", "crates/stealth-sim"]
 resolver = "3"
 
 [workspace.package]

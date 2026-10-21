@@ -62,11 +62,10 @@ const TRACER: u8 = 17;
 const ENEMY_TRACER: u8 = 41;
 /// The other players' rounds: the same ammunition as ours.
 const FRIENDLY_TRACER: u8 = TRACER;
-/// A coasting missile (motor burnt out) by day: black in every flight palette. At night it is
-/// drawn additively instead (`SimVisuals::night_dot`), a little brighter than the sky.
+/// A coasting missile (motor burnt out): black by day, white at night (in every flight
+/// palette), so it stands out against the sky.
 const COASTING: u8 = 5;
-/// Marks the night look of a coasting missile's dot (not a palette colour).
-const NIGHT_DOT: u8 = 0;
+const COASTING_NIGHT: u8 = 15;
 /// A tracer's streak behind the round: this many sim frames of its travel.
 const TRACER_FRAMES: f64 = 0.6;
 const CHUTE: u8 = 15;
@@ -123,10 +122,8 @@ struct Cartridge {
 struct SimVisuals {
     aircraft: HashMap<usize, (Entity, (i32, bool))>,
     /// Projectile model, spec and missile dot with its current look: the motor's glow
-    /// (`TRACER`), black by day (`COASTING`) or additive at night (`NIGHT_DOT`).
+    /// (`TRACER`), black by day (`COASTING`) or white at night (`COASTING_NIGHT`).
     proj: [Option<(Entity, i32, Option<(Entity, u8)>)>; N_PROJ],
-    /// The additive dot material of coasting missiles at night.
-    night_dot: Option<Handle<PaletteMaterial>>,
     cms: [Option<Cartridge>; 4],
     /// Gun rounds: the dot at the round and its tracer line.
     bullets: Vec<(Entity, Entity)>,
@@ -827,34 +824,18 @@ fn sync_objects(
             }
             vis.proj[s] = Some((e, m.spec, dot));
         }
-        // The dot's look: glowing while the motor burns, then black, or at night a little
-        // brighter than the sky behind it.
+        // The dot's look: glowing while the motor burns, then black by day, white at night.
         let look = if m.motor_visible() {
             TRACER
         } else if lights {
-            NIGHT_DOT
+            COASTING_NIGHT
         } else {
             COASTING
         };
         if let Some((_, _, Some((dot, cur)))) = vis.proj[s]
             && cur != look
         {
-            let material = if look == NIGHT_DOT {
-                vis.night_dot
-                    .get_or_insert_with(|| {
-                        materials.add(PaletteMaterial {
-                            params: PaletteParams {
-                                word: 0xFF00 | COASTING as u32,
-                                flags: FLAG_LINE | crate::palette_material::FLAG_DOT_ADD,
-                                ..default()
-                            },
-                            globals: globals.clone(),
-                        })
-                    })
-                    .clone()
-            } else {
-                vis.material(&mut materials, &globals, look)
-            };
+            let material = vis.material(&mut materials, &globals, look);
             let mut d = commands.entity(dot);
             d.insert(MeshMaterial3d(material));
             if look == TRACER {

@@ -3,11 +3,12 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use stealth_campaign::{Aircraft, CampaignState, PlaceId, PlayerId, Sortie};
 use stealth_host::{HostEvent, Rules, Stores};
+use stealth_sim::claims::GunHit;
 use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 /// Changes with every change of the messages: client and server must agree.
-pub const PROTOCOL: u16 = 2;
+pub const PROTOCOL: u16 = 3;
 pub const DEFAULT_PORT: u16 = 28989;
 /// Players a server takes at most.
 pub const MAX_PLAYERS: usize = stealth_sim::MAX_PILOTS;
@@ -45,6 +46,8 @@ pub enum ToServer {
     Rearm {
         stores: Stores,
     },
+    /// One of his own gun rounds hit (he flies them himself; the server checks).
+    Hit(GunHit),
     Bye,
 }
 

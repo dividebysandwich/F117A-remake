@@ -130,6 +130,15 @@ pub struct Pilot {
     pub(crate) chute: (i32, i32, i32),
     pub(crate) landing_type: u8,
     pub(crate) log: Vec<LogEvent>,
+    /// A coop client flies his own gun rounds and reports their hits (`claims`): the host's
+    /// rounds of his only fly (they don't hit). The step he last fired in, and his reports in
+    /// the current step.
+    #[serde(skip)]
+    pub(crate) client_rounds: bool,
+    #[serde(skip)]
+    pub(crate) fired_step: u32,
+    #[serde(skip)]
+    pub(crate) claims: (u32, u8),
 }
 
 /// An event of a step and the pilot it happened to (whose turn it was): private events

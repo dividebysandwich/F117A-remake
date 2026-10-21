@@ -1,6 +1,7 @@
 pub mod aaa;
 pub mod ballistics;
 pub mod campaign;
+pub mod claims;
 pub mod data;
 pub mod math;
 pub mod rng;
@@ -219,6 +220,20 @@ pub struct Sim {
     /// with their age in frames.
     #[serde(skip)]
     pub(crate) remote_rounds: Vec<(Bullet, u16)>,
+    /// Steps run (a host's frame count for the network; a mirror's: the host's frame shown).
+    #[serde(skip)]
+    pub(crate) steps: u32,
+    /// A host's: where the flight units were in the last steps, and the clients' reports of
+    /// gun hits for the next step (`claims`).
+    #[serde(skip)]
+    pub(crate) flight_history: std::collections::VecDeque<(u32, Vec<(i32, i32, i32)>)>,
+    #[serde(skip)]
+    pub(crate) pending_claims: Vec<(u8, claims::GunHit)>,
+    /// A mirror's: the own gun rounds' next slot, and the units already reported hit.
+    #[serde(skip)]
+    pub(crate) local_round: usize,
+    #[serde(skip)]
+    pub(crate) claimed: Vec<(u16, u32)>,
     /// A host's: the shells fired since they were last taken.
     #[serde(skip)]
     pub(crate) record_shells: bool,
@@ -398,6 +413,9 @@ impl Sim {
                 chute: (0, 0, 0),
                 landing_type: 1,
                 log: Vec::new(),
+                client_rounds: false,
+                fired_step: 0,
+                claims: (0, 0),
             },
             weather: m.weather,
             ground_units: (w.ground_unit_count as usize).min(objects.len()),
@@ -457,6 +475,11 @@ impl Sim {
             mirror: false,
             remote: Vec::new(),
             remote_rounds: Vec::new(),
+            steps: 0,
+            flight_history: Default::default(),
+            pending_claims: Vec::new(),
+            local_round: 0,
+            claimed: Vec::new(),
             record_shells: false,
             new_shells: Vec::new(),
             new_ai_shells: Vec::new(),
@@ -787,6 +810,7 @@ impl Sim {
             let ps = self.pl.last_input.clone();
             self.update_own_rounds(&ps);
         }
+        self.apply_claims(&present);
         self.update_enemy_rounds(&present);
         if self.aaa_rng.is_some() {
             self.aaa_damage();
@@ -819,6 +843,8 @@ impl Sim {
             self.mission_tick += 1;
         }
         self.frame = (self.frame + 1) & 0xFFFF;
+        self.steps = self.steps.wrapping_add(1);
+        self.record_flights();
         self.activate(0);
         self.take_pilot_events()
     }

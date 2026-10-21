@@ -472,7 +472,6 @@ impl Sim {
     pub(crate) fn update_own_rounds(&mut self, ps: &PlayerState) {
         let fs = self.fs;
         let nb = self.n_bullets;
-        let f = ROUND_FINE;
         // A round every frame while the trigger is held (the original fired every other frame);
         // each slot is reused after `nb` frames, which ends the round there.
         if !self.pl.lockheed {
@@ -483,6 +482,7 @@ impl Sim {
                 self.sound(6, 2);
                 self.bullets[slot] = Self::gun_round(&self.pl.p, fs);
                 self.pl.gun_firing = true;
+                self.pl.fired_step = self.steps;
             } else {
                 self.bullets[slot].x = 0;
                 self.pl.gun_firing = false;
@@ -497,43 +497,69 @@ impl Sim {
                 b.vz -= g;
             }
         }
+        // A coop client's rounds hit on his side (he reports the hits): here they only fly.
+        if self.pl.client_rounds {
+            for b in self.bullets[..nb].iter_mut().filter(|b| b.alt < 0) {
+                b.x = 0;
+            }
+            return;
+        }
         // Hit tests (the original only tests rounds that project on screen). A player round
         // hits what passes within the hit radius of its path over this frame.
-        let r = GUN_HIT_RADIUS[self.diff.clamp(0, 3) as usize] / WU_METRES;
         self.credit = Some(self.pl.id);
         for i in 0..nb {
             let b = self.bullets[i];
             if b.x == 0 {
                 continue;
             }
-            for j in 0..self.flights.len() {
-                let u = self.flights[j];
-                // A falling wreck is not shot down again.
-                if u.flags & fflags::AIRBORNE == 0 || u.flags & fflags::DESTROYED != 0 {
-                    continue;
-                }
-                let fine = f as f64;
-                let end = [b.x as f64 / fine, b.y as f64 / fine, b.alt as f64 / fine];
-                let step = [b.vx as f64 / fine, b.vy as f64 / fine, b.vz as f64 / fine];
-                let to = [u.wx as f64 - end[0], u.wy as f64 - end[1], u.alt as f64 - end[2]];
-                // Closest point of the segment end - step .. end.
-                let len2 = step.iter().map(|s| s * s).sum::<f64>().max(1e-9);
-                let k =
-                    (-(to[0] * step[0] + to[1] * step[1] + to[2] * step[2]) / len2).clamp(0.0, 1.0);
-                let d2: f64 = (0..3).map(|a| (to[a] + k * step[a]).powi(2)).sum();
-                if d2 < r * r {
-                    self.flights[j].flags |= fflags::HIT;
-                    self.destroy_aircraft(j);
-                    let n = self.ac_type(u.spec).name.clone();
-                    self.msg(format!("{n} destroyed by gunfire"));
-                    self.bullets[i].x = 0;
-                    self.flash = Flash { x: u.x, y: u.y, alt: u.alt, timer: 0x10 };
-                    self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: u.alt, kind: 0x10 });
-                }
+            for j in self.round_hits(&b) {
+                self.gun_kill(j);
+                self.bullets[i].x = 0;
             }
             self.round_on_ground(i);
         }
         self.credit = None;
+    }
+
+    /// Gun hit radius (world units).
+    pub(crate) fn gun_hit_radius(&self) -> f64 {
+        GUN_HIT_RADIUS[self.diff.clamp(0, 3) as usize] / WU_METRES
+    }
+
+    /// The airborne flight units a round's path over this frame passes within the hit radius
+    /// of.
+    pub(crate) fn round_hits(&self, b: &Bullet) -> Vec<usize> {
+        let r = self.gun_hit_radius();
+        let fine = ROUND_FINE as f64;
+        let end = [b.x as f64 / fine, b.y as f64 / fine, b.alt as f64 / fine];
+        let step = [b.vx as f64 / fine, b.vy as f64 / fine, b.vz as f64 / fine];
+        let len2 = step.iter().map(|s| s * s).sum::<f64>().max(1e-9);
+        (0..self.flights.len())
+            .filter(|&j| {
+                let u = self.flights[j];
+                // A falling wreck is not shot down again.
+                if u.flags & fflags::AIRBORNE == 0 || u.flags & fflags::DESTROYED != 0 {
+                    return false;
+                }
+                let to = [u.wx as f64 - end[0], u.wy as f64 - end[1], u.alt as f64 - end[2]];
+                // Closest point of the segment end - step .. end.
+                let k =
+                    (-(to[0] * step[0] + to[1] * step[1] + to[2] * step[2]) / len2).clamp(0.0, 1.0);
+                let d2: f64 = (0..3).map(|a| (to[a] + k * step[a]).powi(2)).sum();
+                d2 < r * r
+            })
+            .collect()
+    }
+
+    /// Flight unit `j` shot down by the active pilot's cannon.
+    pub(crate) fn gun_kill(&mut self, j: usize) {
+        let u = self.flights[j];
+        self.flights[j].flags |= fflags::HIT;
+        self.destroy_aircraft(j);
+        let n = self.ac_type(u.spec).name.clone();
+        self.msg(format!("{n} destroyed by gunfire"));
+        self.flash = Flash { x: u.x, y: u.y, alt: u.alt, timer: 0x10 };
+        self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: u.alt, kind: 0x10 });
     }
 
     /// The enemy aircraft's gun rounds: move, then the hit tests against every pilot.
@@ -583,18 +609,17 @@ impl Sim {
     /// Gun round `i` below the ground: its impact, and what it destroys there.
     fn round_on_ground(&mut self, i: usize) {
         let b = self.bullets[i];
-        if b.x != 0 && b.alt < 0 {
-            let (bx, by) = b.map_xy();
-            // Where the path over this frame crossed the ground.
-            let above = (b.alt - b.vz) as f64;
-            let k = if above > 0.0 {
-                (above / (above - b.alt as f64)).clamp(0.0, 1.0) - 1.0
-            } else {
-                0.0
-            };
-            let at = |p: i32, v: i32| p + (v as f64 * k).round() as i32;
-            self.emit(SimEvent::RoundImpact { x: at(b.x, b.vx), y: at(b.y, b.vy) });
+        if let Some((x, y)) = b.ground_crossing() {
             self.bullets[i].x = 0;
+            self.round_impact(x, y, b.map_xy());
+        }
+    }
+
+    /// A round of the active pilot's hit the ground at (x, y) (fine units), at map point `at`
+    /// below it: dust, and what stands there may go.
+    pub(crate) fn round_impact(&mut self, x: i32, y: i32, (bx, by): (i32, i32)) {
+        {
+            self.emit(SimEvent::RoundImpact { x, y });
             let o = self.find_object_at(bx, by);
             if o == -1 || self.obj(o).flags & oflags::DESTROYED != 0 {
                 return;

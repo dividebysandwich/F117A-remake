@@ -298,3 +298,174 @@ fn a_mirror_flies_the_other_pilots_rounds_from_their_trigger() {
     assert!((a.x - b.x).abs() + (a.y - b.y).abs() < 4 * a.vy.abs().max(a.vx.abs()), "{a:?} {b:?}");
     assert!(host.as_pilot(1, |s| s.other_rounds()).len() == theirs.len(), "the host's view");
 }
+
+/// Pilot 1 (his client flies his rounds) fires his cannon (or not) behind an An-72 3 km
+/// ahead (or `far` away); then `claim` from where the unit was at each step (step, wx, wy,
+/// alt; the last is now).
+fn claimed_kill(
+    far: bool,
+    fire: bool,
+    claim: impl Fn(&[(u32, i32, i32, i32)]) -> claims::GunHit,
+) -> Option<u8> {
+    let (mut sim, base) = two_pilots();
+    let b = sim.objects()[base];
+    let (mx, my) = (b.x + 0x1000, b.y - 0x800);
+    {
+        let u = &mut sim.flights_mut()[1];
+        let ahead = if far { 64 * 60 } else { 64 * 3 };
+        *u = FlightUnit {
+            x: mx,
+            y: my - ahead,
+            alt: 5000,
+            spec: 9,
+            flags: 0x43,
+            speed: 400,
+            timer: 30000,
+            wp: 3,
+            ..Default::default()
+        };
+        u.wx = u.x << 5;
+        u.wy = u.y << 5;
+    }
+    sim.set_client_rounds(1, true);
+    let st = sim.start_state_at(base);
+    let mut inputs =
+        vec![(0, PlayerState { on_ground: true, ..st }), (1, flying(mx, my, 5000, 0, 300))];
+    inputs[1].1.cmd.gun = fire;
+    let mut track = Vec::new();
+    for _ in 0..20 {
+        sim.step_pilots(&inputs, 15);
+        let u = sim.flights()[1];
+        track.push((sim.step_count(), u.wx, u.wy, u.alt));
+    }
+    let mut by = None;
+    sim.claim_hit(1, claim(&track));
+    for e in sim.step_pilots(&inputs, 15) {
+        if let SimEvent::AircraftDestroyed { unit: 1, by: b, .. } = e.event {
+            by = b;
+        }
+    }
+    by
+}
+
+/// The unit as it was `back` steps ago, the round `off` world units east of it.
+fn seen(track: &[(u32, i32, i32, i32)], back: usize, off: i32) -> claims::GunHit {
+    let (step, x, y, alt) = track[track.len() - 1 - back];
+    claims::GunHit::Aircraft { unit: 1, step, at: (x + off, y, alt) }
+}
+
+#[test]
+fn a_reported_hit_is_the_shooters_kill() {
+    assert_eq!(claimed_kill(false, true, |t| seen(t, 0, 0)), Some(1));
+    // Lag compensated: where it was on the client's screen a second ago.
+    assert_eq!(claimed_kill(false, true, |t| seen(t, 15, 0)), Some(1));
+    // (That is not where it is now.)
+    let then_as_now = |t: &[(u32, i32, i32, i32)]| {
+        let claims::GunHit::Aircraft { at, .. } = seen(t, 15, 0) else { unreachable!() };
+        claims::GunHit::Aircraft { unit: 1, step: t[t.len() - 1].0, at }
+    };
+    assert_eq!(claimed_kill(false, true, then_as_now), None);
+}
+
+#[test]
+fn doubtful_reports_are_turned_down() {
+    // Not firing, out of the cannon's reach, far from where it was then.
+    assert_eq!(claimed_kill(false, false, |t| seen(t, 0, 0)), None);
+    assert_eq!(claimed_kill(true, true, |t| seen(t, 0, 0)), None);
+    assert_eq!(claimed_kill(false, true, |t| seen(t, 0, 2000)), None);
+    // Where it is now, but as of long ago (no record of it then).
+    assert_eq!(
+        claimed_kill(false, true, |t| {
+            let (step, x, y, alt) = t[t.len() - 1];
+            claims::GunHit::Aircraft { unit: 1, step: step.wrapping_sub(100), at: (x, y, alt) }
+        }),
+        None
+    );
+}
+
+#[test]
+fn a_client_flown_pilots_host_rounds_do_not_hit() {
+    // Firing straight at it, no report: no kill.
+    let (mut sim, base) = two_pilots();
+    let b = sim.objects()[base];
+    let (mx, my) = (b.x + 0x1000, b.y - 0x800);
+    {
+        let u = &mut sim.flights_mut()[1];
+        *u = FlightUnit {
+            x: mx,
+            y: my - 6,
+            alt: 5000,
+            spec: 9,
+            flags: 0x43,
+            wp: 3,
+            ..Default::default()
+        };
+        u.wx = u.x << 5;
+        u.wy = u.y << 5;
+    }
+    sim.set_client_rounds(1, true);
+    let st = sim.start_state_at(base);
+    let mut inputs =
+        vec![(0, PlayerState { on_ground: true, ..st }), (1, flying(mx, my, 5000, 0, 300))];
+    inputs[1].1.cmd.gun = true;
+    for _ in 0..30 {
+        for e in sim.step_pilots(&inputs, 15) {
+            assert!(!matches!(e.event, SimEvent::AircraftDestroyed { unit: 1, .. }));
+        }
+    }
+}
+
+#[test]
+fn the_client_reports_what_its_rounds_hit_and_the_host_agrees() {
+    let (mut host, base) = two_pilots();
+    let b = host.objects()[base];
+    let (mx, my) = (b.x + 0x1000, b.y - 0x800);
+    {
+        let u = &mut host.flights_mut()[1];
+        *u = FlightUnit {
+            x: mx,
+            y: my - 12,
+            alt: 5000,
+            spec: 9,
+            flags: 0x43,
+            wp: 3,
+            ..Default::default()
+        };
+        u.wx = u.x << 5;
+        u.wy = u.y << 5;
+    }
+    host.set_client_rounds(1, true);
+    let d = data();
+    let s = MissionSettings {
+        theater: 3,
+        roe: 2,
+        opponents: 1,
+        kind: MissionKind::Strike,
+        ..Default::default()
+    };
+    let mut m = stealth_mission::generate(&d.gdata, &s, Seed::Srand(77)).unwrap();
+    m.world = d.gdata.theaters[3].world.clone();
+    let mut mirror =
+        Sim::with_options(&d.sim, &m, SimOptions { campaign: true, ..Default::default() });
+    mirror.make_mirror(1);
+    let st = host.start_state_at(base);
+    let mut inputs =
+        vec![(0, PlayerState { on_ground: true, ..st }), (1, flying(mx, my, 5000, 0, 300))];
+    inputs[1].1.cmd.gun = true;
+    let mut by = None;
+    for _ in 0..30 {
+        for e in host.step_pilots(&inputs, 15) {
+            if let SimEvent::AircraftDestroyed { unit: 1, by: b, .. } = e.event {
+                by = b;
+            }
+        }
+        mirror.apply_world_fast(&host.world_fast());
+        mirror.set_host_step(host.step_count());
+        mirror.apply_pilot_snap(&host.pilot_snap(1));
+        mirror.set_local_player(&inputs[1].1);
+        for hit in mirror.fly_own_rounds(&inputs[1].1) {
+            host.claim_hit(1, hit);
+        }
+    }
+    assert_eq!(by, Some(1), "the client's report is his kill");
+}

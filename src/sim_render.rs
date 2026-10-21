@@ -955,8 +955,11 @@ fn sync_objects(
         let line = spawn_tracer(&mut commands, material);
         vis.bullets.push((dot, line));
     }
-    for (b, &(dot, line)) in bullets.iter().zip(&vis.bullets) {
-        place_tracer(b, dot, line, alpha, 1.0, &mut q);
+    for (k, (b, &(dot, line))) in bullets.iter().zip(&vis.bullets).enumerate() {
+        // The own rounds at his pace, the enemy's with the world.
+        let (a, gap) =
+            if k < n { (combat.own_alpha, 1.0) } else { (alpha, combat.frame_gap as f64) };
+        place_tracer(b, dot, line, a, gap, &mut q);
     }
     // The other pilots' rounds (theirs on the host, flown from their trigger on a client).
     let others = sim.other_rounds();

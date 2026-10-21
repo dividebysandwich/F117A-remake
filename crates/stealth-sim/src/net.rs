@@ -15,7 +15,9 @@
 //! little behind and interpolates. Far away pilots may be left out of a frame
 //! ([`WorldFast::present`] lists them all): the mirror keeps them as they were.
 //!
-//! The shells fly on on the mirror ([`Sim::mirror_frame`]); hits are the host's business.
+//! The shells fly on on the mirror ([`Sim::mirror_frame`]); hits are the host's business,
+//! but for the player's own gun rounds: those the mirror flies, and reports their hits
+//! (`claims`).
 
 use serde::{Deserialize, Serialize};
 
@@ -352,8 +354,6 @@ impl Sim {
         let k = id as usize;
         let mut pilot = self.pilot_ref(k).clone();
         if k == self.pl.id as usize {
-            let nb = self.n_bullets.min(self.bullets.len());
-            pilot.rounds = self.bullets[..nb].to_vec();
             pilot.missiles.copy_from_slice(&self.proj[ENEMY_SLOTS..]);
             if let Some(o) = self.objects.first() {
                 pilot.scratch0 = *o;
@@ -361,6 +361,8 @@ impl Sim {
         }
         pilot.log.clear();
         pilot.last_input = PlayerState::default();
+        // His gun rounds fly on his client (`claims`).
+        pilot.rounds.clear();
         // His own flight model's, the host's own tracking, and the ticking part.
         pilot.p = PlayerView::default();
         pilot.aaa_track = None;
@@ -549,10 +551,6 @@ impl Sim {
         p.sweep_anim = own.sweep_anim;
         p.nearest_base_dist = own.nearest_base_dist;
         p.log = std::mem::take(&mut self.pl.log);
-        let nb = self.n_bullets.min(self.bullets.len());
-        if p.rounds.len() == nb {
-            self.bullets[..nb].copy_from_slice(&p.rounds);
-        }
         self.proj[ENEMY_SLOTS..].copy_from_slice(&p.missiles[..PILOT_SLOTS]);
         if let Some(o) = self.objects.first_mut() {
             *o = p.scratch0;

@@ -101,6 +101,13 @@ impl Client {
         self.recent.retain(|(s, _)| seq.wrapping_sub(*s) < REPEAT as u32);
     }
 
+    /// Reports a hit of one of his own gun rounds.
+    pub fn send_hit(&mut self, hit: stealth_sim::claims::GunHit) {
+        if self.id.is_some() {
+            self.send(&ToServer::Hit(hit));
+        }
+    }
+
     /// Round trip time (seconds).
     pub fn rtt(&self) -> f32 {
         self.net.rtt(0)

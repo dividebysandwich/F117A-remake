@@ -977,6 +977,11 @@ In the air the other players are friendly contacts on the MFD (blue on the class
 pages, a green ring on the modern MFD), never a radar lock; their weapons in flight show as
 missiles. Their cannon fire is drawn as tracers like your own.
 
+Your cannon fires at once on your computer, and what its rounds hit on your screen counts: your
+game tells the server, which checks that you were firing and that the target really was there
+at that moment (it remembers the last second of the war), then it is your kill. Missiles and
+bombs are flown by the server.
+
 If your connection drops during a sortie, your aircraft waits for you for 30 seconds: join again
 under the same name and fly on. After that the sortie ends as aborted.
 

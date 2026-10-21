@@ -110,6 +110,8 @@ pub struct Combat {
     /// Sim frames between the last two states (a coop client's server frames come a few
     /// frames apart).
     pub frame_gap: f32,
+    /// The player's own rounds' alpha (a coop client flies them at his own pace).
+    pub own_alpha: f32,
     /// A coop client's playout of the server's frames.
     playout: crate::net_interp::Playout,
     /// The other pilots' aircraft as sampled, and the frame they are drawn at.
@@ -348,6 +350,7 @@ fn start_combat(
         quit: false,
         alpha: 0.0,
         frame_gap: 1.0,
+        own_alpha: 0.0,
         playout: default(),
         remote_track: default(),
         remote_time: 0.0,
@@ -604,6 +607,11 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                 cmd,
             );
             client.send_input(&ps);
+            // His own rounds fly here; what they hit on his screen he reports.
+            combat.sim.set_local_player(&ps);
+            for hit in combat.sim.fly_own_rounds(&ps) {
+                client.send_hit(hit);
+            }
         }
         let ps = player_state(&a, pos, false, false, collision.0, &hud, &mfd, &view, default());
         combat.sim.set_local_player(&ps);
@@ -640,6 +648,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                     combat.prev_flights.extend_from_slice(combat.sim.flights());
                     combat.prev_proj = *combat.sim.projectiles();
                     combat.sim.apply_world_fast(&w);
+                    combat.sim.set_host_step(step);
                     if let Some(mine) = &mine {
                         combat.sim.apply_pilot_snap(mine);
                     }
@@ -713,11 +722,13 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         }
     }
     if link.as_deref().is_some_and(|l| l.is_client()) {
+        combat.own_alpha = (combat.accum / dt).clamp(0.0, 1.0);
         combat.alpha = combat.playout.alpha();
         combat.frame_gap = combat.playout.span() as f32;
         combat.remote_time = combat.playout.now().unwrap_or(0.0);
     } else {
         combat.alpha = (combat.accum / dt).clamp(0.0, 1.0);
+        combat.own_alpha = combat.alpha;
         combat.frame_gap = 1.0;
         combat.remote_time = combat.host_frame as f64 - 1.0 + combat.alpha as f64;
     }

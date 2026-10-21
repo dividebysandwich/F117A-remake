@@ -60,7 +60,7 @@ pub struct Server {
     grace: HashMap<PlayerId, Instant>,
     /// The listen server's own player.
     local: Option<PlayerId>,
-    /// The simulation's frames, and the one last sent.
+    /// The simulation's step, and the one last sent.
     frame: u32,
     sent_frame: Option<u32>,
     /// Frames between the moving world's messages.
@@ -200,7 +200,9 @@ impl Server {
                 self.hello(conn, protocol, &name, host, sim, now);
                 return Vec::new();
             }
-            (ToServer::Input { seq, state, recent }, Some(_)) => {
+            (ToServer::Input { seq, state, recent }, Some(p)) => {
+                // His client flies his gun rounds.
+                sim.set_client_rounds(p.0, true);
                 let Some(r) = self.remotes.get_mut(&conn) else { return Vec::new() };
                 if r.last_seq.is_some_and(|l| seq.wrapping_sub(l) as i32 <= 0) {
                     return Vec::new();
@@ -220,6 +222,10 @@ impl Server {
             }
             (ToServer::OrderInsertion { place }, Some(p)) => host.order_insertion(sim, p, place),
             (ToServer::EndSortie { outcome }, Some(p)) => Ok(host.end_sortie(sim, p, outcome)),
+            (ToServer::Hit(hit), Some(p)) => {
+                sim.claim_hit(p.0, hit);
+                return Vec::new();
+            }
             (ToServer::Rearm { stores }, Some(p)) => {
                 host.rearm(sim, p, &stores);
                 Ok(Vec::new())
@@ -338,7 +344,6 @@ impl Server {
 
     /// A step's events, to the players they are for.
     pub fn after_step(&mut self, events: &[PilotEvent]) {
-        self.frame = self.frame.wrapping_add(1);
         for r in self.remotes.values_mut() {
             let Some(p) = r.player else { continue };
             r.events.extend(
@@ -372,6 +377,7 @@ impl Server {
     /// Sends the state to every player: what changed now and then and the events at once, the
     /// moving world every `send_every` frames.
     pub fn send_frame(&mut self, host: &Host, sim: &mut Sim, now: Instant) {
+        self.frame = sim.step_count();
         let due = self.sent_frame.is_none_or(|f| self.frame.wrapping_sub(f) >= self.send_every);
         if due {
             self.sent_frame = Some(self.frame);

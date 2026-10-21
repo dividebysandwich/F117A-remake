@@ -8,6 +8,7 @@ mod ai;
 pub mod csar;
 mod damage;
 pub mod drones;
+pub mod guidance;
 pub mod lights;
 mod missiles;
 mod objectives;

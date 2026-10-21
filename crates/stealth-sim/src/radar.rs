@@ -301,7 +301,12 @@ impl Sim {
             tgt_y: 0,
             locked: false,
             fall: None,
+            flight: None,
         };
+        if self.guided(spec) {
+            let tgt = self.player_target().p;
+            self.launch_sam_flight(k, i, tgt);
+        }
         let n = self.place_name(i);
         let sam = self.missile(spec).name.clone();
         self.msg(format!("{n} firing {sam}"));
@@ -415,7 +420,13 @@ impl Sim {
             tgt_y: 0,
             locked: false,
             fall: None,
+            flight: None,
         };
+        if self.guided(u.missile) {
+            let pos = [u.wx as f64, u.wy as f64, (u.alt - 25) as f64];
+            let vel = crate::guidance::direction(u.heading, u.pitch).map(|d| d * u.speed as f64);
+            self.start_flight(k, pos, vel);
+        }
         let ty = self.ac_type(u.spec).name.clone();
         self.msg(format!("{} fired by {ty}", t.name));
         self.launches += 1;

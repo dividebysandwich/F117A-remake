@@ -27,7 +27,7 @@ use stealth_sim::{N_PROJ, fflags};
 use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player};
 use crate::settings::AppState;
-use crate::sim_render::{attitude, map_point};
+use crate::sim_render::attitude;
 use crate::world::{WorldPos, wu_to_bevy};
 
 const SHADER: &str = "shaders/trail.wgsl";
@@ -318,19 +318,13 @@ fn update_trails(
     let projs = sim.projectiles();
     for s in 0..N_PROJ {
         let m = projs[s];
-        if m.ttl == 0 || !is_missile(m.spec) {
+        // Smoke while the motor burns, from where the missile is drawn.
+        if m.ttl == 0 || !is_missile(m.spec) || !m.motor_visible() {
             continue;
         }
-        let p = combat.prev_proj[s];
-        let (mut x, mut y, mut z) = (m.x as f64, m.y as f64, m.alt as f64);
-        if p.ttl != 0 && p.spec == m.spec && (p.x - m.x).abs() < 0x400 && (p.y - m.y).abs() < 0x400
-        {
-            let t = alpha as f64;
-            x = p.x as f64 + (x - p.x as f64) * t;
-            y = p.y as f64 + (y - p.y as f64) * t;
-            z = p.alt as f64 + (z - p.alt as f64) * t;
+        if let Some((pos, _)) = crate::sim_render::projectile_pose(&combat, s) {
+            emitters.push((Source::Missile(s, m.spec), &SMOKE, pos));
         }
-        emitters.push((Source::Missile(s, m.spec), &SMOKE, map_point(x + 0.5, y + 0.5, z)));
     }
     for (i, u, _) in sim.active_aircraft() {
         if u.flags & fflags::DESTROYED != 0 || (u.wx == 0 && u.wy == 0) || u.alt < CONTRAIL_VIEW_Z {

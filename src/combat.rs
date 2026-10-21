@@ -250,6 +250,7 @@ fn start_combat(
             prior_damage,
             external_stores,
             realistic_damage: settings.realistic_damage,
+            realistic_guidance: settings.realistic_guidance,
             ..default()
         },
     );

@@ -60,6 +60,9 @@ pub struct Settings {
     /// `--realistic-damage`: realistic weapon damage instead of the original's
     /// (`stealth_sim::SimOptions::realistic_damage`).
     pub realistic_damage: bool,
+    /// `--realistic-guidance`: realistic missile guidance instead of the original's
+    /// (`stealth_sim::SimOptions::realistic_guidance`).
+    pub realistic_guidance: bool,
     /// `--vr-cockpit-scale <percent>`: size of the cockpit (and the world) in the headset,
     /// 100% = the flown aircraft's `AircraftSpec::vr_scale`.
     pub vr_cockpit_scale: f32,
@@ -179,6 +182,7 @@ impl Settings {
             classic_flight: has("--classic-flight") || (has("--script") && !has("--modern-flight")),
             no_crashes: has("--no-crashes"),
             realistic_damage: has("--realistic-damage"),
+            realistic_guidance: has("--realistic-guidance"),
             vr_cockpit_scale: get(&a, "--vr-cockpit-scale")
                 .and_then(|s| s.parse::<f32>().ok())
                 .map_or(DEFAULT_VR_COCKPIT_SCALE, |p| {

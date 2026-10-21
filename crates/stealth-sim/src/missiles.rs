@@ -55,6 +55,8 @@ impl Sim {
             let spec = self.proj[s].spec;
             let mt = self.missile(spec).clone();
             let cls = mt.class as i32;
+            // Realistic guidance flies this one (`guidance`).
+            let guided = self.proj[s].flight.is_some();
             let mut locked = false;
             let mut aim = 0;
             let mut best;
@@ -104,7 +106,8 @@ impl Sim {
                         locked = false;
                     }
                 }
-                if self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0 {
+                if !guided && self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0
+                {
                     self.proj[s].speed += 1;
                 }
             } else {
@@ -127,8 +130,25 @@ impl Sim {
                             }
                         }
                     }
+                    // Guided: the target locked at launch while the seeker sees it.
+                    let d = self.proj[s].target;
+                    if guided && d >= 0 && d != hit && (d as usize) < self.flights.len() {
+                        let u = self.flights[d as usize];
+                        if u.flags & fflags::AIRBORNE != 0
+                            && u.flags & fflags::DESTROYED == 0
+                            && u.speed != 0
+                            && self.acquire(s, u.x, u.y, u.alt, cls)
+                        {
+                            aim = self.acq_aim;
+                            best = self.acq_range;
+                            hit = d;
+                            alt0 = u.alt;
+                            locked = true;
+                        }
+                    }
                 }
-                if self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0 {
+                if !guided && self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0
+                {
                     self.proj[s].speed += 1;
                     aim = self.proj[s].heading;
                 }
@@ -194,56 +214,84 @@ impl Sim {
                 }
             }
             // Steering.
-            let diff = self.diff;
-            let turn = mt.turn as i32;
-            let m = &mut self.proj[s];
-            m.locked = locked;
-            if aim != 0 && locked {
-                let mut d = s16(aim - m.heading);
-                if s < 8 {
-                    d = clamp_q(d, -(diff + 1) << 8, (diff + 1) << 8);
-                }
-                d = clamp_q(d, -turn << 7, turn << 7);
-                m.heading = s16(m.heading + cdiv(d * 4, fs));
-                m.roll = s16(d * 2);
-                let ab = best.abs();
-                let pa = if s < 8 && best < 0x400 {
-                    bearing(s16(alt0 - m.alt) >> 4, ab)
+            let fused = if guided {
+                let target = if s < 8 {
+                    Some(if self.decoy_active() {
+                        let c = self.cms[0];
+                        let p =
+                            [c.x as f64 * 32.0 + 16.0, c.y as f64 * 32.0 + 16.0, self.p.alt as f64];
+                        crate::guidance::Target { p, v: [0.0; 3] }
+                    } else {
+                        self.player_target()
+                    })
+                } else if hit < 0 {
+                    None
+                } else if cls == 7 {
+                    Some(self.unit_target(hit as usize))
                 } else {
-                    bearing((s16(alt0 - m.alt) >> 5) + if ab > 0x140 { ab >> 3 } else { 0 }, ab)
+                    Some(self.object_target(hit))
                 };
-                let mut dp = s16(pa - m.pitch);
-                if s < 8 {
-                    dp = clamp_q(dp, -(diff + 1) << 9, (diff + 1) << 9);
+                // The fuse goes off near the player whatever the seeker sees.
+                let fuse = if s < 8 { Some(self.player_target()) } else { target };
+                let fused = self.fly_guided(s, target.filter(|_| locked && aim != 0), fuse);
+                if self.proj[s].ttl == 0 {
+                    continue;
                 }
-                dp = clamp_q(dp, -turn << 8, turn << 8);
-                m.pitch = s16(m.pitch + cdiv(dp * 4, fs));
-            } else if m.pitch > 0 && m.spec != 30 {
-                m.pitch = s16(m.pitch - cdiv(sign(m.pitch) * 0x800, fs));
-            }
-            if m.spec == 28 {
-                m.pitch = m.pitch.min(-0x800);
-            }
-            if m.spec == 30 || m.alt == 1 {
-                m.pitch = s16(m.pitch - cdiv(0x800, fs)).max(s16(m.launcher));
-            }
-            let step = cdiv(self.trig.cos_mul(m.pitch, m.speed) * 4, fs);
-            m.x = (m.x + self.trig.sin_mul(m.heading, step)) & 0xFFFF;
-            m.y = (m.y - self.trig.cos_mul(m.heading, step)) & 0xFFFF;
-            m.alt += self.trig.sin_mul(m.pitch, cdiv(m.speed << 7, fs));
-            m.ttl -= 1;
-            // Terrain contact: flat world, objects are not tested.
-            if self.proj[s].alt < 0 {
-                self.ground_impact(s);
-            }
+                fused
+            } else {
+                let diff = self.diff;
+                let turn = mt.turn as i32;
+                let m = &mut self.proj[s];
+                m.locked = locked;
+                if aim != 0 && locked {
+                    let mut d = s16(aim - m.heading);
+                    if s < 8 {
+                        d = clamp_q(d, -(diff + 1) << 8, (diff + 1) << 8);
+                    }
+                    d = clamp_q(d, -turn << 7, turn << 7);
+                    m.heading = s16(m.heading + cdiv(d * 4, fs));
+                    m.roll = s16(d * 2);
+                    let ab = best.abs();
+                    let pa = if s < 8 && best < 0x400 {
+                        bearing(s16(alt0 - m.alt) >> 4, ab)
+                    } else {
+                        bearing((s16(alt0 - m.alt) >> 5) + if ab > 0x140 { ab >> 3 } else { 0 }, ab)
+                    };
+                    let mut dp = s16(pa - m.pitch);
+                    if s < 8 {
+                        dp = clamp_q(dp, -(diff + 1) << 9, (diff + 1) << 9);
+                    }
+                    dp = clamp_q(dp, -turn << 8, turn << 8);
+                    m.pitch = s16(m.pitch + cdiv(dp * 4, fs));
+                } else if m.pitch > 0 && m.spec != 30 {
+                    m.pitch = s16(m.pitch - cdiv(sign(m.pitch) * 0x800, fs));
+                }
+                if m.spec == 28 {
+                    m.pitch = m.pitch.min(-0x800);
+                }
+                if m.spec == 30 || m.alt == 1 {
+                    m.pitch = s16(m.pitch - cdiv(0x800, fs)).max(s16(m.launcher));
+                }
+                let step = cdiv(self.trig.cos_mul(m.pitch, m.speed) * 4, fs);
+                m.x = (m.x + self.trig.sin_mul(m.heading, step)) & 0xFFFF;
+                m.y = (m.y - self.trig.cos_mul(m.heading, step)) & 0xFFFF;
+                m.alt += self.trig.sin_mul(m.pitch, cdiv(m.speed << 7, fs));
+                m.ttl -= 1;
+                // Terrain contact: flat world, objects are not tested.
+                if self.proj[s].alt < 0 {
+                    self.ground_impact(s);
+                }
+                let m = self.proj[s];
+                locked && (s16(alt0 - m.alt).abs() >> 5) + best < cdiv(m.speed << 3, fs)
+            };
             // Proximity fuse.
             let m = self.proj[s];
-            if locked && (s16(alt0 - m.alt).abs() >> 5) + best < cdiv(m.speed << 3, fs) {
+            if fused {
                 if s < 8 {
                     if m.ttl > 4 * fs {
                         self.flash = Flash { x: m.x, y: m.y, alt: m.alt, timer: 0x10 };
                         self.emit(SimEvent::Explosion { x: m.x, y: m.y, alt: m.alt, kind: 0x10 });
-                        self.proj[s].ttl = 2 * fs;
+                        self.proj[s].ttl = if guided { 0 } else { 2 * fs };
                         if !self.decoy_active() {
                             self.msg(format!("Hit by {}", mt.name));
                             self.player_hit(true);
@@ -336,7 +384,7 @@ impl Sim {
     }
 
     /// Ground contact of a projectile.
-    fn ground_impact(&mut self, s: usize) {
+    pub(crate) fn ground_impact(&mut self, s: usize) {
         let m = self.proj[s];
         let (ex, ey) = (m.x, m.y);
         let mut ealt = m.alt;

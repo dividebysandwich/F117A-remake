@@ -30,6 +30,7 @@ Command-line options:
 | `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons); F-117A only |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |
 | `--classic-flight` | the original game's flight model instead of the modern one (aerodynamic model with fly-by-wire: the stick commands pitch and roll rate, released the nose stays where it was left and the settled flight path is held); `--script` runs default to it, `--modern-flight` overrides |
+| `--realistic-guidance` | realistic missile guidance: proportional navigation, motors that burn out (the missiles glide on, smoke only while burning), lofted SAM shots, the AIM-120 flying straight for 3 s so it can be lobbed |
 | `--realistic-damage` | realistic weapon damage: missile hits can destroy the aircraft, start fires that burn out or blow it up, and bend control surfaces (out of trim, oscillating) |
 | `--no-crashes` | crash protection: automatic pull-up near the ground with the gear up, ground contact and collisions are not fatal |
 | `--lockheed` | realistic weapons: the real aircraft's 2 bays, no air-to-air missiles, no carrier operations |

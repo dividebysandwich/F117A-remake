@@ -188,6 +188,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.classic_flight, "--classic-flight"),
         (settings.no_crashes, "--no-crashes"),
         (settings.realistic_damage, "--realistic-damage"),
+        (settings.realistic_guidance, "--realistic-guidance"),
     ] {
         if on {
             cmd.arg(flag);
@@ -723,6 +724,19 @@ fn menu_ui(
                             "Weapon damage", "Game: the original's damage; hits add up but never bring the aircraft down",
                             "Realistic: a missile hit can destroy the aircraft (eject!), damages more systems and often starts a fire, which burns out or blows the aircraft up",
                             "Realistic: damaged control surfaces put the aircraft out of trim or make it oscillate",
+                        ],
+                    )
+                    .changed()
+                    {
+                        settings.set_changed();
+                    }
+                    let s = settings.bypass_change_detection();
+                    if facts(
+                        two_way_switch(ui, "Guidance", &mut s.realistic_guidance, ("CLASSIC", "REAL")),
+                        &[
+                            "Missile guidance", "Classic: the original's missiles, flying straight at their target",
+                            "Realistic: proportional navigation to the collision point; motors burn out and the missiles glide on, losing speed with every turn (smoke only while the motor burns)",
+                            "Realistic: SAMs loft against distant targets; the AIM-120 flies straight for 3 s (pull up to lob it)",
                         ],
                     )
                     .changed()

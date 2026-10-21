@@ -90,7 +90,8 @@ struct Cartridge {
 #[derive(Resource, Default)]
 struct SimVisuals {
     aircraft: HashMap<usize, (Entity, (i32, bool))>,
-    proj: [Option<(Entity, i32)>; N_PROJ],
+    /// Projectile model, spec and motor glow (gone once the motor burns out).
+    proj: [Option<(Entity, i32, Option<Entity>)>; N_PROJ],
     cms: [Option<Cartridge>; 4],
     /// Gun rounds: the dot at the round and its tracer line.
     bullets: Vec<(Entity, Entity)>,
@@ -430,8 +431,8 @@ fn sync_objects(
     for s in 0..N_PROJ {
         let m = projs[s];
         let model = if m.ttl != 0 { sim_missile_model(&combat, m.spec) } else { -1 };
-        if vis.proj[s].is_some_and(|(_, sp)| m.ttl == 0 || sp != m.spec) {
-            if let Some((e, _)) = vis.proj[s].take() {
+        if vis.proj[s].is_some_and(|(_, sp, _)| m.ttl == 0 || sp != m.spec) {
+            if let Some((e, ..)) = vis.proj[s].take() {
                 commands.entity(e).try_despawn();
             }
         }
@@ -443,7 +444,8 @@ fn sync_objects(
                 continue;
             };
             // Rocket motor glow on missiles (not on bombs / equipment), so they can be followed.
-            if crate::trails::is_missile(m.spec) {
+            let mut glow = None;
+            if crate::trails::is_missile(m.spec) && m.motor_visible() {
                 let material = vis.material(&mut materials, &globals, TRACER);
                 let dot = commands
                     .spawn((
@@ -460,10 +462,18 @@ fn sync_objects(
                     ))
                     .id();
                 commands.entity(e).add_child(dot);
+                glow = Some(dot);
             }
-            vis.proj[s] = Some((e, m.spec));
+            vis.proj[s] = Some((e, m.spec, glow));
         }
-        let Some((e, _)) = vis.proj[s] else { continue };
+        // The motor burnt out.
+        if !m.motor_visible()
+            && let Some((_, _, glow)) = vis.proj[s].as_mut()
+            && let Some(dot) = glow.take()
+        {
+            commands.entity(dot).try_despawn();
+        }
+        let Some((e, ..)) = vis.proj[s] else { continue };
         if let (Ok((mut pos, mut tf, _, _)), Some((p, rot))) =
             (q.get_mut(e), projectile_pose(&combat, s))
         {

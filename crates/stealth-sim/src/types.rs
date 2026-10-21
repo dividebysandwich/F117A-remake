@@ -148,21 +148,46 @@ pub struct Projectile {
     /// Ballistic bombs (not in the original record): their exact flight.
     #[serde(default)]
     pub fall: Option<BombFall>,
+    /// Missiles under realistic guidance (not in the original record): their exact flight.
+    #[serde(default)]
+    pub flight: Option<MissileFlight>,
 }
 
 impl Projectile {
     /// Map position (x, y) and altitude (viewZ) with fractions: a ballistic bomb's exact point,
     /// else the record's (+ 0.5 for the middle of the map unit).
     pub fn map_pos(&self) -> (f64, f64, f64) {
+        let fine = ROUND_FINE as f64;
+        if let Some(f) = self.flight {
+            // True altitude, like the aircraft are drawn.
+            return (f.x as f64 / (32.0 * fine), f.y as f64 / (32.0 * fine), f.alt as f64 / fine);
+        }
         match self.fall {
             Some(f) => {
-                let fine = ROUND_FINE as f64;
                 let alt = f.alt as f64 / fine;
                 (f.x as f64 / (32.0 * fine), f.y as f64 / (32.0 * fine), crate::math::view_z_f(alt))
             }
             None => (self.x as f64 + 0.5, self.y as f64 + 0.5, self.alt as f64),
         }
     }
+}
+
+/// A missile's flight under realistic guidance ([`crate::guidance`]): position and velocity in
+/// fine units ([`ROUND_FINE`] per world unit: x east, y south like the map, alt up, the true
+/// altitude) and per second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct MissileFlight {
+    pub x: i32,
+    pub y: i32,
+    pub alt: i32,
+    pub vx: i32,
+    pub vy: i32,
+    pub vz: i32,
+    /// Frames since launch, and frames the motor still trails smoke.
+    pub t: i32,
+    pub smoke: i32,
+    /// Climb angle (BAM) of a lofted SAM, climbing before it steers for the target; 0 = none.
+    pub loft: i32,
 }
 
 /// A falling bomb's position (fine units, [`ROUND_FINE`] per world unit: x east, y south like
@@ -443,6 +468,10 @@ pub struct SimOptions {
     /// explodes) and damaged control surfaces put the aircraft out of trim.
     #[serde(default)]
     pub realistic_damage: bool,
+    /// Realistic missile guidance (not in the original): proportional navigation, motors that
+    /// burn out (the missile glides on), lofted SAM shots, the AIM-120 flying straight for 3 s.
+    #[serde(default)]
+    pub realistic_guidance: bool,
 }
 
 impl Default for SimOptions {
@@ -454,6 +483,7 @@ impl Default for SimOptions {
             prior_damage: None,
             external_stores: false,
             realistic_damage: false,
+            realistic_guidance: false,
         }
     }
 }

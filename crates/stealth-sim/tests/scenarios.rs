@@ -1134,3 +1134,42 @@ fn realistic_missile_damage() {
         assert!(sim.mission_end().is_none(), "the original's damage is never fatal in the air");
     }
 }
+
+/// Realistic guidance: an SA-2 site launches at a player cruising past at 400 kt; the missile
+/// flies on its own flight (no map-unit steps), trails smoke only while its motor burns, and
+/// hits the moving aircraft.
+#[test]
+fn guided_sam_hits_a_cruising_player() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let opts = SimOptions { realistic_guidance: true, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    place_site(&mut sim, 3, 1, mx, my - 640);
+    let mut p = player_at(mx - 300, my, 6000, 0x4000, 400);
+    p.cmd.toggle_bay = true;
+    let (mut x, mut y) = (p.x as f64, p.y as f64);
+    let (mut launched, mut hit, mut smoke_out) = (false, false, false);
+    for _ in 0..15 * 240 {
+        let ev = sim.step(&p, 15);
+        p.cmd = Commands::default();
+        // The player flies on east.
+        let v = ballistics::release_velocity(p.heading as i32, p.velocity as i32, 0);
+        x += v[0] / 15.0;
+        y -= v[1] / 15.0;
+        (p.x, p.y) = (x as i32, y as i32);
+        let m = sim.projectiles()[3];
+        if m.ttl > 0 && m.spec == 1 {
+            assert!(m.flight.is_some(), "guided flight");
+            launched = true;
+            smoke_out |= !m.motor_visible();
+        }
+        if ev.iter().any(|e| matches!(e, SimEvent::PlayerHit { .. })) {
+            hit = true;
+            break;
+        }
+    }
+    assert!(launched && hit, "launched {launched} hit {hit}");
+    // An SA-2 at 10 km gets there with its sustainer still burning.
+    assert!(!smoke_out);
+}

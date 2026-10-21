@@ -336,6 +336,7 @@ impl Sim {
             tgt_y: -1,
             locked: false,
             fall: None,
+            flight: None,
         };
         if spec == 27 {
             self.maverick_view = true;
@@ -378,6 +379,18 @@ impl Sim {
             pr.ttl = 0x7FFF;
         }
         self.proj[slot] = pr;
+        if self.guided(spec) {
+            // Off the aircraft along its nose with its speed (pull up to lob a missile).
+            let pos = [self.p.wx as f64, (0x100000 - self.p.wy) as f64, self.p.alt as f64 - 20.0];
+            let vel = crate::guidance::direction(self.p.heading, self.p.pitch)
+                .map(|d| d * self.p.velocity as f64 / 16.0);
+            // An air-to-air missile goes for the radar's target.
+            let lock = self.air_lock;
+            if mt.class == 7 && lock >= 0 && (lock as usize) < self.flights.len() {
+                self.proj[slot].target = lock;
+            }
+            self.start_flight(slot, pos, vel);
+        }
         self.last_missile_slot = slot as i32;
         self.msg(format!("{} fired", wt.long_name));
         self.sound(if mt.lock_range == 0 { 0x10 } else { 0x0D }, 2);

@@ -34,6 +34,7 @@ Command-line options:
 | `--realistic-damage` | realistic weapon damage: missile hits can destroy the aircraft, start fires that burn out or blow it up, and bend control surfaces (out of trim, oscillating) |
 | `--no-crashes` | crash protection: automatic pull-up near the ground with the gear up, ground contact and collisions are not fatal |
 | `--lockheed` | realistic weapons: the real aircraft's 2 bays, no air-to-air missiles, no carrier operations |
+| `--head-tracking` | head/eye tracking: infrared, eye, webcam or phone trackers move the cockpit view through a tracking program such as OpenTrack (FreeTrack output on Windows, or UDP to 127.0.0.1 port 4242); Home recentres |
 | `--vr` | OpenXR headset (without a runtime it runs on the desktop); the menu and the debrief are a panel in the headset, operated with a controller |
 | `--viewer [--file stflt --model 24]` | browse the converted models |
 | `--freecam [--at Gutersloh\|primary] [--pos x,z]` | free debug camera |
@@ -109,6 +110,7 @@ also be switched in flight (Esc).
 ## 3D cockpit (desktop)
 * Fully clickable cockpit
 * Hold right mouse button to look around
+* Head/eye tracking (infrared, eye, webcam or phone trackers): menu *Head/Eye Tracking*
 * Esc opens the in-flight settings menu (also in VR: the MENU button on the left side panel)
 
 ### Editing the cockpits

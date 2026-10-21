@@ -63,6 +63,7 @@ pub fn campaign_window(
     mut next: ResMut<NextState<AppState>>,
     mut settings: ResMut<crate::settings::Settings>,
     vr: Res<crate::menu::VrAvailable>,
+    head: Res<crate::headtrack::HeadTrack>,
     mut exit: MessageWriter<AppExit>,
 ) -> Result {
     if !w.open {
@@ -92,7 +93,7 @@ pub fn campaign_window(
             });
             ui.vertical(|ui| {
                 ui.set_width(200.0);
-                crate::menu::classic_modern_options(ui, &mut settings, vr.0);
+                crate::menu::classic_modern_options(ui, &mut settings, vr.0, head.source);
             });
             ui.vertical(|ui| {
             for line in [

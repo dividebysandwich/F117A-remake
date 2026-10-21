@@ -3,8 +3,8 @@
 //! aircraft entity -> `HeadAnchor` (pilot eye point, rotated by look-around views) -> eye camera.
 //! In VR the eye camera entity is the XR tracking root (the headset cameras are its children),
 //! so the same rig carries both. External views move the camera off the aircraft instead.
-//! Cockpit views add a free look (`HeadLook`, mouse on the desktop) and `RigOffset` (VR
-//! recentring) to the head.
+//! Cockpit views add a free look (`HeadLook`, mouse on the desktop), the tracked head pose
+//! (`headtrack`, desktop) and `RigOffset` (VR recentring) to the head.
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -506,8 +506,11 @@ fn update_rig(
     mut cam: Query<&mut Transform, With<EyeCamera>>,
     mut viewpoint: ResMut<crate::palette::Viewpoint>,
     combat: Option<Res<crate::combat::Combat>>,
+    track: Res<crate::headtrack::HeadTrack>,
 ) {
     let (Ok(mut head), Ok(mut cam_tf)) = (head.single_mut(), cam.single_mut()) else { return };
+    // The tracked head on top of the views' own direction (none in VR).
+    let tracked = track.pose().unwrap_or_default();
     let Ok((a, pos)) = aircraft.single() else { return };
     // Lowest camera height relative to the aircraft origin in external views (1 m above ground).
     let floor = 1.0 - (a.altitude - a.ground_altitude) * crate::world::WU as f32;
@@ -525,8 +528,12 @@ fn update_rig(
             let base_pitch = if state.view == View::Cockpit { COCKPIT_DOWN_PITCH } else { 0.0 };
             let (y, p) =
                 if settings.vr { (0.0, 0.0) } else { (yaw + look.yaw, base_pitch + look.pitch) };
-            *head = Transform::from_translation(eye)
-                .with_rotation(Quat::from_rotation_y(y) * Quat::from_rotation_x(p));
+            // Angles added, not rotations chained: the horizon stays level looking sideways.
+            *head = Transform::from_translation(eye + tracked.pos).with_rotation(
+                Quat::from_rotation_y(y + tracked.yaw)
+                    * Quat::from_rotation_x(p + tracked.pitch)
+                    * Quat::from_rotation_z(tracked.roll),
+            );
             *cam_tf = if settings.vr { offset.scaled(settings.vr_rig_scale()) } else { offset.0 };
         }
         View::Chase => {
@@ -560,9 +567,10 @@ fn update_rig(
             {
                 yaw = -((u.x - x) as f32).atan2((y - u.y) as f32);
             }
-            // The mouse looks up as far as the canopy overhead.
-            let world_rot = Quat::from_rotation_y(yaw + orbit.yaw)
-                * Quat::from_rotation_x((0.05 - orbit.pitch).clamp(-1.4, 1.5));
+            // The mouse (and the tracked head) looks up as far as the canopy overhead.
+            let world_rot = Quat::from_rotation_y(yaw + orbit.yaw + tracked.yaw)
+                * Quat::from_rotation_x((0.05 - orbit.pitch + tracked.pitch).clamp(-1.4, 1.5))
+                * Quat::from_rotation_z(tracked.roll);
             let local = a.orientation.inverse();
             *head = Transform::from_translation(local * (eye - pos.0).as_vec3())
                 .with_rotation(local * world_rot);

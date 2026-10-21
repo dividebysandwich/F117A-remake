@@ -50,8 +50,9 @@ openxr = { version = "0.21", optional = true }
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-# Closes the console window of a game started from Explorer (src/win_console.rs).
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+# Closes the console window of a game started from Explorer (src/win_console.rs); reads the
+# FreeTrack head tracking shared memory (src/headtrack.rs).
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Memory"] }
 
 [build-dependencies]
 # Links the icon, manifest and version (packaging/windows) into stealth-mission-89.exe.

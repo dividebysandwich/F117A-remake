@@ -70,6 +70,8 @@ pub struct Settings {
     pub tacview: bool,
     /// `--air-defence`: low-level air defences (`stealth_sim::SimOptions::air_defence`).
     pub air_defence: bool,
+    /// `--head-tracking`: TrackIR-style head tracking through OpenTrack (desktop, `headtrack`).
+    pub head_tracking: bool,
     /// `--vr-cockpit-scale <percent>`: size of the cockpit (and the world) in the headset,
     /// 100% = the flown aircraft's `AircraftSpec::vr_scale`.
     pub vr_cockpit_scale: f32,
@@ -193,6 +195,7 @@ impl Settings {
             realistic_guidance: has("--realistic-guidance"),
             tacview: has("--tacview"),
             air_defence: has("--air-defence"),
+            head_tracking: has("--head-tracking"),
             vr_cockpit_scale: get(&a, "--vr-cockpit-scale")
                 .and_then(|s| s.parse::<f32>().ok())
                 .map_or(DEFAULT_VR_COCKPIT_SCALE, |p| {

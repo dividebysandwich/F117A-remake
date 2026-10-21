@@ -48,6 +48,7 @@ pub struct Prefs {
     pub realistic_guidance: bool,
     pub tacview: bool,
     pub air_defence: bool,
+    pub head_tracking: bool,
     pub modern_shading: bool,
     pub shadows: bool,
     pub local_lights: bool,
@@ -91,6 +92,7 @@ impl Default for Prefs {
             realistic_guidance: false,
             tacview: false,
             air_defence: true,
+            head_tracking: false,
             // New players: modern shaders and time of day; classic shadows and lighting;
             // modern cockpit, HUD, avionics and flight model.
             modern_shading: true,
@@ -146,6 +148,7 @@ impl Prefs {
             realistic_guidance: s.realistic_guidance,
             tacview: s.tacview,
             air_defence: s.air_defence,
+            head_tracking: s.head_tracking,
             modern_shading: s.modern_shading,
             shadows: s.shadows,
             local_lights: s.local_lights,
@@ -191,6 +194,7 @@ impl Prefs {
         s.realistic_guidance |= self.realistic_guidance;
         s.tacview |= self.tacview;
         s.air_defence |= self.air_defence;
+        s.head_tracking |= self.head_tracking;
         s.modern_shading |= self.modern_shading;
         s.shadows |= self.shadows;
         s.local_lights |= self.local_lights;

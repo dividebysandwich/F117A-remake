@@ -104,8 +104,19 @@ pub struct Combat {
     pub prev_proj: [Projectile; N_PROJ],
     /// Classic missiles' smoothed paths as drawn (`sim_render::smooth_projectiles`).
     pub proj_smooth: [Option<crate::sim_render::Smoothed>; N_PROJ],
-    /// Fraction of a sim frame elapsed since the last step (0..1).
+    /// Fraction of a sim frame elapsed since the last step (0..1; a coop client's: of the
+    /// gap between the server's last two frames).
     pub alpha: f32,
+    /// Sim frames between the last two states (a coop client's server frames come a few
+    /// frames apart).
+    pub frame_gap: f32,
+    /// A coop client's playout of the server's frames.
+    playout: crate::net_interp::Playout,
+    /// The other pilots' aircraft as sampled, and the frame they are drawn at.
+    pub remote_track: crate::net_interp::RemoteTrack,
+    pub remote_time: f64,
+    /// Frames stepped here (a listen server's samples of the other pilots).
+    host_frame: u32,
     /// Explosions of the steps of this frame: (map x, map y, viewZ altitude, kind).
     pub explosions: Vec<(i32, i32, i32, i32)>,
     /// Gun rounds that hit the ground in the steps of this frame (map x, map y).
@@ -336,6 +347,11 @@ fn start_combat(
         pending: SimCommands::default(),
         quit: false,
         alpha: 0.0,
+        frame_gap: 1.0,
+        playout: default(),
+        remote_track: default(),
+        remote_time: 0.0,
+        host_frame: 0,
         explosions: Vec::new(),
         round_impacts: Vec::new(),
         signal_flares: Vec::new(),
@@ -591,7 +607,17 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         }
         let ps = player_state(&a, pos, false, false, collision.0, &hud, &mfd, &view, default());
         combat.sim.set_local_player(&ps);
-        for m in std::mem::take(&mut inbox.sim) {
+        // The server's frames play out a little behind, at a steady pace; what came between
+        // them (changes, events) goes in order with them.
+        let fs = FS as f64;
+        for m in &inbox.sim {
+            if let SimMsg::Fast(step, ..) = m {
+                combat.playout.received(*step, fs);
+            }
+        }
+        combat.playout.advance(time.delta_secs() as f64, fs);
+        let mut queue = std::mem::take(&mut inbox.sim).into_iter();
+        while let Some(m) = queue.next() {
             match m {
                 SimMsg::Slow(w) => {
                     let before: Vec<bool> =
@@ -604,17 +630,30 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                         take_event(combat, e, &mut a, &mut fx);
                     }
                 }
-                SimMsg::Fast(w, mine) => {
+                SimMsg::Fast(step, w, tick, mine) => {
+                    if !combat.playout.due() {
+                        inbox.sim.push(SimMsg::Fast(step, w, tick, mine));
+                        inbox.sim.extend(queue);
+                        break;
+                    }
                     combat.prev_flights.clear();
                     combat.prev_flights.extend_from_slice(combat.sim.flights());
                     combat.prev_proj = *combat.sim.projectiles();
                     combat.sim.apply_world_fast(&w);
-                    combat.sim.apply_pilot_snap(&mine);
-                    combat.sim.mirror_frame();
+                    if let Some(mine) = &mine {
+                        combat.sim.apply_pilot_snap(mine);
+                    }
+                    combat.sim.apply_pilot_tick(&tick);
+                    for p in &w.pilots {
+                        combat.remote_track.sample(p.id, step, p.view);
+                    }
+                    combat.remote_track.retain(&w.present);
+                    let gap = combat.playout.applied(step);
+                    for _ in 0..gap.min(MAX_STEPS) {
+                        combat.sim.mirror_frame();
+                    }
                     combat.sim.set_local_player(&ps);
                     combat.steps += 1;
-                    // The server's frame is the step: interpolation from here.
-                    combat.accum %= dt;
                     combat.record.sample(&combat.sim);
                     wreck_fire(combat);
                 }
@@ -661,8 +700,27 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         }
         combat.record.sample(&combat.sim);
         wreck_fire(combat);
+        // The other pilots as of this step (a listen server's).
+        combat.host_frame = combat.host_frame.wrapping_add(1);
+        if link.as_deref().is_some() {
+            let me = combat.sim.active_pilot();
+            let others = combat.sim.remote_pilots();
+            let ids: Vec<u8> = others.iter().map(|p| p.id).collect();
+            for p in others.iter().filter(|p| p.id != me) {
+                combat.remote_track.sample(p.id, combat.host_frame, p.view);
+            }
+            combat.remote_track.retain(&ids);
+        }
     }
-    combat.alpha = (combat.accum / dt).clamp(0.0, 1.0);
+    if link.as_deref().is_some_and(|l| l.is_client()) {
+        combat.alpha = combat.playout.alpha();
+        combat.frame_gap = combat.playout.span() as f32;
+        combat.remote_time = combat.playout.now().unwrap_or(0.0);
+    } else {
+        combat.alpha = (combat.accum / dt).clamp(0.0, 1.0);
+        combat.frame_gap = 1.0;
+        combat.remote_time = combat.host_frame as f64 - 1.0 + combat.alpha as f64;
+    }
     crate::sim_render::smooth_projectiles(combat, time.delta_secs());
     // The flight model can end the flight on its own (its ground and runway model differs in
     // detail); if the simulation does not follow within 3 s, end the mission anyway.
@@ -1018,7 +1076,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     let me = sim.active_pilot();
     for p in sim.remote_pilots().iter().filter(|p| p.id != me && p.chute.is_none()) {
         if !p.on_ground {
-            let v = p.view;
+            let v = combat.remote_track.view_at(p.id, combat.remote_time, p.view);
             contacts.list.push(Contact {
                 kind: ContactKind::Aircraft,
                 east: v.wx as f64,

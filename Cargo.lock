@@ -6185,6 +6185,7 @@ dependencies = [
  "lz4_flex",
  "ratatui",
  "serde",
+ "serde_json",
  "stealth-campaign",
  "stealth-host",
  "stealth-mission",

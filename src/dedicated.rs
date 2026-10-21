@@ -19,6 +19,8 @@ stealth-mission-89 --dedicated [switches]
   --seed <n>             campaign seed (new campaigns)
   --sky-ratio <x>        the sky runs x times faster than real time (default 24)
   --start-hour <h>       hour of the day at the start (default 8, new campaigns)
+  --send-rate <hz>       how often the moving world goes to the players, 1..15 a second
+                         (default 7.5; more is smoother, less takes more players)
   --save <file>          the campaign file (default: campaigns/dedicated.json in the
                          game's data directory), saved every minute and on stopping
   --realistic-damage     realistic missile damage

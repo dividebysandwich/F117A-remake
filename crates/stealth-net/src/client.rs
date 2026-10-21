@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use stealth_campaign::{CampaignState, PlayerId};
 use stealth_host::{HostEvent, Rules};
-use stealth_sim::net::{PilotSnap, WorldFast, WorldSlow};
+use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 use crate::protocol::*;
@@ -32,7 +32,8 @@ pub enum ClientEvent {
     Fast {
         step: u32,
         world: Box<WorldFast>,
-        pilot: Box<PilotSnap>,
+        tick: PilotTick,
+        pilot: Option<Box<PilotSnap>>,
     },
     Slow(Box<WorldSlow>),
     Events(Vec<SimEvent>),
@@ -142,13 +143,13 @@ impl Client {
                 self.closed = true;
                 ClientEvent::Closed(reason)
             }
-            ToClient::Fast { step, world, pilot } => {
+            ToClient::Fast { step, world, tick, pilot } => {
                 // An older frame than the last one is of no use.
                 if self.last_step.is_some_and(|l| step.wrapping_sub(l) as i32 <= 0) {
                     return None;
                 }
                 self.last_step = Some(step);
-                ClientEvent::Fast { step, world: Box::new(world), pilot: Box::new(pilot) }
+                ClientEvent::Fast { step, world: Box::new(world), tick, pilot: pilot.map(Box::new) }
             }
             ToClient::Slow(s) => ClientEvent::Slow(Box::new(s)),
             ToClient::Events(e) => ClientEvent::Events(e),

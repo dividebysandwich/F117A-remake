@@ -15,7 +15,7 @@ use stealth_host::{Host, HostEvent, Rules, save, theater};
 
 use crate::console::{Console, Status};
 use crate::protocol::{DEFAULT_PORT, MAX_PLAYERS};
-use crate::server::Server;
+use crate::server::{SEND_EVERY, Server};
 
 /// Seconds between saves.
 const SAVE_EVERY: f32 = 60.0;
@@ -37,6 +37,8 @@ pub struct Config {
     pub start_hour: f32,
     pub rules: Rules,
     pub save: PathBuf,
+    /// Simulation frames between the moving world's messages (`--send-rate`, a second).
+    pub send_every: u32,
     /// Plain log lines instead of the terminal screen.
     pub plain: bool,
 }
@@ -84,6 +86,10 @@ impl Config {
                 realistic_weapons: has("--realistic-weapons"),
             },
             save,
+            send_every: {
+                let hz = num(get("--send-rate"), "--send-rate", FS as f32 / SEND_EVERY as f32)?;
+                (FS as f32 / hz.max(1.0)).round().clamp(1.0, FS as f32) as u32
+            },
             plain: has("--plain"),
         })
     }
@@ -159,6 +165,7 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
     let mut sim = host.new_sim(&sim_data);
     let mut server = Server::new(&cfg.name, cfg.port, cfg.max_players, None)
         .with_context(|| format!("listening on UDP port {}", cfg.port))?;
+    server.send_every = cfg.send_every;
     con.say(format!(
         "{} listening on UDP port {} for {} players, saving to {}",
         cfg.name,
@@ -167,6 +174,7 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
         cfg.save.display()
     ));
     con.say(format!("rules: {}", rules_text(&host.rules)));
+    con.say(format!("sending the world {:.1} times a second", FS as f32 / cfg.send_every as f32));
     let ev = host.begin(&mut sim);
     log_events(&mut con, &ev);
     let frame = Duration::from_secs_f64(1.0 / FS as f64);

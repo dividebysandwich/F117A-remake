@@ -7,7 +7,13 @@
 //!   flight records, new shells), as changes against what the client has been sent: it goes
 //!   on a reliable channel. [`SlowBase`] is the host's record of a client's copy.
 //! * [`PilotSnap`]: a pilot's own state for his client (damage, stores, locks, lights,
-//!   objectives); the client keeps its own flight model's position, attitude and views.
+//!   objectives); the client keeps its own flight model's position, attitude and views. It
+//!   only changes now and then, so the server sends it when it does ([`PilotTick`] is the
+//!   little of it that changes all the time).
+//!
+//! A server sends the moving world a few times a second, not every frame; a client shows it a
+//! little behind and interpolates. Far away pilots may be left out of a frame
+//! ([`WorldFast::present`] lists them all): the mirror keeps them as they were.
 //!
 //! The shells fly on on the mirror ([`Sim::mirror_frame`]); hits are the host's business.
 
@@ -18,8 +24,10 @@ use crate::campaign::{AiMissile, CampaignFlight};
 use crate::types::*;
 use crate::{ENEMY_SLOTS, PILOT_SLOTS, Pilot, PlayerView, Sim};
 
-/// Another pilot's aircraft as everyone sees it.
+/// Another pilot's aircraft as everyone sees it (on the wire as a compact [`RemoteWire`]:
+/// there may be 64 of them in every frame).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(into = "RemoteWire", from = "RemoteWire")]
 pub struct RemotePilot {
     pub id: u8,
     pub view: PlayerView,
@@ -38,6 +46,88 @@ pub struct RemotePilot {
     pub missiles: Vec<Projectile>,
     /// His countermeasures.
     pub cms: [Countermeasure; 4],
+}
+
+/// [`RemotePilot`] as a sequence without field names: id, view (wx, wy, mx, my, alt, view_z,
+/// heading, pitch, roll, velocity, knots, climb), flags (gear up, on the ground, F-117A as it
+/// was, external stores, gun firing, burning), bay doors, parachute, missiles, the live
+/// countermeasures by slot.
+#[derive(Serialize, Deserialize)]
+struct RemoteWire(
+    u8,
+    [i32; 12],
+    u8,
+    i32,
+    Option<(i32, i32, i32)>,
+    Vec<Projectile>,
+    Vec<(u8, Countermeasure)>,
+);
+
+impl From<RemotePilot> for RemoteWire {
+    fn from(p: RemotePilot) -> Self {
+        let v = p.view;
+        let flags =
+            [p.gear_up, p.on_ground, p.lockheed, p.external_stores, p.gun_firing, p.burning]
+                .iter()
+                .enumerate()
+                .fold(0u8, |f, (k, &b)| f | (b as u8) << k);
+        RemoteWire(
+            p.id,
+            [
+                v.wx, v.wy, v.mx, v.my, v.alt, v.view_z, v.heading, v.pitch, v.roll, v.velocity,
+                v.knots, v.climb,
+            ],
+            flags,
+            p.door_anim,
+            p.chute,
+            p.missiles,
+            (0..4u8)
+                .filter(|&k| p.cms[k as usize].ttl != 0)
+                .map(|k| (k, p.cms[k as usize]))
+                .collect(),
+        )
+    }
+}
+
+impl From<RemoteWire> for RemotePilot {
+    fn from(w: RemoteWire) -> Self {
+        let RemoteWire(id, v, flags, door_anim, chute, missiles, live) = w;
+        let [wx, wy, mx, my, alt, view_z, heading, pitch, roll, velocity, knots, climb] = v;
+        let bit = |k: u8| flags & (1 << k) != 0;
+        let mut cms = [Countermeasure::default(); 4];
+        for (k, c) in live {
+            if let Some(slot) = cms.get_mut(k as usize) {
+                *slot = c;
+            }
+        }
+        RemotePilot {
+            id,
+            view: PlayerView {
+                wx,
+                wy,
+                mx,
+                my,
+                alt,
+                view_z,
+                heading,
+                pitch,
+                roll,
+                velocity,
+                knots,
+                climb,
+            },
+            gear_up: bit(0),
+            on_ground: bit(1),
+            door_anim,
+            lockheed: bit(2),
+            external_stores: bit(3),
+            gun_firing: bit(4),
+            burning: bit(5),
+            chute,
+            missiles,
+            cms,
+        }
+    }
 }
 
 /// What moves, as of one frame.
@@ -63,6 +153,9 @@ pub struct WorldFast {
     pub aaa_busy: Vec<(u16, f32, f32, i32, bool)>,
     pub ai_missiles: Vec<AiMissile>,
     pub pilots: Vec<RemotePilot>,
+    /// Every pilot in the world; those not in `pilots` this time are as they were.
+    #[serde(default)]
+    pub present: Vec<u8>,
 }
 
 /// What changed now and then.
@@ -93,10 +186,19 @@ pub struct SlowBase {
     joined: bool,
 }
 
-/// A pilot's own state for his client.
+/// A pilot's own state for his client, without what changes every frame (the same as long as
+/// nothing happens).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PilotSnap {
     pub pilot: Pilot,
+}
+
+/// What of a pilot's own state changes every frame: the radar sweep, the distance to the
+/// nearest base.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct PilotTick {
+    pub sweep_anim: i32,
+    pub nearest_base_dist: i32,
 }
 
 impl Sim {
@@ -142,6 +244,7 @@ impl Sim {
                 .collect(),
             ai_missiles: self.ai_missiles().to_vec(),
             pilots: self.remote_pilots(),
+            present: Vec::new(),
         }
     }
 
@@ -258,7 +361,18 @@ impl Sim {
         }
         pilot.log.clear();
         pilot.last_input = PlayerState::default();
+        // His own flight model's, the host's own tracking, and the ticking part.
+        pilot.p = PlayerView::default();
+        pilot.aaa_track = None;
+        pilot.sweep_anim = 0;
+        pilot.nearest_base_dist = 0;
         PilotSnap { pilot }
+    }
+
+    /// Pilot `id`'s state that changes every frame.
+    pub fn pilot_tick(&self, id: u8) -> PilotTick {
+        let p = self.pilot_ref(id as usize);
+        PilotTick { sweep_anim: p.sweep_anim, nearest_base_dist: p.nearest_base_dist }
     }
 
     // ------------------------------------------------------------------ the mirror
@@ -342,7 +456,17 @@ impl Sim {
         if let Some(c) = self.campaign.as_mut() {
             c.missiles = w.ai_missiles.clone();
         }
-        self.remote = w.pilots.iter().filter(|p| p.id != self.pl.id).cloned().collect();
+        let me = self.pl.id;
+        let mut remote: Vec<RemotePilot> =
+            w.pilots.iter().filter(|p| p.id != me).cloned().collect();
+        // Those left out this time (far away) stay as they were.
+        for p in std::mem::take(&mut self.remote) {
+            if w.present.contains(&p.id) && remote.iter().all(|q| q.id != p.id) {
+                remote.push(p);
+            }
+        }
+        remote.sort_by_key(|p| p.id);
+        self.remote = remote;
     }
 
     pub fn apply_world_slow(&mut self, w: &WorldSlow) {
@@ -422,6 +546,8 @@ impl Sim {
         p.external_view = own.external_view;
         p.on_ground = own.on_ground;
         p.prev_on_ground = own.prev_on_ground;
+        p.sweep_anim = own.sweep_anim;
+        p.nearest_base_dist = own.nearest_base_dist;
         p.log = std::mem::take(&mut self.pl.log);
         let nb = self.n_bullets.min(self.bullets.len());
         if p.rounds.len() == nb {
@@ -432,6 +558,11 @@ impl Sim {
             *o = p.scratch0;
         }
         self.pl = p;
+    }
+
+    pub fn apply_pilot_tick(&mut self, t: &PilotTick) {
+        self.pl.sweep_anim = t.sweep_anim;
+        self.pl.nearest_base_dist = t.nearest_base_dist;
     }
 
     /// One frame of the mirror between the host's: the shells fly on, and the other pilots'

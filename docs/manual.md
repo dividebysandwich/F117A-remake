@@ -998,6 +998,7 @@ stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 289
 | `--sky-ratio <x>` | The sky runs x times faster than real time (default 24: a day per hour). |
 | `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`, `--realistic-weapons` | The rules. |
 | `--save <file>` | The campaign file (default `campaigns/dedicated.json` in the game's data directory). |
+| `--send-rate <hz>` | How often the moving world goes to the players, 1 to 15 times a second (default 7.5). More is smoother; less leaves bandwidth for more players. |
 | `--plain` | Log lines instead of the console screen. |
 
 The server saves the campaign (which side holds which place, what is destroyed, the players'

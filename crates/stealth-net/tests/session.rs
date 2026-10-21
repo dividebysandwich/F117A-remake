@@ -32,7 +32,9 @@ fn world() -> World {
     let mut sim = host.new_sim(&sim_data);
     host.begin(&mut sim);
     let mirror = host.new_sim(&sim_data);
-    let server = Server::new("Test", 0, 8, None).unwrap();
+    let mut server = Server::new("Test", 0, 8, None).unwrap();
+    // Every frame: the mirror is compared with the server's simulation as of the same frame.
+    server.send_every = 1;
     World { host, sim, server, mirror }
 }
 
@@ -63,9 +65,12 @@ fn frame(
         match e {
             ClientEvent::Welcome { id, .. } => w.mirror.make_mirror(id.0),
             ClientEvent::Slow(s) => w.mirror.apply_world_slow(s),
-            ClientEvent::Fast { world, pilot, .. } => {
+            ClientEvent::Fast { world, tick, pilot, .. } => {
                 w.mirror.apply_world_fast(world);
-                w.mirror.apply_pilot_snap(pilot);
+                if let Some(pilot) = pilot {
+                    w.mirror.apply_pilot_snap(pilot);
+                }
+                w.mirror.apply_pilot_tick(tick);
             }
             _ => {}
         }
@@ -146,7 +151,8 @@ fn a_player_joins_flies_and_returns() {
     let fast = encode(&ToClient::Fast {
         step: 0,
         world: w.sim.world_fast(),
-        pilot: w.sim.pilot_snap(me.0),
+        tick: w.sim.pilot_tick(me.0),
+        pilot: Some(w.sim.pilot_snap(me.0)),
     });
     sizes.0 = fast.len();
     let slow = w.sim.world_slow(&mut Default::default());
@@ -195,4 +201,49 @@ fn a_full_campaign_is_saved_and_resumed() {
     let back = stealth_host::save::load_from(&path).unwrap().unwrap();
     assert_eq!(back, w.host.state);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn sixty_four_pilots_fit_in_a_frame() {
+    let mut w = world();
+    let sim = &mut w.sim;
+    let base = (3..sim.objects().len())
+        .find(|&i| sim.objects()[i].flags & 0xF0F == 0x401)
+        .expect("friendly base");
+    let b = sim.objects()[base];
+    let mut inputs = Vec::new();
+    for id in 0..64u8 {
+        sim.respawn_pilot(id, base, None, false, id % 2 == 0);
+        // Half of them together near the base, the others spread out far away.
+        let (dx, dy) = if id < 32 { (id as i32 * 8, 0) } else { (id as i32 * 0x300, 0x2000) };
+        let (x, y) = Sim::map_to_world(b.x + dx, b.y - 0x400 - dy);
+        let ps = PlayerState {
+            x,
+            y,
+            altitude: 3000 + id as u16 * 50,
+            heading: id as u16 * 1000,
+            velocity: 400 * 27,
+            gear_up: true,
+            fuel: 10000,
+            ..Default::default()
+        };
+        inputs.push((id, ps));
+    }
+    for _ in 0..4 {
+        for (_, ps) in inputs.iter_mut() {
+            ps.y += 200;
+        }
+        sim.step_pilots(&inputs, 15);
+    }
+    let world = sim.world_fast();
+    assert_eq!(world.pilots.len(), 64);
+    let size = |pilots: usize| {
+        let mut world = world.clone();
+        world.pilots.truncate(pilots);
+        encode(&ToClient::Fast { step: 0, world, tick: sim.pilot_tick(1), pilot: None }).len()
+    };
+    let (none, all) = (size(0), size(64));
+    eprintln!("frame without pilots {none} bytes, with 64 {all} bytes");
+    assert!((all - none) / 64 < 60, "a pilot costs {} bytes", (all - none) / 64);
+    assert!(all < 6_000);
 }

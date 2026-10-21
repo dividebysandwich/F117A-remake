@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use stealth_net::client::{Client, ClientEvent};
 use stealth_net::server::Server;
 use stealth_sim::SimEvent;
-use stealth_sim::net::{PilotSnap, WorldFast, WorldSlow};
+use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 
 /// At most this many of the server's frames wait to be applied (the newest kept).
 const MAX_FRAMES: usize = 30;
@@ -33,7 +33,9 @@ impl NetLink {
 
 /// What the server sent for the simulation, in the order it came.
 pub enum SimMsg {
-    Fast(Box<WorldFast>, Box<PilotSnap>),
+    /// The server's frame, the world, the pilot's ticking state and (when it changed) the
+    /// rest of it.
+    Fast(u32, Box<WorldFast>, PilotTick, Option<Box<PilotSnap>>),
     Slow(Box<WorldSlow>),
     Events(Vec<SimEvent>),
 }
@@ -69,7 +71,9 @@ fn pump_client(mut link: ResMut<NetLink>, mut inbox: ResMut<NetInbox>) {
     let now = Instant::now();
     for e in client.poll(now) {
         match e {
-            ClientEvent::Fast { world, pilot, .. } => inbox.sim.push(SimMsg::Fast(world, pilot)),
+            ClientEvent::Fast { step, world, tick, pilot } => {
+                inbox.sim.push(SimMsg::Fast(step, world, tick, pilot))
+            }
             ClientEvent::Slow(s) => inbox.sim.push(SimMsg::Slow(s)),
             ClientEvent::Events(e) => inbox.sim.push(SimMsg::Events(e)),
             e => inbox.campaign.push(e),

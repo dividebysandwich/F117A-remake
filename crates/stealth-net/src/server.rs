@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use stealth_campaign::PlayerId;
 use stealth_host::{Host, HostEvent};
-use stealth_sim::net::SlowBase;
+use stealth_sim::net::{RemotePilot, SlowBase, WorldFast};
 use stealth_sim::{Commands, PilotEvent, PlayerState, Sim, SimEvent};
 
 use crate::protocol::*;
@@ -21,6 +21,16 @@ use crate::transport::{Channel, ConnId, Endpoint, NetEvent};
 /// Seconds between full campaign updates (the board, the places, the log) and rosters.
 const SYNC_EVERY: f32 = 5.0;
 const ROSTER_EVERY: f32 = 1.0;
+/// Simulation frames between the moving world's messages by default (7.5 a second).
+pub const SEND_EVERY: u32 = 2;
+/// A player's own state goes again after a change this many times (the channel loses some),
+/// and at least every this many messages.
+const SNAP_REPEAT: u32 = 3;
+const SNAP_REFRESH: u32 = 8;
+/// Pilots farther than this from a player (world units, 60 km) are in every `FAR_EVERY`th
+/// message only.
+const FAR: i32 = 122_880;
+const FAR_EVERY: u32 = 4;
 
 /// A connection, and once it has joined its player.
 struct Remote {
@@ -33,6 +43,13 @@ struct Remote {
     pending: Commands,
     last_seq: Option<u32>,
     events: Vec<SimEvent>,
+    /// His own state as last sent (a hash), how often it is still to go, messages since.
+    snap_hash: u64,
+    snap_repeat: u32,
+    snap_age: u32,
+    /// Bytes sent him this second, and a second's worth.
+    sent: usize,
+    rate: u32,
 }
 
 pub struct Server {
@@ -43,7 +60,12 @@ pub struct Server {
     grace: HashMap<PlayerId, Instant>,
     /// The listen server's own player.
     local: Option<PlayerId>,
-    step: u32,
+    /// The simulation's frames, and the one last sent.
+    frame: u32,
+    sent_frame: Option<u32>,
+    /// Frames between the moving world's messages.
+    pub send_every: u32,
+    rate_timer: f32,
     sync_timer: f32,
     roster_timer: f32,
     campaign_dirty: bool,
@@ -68,7 +90,10 @@ impl Server {
             remotes: HashMap::new(),
             grace: HashMap::new(),
             local,
-            step: 0,
+            frame: 0,
+            sent_frame: None,
+            send_every: SEND_EVERY,
+            rate_timer: 0.0,
             sync_timer: 0.0,
             roster_timer: 0.0,
             campaign_dirty: false,
@@ -114,6 +139,11 @@ impl Server {
                             pending: Commands::default(),
                             last_seq: None,
                             events: Vec::new(),
+                            snap_hash: 0,
+                            snap_repeat: 0,
+                            snap_age: 0,
+                            sent: 0,
+                            rate: 0,
                         },
                     );
                 }
@@ -145,6 +175,14 @@ impl Server {
         }
         self.sync_timer += dt;
         self.roster_timer += dt;
+        self.rate_timer += dt;
+        if self.rate_timer >= 1.0 {
+            for r in self.remotes.values_mut() {
+                r.rate = (r.sent as f32 / self.rate_timer) as u32;
+                r.sent = 0;
+            }
+            self.rate_timer = 0.0;
+        }
         out
     }
 
@@ -300,6 +338,7 @@ impl Server {
 
     /// A step's events, to the players they are for.
     pub fn after_step(&mut self, events: &[PilotEvent]) {
+        self.frame = self.frame.wrapping_add(1);
         for r in self.remotes.values_mut() {
             let Some(p) = r.player else { continue };
             r.events.extend(
@@ -330,10 +369,14 @@ impl Server {
         }
     }
 
-    /// Sends the frame's state to every player.
+    /// Sends the state to every player: what changed now and then and the events at once, the
+    /// moving world every `send_every` frames.
     pub fn send_frame(&mut self, host: &Host, sim: &mut Sim, now: Instant) {
-        self.step = self.step.wrapping_add(1);
-        let world = sim.world_fast();
+        let due = self.sent_frame.is_none_or(|f| self.frame.wrapping_sub(f) >= self.send_every);
+        if due {
+            self.sent_frame = Some(self.frame);
+        }
+        let world = due.then(|| sim.world_fast());
         let (shells, ai_shells) = sim.take_new_shells();
         let sync = self.sync_timer >= SYNC_EVERY || (self.campaign_dirty && self.sync_timer >= 1.0);
         let campaign = sync.then(|| encode(&ToClient::Campaign(host.state.clone())));
@@ -345,37 +388,79 @@ impl Server {
             self.roster_timer = 0.0;
             encode(&ToClient::Roster(self.roster(host, sim)))
         });
+        let round = self.frame / self.send_every.max(1);
         let conns: Vec<ConnId> = self.remotes.keys().copied().collect();
         for conn in conns {
             let Some(r) = self.remotes.get_mut(&conn) else { continue };
             let Some(p) = r.player else { continue };
+            let mut out: Vec<(Channel, Vec<u8>)> = Vec::new();
             let mut slow = sim.world_slow(&mut r.base);
             slow.shells.extend_from_slice(&shells);
             slow.ai_shells.extend_from_slice(&ai_shells);
             let events = std::mem::take(&mut r.events);
             if slow != Default::default() {
-                let m = encode(&ToClient::Slow(slow));
-                self.net.send(conn, Channel::Reliable, &m);
+                out.push((Channel::Reliable, encode(&ToClient::Slow(slow))));
             }
             if !events.is_empty() {
-                let m = encode(&ToClient::Events(events));
-                self.net.send(conn, Channel::Reliable, &m);
+                out.push((Channel::Reliable, encode(&ToClient::Events(events))));
             }
-            let fast = ToClient::Fast {
-                step: self.step,
-                world: world.clone(),
-                pilot: sim.pilot_snap(p.0),
-            };
-            let m = encode(&fast);
-            self.net.send(conn, Channel::Unreliable, &m);
+            if let Some(world) = &world {
+                // His own state when it changed (a few times over), else now and then.
+                let snap = sim.pilot_snap(p.0);
+                let hash = {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    encode(&snap).hash(&mut h);
+                    h.finish()
+                };
+                if hash != r.snap_hash {
+                    r.snap_hash = hash;
+                    r.snap_repeat = SNAP_REPEAT;
+                }
+                r.snap_age += 1;
+                let pilot = (r.snap_repeat > 0 || r.snap_age >= SNAP_REFRESH).then(|| {
+                    r.snap_repeat = r.snap_repeat.saturating_sub(1);
+                    r.snap_age = 0;
+                    snap
+                });
+                let fast = ToClient::Fast {
+                    step: self.frame,
+                    world: Self::seen_by(world, sim, p.0, round),
+                    tick: sim.pilot_tick(p.0),
+                    pilot,
+                };
+                out.push((Channel::Unreliable, encode(&fast)));
+            }
             if let Some(m) = &campaign {
-                self.net.send(conn, Channel::Reliable, m);
+                out.push((Channel::Reliable, m.clone()));
             }
             if let Some(m) = &roster {
-                self.net.send(conn, Channel::Reliable, m);
+                out.push((Channel::Reliable, m.clone()));
+            }
+            r.sent += out.iter().map(|(_, m)| m.len()).sum::<usize>();
+            for (channel, m) in out {
+                self.net.send(conn, channel, &m);
             }
         }
         self.net.flush(now);
+    }
+
+    /// The moving world for pilot `me`: the pilots far from him only in some of the messages
+    /// (each in every `FAR_EVERY`th, in turns).
+    fn seen_by(world: &WorldFast, sim: &Sim, me: u8, round: u32) -> WorldFast {
+        let Some(at) = sim.pilot_view(me).filter(|_| !sim.pilot_absent(me)) else {
+            return WorldFast { present: Vec::new(), ..world.clone() };
+        };
+        let near = |p: &RemotePilot| {
+            p.id == me
+                || (p.view.wx - at.wx).abs().max((p.view.wy - at.wy).abs()) < FAR
+                || (round + p.id as u32) % FAR_EVERY == 0
+        };
+        WorldFast {
+            present: world.pilots.iter().map(|p| p.id).collect(),
+            pilots: world.pilots.iter().filter(|p| near(p)).cloned().collect(),
+            ..world.clone()
+        }
     }
 
     /// Everybody in the campaign now: the host's player, the connected ones, those dropped out.
@@ -404,6 +489,7 @@ impl Server {
                     status,
                     ping,
                     host: Some(id) == self.local,
+                    rate: self.conn_of(id).and_then(|c| self.remotes.get(&c)).map_or(0, |r| r.rate),
                 }
             })
             .collect()

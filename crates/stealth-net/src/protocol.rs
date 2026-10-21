@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use stealth_campaign::{Aircraft, CampaignState, PlaceId, PlayerId, Sortie};
 use stealth_host::{HostEvent, Rules, Stores};
-use stealth_sim::net::{PilotSnap, WorldFast, WorldSlow};
+use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 /// Changes with every change of the messages: client and server must agree.
@@ -65,6 +65,9 @@ pub struct PlayerInfo {
     pub ping: u16,
     /// The host's own player (listen server).
     pub host: bool,
+    /// What the server sends him (bytes a second).
+    #[serde(default)]
+    pub rate: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -95,11 +98,13 @@ pub enum ToClient {
     Reject {
         reason: String,
     },
-    /// What moves and the player's own state, every frame (unreliable).
+    /// What moves and the player's own state, a few times a second (unreliable). `step`: the
+    /// server's frame; `pilot` only when it changed (and now and then).
     Fast {
         step: u32,
         world: WorldFast,
-        pilot: PilotSnap,
+        tick: PilotTick,
+        pilot: Option<PilotSnap>,
     },
     /// What changed now and then.
     Slow(WorldSlow),

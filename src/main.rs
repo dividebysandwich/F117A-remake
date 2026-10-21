@@ -36,6 +36,7 @@ mod mission;
 mod models;
 mod multiplayer_menu;
 mod net;
+mod net_interp;
 mod palette;
 mod palette_material;
 mod panel;

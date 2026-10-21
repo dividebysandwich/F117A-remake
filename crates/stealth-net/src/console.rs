@@ -128,7 +128,7 @@ fn render(f: &mut ratatui::Frame, s: &Status, log: &VecDeque<(String, String)>, 
     let [head, sides, players, events] = Layout::vertical([
         Constraint::Length(4),
         Constraint::Length(5),
-        Constraint::Length(s.players.len().max(1) as u16 + 3),
+        Constraint::Length(s.players.len().clamp(1, 24) as u16 + 3),
         Constraint::Min(5),
     ])
     .areas(f.area());
@@ -206,15 +206,29 @@ fn render(f: &mut ratatui::Frame, s: &Status, log: &VecDeque<(String, String)>, 
                     Cell::from(p.name.clone()).style(Style::new().bold()),
                     Cell::from(status).style(Style::new().fg(c)),
                     Cell::from(if p.ping > 0 { format!("{} ms", p.ping) } else { String::new() }),
+                    Cell::from(if p.rate > 0 {
+                        format!("{:.1} kB/s", p.rate as f32 / 1000.0)
+                    } else {
+                        String::new()
+                    }),
                 ])
             })
             .collect()
     };
     let players_table = Table::new(
         rows,
-        [Constraint::Length(4), Constraint::Length(26), Constraint::Min(30), Constraint::Length(8)],
+        [
+            Constraint::Length(4),
+            Constraint::Length(26),
+            Constraint::Min(30),
+            Constraint::Length(8),
+            Constraint::Length(11),
+        ],
     )
-    .header(Row::new(vec!["#", "Name", "Status", "Ping"]).style(Style::new().fg(Color::DarkGray)))
+    .header(
+        Row::new(vec!["#", "Name", "Status", "Ping", "Sent"])
+            .style(Style::new().fg(Color::DarkGray)),
+    )
     .block(Block::default().borders(Borders::ALL).title(format!(
         " Players {}/{} ",
         s.players.len(),
@@ -270,6 +284,7 @@ mod tests {
                     },
                     ping: 42,
                     host: false,
+                    rate: 6400,
                 },
                 PlayerInfo {
                     id: PlayerId(2),
@@ -277,6 +292,7 @@ mod tests {
                     status: PlayerStatus::Reconnecting { seconds: 17 },
                     ping: 0,
                     host: false,
+                    rate: 0,
                 },
             ],
             max_players: 8,

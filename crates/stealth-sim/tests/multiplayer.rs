@@ -235,6 +235,7 @@ fn a_mirror_follows_the_host() {
         mirror.apply_world_slow(&slow);
         mirror.apply_world_fast(&fast);
         mirror.apply_pilot_snap(&mine);
+        mirror.apply_pilot_tick(&host.pilot_tick(1));
         mirror.mirror_frame();
         let (emitters, lights, targeting, damage, stores) = host.as_pilot(1, |s| {
             (s.emitters(), s.lights(), s.targeting(), s.damage_effects(), s.stores())

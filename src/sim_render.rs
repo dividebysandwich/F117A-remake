@@ -563,13 +563,14 @@ fn spawn_dot(
     parent
 }
 
-/// Puts a round's dot and tracer line where the round is, one sim frame behind (hidden for a
-/// free slot).
+/// Puts a round's dot and tracer line where the round is, `gap` sim frames (the last step's)
+/// behind (hidden for a free slot).
 fn place_tracer(
     b: &stealth_sim::Bullet,
     dot: Entity,
     line: Entity,
     alpha: f32,
+    gap: f64,
     q: &mut Query<
         (&mut WorldPos, &mut Transform, Option<&mut ModelState>, &mut Visibility),
         With<SimObject>,
@@ -578,7 +579,7 @@ fn place_tracer(
     let fine = stealth_sim::ROUND_FINE as f64;
     let (x, y, alt) = b.map_pos();
     let step = (b.vx as f64 / (32.0 * fine), b.vy as f64 / (32.0 * fine), b.vz as f64 / fine);
-    let back = 1.0 - alpha as f64;
+    let back = (1.0 - alpha as f64) * gap;
     let head = map_point(x - step.0 * back, y - step.1 * back, alt - step.2 * back);
     let tail = map_point(
         x - step.0 * (back + TRACER_FRAMES),
@@ -955,7 +956,7 @@ fn sync_objects(
         vis.bullets.push((dot, line));
     }
     for (b, &(dot, line)) in bullets.iter().zip(&vis.bullets) {
-        place_tracer(b, dot, line, alpha, &mut q);
+        place_tracer(b, dot, line, alpha, 1.0, &mut q);
     }
     // The other pilots' rounds (theirs on the host, flown from their trigger on a client).
     let others = sim.other_rounds();
@@ -966,8 +967,10 @@ fn sync_objects(
         vis.other_bullets.push((dot, line));
     }
     let none = stealth_sim::Bullet::default();
+    // A coop client flies them on by the server's frames, a few at a time.
+    let gap = combat.frame_gap as f64;
     for (k, &(dot, line)) in vis.other_bullets.iter().enumerate() {
-        place_tracer(others.get(k).unwrap_or(&none), dot, line, alpha, &mut q);
+        place_tracer(others.get(k).unwrap_or(&none), dot, line, alpha, gap, &mut q);
     }
 
     // --- falling wreck (model 11) until it hits the ground
@@ -1207,7 +1210,7 @@ fn own_shadow(
 /// view before the latest one (for the interpolation); their weapons in flight.
 #[derive(Resource, Default)]
 pub struct RemoteVisuals {
-    planes: HashMap<u8, (Entity, &'static str, stealth_sim::PlayerView, stealth_sim::PlayerView)>,
+    planes: HashMap<u8, (Entity, &'static str)>,
     missiles: Vec<(Entity, i32)>,
 }
 
@@ -1262,20 +1265,15 @@ fn sync_remote_pilots(
                 Visibility::Inherited,
                 crate::models::LodRange(FRIENDLY_LOD_RANGE),
             ));
-            vis.planes.insert(p.id, (e, spec.model, p.view, p.view));
+            vis.planes.insert(p.id, (e, spec.model));
         }
-        let Some(v) = vis.planes.get_mut(&p.id) else { continue };
-        if v.3 != p.view {
-            v.2 = v.3;
-            v.3 = p.view;
-        }
-        let (old, cur) = (v.2, v.3);
-        let jump = (old.wx - cur.wx).abs() > 0x4000 || (old.wy - cur.wy).abs() > 0x4000;
-        let t = if jump { 1.0 } else { combat.alpha as f64 };
+        let Some(v) = vis.planes.get(&p.id) else { continue };
+        // Between the samples around the time shown (carried on a little past the last).
+        let (old, cur, t) = combat.remote_track.at(p.id, combat.remote_time, p.view);
         let lerp = |a: i32, b: i32| a as f64 + (b - a) as f64 * t;
         let pos = wu_to_bevy(lerp(old.wx, cur.wx), lerp(old.wy, cur.wy), lerp(old.alt, cur.alt));
         let rot = attitude(old.heading, old.pitch, old.roll)
-            .slerp(attitude(cur.heading, cur.pitch, cur.roll), t as f32);
+            .slerp(attitude(cur.heading, cur.pitch, cur.roll), t.min(1.0) as f32);
         if let Ok((mut wp, mut tf, state)) = q.get_mut(v.0) {
             wp.0 = pos + (rot * Vec3::Y * spec.model_lift).as_dvec3();
             tf.rotation = rot;

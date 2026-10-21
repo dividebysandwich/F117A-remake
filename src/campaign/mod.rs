@@ -319,6 +319,7 @@ impl ActiveCampaign {
             status,
             ping: 0,
             host: self.role == Role::Host,
+            rate: 0,
         }]
     }
 }

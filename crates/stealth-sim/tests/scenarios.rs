@@ -553,70 +553,76 @@ fn countermeasure_stores_run_out() {
     assert_eq!(sim.stores().0, 0);
 }
 
+/// Ten simulated minutes of one theater with a scripted flight and random commands.
+fn ten_minute_mission(d: &Data, th: usize, k: u16, opp: u8, opts: SimOptions) -> Sim {
+    let trig = &d.sim.trig;
+    let m = mission(d, th, 0x100 + th as u16 * 7 + k, opp);
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let mut p = sim.start_state();
+    let mut rng = Rng::new(th as u32 * 77 + k as u32);
+    let (mut wx, mut wy) = (p.x as i64, p.y as i64);
+    let mut alt = 0i32;
+    let mut ended = false;
+    for f in 0..15 * 600 {
+        // Climb out and fly towards the primary, then the secondary.
+        let wp = m.waypoints[if f < 15 * 300 { 1 } else { 2 }];
+        let (tx, ty) = Sim::map_to_world(wp.x, wp.y);
+        let h = stealth_sim::math::bearing(
+            ((tx as i64 - wx) >> 6) as i32,
+            ((ty as i64 - wy) >> 6) as i32,
+        );
+        p.heading = h as u16;
+        alt = (alt + 20).min(if f < 15 * 400 { 3000 } else { 300 });
+        p.altitude = alt as u16;
+        p.velocity = 450 * 27;
+        p.on_ground = false;
+        p.gear_up = true;
+        p.roll = ((f % 300) as i16 - 150) * 40;
+        let v = (p.velocity as i32 * 4) / 15 / 64;
+        wx += trig.sin_mul(h as i32, v) as i64 * 4;
+        wy += trig.cos_mul(h as i32, v) as i64 * 4;
+        p.x = wx as i32;
+        p.y = wy as i32;
+        p.hud_mode = [HudMode::Nav, HudMode::Air, HudMode::Gnd][(f / 900) % 3];
+        p.camera_mfd = f % 1000 < 600;
+        let r = rng.random(1000);
+        p.cmd = Commands {
+            fire: r < 20,
+            gun: r % 7 == 0,
+            flare: r == 100,
+            chaff: r == 101,
+            decoy: r == 102,
+            toggle_ecm: r == 103,
+            toggle_irj: r == 104,
+            toggle_bay: r == 105,
+            next_bay: r == 106,
+            designate: r == 107,
+            next_target: r == 108,
+            camera_dir: (r == 109).then_some(0x4000),
+            nearest_target: r == 110,
+            ..Default::default()
+        };
+        for e in sim.step(&p, 15) {
+            if matches!(e, SimEvent::MissionEnd(_)) {
+                ended = true;
+            }
+        }
+        let _ = sim.targeting();
+        let _ = sim.active_aircraft();
+        if ended {
+            break;
+        }
+    }
+    sim
+}
+
 /// Ten simulated minutes of every theater with a scripted flight and random commands.
 #[test]
 fn ten_minute_missions_all_theaters() {
     let d = data();
-    let trig = &d.sim.trig;
     for th in 0..9 {
         for (k, opp) in [(0u16, 0u8), (1, 3)] {
-            let m = mission(d, th, 0x100 + th as u16 * 7 + k, opp);
-            let mut sim = Sim::new(&d.sim, &m);
-            let mut p = sim.start_state();
-            let mut rng = Rng::new(th as u32 * 77 + k as u32);
-            let (mut wx, mut wy) = (p.x as i64, p.y as i64);
-            let mut alt = 0i32;
-            let mut ended = false;
-            for f in 0..15 * 600 {
-                // Climb out and fly towards the primary, then the secondary.
-                let wp = m.waypoints[if f < 15 * 300 { 1 } else { 2 }];
-                let (tx, ty) = Sim::map_to_world(wp.x, wp.y);
-                let h = stealth_sim::math::bearing(
-                    ((tx as i64 - wx) >> 6) as i32,
-                    ((ty as i64 - wy) >> 6) as i32,
-                );
-                p.heading = h as u16;
-                alt = (alt + 20).min(if f < 15 * 400 { 3000 } else { 300 });
-                p.altitude = alt as u16;
-                p.velocity = 450 * 27;
-                p.on_ground = false;
-                p.gear_up = true;
-                p.roll = ((f % 300) as i16 - 150) * 40;
-                let v = (p.velocity as i32 * 4) / 15 / 64;
-                wx += trig.sin_mul(h as i32, v) as i64 * 4;
-                wy += trig.cos_mul(h as i32, v) as i64 * 4;
-                p.x = wx as i32;
-                p.y = wy as i32;
-                p.hud_mode = [HudMode::Nav, HudMode::Air, HudMode::Gnd][(f / 900) % 3];
-                p.camera_mfd = f % 1000 < 600;
-                let r = rng.random(1000);
-                p.cmd = Commands {
-                    fire: r < 20,
-                    gun: r % 7 == 0,
-                    flare: r == 100,
-                    chaff: r == 101,
-                    decoy: r == 102,
-                    toggle_ecm: r == 103,
-                    toggle_irj: r == 104,
-                    toggle_bay: r == 105,
-                    next_bay: r == 106,
-                    designate: r == 107,
-                    next_target: r == 108,
-                    camera_dir: (r == 109).then_some(0x4000),
-                    nearest_target: r == 110,
-                    ..Default::default()
-                };
-                for e in sim.step(&p, 15) {
-                    if matches!(e, SimEvent::MissionEnd(_)) {
-                        ended = true;
-                    }
-                }
-                let _ = sim.targeting();
-                let _ = sim.active_aircraft();
-                if ended {
-                    break;
-                }
-            }
+            let sim = ten_minute_mission(d, th, k, opp, SimOptions::default());
             eprintln!(
                 "theater {th}: {} s, end {:?}, launches {}, log {}",
                 sim.mission_tick(),
@@ -627,6 +633,49 @@ fn ten_minute_missions_all_theaters() {
             assert!(sim.mission_tick() > 0);
         }
     }
+}
+
+/// FNV-1a over the serialized state.
+fn state_hash(sim: &Sim) -> u64 {
+    serde_json::to_vec(sim)
+        .unwrap()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325, |h, &b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
+}
+
+/// Classic behaviour is pinned: the end state of the ten-minute missions with default options
+/// must not change when optional features are added.
+#[test]
+fn classic_state_golden() {
+    const GOLDEN: [u64; 18] = [
+        0x4d83036d640805a9,
+        0xe9904b375be4fa29,
+        0x9aa541c96b3b108b,
+        0xdd596212bc308d02,
+        0x83d4f4783879bb28,
+        0x7ead38f91a35ae2a,
+        0xc03004f62a65c96b,
+        0x85c70a5342ce14f6,
+        0xc3c4dc270c33bbb0,
+        0x005b7e23c293cf4c,
+        0x5ec3a0fb4b8e35dd,
+        0xba5aef918843fca1,
+        0xebab9efb01b0ee2d,
+        0xc5574f37ac73f98f,
+        0x4c1ce6156422c146,
+        0x9b9de6090d9ef47d,
+        0xbf858b38f0bb38d5,
+        0x9e87bcb88b650564,
+    ];
+    let d = data();
+    let mut got = Vec::new();
+    for th in 0..9 {
+        for (k, opp) in [(0u16, 0u8), (1, 3)] {
+            got.push(state_hash(&ten_minute_mission(d, th, k, opp, SimOptions::default())));
+        }
+    }
+    let hex: Vec<String> = got.iter().map(|h| format!("0x{h:016x}")).collect();
+    assert_eq!(got, GOLDEN, "new hashes: [{}]", hex.join(", "));
 }
 
 /// Supply drop: unreachable in the original (spec vs class test), fixed behind `fix_original_bugs`.

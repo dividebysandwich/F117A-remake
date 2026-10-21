@@ -54,11 +54,13 @@ pub struct CloudVolume {
     /// 0: wisps of the ridges alone; 1: a solid core from the spheres, its edges eroded by
     /// the ridges.
     pub core: f32,
+    /// 0..1: how much darker than the shade ramp the cloud is drawn (storm cells).
+    pub darken: f32,
 }
 
 impl CloudVolume {
     pub fn new(volume: Handle<WaveletVolume>) -> Self {
-        Self { volume, j_max: 3, h_max: 4, fill: 1.0, core: 0.0 }
+        Self { volume, j_max: 3, h_max: 4, fill: 1.0, core: 0.0, darken: 0.0 }
     }
 
     pub fn with_fill(self, fill: f32) -> Self {
@@ -67,6 +69,10 @@ impl CloudVolume {
 
     pub fn with_core(self, core: f32) -> Self {
         Self { core: core.clamp(0.0, 1.0), ..self }
+    }
+
+    pub fn with_darken(self, darken: f32) -> Self {
+        Self { darken: darken.clamp(0.0, 1.0), ..self }
     }
 }
 
@@ -93,6 +99,8 @@ pub struct CloudShading {
     pub line_a: Vec4,
     pub line_b: Vec4,
     pub line_color: Vec3,
+    /// Fog over the clouds (inside another cloud): colour, amount 0..1.
+    pub fog: Vec4,
 }
 
 impl Default for CloudShading {
@@ -105,6 +113,7 @@ impl Default for CloudShading {
             line_a: Vec4::ZERO,
             line_b: Vec4::ZERO,
             line_color: Vec3::ONE,
+            fog: Vec4::ZERO,
         }
     }
 }
@@ -124,6 +133,7 @@ pub struct CloudGlobals {
     pub line_a: Vec4,
     pub line_b: Vec4,
     pub line_color: Vec4,
+    pub fog: Vec4,
     pub ramp: [Vec4; 16],
 }
 
@@ -301,6 +311,7 @@ pub(crate) fn upload_cloud_frame(
         line_a: s.line_a,
         line_b: s.line_b,
         line_color: s.line_color.extend(0.0),
+        fog: s.fog,
         ramp: s.ramp,
     };
     frame.steps = std::array::from_fn(|j| settings.steps_for_lod(j as u32));
@@ -338,7 +349,7 @@ pub(crate) fn upload_cloud_frame(
                 aabb_max,
                 h_max: volume.h_max as f32,
                 misc: UVec4::new(0, 0, asset.seed, interior),
-                fill: Vec4::new(volume.fill.max(0.05), volume.core, 0.0, 0.0),
+                fill: Vec4::new(volume.fill.max(0.05), volume.core, volume.darken, 0.0),
             },
             tf: *tf,
             volume: volume.volume.id(),

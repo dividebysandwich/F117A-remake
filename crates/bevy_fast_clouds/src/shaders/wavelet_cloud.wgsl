@@ -13,7 +13,7 @@ struct GpuVolume {
     h_max: f32,
     // Sphere offset, sphere count, seed, camera inside.
     misc: vec4<u32>,
-    // Fill, core.
+    // Fill, core, darken (0..1).
     fill: vec4<f32>,
 }
 
@@ -31,6 +31,8 @@ struct CloudGlobals {
     line_a: vec4<f32>,
     line_b: vec4<f32>,
     line_color: vec4<f32>,
+    // Fog over the clouds: colour, amount.
+    fog: vec4<f32>,
     // Shade ramp: 0 sunlit (and the haze colour) .. 15 darkest.
     ramp: array<vec4<f32>, 16>,
 }
@@ -413,7 +415,10 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
 #else
     var rgb = ramp(k);
 #endif
+    // Dark clouds (storm cells) stay dark whatever the ramp and the haze.
+    rgb *= 1.0 - vol.fill.z;
     rgb += globals.flash.rgb + globals.line_color.rgb * glow;
+    rgb = mix(rgb, globals.fog.rgb, globals.fog.a);
     if (globals.params0.w > 0.0) {
         rgb = lod_tint(vol.j_max, globals.params1.x);
     }

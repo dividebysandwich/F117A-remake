@@ -226,36 +226,43 @@ fn cumulus_spheres(r: f32, h: f32, seed: u64) -> Vec<CloudSphere> {
     out
 }
 
-/// The spheres of a cumulonimbus (radius `r`, height `h`): a column of stacked puffs under a
-/// wide anvil at the top.
+/// The spheres of a cumulonimbus (radius `r`, height `h`): a massive column of big overlapping
+/// puffs, staggered around the axis, under an anvil of big puffs spreading past the column.
 fn tower_spheres(r: f32, h: f32, seed: u64) -> Vec<CloudSphere> {
-    let col = 0.45 * r;
-    let anvil = 0.35 * r;
-    let anvil_y = (h - anvil).max(col);
-    let stack = (((anvil_y - 0.5 * col) / (0.8 * col)).round() as usize).clamp(1, 5);
+    let jitter = |i: u64| unit(hash(seed ^ i.wrapping_mul(0x9E37_79B9_7F4A_7C15)));
+    let col = 0.95 * r;
+    let anvil = 0.6 * r;
+    let anvil_y = (h - 0.7 * anvil).max(col);
+    // Puffs every half radius up the column (up to 5), narrowing a little with height.
+    let stack = (((anvil_y - 0.4 * col) / (0.5 * col)).ceil() as usize).clamp(1, 5);
     let mut out = Vec::new();
+    let turn = jitter(1) * std::f32::consts::TAU;
     for i in 0..stack {
-        let f = i as f32 / stack.max(2) as f32;
-        let wobble = unit(hash(seed ^ ((i as u64 + 1) * 0x51ED))) - 0.5;
-        out.push(CloudSphere {
-            center: Vec3::new(wobble * 0.15 * r, 0.5 * col + f * (anvil_y - 0.5 * col), 0.0),
-            radius: col * (1.0 - 0.15 * f),
-        });
+        let f = i as f32 / (stack - 1).max(1) as f32;
+        let rad = col * (1.0 - 0.2 * f) * (0.9 + 0.2 * jitter(10 + i as u64));
+        let a = turn + i as f32 * 2.4;
+        let off = 0.3 * r * (0.5 + 0.5 * jitter(20 + i as u64));
+        let y = 0.6 * col + f * (anvil_y - 0.6 * col - 0.3 * anvil);
+        out.push(CloudSphere { center: Vec3::new(a.cos() * off, y, a.sin() * off), radius: rad });
     }
-    // Anvil: one over the column and a ring spreading out.
-    out.push(CloudSphere { center: Vec3::new(0.0, anvil_y, 0.0), radius: anvil * 1.2 });
+    // Anvil: one over the column and a ring spreading out to about 1.5 r.
+    out.push(CloudSphere { center: Vec3::new(0.0, anvil_y, 0.0), radius: anvil * 1.25 });
     let ring = 12 - out.len();
-    let turn = unit(hash(seed ^ 0xA5)) * std::f32::consts::TAU;
     for i in 0..ring {
-        let a = turn + i as f32 / ring as f32 * std::f32::consts::TAU;
-        let d = 0.7 * r * (0.85 + 0.3 * unit(hash(seed ^ ((i as u64 + 7) * 0x2F1))));
+        let a = turn
+            + (i as f32 + 0.3 * (jitter(30 + i as u64) - 0.5)) / ring as f32
+                * std::f32::consts::TAU;
+        let d = 0.85 * r * (0.85 + 0.3 * jitter(40 + i as u64));
         out.push(CloudSphere {
-            center: Vec3::new(a.cos() * d, anvil_y + 0.1 * anvil, a.sin() * d),
-            radius: anvil,
+            center: Vec3::new(a.cos() * d, anvil_y + 0.15 * anvil, a.sin() * d),
+            radius: anvil * (0.85 + 0.3 * jitter(50 + i as u64)),
         });
     }
     out
 }
+
+/// How much darker storm cells are drawn (fraction of their brightness taken away).
+const STORM_DARKEN: f32 = 0.5;
 
 /// LOD by the size clouds appear on screen (`SM89_CLOUD_LOD_PX`: pixels a cloud must cover
 /// for full detail).
@@ -417,16 +424,18 @@ fn stream_clouds(
         let r_m = c.r as f32 * 32.0 * WU as f32;
         let pos = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, c.base_ft as f64);
         let h_m = (c.top_ft - c.base_ft) as f32 * WU as f32;
-        let spheres = match c.kind {
-            CloudKind::Cumulonimbus => tower_spheres(r_m, h_m, h),
-            _ => cumulus_spheres(r_m, h_m, h),
+        // Storm cells are dark, and so is everything under a storm sky.
+        let (spheres, darken) = match c.kind {
+            CloudKind::Cumulonimbus => (tower_spheres(r_m, h_m, h), STORM_DARKEN),
+            _ if w.sky == Sky::Storm => (cumulus_spheres(r_m, h_m, h), STORM_DARKEN / 2.0),
+            _ => (cumulus_spheres(r_m, h_m, h), 0.0),
         };
         let volume = WaveletVolume::from_spheres(spheres, h as u32, 3, 4, 0.72).with_floor(0.0);
         let tf = Transform::from_translation((pos - origin.origin).as_vec3());
         let e = commands
             .spawn((
                 CloudEntity,
-                CloudVolume::new(volumes.add(volume)).with_core(1.0),
+                CloudVolume::new(volumes.add(volume)).with_core(1.0).with_darken(darken),
                 WorldPos(pos),
                 tf,
                 // Drawn this frame: transforms were already propagated.
@@ -493,6 +502,8 @@ fn shade_clouds(
         line_a,
         line_b,
         line_color: BOLT_COLOR * flash_scale,
+        // Inside a cloud everything fades into it (`whiteout` in palette.wgsl).
+        fog: tint(linear(CLOUD_RAMP + 2)).extend(state.whiteout),
     };
     // VR (two large eye views on a mobile GPU): marched at a third of the resolution, coarse
     // scales only, fewer steps, no second occupancy sample for the self shadow.

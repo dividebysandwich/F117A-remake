@@ -4,10 +4,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, PrimaryEguiContext, egui};
-use stealth_campaign::{
-    InsertionState, MissionKind, MissionOffer, Objective, Side, SiteKind, SortieResult,
-};
-use stealth_sim::fflags;
+use stealth_campaign::{InsertionState, MissionKind, MissionOffer, Objective, Side, SortieResult};
 
 use super::{ActiveCampaign, ME, Phase, Session, apply, describe, sortie_mission};
 use crate::map_draw::{self, FRIENDLY_BLUE, MISSILE_RED, MapView};
@@ -36,6 +33,25 @@ pub struct OpsUi {
     fitted: bool,
     /// `--campaign-take` was done.
     pub test_taken: bool,
+    /// The accepted mission's briefing (map and loadout) before take-off.
+    briefing: Option<Briefing>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BriefPage {
+    Map,
+    Loadout,
+}
+
+/// A mission accepted from the board, briefed before take-off.
+struct Briefing {
+    offer: u32,
+    base: u16,
+    loadout: crate::loadout::PlannedLoadout,
+    window: crate::loadout::LoadoutWindow,
+    page: BriefPage,
+    /// Map centre and scale (fitted to the route at first).
+    view: Option<(egui::Vec2, f32)>,
 }
 
 /// The camera that carries the Ops screen's egui context.
@@ -119,6 +135,12 @@ pub fn test_take() -> Option<usize> {
     args.iter().position(|a| a == "--campaign-take").and_then(|i| args.get(i + 1))?.parse().ok()
 }
 
+fn test_accept() -> Option<BriefPage> {
+    let args: Vec<String> = std::env::args().collect();
+    let p = args.iter().position(|a| a == "--campaign-accept").and_then(|i| args.get(i + 1))?;
+    Some(if p == "loadout" { BriefPage::Loadout } else { BriefPage::Map })
+}
+
 /// Background of an unselected mission row.
 const ROW: egui::Color32 = egui::Color32::from_rgb(10, 34, 18);
 
@@ -145,7 +167,8 @@ fn clock_text(c: &ActiveCampaign) -> String {
     let h = c.state.sky_hours();
     let day = (h / 24.0).floor() as i64 + 1;
     let hh = h.rem_euclid(24.0);
-    format!("DAY {day}  {:02}:{:02}", hh.floor() as i32, ((hh.fract()) * 60.0).floor() as i32)
+    let secs = (hh * 3600.0).floor() as i64;
+    format!("DAY {day}  {:02}:{:02}:{:02}", secs / 3600, secs / 60 % 60, secs % 60)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -212,6 +235,32 @@ pub fn ops_ui(
     let screen = ctx.content_rect();
     let width = (screen.width() - 32.0).clamp(640.0, 1200.0);
     let height = (screen.height() - 190.0).clamp(240.0, 700.0);
+    // Test aid: `--campaign-accept map|loadout` opens the first mission's briefing.
+    if let Some(page) = test_accept()
+        && !std::mem::replace(&mut c.ui.test_taken, true)
+        && let Some(o) = c.state.board.iter().find(|o| !o.kind.ai_flown()).cloned()
+    {
+        let sortie = stealth_campaign::Sortie {
+            id: 0,
+            offer: o.clone(),
+            base: o.base,
+            started: 0.0,
+            progress: Default::default(),
+        };
+        let m = sortie_mission(&c.mission, &c.state, &sortie);
+        c.ui.briefing = Some(Briefing {
+            offer: o.id,
+            base: o.base,
+            loadout: crate::loadout::PlannedLoadout::of(&m, s.settings.aircraft),
+            window: default(),
+            page,
+            view: None,
+        });
+    }
+    if c.ui.briefing.is_some() {
+        briefing(ctx, c, &mut s, tex.as_ref(), egui::vec2(width, height));
+        return Ok(());
+    }
     let mut leave = false;
     egui::Window::new("Ops")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
@@ -268,9 +317,8 @@ pub fn ops_ui(
                     ui.colored_label(AMBER, e);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new("The war goes on while you choose").small().color(DIM),
-                    );
+                    ui.add(egui::Spinner::new().color(GREEN));
+                    ui.label(egui::RichText::new("War simulation running").color(DIM));
                 });
             });
         });
@@ -453,19 +501,19 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, s: &mut Session, width: f32)
                 progress: Default::default(),
             };
             let m = sortie_mission(&c.mission, &c.state, &sortie);
-            let stores = crate::loadout::PlannedLoadout::of(&m, s.settings.aircraft).summary();
-            ui.label(egui::RichText::new(format!("Stores: {stores}")).color(DIM));
+            let loadout = crate::loadout::PlannedLoadout::of(&m, s.settings.aircraft);
+            ui.label(egui::RichText::new(format!("Stores: {}", loadout.summary())).color(DIM));
             ui.add_space(10.0);
-            if ui.add(big_button("TAKE OFF").fill(DIM)).clicked() {
-                let cmd =
-                    stealth_campaign::Command::TakeMission { offer: o.id, base: Some(chosen) };
-                match c.state.apply(ME, cmd) {
-                    Ok(ev) => {
-                        c.ui.error = None;
-                        apply(c, s, ev);
-                    }
-                    Err(e) => c.ui.error = Some(e),
-                }
+            if ui.add(big_button("ACCEPT MISSION").fill(DIM)).clicked() {
+                c.ui.error = None;
+                c.ui.briefing = Some(Briefing {
+                    offer: o.id,
+                    base: chosen,
+                    loadout,
+                    window: default(),
+                    page: BriefPage::Map,
+                    view: None,
+                });
             }
         });
     });
@@ -535,10 +583,6 @@ fn war_map(
                 ));
             }
         }
-        // SAM sites still standing.
-        for site in st.sites.iter().filter(|s| s.kind == SiteKind::Sam && s.alive()) {
-            painter.circle_filled(at(site.x, site.y), 2.5, MISSILE_RED.gamma_multiply(0.8));
-        }
         // The places.
         for p in &st.places {
             let col = match p.owner {
@@ -568,33 +612,12 @@ fn war_map(
                 );
             }
         }
-        // Aircraft in the air: helicopters, fighters, the player.
-        let sim = &s.combat.sim;
-        for (i, u) in sim.flights().iter().enumerate() {
-            if u.flags & fflags::AIRBORNE == 0 || u.flags & fflags::DESTROYED != 0 || u.speed == 0 {
-                continue;
-            }
-            let Some(f) = sim.campaign_flight(i) else { continue };
-            let p = at(u.x, u.y);
-            let col = if f.blue { FRIENDLY_BLUE } else { MISSILE_RED };
-            match f.role {
-                stealth_sim::campaign::Role::Insertion => {
-                    painter.circle_filled(p, 3.0, col);
-                }
-                stealth_sim::campaign::Role::Fighter => {
-                    let pts = vec![
-                        p + egui::vec2(0.0, -5.0),
-                        p + egui::vec2(4.0, 4.0),
-                        p + egui::vec2(-4.0, 4.0),
-                    ];
-                    painter.add(egui::Shape::convex_polygon(pts, col, egui::Stroke::NONE));
-                }
-            }
-        }
-        if !sim.player_absent() {
-            let p = sim.player();
-            painter.circle_stroke(at(p.mx, p.my), 5.0, egui::Stroke::new(2.0, GREEN));
-        } else if let Some(b) = c.parked.and_then(|b| st.site(b as u16)) {
+        // What the friendly side sees: its aircraft, enemy fighters on radar, known defences.
+        let pic = super::picture::picture(st, &s.combat.sim);
+        super::picture::draw(&painter, &view, &pic, false);
+        if pic.player.is_none()
+            && let Some(b) = c.parked.and_then(|b| st.site(b as u16))
+        {
             painter.circle_stroke(at(b.x, b.y), 8.0, egui::Stroke::new(1.5, GREEN));
         }
         // The selected mission's target.
@@ -632,26 +655,7 @@ fn war_map(
                     egui::Stroke::new(1.5, MISSILE_RED),
                 );
             });
-            map_draw::legend(ui, "SAM site", |p, c0| {
-                p.circle_filled(c0, 2.5, MISSILE_RED);
-            });
-            map_draw::legend(ui, "Recon intel", |p, c0| {
-                p.circle_stroke(c0, 6.0, egui::Stroke::new(1.0, BRIGHT));
-            });
-            map_draw::legend(ui, "Insertion helicopter", |p, c0| {
-                p.circle_filled(c0, 3.0, FRIENDLY_BLUE);
-            });
-            map_draw::legend(ui, "Enemy fighter", |p, c0| {
-                let pts = vec![
-                    c0 + egui::vec2(0.0, -5.0),
-                    c0 + egui::vec2(4.0, 4.0),
-                    c0 + egui::vec2(-4.0, 4.0),
-                ];
-                p.add(egui::Shape::convex_polygon(pts, MISSILE_RED, egui::Stroke::NONE));
-            });
-            map_draw::legend(ui, "You", |p, c0| {
-                p.circle_stroke(c0, 5.0, egui::Stroke::new(2.0, GREEN));
-            });
+            super::picture::legend(ui);
             ui.add_space(8.0);
             ui.label(egui::RichText::new("Wheel: zoom, drag: pan").small().color(DIM));
         });
@@ -722,4 +726,221 @@ fn log(ui: &mut egui::Ui, c: &ActiveCampaign) {
             });
         }
     });
+}
+
+/// The accepted mission's briefing: the route and what is known of the defences on a map, the
+/// stores to carry; then take off (or back to the board).
+fn briefing(
+    ctx: &egui::Context,
+    c: &mut ActiveCampaign,
+    s: &mut Session,
+    tex: Option<&egui::TextureHandle>,
+    size: egui::Vec2,
+) {
+    let Some(mut b) = c.ui.briefing.take() else { return };
+    let Some(o) = c.state.board.iter().find(|o| o.id == b.offer).cloned() else {
+        c.ui.error = Some("That mission is no longer on the board".into());
+        return;
+    };
+    let sortie = stealth_campaign::Sortie {
+        id: 0,
+        offer: o.clone(),
+        base: b.base,
+        started: 0.0,
+        progress: Default::default(),
+    };
+    let m = sortie_mission(&c.mission, &c.state, &sortie);
+    let mut back = false;
+    let mut take_off = false;
+    egui::Window::new("Briefing")
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .collapsible(false)
+        .resizable(false)
+        .title_bar(false)
+        .min_width(size.x)
+        .max_width(size.x)
+        .frame(egui::Frame::window(&ctx.global_style()).inner_margin(14.0))
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("MISSION BRIEFING").heading().color(BRIGHT));
+                ui.label(egui::RichText::new(o.kind.name()).color(kind_colour(o.kind)));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new(clock_text(c)).color(BRIGHT));
+                });
+            });
+            ui.label(egui::RichText::new(&o.title).size(20.0).color(BRIGHT));
+            ui.label(egui::RichText::new(describe(o.kind)).color(DIM));
+            let d = km(dist(m.takeoff.position.x, m.takeoff.position.y, o.x, o.y));
+            ui.label(format!(
+                "From {} - {d:.0} km to the target - stores: {}",
+                m.takeoff.name,
+                b.loadout.summary()
+            ));
+            ui.horizontal(|ui| {
+                for (page, label) in
+                    [(BriefPage::Map, "BRIEFING MAP"), (BriefPage::Loadout, "LOADOUT")]
+                {
+                    if ui.selectable_label(b.page == page, label).clicked() {
+                        b.page = page;
+                    }
+                }
+            });
+            ui.separator();
+            let height = size.y - 70.0;
+            ui.allocate_ui(egui::vec2(size.x, height), |ui| {
+                ui.set_min_height(height);
+                match b.page {
+                    BriefPage::Map => {
+                        brief_map(ui, c, s, &m, &mut b, tex, egui::vec2(size.x, height))
+                    }
+                    BriefPage::Loadout => {
+                        crate::loadout::editor(ui, &mut b.window, &mut b.loadout, &m, height);
+                        ui.horizontal(|ui| {
+                            if ui.add(big_button("BRIEFED")).clicked() {
+                                b.loadout =
+                                    crate::loadout::PlannedLoadout::of(&m, s.settings.aircraft);
+                            }
+                        });
+                    }
+                }
+            });
+            ui.separator();
+            ui.horizontal(|ui| {
+                back = ui.add(big_button("BACK")).clicked();
+                if let Some(e) = &c.ui.error {
+                    ui.colored_label(AMBER, e);
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    take_off = ui.add(big_button("TAKE OFF").fill(DIM)).clicked();
+                    ui.add(egui::Spinner::new().color(GREEN));
+                    ui.label(egui::RichText::new("War simulation running").color(DIM));
+                });
+            });
+        });
+    if take_off {
+        let cmd = stealth_campaign::Command::TakeMission { offer: o.id, base: Some(b.base) };
+        c.take_loadout = Some(b.loadout.clone());
+        match c.state.apply(ME, cmd) {
+            Ok(ev) => {
+                c.ui.error = None;
+                apply(c, s, ev);
+                return;
+            }
+            Err(e) => {
+                c.take_loadout = None;
+                c.ui.error = Some(e);
+            }
+        }
+    }
+    if !back {
+        c.ui.briefing = Some(b);
+    }
+}
+
+/// The briefing map: the route, the target and what is known around them.
+fn brief_map(
+    ui: &mut egui::Ui,
+    c: &ActiveCampaign,
+    s: &Session,
+    m: &stealth_mission::Mission,
+    b: &mut Briefing,
+    tex: Option<&egui::TextureHandle>,
+    size: egui::Vec2,
+) {
+    let legend_w = 210.0;
+    ui.horizontal_top(|ui| {
+        let (rect, resp) = ui.allocate_exact_size(
+            egui::vec2(size.x - legend_w, size.y),
+            egui::Sense::click_and_drag(),
+        );
+        let route: Vec<egui::Vec2> = std::iter::once(m.takeoff.position)
+            .chain(m.waypoints.iter().copied())
+            .map(|p| egui::vec2(p.x as f32, p.y as f32))
+            .collect();
+        let (mut centre, mut scale) = *b.view.get_or_insert_with(|| {
+            let lo = route.iter().fold(egui::vec2(f32::MAX, f32::MAX), |a, p| a.min(*p));
+            let hi = route.iter().fold(egui::vec2(f32::MIN, f32::MIN), |a, p| a.max(*p));
+            // Room around the target for its defences.
+            MapView::fit(
+                rect,
+                lo - egui::vec2(0x300 as f32, 0x300 as f32),
+                hi + egui::vec2(0x300 as f32, 0x300 as f32),
+            )
+        });
+        let view = MapView { rect, centre, scale };
+        view.pan_zoom(ui, &resp, &mut centre, &mut scale);
+        b.view = Some((centre, scale));
+        let painter = ui.painter_at(rect);
+        map_draw::picture(&painter, &view, tex);
+        let st = &c.state;
+        let at = |x: f32, y: f32| view.to_screen(x, y);
+        for p in &st.places {
+            let col = match p.owner {
+                Side::Blue => FRIENDLY_BLUE,
+                Side::Red => MISSILE_RED,
+                Side::Neutral => DIM,
+            };
+            let c0 = at(p.x as f32, p.y as f32);
+            painter.circle_stroke(c0, 5.0, egui::Stroke::new(1.5, col));
+            painter.text(
+                c0 + egui::vec2(7.0, -7.0),
+                egui::Align2::LEFT_BOTTOM,
+                &p.name,
+                egui::FontId::monospace(11.0),
+                col,
+            );
+        }
+        let pic = super::picture::picture(st, &s.combat.sim);
+        super::picture::draw(&painter, &view, &pic, true);
+        // The route: out to the target and home.
+        let pts: Vec<egui::Pos2> = route.iter().map(|p| at(p.x, p.y)).collect();
+        painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(2.0, GREEN)));
+        for (k, p) in pts.iter().enumerate().skip(1) {
+            painter.circle_filled(*p, 3.5, GREEN);
+            painter.text(
+                *p + egui::vec2(6.0, 6.0),
+                egui::Align2::LEFT_TOP,
+                format!("{k}"),
+                egui::FontId::monospace(11.0),
+                GREEN,
+            );
+        }
+        let t = at(m.waypoints[1].x as f32, m.waypoints[1].y as f32);
+        painter.circle_stroke(t, 12.0, egui::Stroke::new(2.0, AMBER));
+        painter.circle_stroke(t, 4.0, egui::Stroke::new(2.0, AMBER));
+        ui.vertical(|ui| {
+            ui.set_width(legend_w - 12.0);
+            section(ui, "Legend");
+            map_draw::legend(ui, "Route, waypoints", |p, c0| {
+                p.line_segment(
+                    [c0 - egui::vec2(7.0, 0.0), c0 + egui::vec2(7.0, 0.0)],
+                    egui::Stroke::new(2.0, GREEN),
+                );
+            });
+            map_draw::legend(ui, "Target", |p, c0| {
+                p.circle_stroke(c0, 6.0, egui::Stroke::new(2.0, AMBER));
+            });
+            map_draw::legend(ui, "SAM missile reach", |p, c0| {
+                p.extend(map_draw::missile_circle(c0, 6.0, 1.0));
+            });
+            super::picture::legend(ui);
+            ui.add_space(8.0);
+            let known = pic.sams.len() + pic.guns.len();
+            ui.label(egui::RichText::new(format!("{known} defences known")).color(BRIGHT));
+            if o_intel(c, m) {
+                ui.label(egui::RichText::new("Recon photos of the target").color(GREEN));
+            } else {
+                ui.label(
+                    egui::RichText::new("No recon of the target: expect more").small().color(AMBER),
+                );
+            }
+            ui.label(egui::RichText::new("Wheel: zoom, drag: pan").small().color(DIM));
+        });
+    });
+}
+
+/// The sortie's target place has recon intelligence.
+fn o_intel(c: &ActiveCampaign, m: &stealth_mission::Mission) -> bool {
+    let (x, y) = (m.waypoints[1].x, m.waypoints[1].y);
+    c.state.places.iter().any(|p| p.intel(c.state.clock) && dist(p.x, p.y, x, y) < 0x200)
 }

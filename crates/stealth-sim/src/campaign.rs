@@ -441,6 +441,20 @@ impl Sim {
         }
     }
 
+    /// Campaign: SAM site `i` fired at an aircraft lately (it gave itself away).
+    pub fn site_engaging(&self, i: usize) -> bool {
+        self.campaign.as_ref().is_some_and(|c| c.site_cool.get(i).is_some_and(|&t| t > 0))
+    }
+
+    /// Campaign: AAA unit `k` is engaging something (an AI aircraft or the player).
+    pub fn aaa_engaging(&self, k: usize) -> bool {
+        let busy = self.aaa.get(k).is_some_and(|u| !u.destroyed && (u.burst > 0 || u.tracking));
+        busy || self
+            .campaign
+            .as_ref()
+            .is_some_and(|c| c.aaa_target.get(k).is_some_and(Option::is_some))
+    }
+
     /// Campaign: AAA unit `k` is friendly.
     pub fn aaa_blue(&self, k: usize) -> bool {
         self.campaign.as_ref().is_some_and(|c| c.aaa_blue.get(k).copied().unwrap_or(false))

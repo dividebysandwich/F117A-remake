@@ -368,9 +368,6 @@ pub fn loadout_ui(
     if !lo.fits(&m, aircraft) {
         *lo = PlannedLoadout::of(&m, aircraft);
     }
-    let lay = lo.layout();
-    w.selected = w.selected.min(lay.hardpoints.len() - 1);
-    let mirror = w.mirror.get_or_insert(true);
     let screen = ctx.content_rect();
     let size = egui::vec2(
         (screen.width() - 32.0).clamp(600.0, 1100.0),
@@ -392,70 +389,7 @@ pub fn loadout_ui(
                 );
             });
             ui.separator();
-            ui.horizontal_top(|ui| {
-                let side = 380.0;
-                let draw =
-                    egui::vec2(ui.available_width() - side - 12.0, ui.available_height() - 60.0);
-                if let Some(i) = diagram(ui, lay, &lo.stores, w.selected, draw) {
-                    w.selected = i;
-                }
-                ui.vertical(|ui| {
-                    ui.set_width(side);
-                    let hp = &lay.hardpoints[w.selected];
-                    section(ui, hp.name);
-                    if hp.fantasy {
-                        ui.label(
-                            egui::RichText::new("Not on the real aircraft").small().color(AMBER),
-                        );
-                    }
-                    let mut pick = lo.stores[w.selected];
-                    egui::ScrollArea::vertical().max_height(size.y - 260.0).show(ui, |ui| {
-                        ui.radio_value(&mut pick, None, "Empty");
-                        for &wpn in hp.loads {
-                            let (name, role) = WEAPONS[wpn as usize];
-                            let stock = !out_of_stock(&m, wpn);
-                            let r = ui.add_enabled(
-                                stock,
-                                egui::RadioButton::new(
-                                    pick == Some(wpn),
-                                    format!("{}x {name}", hp.rounds(wpn)),
-                                ),
-                            );
-                            let r = r.on_disabled_hover_text("None in stock for this mission");
-                            if facts(r, &[role]).clicked() {
-                                pick = Some(wpn);
-                            }
-                        }
-                    });
-                    if let Some(j) = hp.mirror {
-                        ui.add_space(4.0);
-                        facts(
-                            ui.checkbox(mirror, "Same on both sides"),
-                            &[&format!(
-                                "Loads {} too",
-                                lay.hardpoints[j].name.to_ascii_lowercase()
-                            )],
-                        );
-                    }
-                    if pick != lo.stores[w.selected] {
-                        lo.stores[w.selected] = pick;
-                        if *mirror && let Some(j) = hp.mirror {
-                            lo.stores[j] = pick;
-                        }
-                    }
-                    section(ui, "Stores");
-                    ui.label(egui::RichText::new(lo.summary()).color(GREEN));
-                    if m.loadout.bays.iter().any(|b| b.weapon == 16 || b.weapon == 18) {
-                        ui.label(
-                            egui::RichText::new(
-                                "The mission needs its camera or special equipment",
-                            )
-                            .small()
-                            .color(AMBER),
-                        );
-                    }
-                });
-            });
+            editor(ui, w, lo, &m, size.y);
             ui.separator();
             ui.horizontal(|ui| {
                 if facts(
@@ -476,6 +410,77 @@ pub fn loadout_ui(
                 });
             });
         });
+}
+
+/// The editor: the aircraft's hardpoints and the stores of the selected one (the menu's
+/// loadout window, the campaign's briefing). `height`: the space it may take.
+pub fn editor(
+    ui: &mut egui::Ui,
+    w: &mut LoadoutWindow,
+    lo: &mut PlannedLoadout,
+    m: &Mission,
+    height: f32,
+) {
+    let lay = lo.layout();
+    w.selected = w.selected.min(lay.hardpoints.len() - 1);
+    let mirror = w.mirror.get_or_insert(true);
+    let size = egui::vec2(ui.available_width(), height);
+    ui.horizontal_top(|ui| {
+        let side = 380.0;
+        let draw = egui::vec2(ui.available_width() - side - 12.0, ui.available_height() - 60.0);
+        if let Some(i) = diagram(ui, lay, &lo.stores, w.selected, draw) {
+            w.selected = i;
+        }
+        ui.vertical(|ui| {
+            ui.set_width(side);
+            let hp = &lay.hardpoints[w.selected];
+            section(ui, hp.name);
+            if hp.fantasy {
+                ui.label(egui::RichText::new("Not on the real aircraft").small().color(AMBER));
+            }
+            let mut pick = lo.stores[w.selected];
+            egui::ScrollArea::vertical().max_height(size.y - 260.0).show(ui, |ui| {
+                ui.radio_value(&mut pick, None, "Empty");
+                for &wpn in hp.loads {
+                    let (name, role) = WEAPONS[wpn as usize];
+                    let stock = !out_of_stock(m, wpn);
+                    let r = ui.add_enabled(
+                        stock,
+                        egui::RadioButton::new(
+                            pick == Some(wpn),
+                            format!("{}x {name}", hp.rounds(wpn)),
+                        ),
+                    );
+                    let r = r.on_disabled_hover_text("None in stock for this mission");
+                    if facts(r, &[role]).clicked() {
+                        pick = Some(wpn);
+                    }
+                }
+            });
+            if let Some(j) = hp.mirror {
+                ui.add_space(4.0);
+                facts(
+                    ui.checkbox(mirror, "Same on both sides"),
+                    &[&format!("Loads {} too", lay.hardpoints[j].name.to_ascii_lowercase())],
+                );
+            }
+            if pick != lo.stores[w.selected] {
+                lo.stores[w.selected] = pick;
+                if *mirror && let Some(j) = hp.mirror {
+                    lo.stores[j] = pick;
+                }
+            }
+            section(ui, "Stores");
+            ui.label(egui::RichText::new(lo.summary()).color(GREEN));
+            if m.loadout.bays.iter().any(|b| b.weapon == 16 || b.weapon == 18) {
+                ui.label(
+                    egui::RichText::new("The mission needs its camera or special equipment")
+                        .small()
+                        .color(AMBER),
+                );
+            }
+        });
+    });
 }
 
 /// The aircraft from above with its hardpoints; returns the one clicked.

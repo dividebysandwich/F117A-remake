@@ -20,6 +20,7 @@
 
 mod menu;
 mod ops;
+mod picture;
 mod save;
 
 pub use menu::CampaignWindow;
@@ -120,6 +121,8 @@ pub struct ActiveCampaign {
     crash_timer: f32,
     /// Leave the campaign (back to the menu) at the next frame.
     pub exit: bool,
+    /// The stores chosen in the briefing for the sortie being taken.
+    pub take_loadout: Option<crate::loadout::PlannedLoadout>,
 }
 
 impl ActiveCampaign {
@@ -152,6 +155,7 @@ impl ActiveCampaign {
             end_timer: None,
             crash_timer: 0.0,
             exit: false,
+            take_loadout: None,
         }
     }
 
@@ -650,7 +654,12 @@ fn begin_sortie(c: &mut ActiveCampaign, s: &mut Session, sortie: &Sortie) {
     let base = sortie.base as usize;
     let st = s.combat.sim.respawn_player(base, objective);
     let m = sortie_mission(&c.mission, &c.state, sortie);
-    let loadout = crate::loadout::PlannedLoadout::of(&m, s.settings.aircraft);
+    let aircraft = s.settings.aircraft;
+    let loadout = c
+        .take_loadout
+        .take()
+        .filter(|l| l.fits(&m, aircraft))
+        .unwrap_or_else(|| crate::loadout::PlannedLoadout::of(&m, aircraft));
     s.combat.sim.set_loadout(&loadout.stations());
     s.combat.sim.select_bay(loadout.first_choice(&m));
     let route = PlannedRoute::of(&m);
@@ -763,8 +772,18 @@ pub fn describe(kind: MissionKind) -> &'static str {
     }
 }
 
-/// Leaving the flight session: the campaign is saved and closed.
-fn leave(mut commands: Commands, c: Option<Res<ActiveCampaign>>) {
+/// Leaving the flight session: the campaign is saved and closed, and the Ops screen's egui
+/// context goes with it (the menu brings its own).
+fn leave(
+    mut commands: Commands,
+    c: Option<Res<ActiveCampaign>>,
+    cams: Query<Entity, With<ops::OpsCamera>>,
+) {
+    for e in &cams {
+        commands.entity(e).try_despawn();
+    }
+    #[cfg(feature = "xr")]
+    commands.remove_resource::<crate::vr_menu::WorldPanel>();
     if let Some(c) = c {
         save::save(&c.name, &c.state);
         commands.remove_resource::<ActiveCampaign>();

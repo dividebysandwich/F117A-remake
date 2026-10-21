@@ -672,6 +672,11 @@ impl Default for MapRaster {
 }
 
 impl MapRaster {
+    /// The theater's map geometry (empty until its models are loaded).
+    pub fn models(&self) -> &HashMap<u8, MapModel> {
+        &self.models
+    }
+
     pub fn invalidate(&mut self) {
         self.valid = false;
         self.buf_valid = false;

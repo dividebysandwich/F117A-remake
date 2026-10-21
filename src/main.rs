@@ -23,6 +23,7 @@ mod hud;
 mod input;
 mod input_dialog;
 mod keyboard_layout;
+mod kneeboard;
 mod lighting;
 mod lightning;
 mod loadout;
@@ -157,6 +158,7 @@ fn main() {
             trails::TrailsPlugin,
             explosions::ExplosionsPlugin,
             flight_menu::FlightMenuPlugin,
+            kneeboard::KneeboardPlugin,
         ))
         .add_plugins((
             sky::SkyPlugin,

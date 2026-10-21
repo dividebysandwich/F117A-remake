@@ -38,9 +38,6 @@ pub struct Sky {
     /// Directions (Bevy: x east, y up, z south) to the sun and the moon.
     pub sun: Vec3,
     pub moon: Vec3,
-    /// Moon phase 0 (new) .. 0.5 (full) .. 1, and its lit fraction.
-    pub phase: f32,
-    pub illumination: f32,
     /// Moonlight on the ground 0..1 (lit fraction, less near the horizon).
     pub moonlight: f32,
     /// Star visibility 0..1.
@@ -58,8 +55,6 @@ impl Default for Sky {
             on: false,
             sun: crate::lighting::sun_direction(),
             moon: Vec3::Y,
-            phase: 0.0,
-            illumination: 0.0,
             moonlight: 0.0,
             stars: 0.0,
             day: 1.0,
@@ -76,21 +71,21 @@ impl Sky {
         let night = self.moonlight * FULL_MOON_LIGHT;
         (night + (255.0 - night) * self.day).round().clamp(0.0, 255.0) as u8
     }
+}
 
-    /// Phase name for the briefing ("Full moon").
-    pub fn phase_name(&self) -> &'static str {
-        const NAMES: [&str; 8] = [
-            "New moon",
-            "Waxing crescent",
-            "First quarter",
-            "Waxing gibbous",
-            "Full moon",
-            "Waning gibbous",
-            "Last quarter",
-            "Waning crescent",
-        ];
-        NAMES[((self.phase * 8.0 + 0.5) as usize) % 8]
-    }
+/// Name of a moon phase 0..1 ("Full moon").
+pub fn phase_name(phase: f64) -> &'static str {
+    const NAMES: [&str; 8] = [
+        "New moon",
+        "Waxing crescent",
+        "First quarter",
+        "Waxing gibbous",
+        "Full moon",
+        "Waning gibbous",
+        "Last quarter",
+        "Waning crescent",
+    ];
+    NAMES[((phase * 8.0 + 0.5) as usize) % 8]
 }
 
 /// Direction to the sun at the equinox, `hours` local solar time, at latitude `lat` (degrees),
@@ -202,8 +197,6 @@ fn update_sky(
         on,
         sun,
         moon,
-        phase: phase as f32,
-        illumination: lit as f32,
         moonlight: moonlight as f32,
         stars: ((1.0 - smoothstep(-14.0, -4.0, elev)) * (1.0 - 0.6 * moonlight)) as f32,
         day: day as f32,
@@ -249,9 +242,8 @@ mod tests {
         // A full moon is up at midnight, high in the south.
         let m = moon_dir(0.0, 50.0, 0.5);
         assert!(m.y > 0.6 && m.z > 0.0);
-        let mut sky = Sky::default();
-        sky.phase = 0.5;
-        assert_eq!(sky.phase_name(), "Full moon");
+        assert_eq!(phase_name(0.5), "Full moon");
+        assert_eq!(phase_name(0.98), "New moon");
     }
 
     #[test]

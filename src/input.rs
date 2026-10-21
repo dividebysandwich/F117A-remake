@@ -116,6 +116,9 @@ pub enum Action {
     LockCursor,
     /// Modern avionics: the sensor of interest moves to the other MFD (not in the original).
     SwapSoi,
+    /// Kneeboard: desktop, shows it over the view and turns its pages; VR, shows or hides the
+    /// board on the thigh (not in the original).
+    Kneeboard,
     /// Tracking camera / targeting pod zoom (not in the original: it zoomed by range).
     CameraZoomIn,
     CameraZoomOut,
@@ -328,6 +331,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (Alt, K::KeyT, Training),
         (Alt, K::KeyR, Resupply),
         (Alt, K::KeyN, DayNight),
+        (None, K::KeyK, Kneeboard),
     ]
 };
 

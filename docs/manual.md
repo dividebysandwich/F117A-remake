@@ -331,6 +331,18 @@ an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
 
 Changes apply at once and are saved as the defaults for the next flight.
 
+### 3.9 Kneeboard
+
+A kneeboard lies on your left thigh: look down to read it. Its tabs choose the page: **BRIEF**
+(the orders, the objectives, departure and landing, the weather, the moon's phase, the armament
+and the rules of engagement), **ROUTE** (each leg's bearing, distance and the time at 480 kt, the
+current waypoint highlighted), **MAP** (the route on the theater map with the radar sites' missile
+ranges and your position) and **TARGET** (a close-up of the primary target's surroundings with a
+2 km scale and its grid reference, and the intelligence summary). In VR touch a tab with a
+fingertip; on the desktop click one. **K** shows the kneeboard large over the view on the desktop
+and turns its pages, the last one hides it again; in VR the *Kneeboard* action (bind it to a
+controller button in the input mapping) hides or shows the board.
+
 ## 4. MFD pages
 
 The panel has two multi-function displays (MFDs), the F-117A's three: its right MFD is the large
@@ -658,6 +670,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | | Night vision goggles | F4 |
 | | Weapons page / FLIR / ILS / mission orders | F5 / F6 / F9 / F10 |
 | **Navigation** | Waypoint page / change waypoint / reset waypoint | F7 / F8 / Shift F8 |
+| | Kneeboard: show, next page, hide (chapter 3.9) | K |
 | | Previous / next waypoint | PgUp / PgDn |
 | **Views** | Cockpit | F1 |
 | | Look ahead / rear / left / right | Shift `/` / Shift `.` / Shift `,` / Shift M |

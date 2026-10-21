@@ -51,4 +51,5 @@ These are the defaults: the menu's CONTROLS dialog rebinds every key, the stick 
 | Time | accelerate / normal | Shift Z / Shift X |
 | Misc | pause (remake: settings menu, also Esc) / boss / quit | Alt P / Alt B / Alt Q |
 | | volume / detail level | Alt V / Alt D |
+| | kneeboard (remake): show, next page, hide | K |
 | Training | go to training / resupply / day-night / teleport | Alt T / Alt R / Alt N / Alt + arrows |

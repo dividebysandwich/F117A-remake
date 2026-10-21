@@ -20,7 +20,7 @@ mod controls;
 mod displays;
 mod hud_glass;
 pub mod layout;
-mod levers;
+pub mod levers;
 mod model;
 mod shading;
 

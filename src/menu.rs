@@ -81,6 +81,10 @@ pub struct MenuState {
     pub loadout: Option<crate::loadout::PlannedLoadout>,
     /// Career mode: the pilot (file key) whose tour sortie this is.
     pub career: Option<String>,
+    /// Takeoff hour (0-23); None: rolled with the mission.
+    pub start_hour: Option<u8>,
+    /// The mission screen (single mission or career sortie) instead of the main menu.
+    pub mission_screen: bool,
     dirty: bool,
 }
 
@@ -90,8 +94,6 @@ impl MenuState {
         self.career = Some(p.key());
         (self.theater, self.roe, self.opponents, self.lockheed) =
             (t.theater, t.roe, t.opponents, t.lockheed);
-        // Tour weather is rolled with the mission (also in the VR relaunch).
-        (self.weather, self.cloud_cover) = (None, None);
         self.seed = rand::random();
         self.dirty = true;
     }
@@ -122,6 +124,11 @@ impl Default for MenuState {
             route: None,
             loadout: None,
             career: None,
+            start_hour: Some(8),
+            // `--open-mission`: start in the mission screen (screenshots), also where
+            // `--open-planner` and `--open-loadout` return to.
+            mission_screen: std::env::args()
+                .any(|a| a == "--open-mission" || a == "--open-planner" || a == "--open-loadout"),
             dirty: true,
         }
     }
@@ -180,6 +187,10 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
     .args(["--weather", state.weather.map_or("random", Sky::name)]);
     if let Some(c) = state.cloud_cover {
         cmd.args(["--cloud-cover", &c.to_string()]);
+    }
+    // Career sorties start at the rolled time.
+    if let Some(h) = state.start_hour.filter(|_| state.career.is_none()) {
+        cmd.args(["--start-hour", &h.to_string()]);
     }
     if state.realistic(settings.aircraft) {
         cmd.arg("--lockheed");
@@ -575,6 +586,392 @@ pub(crate) fn big_button(text: &str) -> egui::Button<'static> {
     egui::Button::new(egui::RichText::new(text).size(22.0)).min_size(egui::vec2(170.0, 50.0))
 }
 
+type SettingsMut<'a> = ResMut<'a, crate::settings::Settings>;
+
+pub(crate) fn theater_options(ui: &mut egui::Ui, theater: &mut usize) {
+    section(ui, "Theater");
+    for (i, (_, name)) in THEATERS.iter().enumerate() {
+        facts(ui.radio_value(theater, i, *name), THEATER_FACTS[i]);
+    }
+}
+
+pub(crate) fn opponent_options(ui: &mut egui::Ui, opponents: &mut u8) {
+    section(ui, "Opponents");
+    for (i, (name, f)) in OPPONENTS.iter().enumerate() {
+        facts(ui.radio_value(opponents, i as u8, *name), f);
+    }
+}
+
+pub(crate) fn situation_options(ui: &mut egui::Ui, roe: &mut u8) {
+    section(ui, "Situation");
+    for (i, (name, f)) in ROE.iter().enumerate() {
+        facts(ui.radio_value(roe, i as u8, *name), f);
+    }
+}
+
+fn mission_options(ui: &mut egui::Ui, state: &mut MenuState) {
+    section(ui, "Mission");
+    let drones = DRONE_THEATERS.contains(&THEATERS[state.theater].0);
+    if !drones && state.kind == MissionKind::DroneDefense {
+        state.kind = MissionKind::Air;
+    }
+    for (kind, name, f) in KINDS {
+        if kind != MissionKind::DroneDefense || drones {
+            facts(ui.radio_value(&mut state.kind, kind, name), f);
+        }
+    }
+}
+
+fn start_time_options(ui: &mut egui::Ui, state: &mut MenuState) {
+    section(ui, "Start time");
+    let mut random = state.start_hour.is_none();
+    let r = facts(
+        ui.checkbox(&mut random, "Random"),
+        &[
+            "Rolled with each new mission, as in the original",
+            "06:00-08:00 by day or 18:00-20:00 by night",
+            "Uncheck to choose the hour",
+        ],
+    );
+    if r.changed() {
+        state.start_hour = if random { None } else { Some(8) };
+    }
+    if let Some(h) = state.start_hour.as_mut() {
+        let slider = egui::Slider::new(h, 0..=23).custom_formatter(|v, _| format!("{v:02.0}:00"));
+        facts(
+            ui.add(slider),
+            &["Takeoff time", "Night from 18:00 to 06:00", "Kept by NEW MISSION"],
+        );
+    }
+}
+
+/// The aircraft, with the switches that go with it; `lockheed` shows "Realistic weapons".
+pub(crate) fn aircraft_options(
+    ui: &mut egui::Ui,
+    settings: &mut SettingsMut,
+    lockheed: Option<&mut bool>,
+) {
+    section(ui, "Aircraft");
+    let s = settings.bypass_change_detection();
+    let mut picked = false;
+    for (kind, f) in AIRCRAFT {
+        picked |= facts(ui.radio_value(&mut s.aircraft, kind, kind.name()), f).changed();
+    }
+    if picked {
+        settings.set_changed();
+    }
+    // The F-16 carries AIM-9s and AIM-120s on its pylons anyway.
+    if settings.aircraft == AircraftKind::F117
+        && let Some(lockheed) = lockheed
+    {
+        facts(
+            ui.checkbox(lockheed, "Realistic weapons"),
+            &[
+                "The real aircraft's limits",
+                "2 weapon bays instead of 4",
+                "No AIM-9 or AIM-120 missiles",
+                "No carrier takeoffs or landings",
+            ],
+        );
+    }
+    let s = settings.bypass_change_detection();
+    if facts(
+        ui.checkbox(&mut s.no_crashes, "Crash protection"),
+        &[
+            "Pulls up automatically near the ground (gear up)",
+            "Ground contact and collisions are not fatal",
+            "Off: the ground can always be hit",
+        ],
+    )
+    .changed()
+    {
+        settings.set_changed();
+    }
+    let s = settings.bypass_change_detection();
+    if facts(
+        ui.checkbox(&mut s.tacview, "Tacview export"),
+        &[
+            "Saves each flight as a Tacview recording (.acmi)",
+            "In the game's data folder, under tacview",
+        ],
+    )
+    .changed()
+    {
+        settings.set_changed();
+    }
+}
+
+pub(crate) fn realism_options(ui: &mut egui::Ui, settings: &mut SettingsMut) {
+    section(ui, "Realism");
+    let s = settings.bypass_change_detection();
+    if facts(
+        two_way_switch(ui, "Damage", &mut s.realistic_damage, ("GAME", "REAL")),
+        &[
+            "Weapon damage", "Game: the original's damage; hits add up but never bring the aircraft down",
+            "Realistic: a missile hit can destroy the aircraft (eject!), damages more systems and often starts a fire, which burns out or blows the aircraft up",
+            "Realistic: damaged control surfaces put the aircraft out of trim or make it oscillate",
+        ],
+    )
+    .changed()
+    {
+        settings.set_changed();
+    }
+    let s = settings.bypass_change_detection();
+    if facts(
+        two_way_switch(ui, "Guidance", &mut s.realistic_guidance, ("CLASSIC", "REAL")),
+        &[
+            "Missile guidance", "Classic: the original's missiles, flying straight at their target",
+            "Realistic: proportional navigation to the collision point; motors burn out and the missiles glide on, losing speed with every turn (smoke only while the motor burns)",
+            "Realistic: SAMs loft against distant targets; the AIM-120 flies straight for 3 s (pull up to lob it)",
+        ],
+    )
+    .changed()
+    {
+        settings.set_changed();
+    }
+    let s = settings.bypass_change_detection();
+    if facts(
+        two_way_switch(ui, "Low level", &mut s.air_defence, ("CLASSIC", "REAL")),
+        &[
+            "Low-level air defences", "Classic: only the original's SAM sites and fighters",
+            "Realistic: radar-laid ZSU-23-4 guns (their radar sees you like a SAM's) and S-60 flak batteries guard the airfields and the targets; MANPADS teams in the towns fire SA-14s at what they see",
+            "Flying low over defended places becomes dangerous; bombs and guns destroy the guns",
+        ],
+    )
+    .changed()
+    {
+        settings.set_changed();
+    }
+}
+
+pub(crate) fn weather_options(
+    ui: &mut egui::Ui,
+    weather: &mut Option<Sky>,
+    cloud_cover: &mut Option<u8>,
+) {
+    section(ui, "Weather");
+    facts(ui.radio_value(weather, None, "Random"), RANDOM_SKY_FACTS);
+    for sky in Sky::ALL {
+        facts(ui.radio_value(weather, Some(sky), sky.name()), sky_facts(sky));
+    }
+    // Coverage of the main layer (cumulus, or stratus for overcast and storms).
+    let mut auto = cloud_cover.is_none();
+    let r = facts(
+        ui.checkbox(&mut auto, "Random cover"),
+        &[
+            "Main cloud layer cover rolled with the weather",
+            "Uncheck to set it yourself",
+            "Main layer: stratus for overcast and storm, cumulus otherwise",
+        ],
+    );
+    if r.changed() {
+        *cloud_cover = if auto { None } else { Some(50) };
+    }
+    if let Some(c) = cloud_cover.as_mut() {
+        facts(
+            ui.add(egui::Slider::new(c, 0..=100).suffix("%")),
+            &["Share of the sky the main layer covers", "No effect on a clear sky"],
+        );
+    }
+}
+
+/// The classic / modern switches and the VR cockpit size.
+pub(crate) fn classic_modern_options(ui: &mut egui::Ui, settings: &mut SettingsMut, vr: bool) {
+    section(ui, "Classic / Modern");
+    // Only mark the settings changed when a switch is flipped.
+    let mut toggled = false;
+    let s = settings.bypass_change_detection();
+    let mut cockpit = !s.classic_cockpit;
+    let mut hud = !s.classic_hud;
+    let mut avionics = !s.classic_avionics;
+    let mut flight = !s.classic_flight;
+    for (modern, name, f) in [
+        (
+            &mut s.modern_shading,
+            "Shaders",
+            &[
+                "Modern: MSAA anti-aliasing, subtle directional shading, smooth distance haze",
+                "Classic: the original's flat shading",
+            ][..],
+        ),
+        (
+            &mut s.shadows,
+            "Shadows",
+            &[
+                "Modern: sun shadows in the cockpit and the world (costs GPU time)",
+                "Classic: no shadows",
+            ][..],
+        ),
+        (
+            &mut s.local_lights,
+            "Lighting",
+            &[
+                "Modern: cockpit flood and display lights; explosions, plumes and runway lights light the scene",
+                "Classic: sun and sky light only",
+            ][..],
+        ),
+        (
+            &mut s.continuous_time,
+            "Time of day",
+            &[
+                "Modern: the sun and the moon move with the mission clock, the sky darkens and brightens with the sun; stars and the moon's phase at night",
+                "Modern: moonlight sets how far enemy pilots see you at night (2 km on a moonless night, 4 km under a full moon)",
+                "Classic: the original's slow change of colours and a fixed sun",
+            ][..],
+        ),
+        (
+            &mut cockpit,
+            "Cockpit",
+            &[
+                "Modern: high-resolution displays with bezel buttons",
+                "Classic: the original instrument panel layout and 77x60 displays",
+            ][..],
+        ),
+        (
+            &mut hud,
+            "HUD",
+            &[
+                "Modern: high-resolution F-16 style HUD in green with NAV, AA and AG modes",
+                "Classic: the original HUD",
+            ][..],
+        ),
+        (
+            &mut avionics,
+            "Avionics",
+            &[
+                "Modern: F-16 style MFD formats on either MFD (situation display, HARM, targeting pod, map, stores) with a slewable cursor",
+                "Classic: the original's map and TAC left, camera, WAY, WPN and ORD right",
+            ][..],
+        ),
+        (
+            &mut flight,
+            "Flight model",
+            &[
+                "Modern: aerodynamic flight model with fly-by-wire: the stick commands pitch and roll rate; released, the nose stays put and the flight path is held",
+                "Classic: the original game's flight model",
+            ][..],
+        ),
+    ] {
+        toggled |= facts(slide_switch(ui, name, modern), f).changed();
+    }
+    s.classic_cockpit = !cockpit;
+    s.classic_hud = !hud;
+    s.classic_avionics = !avionics;
+    s.classic_flight = !flight;
+    section(ui, "VR");
+    // Read every frame by the rig: no change detection needed.
+    let range = crate::settings::VR_COCKPIT_SCALE_RANGE;
+    let mut pct = (s.vr_cockpit_scale * 100.0).round() as u32;
+    let slider = egui::Slider::new(
+        &mut pct,
+        (*range.start() * 100.0) as u32..=(*range.end() * 100.0) as u32,
+    )
+    .suffix("%")
+    .text("cockpit scale");
+    if facts(
+        ui.add_enabled(vr || s.vr, slider),
+        &[
+            "Size of the cockpit in the headset",
+            "100% (default): the size that suits the aircraft",
+            "Smaller puts more of the panel in view",
+        ],
+    )
+    .changed()
+    {
+        s.vr_cockpit_scale = pct as f32 / 100.0;
+    }
+    if toggled {
+        settings.set_changed();
+    }
+}
+
+/// A full-screen-width menu window in the terminal style.
+pub(crate) fn menu_window(ctx: &egui::Context, id: &str, width: f32) -> egui::Window<'static> {
+    egui::Window::new(id.to_string())
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .collapsible(false)
+        .resizable(false)
+        .title_bar(false)
+        .min_width(width)
+        .max_width(width)
+        .frame(egui::Frame::window(&ctx.global_style()).inner_margin(16.0))
+}
+
+/// Width of the menu's wide windows.
+pub(crate) fn wide_width(ctx: &egui::Context) -> f32 {
+    (ctx.content_rect().width() - 32.0).clamp(600.0, 1400.0)
+}
+
+/// The top level: what to play.
+fn main_screen(
+    ctx: &egui::Context,
+    state: &mut MenuState,
+    dialog: &mut crate::input_dialog::InputDialog,
+    career: &mut crate::career::CareerWindow,
+    campaign: &mut crate::campaign::CampaignWindow,
+    exit: &mut MessageWriter<AppExit>,
+) {
+    let wide = |text: &str| big_button(text).min_size(egui::vec2(360.0, 50.0));
+    menu_window(ctx, "Stealth Mission 89", 420.0).show(ctx, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.label(egui::RichText::new("STEALTH MISSION 89").heading().color(BRIGHT));
+            ui.label(egui::RichText::new("MISSION PLANNING SYSTEM").color(DIM));
+            ui.add_space(10.0);
+            if facts(
+                ui.add(wide("SINGLE MISSION")),
+                &[
+                    "One mission in the theater of your choice",
+                    "Choose the options, plan the route and the loadout",
+                ],
+            )
+            .clicked()
+            {
+                // Leaves career mode; the same mission again if the options are the same.
+                state.career = None;
+                state.dirty = true;
+                state.mission_screen = true;
+            }
+            if facts(
+                ui.add(wide("CAREER")),
+                &[
+                    "Pilot records: rank, decorations, sorties",
+                    "Tour of duty: 12 sorties in one theater",
+                    "What you destroy stays destroyed",
+                ],
+            )
+            .clicked()
+            {
+                career.show();
+            }
+            if facts(
+                ui.add(wide("DYNAMIC CAMPAIGN")),
+                &[
+                    "Dynamic campaign in real time",
+                    "Take the enemy's cities and airfields",
+                    "Missions from the live situation",
+                ],
+            )
+            .clicked()
+            {
+                campaign.show();
+            }
+            ui.add_enabled(false, wide("MULTIPLAYER")).on_disabled_hover_text("Not available yet");
+            if facts(
+                ui.add(wide("CONTROLS")),
+                &["Map keys, joystick and HOTAS axes and buttons", "Saved for the next flights"],
+            )
+            .clicked()
+            {
+                dialog.open = true;
+            }
+            ui.add_space(10.0);
+            if facts(ui.add(wide("QUIT")), &["Exit to the desktop"]).clicked() {
+                exit.write(AppExit::Success);
+            }
+        });
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 fn menu_ui(
     mut commands: Commands,
@@ -613,7 +1010,7 @@ fn menu_ui(
         let pilot = state.career.as_deref().and_then(crate::career::Pilot::load);
         if let Some(p) = pilot {
             // Career: the tour's next sortie, on targets that still stand.
-            match crate::career::next_sortie(&data, &p, state.seed, settings.aircraft) {
+            match crate::career::next_sortie(&data, &p, &state, settings.aircraft) {
                 Some((seed, m)) => {
                     state.seed = seed;
                     state.kind = m.settings.kind;
@@ -623,7 +1020,7 @@ fn menu_ui(
             }
         } else {
             state.career = None;
-            let settings = crate::mission::settings(
+            let mut settings = crate::mission::settings(
                 state.theater,
                 state.roe,
                 state.kind,
@@ -632,6 +1029,7 @@ fn menu_ui(
                 state.weather,
                 state.cloud_cover,
             );
+            settings.start_hour = state.start_hour;
             state.mission = Some(
                 crate::mission::generate(&data, &settings, state.seed)
                     .map_err(|e| format!("{e:#}")),
@@ -656,8 +1054,6 @@ fn menu_ui(
     if ctx.global_style().visuals.window_fill != BG {
         ctx.all_styles_mut(apply_terminal_style);
     }
-    let screen = ctx.content_rect();
-    let width = (screen.width() - 32.0).clamp(600.0, 1400.0);
     let before = (
         state.theater,
         state.roe,
@@ -666,26 +1062,26 @@ fn menu_ui(
         state.lockheed,
         state.weather,
         state.cloud_cover,
+        state.start_hour,
     );
     let realistic_before = state.realistic(settings.aircraft);
-    egui::Window::new("Stealth Mission 89")
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .collapsible(false)
-        .resizable(false)
-        .title_bar(false)
-        .min_width(width)
-        .max_width(width)
-        .frame(egui::Frame::window(&ctx.global_style()).inner_margin(16.0))
-        .show(ctx, |ui| {
-            if dialog.open || planner.open || career.open || loadout.open || campaign.open {
-                ui.disable();
-            }
+    // One window at a time: the open dialog replaces the screen it was opened from.
+    let dialogs = dialog.open || career.open || campaign.open;
+    if !state.mission_screen && !dialogs {
+        main_screen(ctx, &mut state, &mut dialog, &mut career, &mut campaign, &mut exit);
+    }
+    if state.mission_screen && !dialogs && !planner.open && !loadout.open {
+        let width = wide_width(ctx);
+        // Career sorties take their options from the career window.
+        let career_mode = state.career.is_some();
+        let mut back = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        menu_window(ctx, "Single mission", width).show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("STEALTH MISSION 89").heading().color(BRIGHT));
+                ui.label(egui::RichText::new(if career_mode { "CAREER SORTIE" } else { "SINGLE MISSION" }).heading().color(BRIGHT));
                 if let Some(p) = state.career.as_deref().and_then(crate::career::Pilot::load)
                     && let Some(t) = &p.tour
                 {
-                    ui.label(egui::RichText::new(format!("  CAREER: {}  //  TOUR SORTIE {} OF {}", p.title().to_ascii_uppercase(), t.sortie + 1, t.length)).color(AMBER));
+                    ui.label(egui::RichText::new(format!("  {}  //  TOUR SORTIE {} OF {}", p.title().to_ascii_uppercase(), t.sortie + 1, t.length)).color(AMBER));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(egui::RichText::new(format!("MISSION PLANNING SYSTEM  //  MSN {:05}", state.seed)).color(DIM));
@@ -693,195 +1089,28 @@ fn menu_ui(
             });
             ui.separator();
             ui.horizontal_top(|ui| {
-                // Options: three narrow columns.
-                ui.vertical(|ui| {
-                    ui.set_width(210.0);
-                    section(ui, "Theater");
-                    for (i, (_, name)) in THEATERS.iter().enumerate() {
-                        facts(ui.radio_value(&mut state.theater, i, *name), THEATER_FACTS[i]);
-                    }
-                    section(ui, "Opponents");
-                    for (i, (name, f)) in OPPONENTS.iter().enumerate() {
-                        facts(ui.radio_value(&mut state.opponents, i as u8, *name), f);
-                    }
-                });
-                ui.vertical(|ui| {
-                    ui.set_width(190.0);
-                    section(ui, "Situation");
-                    for (i, (name, f)) in ROE.iter().enumerate() {
-                        facts(ui.radio_value(&mut state.roe, i as u8, *name), f);
-                    }
-                    section(ui, "Mission");
-                    let drones = DRONE_THEATERS.contains(&THEATERS[state.theater].0);
-                    if !drones && state.kind == MissionKind::DroneDefense {
-                        state.kind = MissionKind::Air;
-                    }
-                    for (kind, name, f) in KINDS {
-                        if kind != MissionKind::DroneDefense || drones {
-                            facts(ui.radio_value(&mut state.kind, kind, name), f);
-                        }
-                    }
-                    section(ui, "Aircraft");
-                    let s = settings.bypass_change_detection();
-                    let mut picked = false;
-                    for (kind, f) in AIRCRAFT {
-                        picked |= facts(ui.radio_value(&mut s.aircraft, kind, kind.name()), f).changed();
-                    }
-                    if picked {
-                        settings.set_changed();
-                    }
-                    // The F-16 carries AIM-9s and AIM-120s on its pylons anyway.
-                    if settings.aircraft == AircraftKind::F117 {
-                        facts(
-                            ui.checkbox(&mut state.lockheed, "Realistic weapons"),
-                            &["The real aircraft's limits", "2 weapon bays instead of 4", "No AIM-9 or AIM-120 missiles", "No carrier takeoffs or landings"],
-                        );
-                    }
-                    let s = settings.bypass_change_detection();
-                    if facts(
-                        ui.checkbox(&mut s.no_crashes, "Crash protection"),
-                        &["Pulls up automatically near the ground (gear up)", "Ground contact and collisions are not fatal", "Off: the ground can always be hit"],
-                    )
-                    .changed()
-                    {
-                        settings.set_changed();
-                    }
-                    let s = settings.bypass_change_detection();
-                    if facts(
-                        ui.checkbox(&mut s.tacview, "Tacview export"),
-                        &["Saves each flight as a Tacview recording (.acmi)", "In the game's data folder, under tacview"],
-                    )
-                    .changed()
-                    {
-                        settings.set_changed();
-                    }
-                    section(ui, "Realism");
-                    let s = settings.bypass_change_detection();
-                    if facts(
-                        two_way_switch(ui, "Damage", &mut s.realistic_damage, ("GAME", "REAL")),
-                        &[
-                            "Weapon damage", "Game: the original's damage; hits add up but never bring the aircraft down",
-                            "Realistic: a missile hit can destroy the aircraft (eject!), damages more systems and often starts a fire, which burns out or blows the aircraft up",
-                            "Realistic: damaged control surfaces put the aircraft out of trim or make it oscillate",
-                        ],
-                    )
-                    .changed()
-                    {
-                        settings.set_changed();
-                    }
-                    let s = settings.bypass_change_detection();
-                    if facts(
-                        two_way_switch(ui, "Guidance", &mut s.realistic_guidance, ("CLASSIC", "REAL")),
-                        &[
-                            "Missile guidance", "Classic: the original's missiles, flying straight at their target",
-                            "Realistic: proportional navigation to the collision point; motors burn out and the missiles glide on, losing speed with every turn (smoke only while the motor burns)",
-                            "Realistic: SAMs loft against distant targets; the AIM-120 flies straight for 3 s (pull up to lob it)",
-                        ],
-                    )
-                    .changed()
-                    {
-                        settings.set_changed();
-                    }
-                    let s = settings.bypass_change_detection();
-                    if facts(
-                        two_way_switch(ui, "Low level", &mut s.air_defence, ("CLASSIC", "REAL")),
-                        &[
-                            "Low-level air defences", "Classic: only the original's SAM sites and fighters",
-                            "Realistic: radar-laid ZSU-23-4 guns (their radar sees you like a SAM's) and S-60 flak batteries guard the airfields and the targets; MANPADS teams in the towns fire SA-14s at what they see",
-                            "Flying low over defended places becomes dangerous; bombs and guns destroy the guns",
-                        ],
-                    )
-                    .changed()
-                    {
-                        settings.set_changed();
-                    }
-                });
-                ui.vertical(|ui| {
-                    ui.set_width(200.0);
-                    section(ui, "Weather");
-                    facts(ui.radio_value(&mut state.weather, None, "Random"), RANDOM_SKY_FACTS);
-                    for sky in Sky::ALL {
-                        facts(ui.radio_value(&mut state.weather, Some(sky), sky.name()), sky_facts(sky));
-                    }
-                    // Coverage of the main layer (cumulus, or stratus for overcast and storms).
-                    let mut auto = state.cloud_cover.is_none();
-                    let r = facts(
-                        ui.checkbox(&mut auto, "Random cover"),
-                        &["Main cloud layer cover rolled with the weather", "Uncheck to set it yourself", "Main layer: stratus for overcast and storm, cumulus otherwise"],
-                    );
-                    if r.changed() {
-                        state.cloud_cover = if auto { None } else { Some(50) };
-                    }
-                    if let Some(c) = state.cloud_cover.as_mut() {
-                        facts(ui.add(egui::Slider::new(c, 0..=100).suffix("%")), &["Share of the sky the main layer covers", "No effect on a clear sky"]);
-                    }
-                    section(ui, "Classic / Modern");
-                    // Only mark the settings changed when a switch is flipped.
-                    let mut toggled = false;
-                    let s = settings.bypass_change_detection();
-                    let mut cockpit = !s.classic_cockpit;
-                    let mut hud = !s.classic_hud;
-                    let mut avionics = !s.classic_avionics;
-                    let mut flight = !s.classic_flight;
-                    for (modern, name, f) in [
-                        (&mut s.modern_shading, "Shaders", &["Modern: MSAA anti-aliasing, subtle directional shading, smooth distance haze", "Classic: the original's flat shading"][..]),
-                        (&mut s.shadows, "Shadows", &["Modern: sun shadows in the cockpit and the world (costs GPU time)", "Classic: no shadows"][..]),
-                        (&mut s.local_lights, "Lighting", &["Modern: cockpit flood and display lights; explosions, plumes and runway lights light the scene", "Classic: sun and sky light only"][..]),
-                        (
-                            &mut s.continuous_time,
-                            "Time of day",
-                            &[
-                                "Modern: the sun and the moon move with the mission clock, the sky darkens and brightens with the sun; stars and the moon's phase at night",
-                                "Modern: moonlight sets how far enemy pilots see you at night (2 km on a moonless night, 4 km under a full moon)",
-                                "Classic: the original's slow change of colours and a fixed sun",
-                            ][..],
-                        ),
-                        (
-                            &mut cockpit,
-                            "Cockpit",
-                            &["Modern: high-resolution displays with bezel buttons", "Classic: the original instrument panel layout and 77x60 displays"][..],
-                        ),
-                        (&mut hud, "HUD", &["Modern: high-resolution F-16 style HUD in green with NAV, AA and AG modes", "Classic: the original HUD"][..]),
-                        (
-                            &mut avionics,
-                            "Avionics",
-                            &[
-                                "Modern: F-16 style MFD formats on either MFD (situation display, HARM, targeting pod, map, stores) with a slewable cursor",
-                                "Classic: the original's map and TAC left, camera, WAY, WPN and ORD right",
-                            ][..],
-                        ),
-                        (
-                            &mut flight,
-                            "Flight model",
-                            &[
-                                "Modern: aerodynamic flight model with fly-by-wire: the stick commands pitch and roll rate; released, the nose stays put and the flight path is held",
-                                "Classic: the original game's flight model",
-                            ][..],
-                        ),
-                    ] {
-                        toggled |= facts(slide_switch(ui, name, modern), f).changed();
-                    }
-                    s.classic_cockpit = !cockpit;
-                    s.classic_hud = !hud;
-                    s.classic_avionics = !avionics;
-                    s.classic_flight = !flight;
-                    section(ui, "VR");
-                    // Read every frame by the rig: no change detection needed.
-                    let range = crate::settings::VR_COCKPIT_SCALE_RANGE;
-                    let mut pct = (s.vr_cockpit_scale * 100.0).round() as u32;
-                    let slider = egui::Slider::new(&mut pct, (*range.start() * 100.0) as u32..=(*range.end() * 100.0) as u32).suffix("%").text("cockpit scale");
-                    if facts(
-                        ui.add_enabled(vr.0 || s.vr, slider),
-                        &["Size of the cockpit in the headset", "100% (default): the size that suits the aircraft", "Smaller puts more of the panel in view"],
-                    )
-                    .changed()
-                    {
-                        s.vr_cockpit_scale = pct as f32 / 100.0;
-                    }
-                    if toggled {
-                        settings.set_changed();
-                    }
-                });
+                if !career_mode {
+                    // Options: three narrow columns.
+                    ui.vertical(|ui| {
+                        ui.set_width(210.0);
+                        theater_options(ui, &mut state.theater);
+                        opponent_options(ui, &mut state.opponents);
+                        start_time_options(ui, &mut state);
+                    });
+                    ui.vertical(|ui| {
+                        ui.set_width(190.0);
+                        situation_options(ui, &mut state.roe);
+                        mission_options(ui, &mut state);
+                        aircraft_options(ui, &mut settings, Some(&mut state.lockheed));
+                        realism_options(ui, &mut settings);
+                    });
+                    ui.vertical(|ui| {
+                        ui.set_width(200.0);
+                        let state = &mut *state;
+                        weather_options(ui, &mut state.weather, &mut state.cloud_cover);
+                        classic_modern_options(ui, &mut settings, vr.0);
+                    });
+                }
                 // Mission summary in big type, the full briefing below in small type.
                 // What is left beside the option columns, less the frame margins and border.
                 let summary_width = (ui.available_width() - 22.0).max(300.0);
@@ -917,21 +1146,14 @@ fn menu_ui(
             ui.separator();
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if facts(ui.add(big_button("QUIT")), &["Exit to the desktop"]).clicked() {
-                    exit.write(AppExit::Success);
+                let to = if career_mode { "Back to the pilot records" } else { "Back to the main menu" };
+                if facts(ui.add(big_button("BACK")), &[to]).clicked() {
+                    back = true;
                 }
-                if facts(ui.add(big_button("NEW MISSION")), &["Rolls a different mission", "Keeps all the options above"]).clicked() {
+                let new = if career_mode { "NEW SORTIE" } else { "NEW MISSION" };
+                if facts(ui.add(big_button(new)), &["Rolls different objectives", "Keeps all the options and the start time"]).clicked() {
                     state.seed = rand::random();
                     state.dirty = true;
-                }
-                if facts(ui.add(big_button("CONTROLS")), &["Map keys, joystick and HOTAS axes and buttons", "Saved for the next flights"]).clicked() {
-                    dialog.open = true;
-                }
-                if facts(ui.add(big_button("CAREER")), &["Pilot records: rank, decorations, sorties", "Tour of duty: 12 sorties in one theater", "What you destroy stays destroyed"]).clicked() {
-                    career.show();
-                }
-                if facts(ui.add(big_button("CAMPAIGN")), &["Dynamic campaign in real time", "Take the enemy's cities and airfields", "Missions from the live situation"]).clicked() {
-                    campaign.show();
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -967,6 +1189,13 @@ fn menu_ui(
                 });
             });
         });
+        if back {
+            state.mission_screen = false;
+            if career_mode {
+                career.show();
+            }
+        }
+    }
     crate::input_dialog::show(
         ctx,
         &mut dialog,
@@ -985,6 +1214,7 @@ fn menu_ui(
             state.lockheed,
             state.weather,
             state.cloud_cover,
+            state.start_hour,
         )
     {
         // Changing the mission's options leaves career mode.
@@ -994,7 +1224,7 @@ fn menu_ui(
         // Another aircraft: the same mission with or without the F-117A's limits.
         state.dirty = true;
     }
-    crate::career::career_ui(ctx, &mut career, &mut state);
+    crate::career::career_ui(ctx, &mut career, &mut state, &mut settings, vr.0);
     crate::prefs::Prefs::save_if_changed(&state, &settings, &mut saved);
     Ok(())
 }

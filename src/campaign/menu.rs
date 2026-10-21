@@ -1,4 +1,4 @@
-//! The menu's campaign window: start a dynamic campaign in the menu's theater, or continue a
+//! The menu's campaign window: choose the options and start a dynamic campaign, or continue a
 //! saved one.
 
 use bevy::prelude::*;
@@ -28,6 +28,14 @@ impl Default for CampaignWindow {
 }
 
 impl CampaignWindow {
+    pub fn opened(open: bool) -> Self {
+        let mut w = Self::default();
+        if open {
+            w.show();
+        }
+        w
+    }
+
     pub fn show(&mut self) {
         self.open = true;
         self.saves = super::save::list_saves();
@@ -48,12 +56,12 @@ pub fn campaign_window(
     mut commands: Commands,
     mut contexts: EguiContexts,
     mut w: ResMut<CampaignWindow>,
-    state: Res<MenuState>,
+    mut state: ResMut<MenuState>,
     data: Option<Res<MissionData>>,
     tables: Res<crate::flight::SimTables>,
     mut setup: ResMut<MissionSetup>,
     mut next: ResMut<NextState<AppState>>,
-    settings: Res<crate::settings::Settings>,
+    mut settings: ResMut<crate::settings::Settings>,
     vr: Res<crate::menu::VrAvailable>,
     mut exit: MessageWriter<AppExit>,
 ) -> Result {
@@ -65,15 +73,28 @@ pub fn campaign_window(
     let (code, theater) = THEATERS[state.theater.min(THEATERS.len() - 1)];
     let mut start: Option<ActiveCampaign> = None;
     let mut vr_name: Option<String> = None;
-    let mut close = false;
-    egui::Window::new("Dynamic campaign")
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .collapsible(false)
-        .resizable(false)
-        .title_bar(false)
-        .min_width(640.0)
-        .show(ctx, |ui| {
-            ui.label(egui::RichText::new("DYNAMIC CAMPAIGN").heading().color(BRIGHT));
+    let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let width = crate::menu::wide_width(ctx);
+    crate::menu::menu_window(ctx, "Dynamic campaign", width).show(ctx, |ui| {
+        ui.label(egui::RichText::new("DYNAMIC CAMPAIGN").heading().color(BRIGHT));
+        ui.separator();
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(210.0);
+                crate::menu::theater_options(ui, &mut state.theater);
+                crate::menu::opponent_options(ui, &mut state.opponents);
+                crate::menu::situation_options(ui, &mut state.roe);
+            });
+            ui.vertical(|ui| {
+                ui.set_width(190.0);
+                crate::menu::aircraft_options(ui, &mut settings, None);
+                crate::menu::realism_options(ui, &mut settings);
+            });
+            ui.vertical(|ui| {
+                ui.set_width(200.0);
+                crate::menu::classic_modern_options(ui, &mut settings, vr.0);
+            });
+            ui.vertical(|ui| {
             for line in [
                 "The war runs in real time while you play, also while the menu is open.",
                 "Fly the missions on the board: recon, SEAD, CAP, CAS, anti-ship, strike, escort.",
@@ -89,11 +110,6 @@ pub fn campaign_window(
                 roe_name(state.roe),
                 ["green", "regular", "veteran", "elite"][state.opponents.min(3) as usize]
             ));
-            ui.label(
-                egui::RichText::new("Theater, war level and opponents as chosen in the menu")
-                    .small()
-                    .color(DIM),
-            );
             ui.horizontal(|ui| {
                 ui.label("Day and night:");
                 for (ratio, label) in [
@@ -109,7 +125,11 @@ pub fn campaign_window(
             });
             ui.horizontal(|ui| {
                 ui.label("Starts at");
-                ui.add(egui::Slider::new(&mut w.start_hour, 0.0..=23.0).step_by(1.0).suffix(":00"));
+                ui.add(
+                    egui::Slider::new(&mut w.start_hour, 0.0..=23.0)
+                        .step_by(1.0)
+                        .custom_formatter(|v, _| format!("{v:02.0}:00")),
+                );
             });
             if ui.add(big_button("START")).clicked() {
                 let secs = std::time::SystemTime::now()
@@ -155,11 +175,13 @@ pub fn campaign_window(
             if let Some(e) = &w.error {
                 ui.colored_label(AMBER, e);
             }
-            ui.separator();
-            if ui.add(big_button("CLOSE")).clicked() {
-                close = true;
-            }
+            });
         });
+        ui.separator();
+        if ui.add(big_button("BACK")).on_hover_text("Back to the main menu").clicked() {
+            close = true;
+        }
+    });
     if let Some(c) = start {
         super::save::save(&c.name, &c.state);
         super::start(&mut commands, c, &mut setup, &tables.start_dir);

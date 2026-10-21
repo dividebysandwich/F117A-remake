@@ -76,7 +76,8 @@ impl Plugin for CampaignPlugin {
             EguiPrimaryContextPass,
             ops::ops_ui.run_if(in_state(AppState::Flight)).run_if(running),
         )
-        .init_resource::<CampaignWindow>()
+        // `--open-campaign`: start in the campaign window (screenshots).
+        .insert_resource(CampaignWindow::opened(std::env::args().any(|a| a == "--open-campaign")))
         .init_resource::<UnitView>()
         .init_resource::<crate::camera::HideOwnAircraft>()
         .add_systems(

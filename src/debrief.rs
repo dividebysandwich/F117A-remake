@@ -55,6 +55,7 @@ fn record_career(
     flight: Option<Res<crate::career::CareerFlight>>,
     debrief: Option<ResMut<Debrief>>,
     mut menu: ResMut<crate::menu::MenuState>,
+    mut career: ResMut<crate::career::CareerWindow>,
 ) {
     let (Some(flight), Some(mut d)) = (flight, debrief) else { return };
     commands.remove_resource::<crate::career::CareerFlight>();
@@ -67,6 +68,11 @@ fn record_career(
     menu.career = (p.tour.is_some() && p.status == crate::career::Status::Active).then(|| p.key());
     menu.seed = rand::random();
     menu.regenerate();
+    // The tour is over: back to the pilot records.
+    menu.mission_screen = menu.career.is_some();
+    if menu.career.is_none() {
+        career.show();
+    }
 }
 
 fn clock(t: i32) -> String {

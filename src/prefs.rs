@@ -42,6 +42,7 @@ pub struct Prefs {
     pub lockheed: bool,
     pub weather: Option<Sky>,
     pub cloud_cover: Option<u8>,
+    pub start_hour: Option<u8>,
     pub no_crashes: bool,
     pub realistic_damage: bool,
     pub realistic_guidance: bool,
@@ -76,6 +77,7 @@ impl Default for Prefs {
             lockheed: menu.lockheed,
             weather: menu.weather,
             cloud_cover: menu.cloud_cover,
+            start_hour: menu.start_hour,
             no_crashes: false,
             realistic_damage: false,
             realistic_guidance: false,
@@ -124,6 +126,7 @@ impl Prefs {
             lockheed: menu.lockheed,
             weather: menu.weather,
             cloud_cover: menu.cloud_cover,
+            start_hour: menu.start_hour,
             no_crashes: s.no_crashes,
             realistic_damage: s.realistic_damage,
             realistic_guidance: s.realistic_guidance,
@@ -152,6 +155,7 @@ impl Prefs {
         menu.lockheed = self.lockheed;
         menu.weather = self.weather;
         menu.cloud_cover = self.cloud_cover.map(|c| c.min(100));
+        menu.start_hour = self.start_hour.map(|h| h.min(23));
         s.no_crashes |= self.no_crashes;
         s.realistic_damage |= self.realistic_damage;
         s.realistic_guidance |= self.realistic_guidance;

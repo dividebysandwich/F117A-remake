@@ -14,6 +14,7 @@ use stealth_sim::score::{MissionReport, Outcome};
 
 use crate::menu::{AMBER, BRIGHT, DIM, GREEN, MenuState, THEATERS, big_button, section};
 use crate::mission::MissionData;
+use crate::settings::Settings;
 
 /// Rank, abbreviation, career points needed.
 pub const RANKS: [(&str, &str, i32); 6] = [
@@ -238,18 +239,19 @@ impl Pilot {
     }
 }
 
-/// Generates the next sortie of a pilot's tour: the first seed from `seed` on whose targets
-/// still stand. Mostly strikes, some intercepts, in Ukraine also drone defense.
+/// Generates the next sortie of a pilot's tour: the first seed from the menu's on whose
+/// targets still stand, in the menu's weather. Mostly strikes, some intercepts, in Ukraine also
+/// drone defense.
 pub fn next_sortie(
     data: &MissionData,
     pilot: &Pilot,
-    seed: u16,
+    menu: &MenuState,
     aircraft: crate::aircraft::AircraftKind,
 ) -> Option<(u16, Mission)> {
     let t = pilot.tour.as_ref()?;
     let drones = THEATERS.get(t.theater).is_some_and(|(id, _)| *id == "ua");
     for k in 0..SORTIE_TRIES {
-        let s = seed.wrapping_add(k as u16 * 7919);
+        let s = menu.seed.wrapping_add(k as u16 * 7919);
         let kind = match s % 20 {
             0..=11 => MissionKind::Strike,
             12..=15 if drones => MissionKind::DroneDefense,
@@ -261,8 +263,8 @@ pub fn next_sortie(
             kind,
             t.opponents,
             t.lockheed && aircraft == crate::aircraft::AircraftKind::F117,
-            None,
-            None,
+            menu.weather,
+            menu.cloud_cover,
         );
         settings.pilot = pilot.title();
         settings.sorties = pilot.sorties as u16;
@@ -303,143 +305,210 @@ impl CareerWindow {
     }
 }
 
-/// Draws the career window over the menu.
-pub fn career_ui(ctx: &egui::Context, w: &mut CareerWindow, state: &mut MenuState) {
+/// The career window in place of the main menu: the tour options, the pilots and their
+/// records.
+pub fn career_ui(
+    ctx: &egui::Context,
+    w: &mut CareerWindow,
+    state: &mut MenuState,
+    settings: &mut ResMut<Settings>,
+    vr: bool,
+) {
     if !w.open {
         return;
     }
     let mut close = false;
-    let screen = ctx.content_rect();
-    let size = egui::vec2(
-        (screen.width() - 64.0).clamp(600.0, 1100.0),
-        (screen.height() - 64.0).clamp(400.0, 800.0),
-    );
-    egui::Window::new("Career")
-        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-        .collapsible(false)
-        .resizable(false)
-        .title_bar(false)
-        .fixed_size(size)
-        .frame(egui::Frame::window(&ctx.global_style()).inner_margin(16.0))
-        .show(ctx, |ui| {
-            ui.label(egui::RichText::new("PILOT RECORDS").heading().color(BRIGHT));
-            ui.separator();
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(260.0);
-                    section(ui, "Pilots");
-                    for p in &w.pilots {
-                        let status = match p.status {
-                            Status::Active => "",
-                            Status::Kia => " (KIA)",
-                            Status::Pow => " (POW)",
-                        };
-                        let text = format!("{}{status}", p.title());
-                        if ui.selectable_label(w.selected.as_deref() == Some(&p.key()), text).clicked() {
-                            w.selected = Some(p.key());
-                        }
-                    }
-                    section(ui, "New pilot");
-                    ui.text_edit_singleline(&mut w.new_name);
-                    let name = w.new_name.trim().to_string();
-                    let taken = w.pilots.iter().any(|p| p.key() == file_key(&name));
-                    if ui.add_enabled(!name.is_empty() && !taken && name.len() <= 24, egui::Button::new("ENLIST")).clicked() {
-                        let p = Pilot::new(&name);
-                        p.save();
-                        w.selected = Some(p.key());
-                        w.pilots = Pilot::load_all();
-                        w.new_name.clear();
-                    }
+    // A tour flies in its own theater, situation and opponents.
+    let tour = w
+        .selected
+        .as_ref()
+        .and_then(|k| w.pilots.iter().find(|p| p.key() == *k))
+        .filter(|p| p.status == Status::Active)
+        .and_then(|p| p.tour.clone());
+    if let Some(t) = &tour {
+        (state.theater, state.roe, state.opponents, state.lockheed) =
+            (t.theater, t.roe, t.opponents, t.lockheed);
+    }
+    let width = crate::menu::wide_width(ctx);
+    crate::menu::menu_window(ctx, "Career", width).show(ctx, |ui| {
+        ui.label(egui::RichText::new("PILOT RECORDS").heading().color(BRIGHT));
+        ui.separator();
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(210.0);
+                ui.add_enabled_ui(tour.is_none(), |ui| {
+                    crate::menu::theater_options(ui, &mut state.theater);
+                    crate::menu::opponent_options(ui, &mut state.opponents);
+                    crate::menu::situation_options(ui, &mut state.roe);
                 });
-                ui.vertical(|ui| {
-                    let Some(p) = w.selected.as_ref().and_then(|k| w.pilots.iter_mut().find(|p| p.key() == *k)) else {
-                        ui.label(egui::RichText::new("Select or enlist a pilot").color(DIM));
-                        return;
-                    };
-                    section(ui, "Service record");
-                    egui::Grid::new("record").num_columns(2).spacing([14.0, 4.0]).show(ui, |ui| {
-                        let rows = [
-                            ("RANK", RANKS[p.rank()].0.to_string()),
-                            ("POINTS", p.points.to_string()),
-                            ("SORTIES", p.sorties.to_string()),
-                            ("TOURS", p.tours_completed.to_string()),
-                            (
-                                "STATUS",
-                                match p.status {
-                                    Status::Active => "Active duty",
-                                    Status::Kia => "Killed in action",
-                                    Status::Pow => "Prisoner of war",
-                                }
-                                .to_string(),
-                            ),
-                        ];
-                        for (k, v) in rows {
-                            ui.label(egui::RichText::new(k).size(14.0).color(DIM));
-                            ui.label(egui::RichText::new(v.to_ascii_uppercase()).size(18.0).color(GREEN));
-                            ui.end_row();
-                        }
-                    });
-                    if !p.medals.is_empty() {
-                        section(ui, "Decorations");
-                        for (m, n) in &p.medals {
-                            ui.label(if *n > 1 { format!("{m} x{n}") } else { m.clone() });
-                        }
-                    }
-                    section(ui, "Tour of duty");
-                    match (&p.tour, p.status) {
-                        (Some(t), Status::Active) => {
-                            ui.label(format!("{}  {}  sortie {} of {}  {} points", THEATERS[t.theater].1, stealth_mission::ROE_NAMES[t.roe as usize], t.sortie + 1, t.length, t.points));
-                            ui.label(egui::RichText::new(format!("{} targets destroyed so far", t.damage.positions.len())).small().color(DIM));
-                            if ui.add(big_button("FLY NEXT SORTIE").fill(DIM)).clicked() {
-                                state.start_career(p, t);
-                                close = true;
-                            }
-                        }
-                        (None, Status::Active) => {
-                            ui.label(egui::RichText::new(format!(
-                                "{TOUR_LENGTH} sorties in {}, {}, against {} opponents (the menu's choices)",
-                                THEATERS[state.theater].1,
-                                stealth_mission::ROE_NAMES[state.roe as usize],
-                                stealth_mission::OPPONENT_NAMES[state.opponents as usize].to_ascii_lowercase()
-                            )))
-                            .on_hover_text("What you destroy stays destroyed for the rest of the tour");
-                            if ui.add(big_button("START TOUR").fill(DIM)).clicked() {
-                                let t = Tour {
-                                    theater: state.theater,
-                                    roe: state.roe,
-                                    opponents: state.opponents,
-                                    lockheed: state.lockheed,
-                                    sortie: 0,
-                                    length: TOUR_LENGTH,
-                                    points: 0,
-                                    damage: WorldDamage::default(),
-                                };
-                                p.tour = Some(t.clone());
-                                p.save();
-                                state.start_career(p, &t);
-                                close = true;
-                            }
-                        }
-                        _ => {
-                            ui.label(egui::RichText::new("Retired from active duty").color(AMBER));
-                        }
-                    }
-                    section(ui, "Last sorties");
-                    egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                        for s in p.history.iter().rev().take(20) {
-                            ui.label(egui::RichText::new(format!("{}  {}  {:+}  {}", s.date, s.outcome, s.points, s.medal.clone().unwrap_or_default())).small());
-                            ui.label(egui::RichText::new(format!("   {}", s.orders)).small().color(DIM));
-                        }
-                    });
-                });
-            });
-            ui.add_space(8.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(big_button("CLOSE")).clicked() {
-                    close = true;
+                if tour.is_some() {
+                    ui.label(egui::RichText::new("Set by the pilot's tour").small().color(DIM));
                 }
             });
+            ui.vertical(|ui| {
+                ui.set_width(190.0);
+                let lockheed = tour.is_none().then_some(&mut state.lockheed);
+                crate::menu::aircraft_options(ui, settings, lockheed);
+                crate::menu::realism_options(ui, settings);
+            });
+            ui.vertical(|ui| {
+                ui.set_width(200.0);
+                crate::menu::weather_options(ui, &mut state.weather, &mut state.cloud_cover);
+                crate::menu::classic_modern_options(ui, settings, vr);
+            });
+            ui.vertical(|ui| {
+                ui.set_width(260.0);
+                section(ui, "Pilots");
+                for p in &w.pilots {
+                    let status = match p.status {
+                        Status::Active => "",
+                        Status::Kia => " (KIA)",
+                        Status::Pow => " (POW)",
+                    };
+                    let text = format!("{}{status}", p.title());
+                    if ui.selectable_label(w.selected.as_deref() == Some(&p.key()), text).clicked()
+                    {
+                        w.selected = Some(p.key());
+                    }
+                }
+                section(ui, "New pilot");
+                ui.text_edit_singleline(&mut w.new_name);
+                let name = w.new_name.trim().to_string();
+                let taken = w.pilots.iter().any(|p| p.key() == file_key(&name));
+                if ui
+                    .add_enabled(
+                        !name.is_empty() && !taken && name.len() <= 24,
+                        egui::Button::new("ENLIST"),
+                    )
+                    .clicked()
+                {
+                    let p = Pilot::new(&name);
+                    p.save();
+                    w.selected = Some(p.key());
+                    w.pilots = Pilot::load_all();
+                    w.new_name.clear();
+                }
+            });
+            ui.vertical(|ui| {
+                let Some(p) =
+                    w.selected.as_ref().and_then(|k| w.pilots.iter_mut().find(|p| p.key() == *k))
+                else {
+                    ui.label(egui::RichText::new("Select or enlist a pilot").color(DIM));
+                    return;
+                };
+                section(ui, "Service record");
+                egui::Grid::new("record").num_columns(2).spacing([14.0, 4.0]).show(ui, |ui| {
+                    let rows = [
+                        ("RANK", RANKS[p.rank()].0.to_string()),
+                        ("POINTS", p.points.to_string()),
+                        ("SORTIES", p.sorties.to_string()),
+                        ("TOURS", p.tours_completed.to_string()),
+                        (
+                            "STATUS",
+                            match p.status {
+                                Status::Active => "Active duty",
+                                Status::Kia => "Killed in action",
+                                Status::Pow => "Prisoner of war",
+                            }
+                            .to_string(),
+                        ),
+                    ];
+                    for (k, v) in rows {
+                        ui.label(egui::RichText::new(k).size(14.0).color(DIM));
+                        ui.label(
+                            egui::RichText::new(v.to_ascii_uppercase()).size(18.0).color(GREEN),
+                        );
+                        ui.end_row();
+                    }
+                });
+                if !p.medals.is_empty() {
+                    section(ui, "Decorations");
+                    for (m, n) in &p.medals {
+                        ui.label(if *n > 1 { format!("{m} x{n}") } else { m.clone() });
+                    }
+                }
+                section(ui, "Tour of duty");
+                match (&p.tour, p.status) {
+                    (Some(t), Status::Active) => {
+                        ui.label(format!(
+                            "{}  {}  sortie {} of {}  {} points",
+                            THEATERS[t.theater].1,
+                            stealth_mission::ROE_NAMES[t.roe as usize],
+                            t.sortie + 1,
+                            t.length,
+                            t.points
+                        ));
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} targets destroyed so far",
+                                t.damage.positions.len()
+                            ))
+                            .small()
+                            .color(DIM),
+                        );
+                        if ui.add(big_button("FLY NEXT SORTIE").fill(DIM)).clicked() {
+                            state.start_career(p, t);
+                            state.mission_screen = true;
+                            close = true;
+                        }
+                    }
+                    (None, Status::Active) => {
+                        ui.label(egui::RichText::new(format!(
+                            "{TOUR_LENGTH} sorties in {}, {}, against {} opponents",
+                            THEATERS[state.theater].1,
+                            stealth_mission::ROE_NAMES[state.roe as usize],
+                            stealth_mission::OPPONENT_NAMES[state.opponents as usize]
+                                .to_ascii_lowercase()
+                        )))
+                        .on_hover_text("What you destroy stays destroyed for the rest of the tour");
+                        if ui.add(big_button("START TOUR").fill(DIM)).clicked() {
+                            let t = Tour {
+                                theater: state.theater,
+                                roe: state.roe,
+                                opponents: state.opponents,
+                                lockheed: state.lockheed,
+                                sortie: 0,
+                                length: TOUR_LENGTH,
+                                points: 0,
+                                damage: WorldDamage::default(),
+                            };
+                            p.tour = Some(t.clone());
+                            p.save();
+                            state.start_career(p, &t);
+                            state.mission_screen = true;
+                            close = true;
+                        }
+                    }
+                    _ => {
+                        ui.label(egui::RichText::new("Retired from active duty").color(AMBER));
+                    }
+                }
+                section(ui, "Last sorties");
+                egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                    for s in p.history.iter().rev().take(20) {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{}  {}  {:+}  {}",
+                                s.date,
+                                s.outcome,
+                                s.points,
+                                s.medal.clone().unwrap_or_default()
+                            ))
+                            .small(),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!("   {}", s.orders)).small().color(DIM),
+                        );
+                    }
+                });
+            });
         });
+        ui.add_space(8.0);
+        ui.separator();
+        if ui.add(big_button("BACK")).on_hover_text("Back to the main menu").clicked() {
+            close = true;
+        }
+    });
     if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         w.open = false;
     }

@@ -192,12 +192,10 @@ pub fn from_args(app: &mut App) {
     let weather = crate::settings::weather_arg(&args);
     let cloud_cover = crate::settings::cover_arg(&args);
     let data = MissionData::load().expect("mission data");
-    let mut m = generate(
-        &data,
-        &settings(theater, roe, kind, opponents, lockheed, weather, cloud_cover),
-        seed,
-    )
-    .expect("mission");
+    let mut settings = settings(theater, roe, kind, opponents, lockheed, weather, cloud_cover);
+    // `--start-hour <0-23>`: takeoff time.
+    settings.start_hour = get("--start-hour").and_then(|s| s.parse::<u8>().ok()).map(|h| h.min(23));
+    let mut m = generate(&data, &settings, seed).expect("mission");
     // `--start-base <name>`: take off from another airfield (also an enemy one; for tests).
     if let Some(name) = get("--start-base") {
         let w = &m.world;

@@ -328,9 +328,14 @@ fn cockpit_lamps(
 }
 
 /// The cockpit is only drawn from the pilot's seat, not in the external views.
-fn cockpit_visibility(state: Res<ViewState>, mut roots: Query<&mut Visibility, With<CockpitRoot>>) {
+fn cockpit_visibility(
+    state: Res<ViewState>,
+    hide: Option<Res<crate::camera::HideOwnAircraft>>,
+    mut roots: Query<&mut Visibility, With<CockpitRoot>>,
+) {
     let inside =
-        matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
+        matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear)
+            && !hide.is_some_and(|h| h.0);
     for mut v in &mut roots {
         v.set_if_neq(if inside { Visibility::Inherited } else { Visibility::Hidden });
     }

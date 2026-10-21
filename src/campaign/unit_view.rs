@@ -429,6 +429,9 @@ pub fn window(
     let view = &mut *view;
     egui::Window::new(title)
         .id(egui::Id::new("unit_view"))
+        // Above the Ops screen: clicking that one must not bury the view behind it.
+        .order(egui::Order::Foreground)
+        .constrain(true)
         .open(&mut open)
         .resizable(true)
         .collapsible(true)

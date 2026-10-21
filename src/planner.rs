@@ -66,7 +66,10 @@ pub struct Planner {
     /// Theater whose map is being prepared or shown.
     theater: Option<Theater>,
     gltf: Option<Handle<Gltf>>,
-    texture: Option<(String, egui::TextureHandle)>,
+    /// The map picture: theater, texture, and the egui context (camera) it was loaded into (a
+    /// texture only exists in its own context: the menu, the debrief and the campaign's Ops
+    /// screen each have theirs).
+    texture: Option<(String, egui::TextureHandle, Entity)>,
     sim: Option<SimData>,
     /// View: map centre (map units) and map units per screen point.
     centre: egui::Vec2,
@@ -85,7 +88,7 @@ impl Planner {
 
     /// The map picture of theater `id`, once prepared.
     pub fn map_texture(&self, id: &str) -> Option<&egui::TextureHandle> {
-        self.texture.as_ref().filter(|(t, _)| t == id).map(|(_, t)| t)
+        self.texture.as_ref().filter(|(t, ..)| t == id).map(|(_, t, _)| t)
     }
 }
 
@@ -104,6 +107,7 @@ pub fn prepare_map(
     debrief: Option<Res<crate::debrief::Debrief>>,
     app_state: Res<State<crate::settings::AppState>>,
     campaign: Option<Res<crate::campaign::ActiveCampaign>>,
+    egui_context: Query<Entity, With<bevy_egui::PrimaryEguiContext>>,
 ) {
     // The planner's mission, the one flown on the debrief's flight map, or the campaign's
     // theater (its war map).
@@ -121,7 +125,8 @@ pub fn prepare_map(
     };
     let Some(code) = code else { return };
     let id = code.to_ascii_lowercase();
-    if planner.texture.as_ref().is_some_and(|(t, _)| *t == id) {
+    let Ok(context) = egui_context.single() else { return };
+    if planner.texture.as_ref().is_some_and(|(t, _, c)| *t == id && *c == context) {
         return;
     }
     if planner.sim.is_none() {
@@ -139,7 +144,7 @@ pub fn prepare_map(
     let image = render_theater(theater, &models);
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let tex = ctx.load_texture(format!("planner_{id}"), image, egui::TextureOptions::LINEAR);
-    planner.texture = Some((id, tex));
+    planner.texture = Some((id, tex, context));
 }
 
 /// The whole theater top-down in the day palette (the MFD map's colours).
@@ -379,7 +384,7 @@ fn map_view(
     let to_map = |p: egui::Pos2| view.to_map(p);
     let painter = painter.with_clip_rect(rect);
 
-    map_draw::picture(&painter, &view, planner.texture.as_ref().map(|(_, t)| t));
+    map_draw::picture(&painter, &view, planner.texture.as_ref().map(|(_, t, _)| t));
     // Threat coverage: filled radar detection circles, dotted missile range circles; dim when
     // off the air.
     for ring in rings {

@@ -35,6 +35,8 @@ pub struct OpsUi {
     pub test_taken: bool,
     /// The accepted mission's briefing (map and loadout) before take-off.
     briefing: Option<Briefing>,
+    /// SAVE & EXIT asks first.
+    confirm_exit: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +65,8 @@ pub struct OpsCamera;
 pub fn overlay(
     mut commands: Commands,
     c: Option<Res<ActiveCampaign>>,
-    cams: Query<Entity, With<OpsCamera>>,
+    mut cams: Query<(Entity, &mut Msaa), With<OpsCamera>>,
+    eye: Query<&Msaa, (With<crate::camera::EyeCamera>, Without<OpsCamera>)>,
     settings: Res<crate::settings::Settings>,
     root: Option<Res<crate::camera::XrRoot>>,
     mut images: ResMut<Assets<Image>>,
@@ -71,11 +74,20 @@ pub fn overlay(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let want = c.is_some_and(|c| c.screen_open() && !c.exit);
+    // The overlay draws into the 3D view's picture only with the same anti-aliasing (else it
+    // gets a picture of its own that nothing clears: the world gone behind the screen and
+    // moved windows leaving trails). The 3D view's MSAA follows the shading settings.
+    let msaa = eye.iter().next().copied().unwrap_or(Msaa::Off);
+    for (_, mut m) in &mut cams {
+        if *m != msaa {
+            *m = msaa;
+        }
+    }
     if want == !cams.is_empty() {
         return;
     }
     if !want {
-        for e in &cams {
+        for (e, _) in &cams {
             commands.entity(e).try_despawn();
         }
         #[cfg(feature = "xr")]
@@ -100,6 +112,7 @@ pub fn overlay(
     commands.spawn((
         Camera2d,
         Camera { order: 50, clear_color: ClearColorConfig::None, ..default() },
+        msaa,
         OpsCamera,
         PrimaryEguiContext,
     ));
@@ -110,10 +123,18 @@ pub fn block_input(
     c: Res<ActiveCampaign>,
     menu: Res<crate::flight_menu::FlightMenu>,
     mut block: ResMut<crate::input::InputBlock>,
+    settings: Res<crate::settings::Settings>,
+    mut hide: ResMut<crate::camera::HideOwnAircraft>,
 ) {
     let want = c.screen_open() || menu.open;
     if block.0 != want {
         block.0 = want;
+    }
+    // VR: the parked aircraft and its cockpit are not drawn around the Ops screen (the
+    // in-flight menu's screen is in the cockpit: then it is drawn).
+    let hidden = settings.vr && c.screen_open() && !menu.open;
+    if hide.0 != hidden {
+        hide.0 = hidden;
     }
 }
 
@@ -314,7 +335,7 @@ pub fn ops_ui(
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.add(big_button("SAVE & EXIT")).clicked() {
-                    leave = true;
+                    c.ui.confirm_exit = true;
                 }
                 if let Some(e) = &c.ui.error {
                     ui.colored_label(AMBER, e);
@@ -325,7 +346,38 @@ pub fn ops_ui(
                 });
             });
         });
+    if c.ui.confirm_exit {
+        egui::Window::new("Leave the campaign")
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .collapsible(false)
+            .resizable(false)
+            .title_bar(false)
+            .order(egui::Order::Foreground)
+            .frame(egui::Frame::window(&ctx.global_style()).inner_margin(18.0))
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new("SAVE AND LEAVE THE CAMPAIGN?").heading().color(BRIGHT),
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "The war stops until you continue it. Aircraft in the air are lost; \
+                         insertions under way start again from their base.",
+                    )
+                    .color(DIM),
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.add(big_button("SAVE & EXIT").fill(DIM)).clicked() {
+                        leave = true;
+                    }
+                    if ui.add(big_button("CANCEL")).clicked() {
+                        c.ui.confirm_exit = false;
+                    }
+                });
+            });
+    }
     if leave {
+        c.ui.confirm_exit = false;
         super::save::save(&c.name, &c.state);
         c.exit = true;
         next.set(AppState::Menu);

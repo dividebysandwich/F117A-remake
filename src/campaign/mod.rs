@@ -78,6 +78,7 @@ impl Plugin for CampaignPlugin {
         )
         .init_resource::<CampaignWindow>()
         .init_resource::<UnitView>()
+        .init_resource::<crate::camera::HideOwnAircraft>()
         .add_systems(
             Update,
             unit_view::follow
@@ -594,7 +595,7 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
         if *t > END_SECONDS {
             let base = c.parked;
             park(c, &mut s, base);
-            c.ui.tab = ops::Tab::Debrief;
+            c.ui.tab = ops::test_tab().unwrap_or(ops::Tab::Debrief);
         }
     }
     // The sky's clock.
@@ -807,6 +808,7 @@ fn leave(
     }
     view.close();
     unit_view::follow_cleanup(&mut commands, &mut view);
+    commands.insert_resource(crate::camera::HideOwnAircraft(false));
     sites.follow = None;
     #[cfg(feature = "xr")]
     commands.remove_resource::<crate::vr_menu::WorldPanel>();

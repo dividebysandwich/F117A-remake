@@ -189,6 +189,11 @@ pub const RECON_BACKGROUND_LAYER: [usize; 2] = [5, 6];
 /// Background sphere of the campaign's unit view camera.
 pub const UNIT_BACKGROUND_LAYER: usize = 7;
 
+/// Hides the player's aircraft and cockpit from every view (VR: while the campaign's Ops
+/// screen is up the player looks at the world, not at a parked aircraft around him).
+#[derive(Resource, Default)]
+pub struct HideOwnAircraft(pub bool);
+
 /// A 3D camera rendering into a texture (the tracking camera, the recon cameras): not the
 /// main view.
 #[derive(Component)]

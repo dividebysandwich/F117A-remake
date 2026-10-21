@@ -274,12 +274,14 @@ fn attach_own_model(
 /// aircraft has one.
 fn own_model_visibility(
     view: Res<ViewState>,
+    hide: Option<Res<crate::camera::HideOwnAircraft>>,
     mut q: Query<&mut Visibility, (With<OwnModel>, Without<OwnModelInterior>)>,
     mut interior: Query<&mut Visibility, (With<OwnModelInterior>, Without<OwnModel>)>,
 ) {
     let external =
         !matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
-    let vis = |on: bool| if on { Visibility::Inherited } else { Visibility::Hidden };
+    let hidden = hide.is_some_and(|h| h.0);
+    let vis = |on: bool| if on && !hidden { Visibility::Inherited } else { Visibility::Hidden };
     for mut v in &mut q {
         v.set_if_neq(vis(external));
     }

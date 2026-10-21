@@ -324,7 +324,7 @@ fn apply_msaa(
 }
 
 /// Sky band boundaries, original screen units at f = 256.
-const SKY_RING: [f32; 16] =
+pub(crate) const SKY_RING: [f32; 16] =
     [0., 2., 3., 4., 6., 8., 11., 15., 20., 27., 36., 48., 64., 87., 119., 164.];
 
 #[allow(clippy::too_many_arguments)]

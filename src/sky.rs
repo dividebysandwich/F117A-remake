@@ -47,6 +47,8 @@ pub struct Sky {
     /// Mission date: days since 1970-01-01 (the moon's phase), and the theater's latitude.
     days: f64,
     lat: f64,
+    /// The golden hour palette in use and its variant.
+    golden: Option<(usize, VgaPalette)>,
 }
 
 impl Default for Sky {
@@ -60,6 +62,7 @@ impl Default for Sky {
             day: 1.0,
             days: 0.0,
             lat: 45.0,
+            golden: None,
         }
     }
 }
@@ -121,15 +124,64 @@ fn smoothstep(e0: f64, e1: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// The theater palette for a sun elevation (degrees): night below -12, through dusk at -4, to
-/// day above +8; moonlight lifts the night part towards dusk.
-pub fn blend(p: &TheaterPalettes, elev: f64, moonlight: f64) -> VgaPalette {
-    let (a, b, t) = if elev < -4.0 {
-        let t = smoothstep(-12.0, -4.0, elev);
-        (&p.night, &p.dusk, t.max(moonlight * 0.25))
-    } else {
-        (&p.dusk, &p.day, smoothstep(-4.0, 8.0, elev))
-    };
+/// A golden hour look: the sky from the horizon up (8-bit sRGB: at the horizon, 8 degrees up,
+/// from 30 degrees up) and the warm tint of everything else.
+struct Golden {
+    sky: [[f64; 3]; 3],
+    tint: [f64; 3],
+}
+
+/// The golden hours' looks; a mission's dawn and dusk each pick one by the date.
+const GOLDEN: [Golden; 4] = [
+    // Gold.
+    Golden { sky: [[255.0, 172.0, 64.0], [236.0, 188.0, 124.0], [72.0, 112.0, 172.0]], tint: [1.0, 0.84, 0.62] },
+    // Deep orange.
+    Golden { sky: [[255.0, 118.0, 36.0], [222.0, 142.0, 104.0], [52.0, 82.0, 150.0]], tint: [1.0, 0.76, 0.55] },
+    // Pink and gold.
+    Golden { sky: [[255.0, 150.0, 92.0], [228.0, 158.0, 168.0], [82.0, 100.0, 170.0]], tint: [1.0, 0.8, 0.7] },
+    // Pale yellow haze.
+    Golden { sky: [[255.0, 212.0, 124.0], [222.0, 212.0, 172.0], [92.0, 140.0, 200.0]], tint: [1.0, 0.9, 0.72] },
+];
+
+/// The golden hour palette `variant` of a theater: the day palette with a warm, low-sun sky
+/// (colours 0x80.. 0x8F, the bands from the horizon up, each coloured for its elevation) and
+/// everything else warmer and a little darker.
+/// The fixed low 16 colours (the displays) stay.
+pub fn golden(p: &TheaterPalettes, variant: usize) -> VgaPalette {
+    let g = &GOLDEN[variant % GOLDEN.len()];
+    let six = |v: f64| (v / 4.0).round().clamp(0.0, 63.0) as u8;
+    let colors = p
+        .day
+        .colors
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            if i < 16 {
+                *c
+            } else if (0x80..0x90).contains(&i) {
+                // The band's lower edge (`SKY_RING`: 256 x the tangent of the elevation).
+                let el = (crate::palette::SKY_RING[i - 0x80] as f64 / 256.0).atan().to_degrees();
+                let (a, b, k) = if el < 8.0 {
+                    (g.sky[0], g.sky[1], el / 8.0)
+                } else {
+                    (g.sky[1], g.sky[2], ((el - 8.0) / 22.0).min(1.0))
+                };
+                std::array::from_fn(|ch| six(a[ch] + (b[ch] - a[ch]) * k))
+            } else {
+                std::array::from_fn(|ch| six(c[ch] as f64 * 4.0 * g.tint[ch] * 0.88))
+            }
+        })
+        .collect();
+    VgaPalette { colors }
+}
+
+/// Golden hour look of a mission's dawn or dusk (by the date, so each day has its own).
+pub fn golden_variant(days: f64, evening: bool) -> usize {
+    let d = days.floor() as i64 * 2 + evening as i64;
+    (d.wrapping_mul(0x9E37_79B9).rem_euclid(1 << 30) >> 7) as usize % GOLDEN.len()
+}
+
+fn mix(a: &VgaPalette, b: &VgaPalette, t: f64) -> VgaPalette {
     let colors = a
         .colors
         .iter()
@@ -139,6 +191,20 @@ pub fn blend(p: &TheaterPalettes, elev: f64, moonlight: f64) -> VgaPalette {
         })
         .collect();
     VgaPalette { colors }
+}
+
+/// The palette for a sun elevation (degrees): night below -14; the dusk palette's purple and
+/// dark blue at -9 (about 19:00 at the equinox in Central Europe); the golden hour from about
+/// -2 to +4 degrees; day above +14. Moonlight lifts the night towards dusk.
+pub fn blend(p: &TheaterPalettes, golden: &VgaPalette, elev: f64, moonlight: f64) -> VgaPalette {
+    if elev < -9.0 {
+        let t = smoothstep(-14.0, -9.0, elev).max(moonlight * 0.25);
+        mix(&p.night, &p.dusk, t)
+    } else if elev < -2.0 {
+        mix(&p.dusk, golden, smoothstep(-9.0, -2.0, elev))
+    } else {
+        mix(golden, &p.day, smoothstep(4.0, 14.0, elev))
+    }
 }
 
 fn test_hours() -> Option<f64> {
@@ -206,7 +272,12 @@ fn update_sky(
     if let Some(mut palette) = palette
         && !tod.frozen
     {
-        let p = blend(&palette.theater, elev, moonlight);
+        let variant = golden_variant(sky.days, hours.rem_euclid(24.0) >= 12.0);
+        if sky.golden.as_ref().is_none_or(|(v, _)| *v != variant) {
+            sky.golden = Some((variant, golden(&palette.theater, variant)));
+        }
+        let Some((_, gold)) = &sky.golden else { return };
+        let p = blend(&palette.theater, gold, elev, moonlight);
         if p.colors != palette.active.colors {
             palette.active = p;
         }
@@ -244,6 +315,27 @@ mod tests {
         assert!(m.y > 0.6 && m.z > 0.0);
         assert_eq!(phase_name(0.5), "Full moon");
         assert_eq!(phase_name(0.98), "New moon");
+    }
+
+    #[test]
+    fn golden_hours() {
+        let pal = |v: u8| VgaPalette { colors: vec![[v; 3]; 256] };
+        let p = TheaterPalettes { day: pal(60), dusk: pal(20), night: pal(2) };
+        let g = golden(&p, 0);
+        // A warm horizon, a blue zenith, the displays' colours untouched.
+        assert!(g.colors[0x80][0] > g.colors[0x80][2]);
+        assert!(g.colors[0x8F][2] > g.colors[0x8F][0]);
+        assert_eq!(g.colors[3], [60; 3]);
+        assert_eq!(blend(&p, &g, -30.0, 0.0).colors, p.night.colors);
+        assert_eq!(blend(&p, &g, -9.0, 0.0).colors, p.dusk.colors);
+        assert_eq!(blend(&p, &g, 0.0, 0.0).colors, g.colors);
+        assert_eq!(blend(&p, &g, 30.0, 0.0).colors, p.day.colors);
+        // 19:00 at the equinox in Central Europe is near full dusk.
+        let e19 = (sun_dir(19.0, 52.6).y as f64).asin().to_degrees();
+        assert!((-10.0..-8.0).contains(&e19), "{e19}");
+        let used: std::collections::HashSet<_> =
+            (0..40).map(|d| golden_variant(d as f64 + 9000.0, d % 2 == 0)).collect();
+        assert!(used.len() > 2);
     }
 
     #[test]

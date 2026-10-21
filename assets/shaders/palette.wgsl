@@ -465,6 +465,31 @@ fn cloud_ramp(shade: f32, dist: f32, modern: bool) -> vec3<f32> {
 }
 
 // 4x4 ordered dither threshold (classic mode's soft cloud edges).
+// Angular radius of the sun's disc (drawn about three times its real size).
+const SUN_RADIUS: f32 = 0.014;
+
+// The sun's colour at an elevation (sine): orange red at the horizon, warm white up high.
+fn sun_colour(h: f32) -> vec3<f32> {
+    return mix(vec3<f32>(1.0, 0.42, 0.1), vec3<f32>(1.0, 0.93, 0.78), smoothstep(-0.02, 0.3, h));
+}
+
+// Modern shaders, continuous time of day: the glare of the sun over everything in its
+// direction, a bright core and wide soft halos, dimmed by an overcast and gone below the horizon.
+fn sun_glare(dir: vec3<f32>) -> vec3<f32> {
+    if (globals.sky_sun.w == 0.0 || globals.params.w == 0.0) {
+        return vec3<f32>(0.0);
+    }
+    let s = normalize(globals.sky_sun.xyz);
+    let up = smoothstep(-0.03, 0.02, s.y);
+    if (up <= 0.0) {
+        return vec3<f32>(0.0);
+    }
+    let c = max(dot(normalize(dir), s), 0.0);
+    let strength = clamp(globals.sun.w / 0.3, 0.0, 1.0) * up;
+    let glow = pow(c, 900.0) * 0.9 + pow(c, 60.0) * 0.16 + pow(c, 8.0) * 0.05;
+    return sun_colour(s.y) * glow * strength;
+}
+
 // Angular radius of the moon's disc (drawn about five times its real size).
 const MOON_RADIUS: f32 = 0.022;
 const MOON_COLOR: vec3<f32> = vec3<f32>(0.82, 0.80, 0.74);
@@ -476,7 +501,7 @@ fn hash2(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
 }
 
-// Continuous time of day: stars and the moon over the sky colour (`nd` normalised, above the
+// Continuous time of day: the sun, stars and the moon over the sky colour (`nd` normalised, above the
 // horizon). The moon is lit from the true sun direction, so its phase shows by itself.
 fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>) -> vec3<f32> {
     var bg = bg_in;
@@ -505,6 +530,13 @@ fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>) -> vec3<f32> {
             let alt_fade = smoothstep(0.0, 0.15, nd.y);
             bg += vec3<f32>(0.9, 0.92, 1.0) * core * mag * stars * alt_fade * 0.8;
         }
+    }
+    // The sun's disc, a soft edge against the sky.
+    let sun = normalize(globals.sky_sun.xyz);
+    if (sun.y > -SUN_RADIUS) {
+        let a = acos(clamp(dot(nd, sun), -1.0, 1.0));
+        let edge = 1.0 - smoothstep(SUN_RADIUS - px, SUN_RADIUS + px, a);
+        bg = mix(bg, sun_colour(sun.y) * 1.6, edge);
     }
     let m = normalize(globals.sky_moon.xyz);
     let c = dot(nd, m);
@@ -765,7 +797,8 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(flir(c.rgb, in.warm, in.fog_f), c.a);
     }
     let c = shade_fragment(in);
-    return vec4<f32>(nvg(c.rgb, in.clip_position), c.a);
+    let glare = sun_glare(in.world_position - view.world_position);
+    return vec4<f32>(nvg(c.rgb + glare * c.a, in.clip_position), c.a);
 }
 
 fn shade_fragment(in: VertexOutput) -> vec4<f32> {

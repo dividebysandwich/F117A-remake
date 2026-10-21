@@ -5,7 +5,13 @@
 //! Graphics switches (shaders, shadows, lighting), cockpit and HUD style and the VR cockpit size
 //! apply at once and are saved to the preferences when the menu closes. Choose an entry with the
 //! mouse, a VR fingertip and the trigger, the arrow keys / gamepad d-pad / VR thumbstick and
-//! Enter / A / X.
+//! Enter / A / X. In VR a fingertip on the screen highlights an entry and the trigger presses it
+//! (a trigger pulled away from the screen and the cockpit controls presses the highlighted entry).
+//!
+//! END MISSION keeps the flight paused and shows EXITING... until the debrief takes over.
+//!
+//! In VR the end-of-mission overlay (a 2D overlay on the desktop) is a screen floating in front of
+//! the head, also in the outside views.
 
 use bevy::audio::{AudioSink, AudioSinkPlayback};
 use bevy::light::NotShadowCaster;
@@ -30,7 +36,9 @@ impl Plugin for FlightMenuPlugin {
             .add_systems(OnExit(AppState::Flight), close_on_exit)
             .add_systems(
                 Update,
-                (toggle, spawn_screen, navigate, draw).chain().run_if(in_state(AppState::Flight)),
+                (toggle, spawn_screen, navigate, draw, vr_end_screen)
+                    .chain()
+                    .run_if(in_state(AppState::Flight)),
             );
     }
 }
@@ -43,6 +51,9 @@ pub struct FlightMenu {
     cursor: usize,
     /// Settings when the menu opened (saved to the preferences on close if changed).
     opened_with: Option<Settings>,
+    /// END MISSION was chosen: the menu shows EXITING... and the flight ends without the end
+    /// overlay.
+    pub exiting: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -125,11 +136,20 @@ const BG: u8 = 5;
 const BRIGHT: u8 = 47;
 const DIM: u8 = 45;
 const ROW_BG: u8 = 44;
-/// A VR fingertip touches the screen within this distance (metres).
-const TOUCH: f32 = 0.025;
+/// A VR fingertip touches the screen from this far in front of it to this far behind it
+/// (metres; a finger easily passes through the plane).
+const TOUCH_FRONT: f32 = 0.05;
+const TOUCH_BEHIND: f32 = 0.10;
 
 #[derive(Component)]
 struct MenuScreen;
+
+#[derive(Component)]
+struct EndScreen;
+
+/// The VR end screen: size (metres) and distance in front of the head.
+const END_SIZE: Vec2 = Vec2::new(0.6, 0.4);
+const END_DISTANCE: f32 = 0.8;
 
 fn close_on_exit(
     mut menu: ResMut<FlightMenu>,
@@ -138,6 +158,7 @@ fn close_on_exit(
 ) {
     menu.open = false;
     menu.opened_with = None;
+    menu.exiting = false;
     time.unpause();
     block.0 = false;
 }
@@ -154,7 +175,7 @@ fn toggle(
     sinks: Query<&AudioSink>,
 ) {
     let pressed = actions.read().filter(|a| a.0 == Action::Menu).count() % 2 == 1;
-    if pressed {
+    if pressed && !menu.exiting {
         let open = !menu.open;
         set_open(&mut menu, open, &settings, &mut time, &mut block, &sinks);
         if menu.open && view.view != View::Cockpit {
@@ -308,7 +329,7 @@ fn navigate(
     mut actions: MessageWriter<ActionEvent>,
     sinks: Query<&AudioSink>,
 ) {
-    if !menu.open {
+    if !menu.open || menu.exiting {
         return;
     }
     let n = ITEMS.len();
@@ -393,17 +414,23 @@ fn navigate(
         let local_from_cockpit = screen_tf.compute_affine().inverse();
         for hand in hands.hands.iter_mut().filter(|h| h.active) {
             let l = local_from_cockpit.transform_point3(hand.finger);
-            if l.z.abs() > TOUCH {
-                continue;
-            }
-            if let Some(hit) = to_canvas(l).and_then(item_at) {
+            let hit = (l.z < TOUCH_FRONT && l.z > -TOUCH_BEHIND)
+                .then(|| to_canvas(l))
+                .flatten()
+                .and_then(item_at);
+            if let Some(hit) = hit {
                 if menu.cursor != hit.0 {
                     hand.haptic = hand.haptic.max(0.1);
                 }
                 menu.cursor = hit.0;
-                if hand.trigger_pulled() {
-                    hand.haptic = hand.haptic.max(0.6);
-                    clicked = Some(hit);
+            }
+            // Away from the screen, not while the finger is on a cockpit control (the MENU
+            // button that opens and closes the menu).
+            if hand.trigger_pulled() && (hit.is_some() || !hand.touching) {
+                hand.haptic = hand.haptic.max(0.6);
+                match hit {
+                    Some(hit) => clicked = Some(hit),
+                    None => select = true,
                 }
             }
         }
@@ -449,7 +476,11 @@ fn navigate(
         }
         Item::Resume => close = true,
         Item::EndMission => {
-            close = true;
+            // Stays open (paused and silent) showing EXITING... until the flight ends.
+            menu.exiting = true;
+            if menu.opened_with.take().is_some_and(|before| switches(&before) != switches(s)) {
+                crate::prefs::Prefs::save_switches(s);
+            }
             actions.write(ActionEvent(Action::Quit));
         }
     }
@@ -471,6 +502,20 @@ fn draw(
     let c = &mut tex.canvas;
     c.clear(BG);
     c.frame(Vec2::new(6.0, 6.0), Vec2::new(W as f32 - 7.0, H as f32 - 7.0), 3.0, DIM);
+    if menu.exiting {
+        stroke_text_at(
+            c,
+            W as f32 / 2.0,
+            H as f32 / 2.0,
+            "EXITING...",
+            40.0,
+            4.0,
+            BRIGHT,
+            Align::Centre,
+        );
+        tex.dirty = true;
+        return;
+    }
     stroke_text_at(
         c,
         W as f32 / 2.0,
@@ -496,4 +541,89 @@ fn draw(
         }
     }
     tex.dirty = true;
+}
+
+/// VR: the end-of-mission overlay on a screen in front of the head (a child of the XR tracking
+/// root, so it stays in view in every camera view). Not after END MISSION, which goes straight
+/// to the debrief.
+#[allow(clippy::too_many_arguments)]
+fn vr_end_screen(
+    mut commands: Commands,
+    settings: Res<Settings>,
+    menu: Res<FlightMenu>,
+    combat: Option<Res<crate::combat::Combat>>,
+    roots: Query<Entity, With<EyeCamera>>,
+    cams: Query<(&ChildOf, &Transform), With<Camera>>,
+    screens: Query<(), With<EndScreen>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if !settings.vr || menu.exiting || !screens.is_empty() {
+        return;
+    }
+    let Some(end) = combat.as_ref().and_then(|c| c.end.as_ref()) else { return };
+    let Ok(root) = roots.single() else { return };
+    // The head pose in the tracking space: the headset cameras' (the root's children).
+    let eyes: Vec<&Transform> =
+        cams.iter().filter(|(p, _)| p.parent() == root).map(|(_, t)| t).collect();
+    let head = eyes.iter().map(|t| t.translation).sum::<Vec3>() / eyes.len().max(1) as f32;
+    let fwd = eyes.first().map_or(Vec3::NEG_Z, |t| t.forward().as_vec3());
+    let flat = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or(Vec3::NEG_Z);
+    let centre = head + flat * END_DISTANCE - Vec3::Y * 0.05;
+
+    let mut canvas = Canvas::new(W, H);
+    canvas.clear(BG);
+    canvas.frame(Vec2::new(6.0, 6.0), Vec2::new(W as f32 - 7.0, H as f32 - 7.0), 3.0, DIM);
+    // Each line as large as fits the width.
+    let fit = |s: &str, h: f32| h.min((W as f32 - 64.0) / s.chars().count().max(1) as f32);
+    let title = end.title.to_uppercase();
+    stroke_text_at(
+        &mut canvas,
+        W as f32 / 2.0,
+        64.0,
+        &title,
+        fit(&title, 32.0),
+        3.6,
+        BRIGHT,
+        Align::Centre,
+    );
+    for (i, l) in end.lines.iter().enumerate() {
+        let y = 140.0 + 42.0 * i as f32;
+        stroke_text_at(&mut canvas, W as f32 / 2.0, y, l, fit(l, 20.0), 2.6, BRIGHT, Align::Centre);
+    }
+    let hint = "PULL THE TRIGGER";
+    stroke_text_at(
+        &mut canvas,
+        W as f32 / 2.0,
+        H as f32 - 50.0,
+        hint,
+        20.0,
+        2.6,
+        DIM,
+        Align::Centre,
+    );
+    let tex = CanvasTexture::new(canvas, &mut images, false);
+    if let Some(mut img) = images.get_mut(&tex.image) {
+        img.sampler = bevy::image::ImageSampler::linear();
+    }
+    let material = materials.add(StandardMaterial {
+        base_color_texture: Some(tex.image.clone()),
+        unlit: true,
+        cull_mode: None,
+        fog_enabled: false,
+        ..default()
+    });
+    let screen = commands
+        .spawn((
+            EndScreen,
+            tex,
+            Mesh3d(meshes.add(Rectangle::new(END_SIZE.x, END_SIZE.y))),
+            MeshMaterial3d(material),
+            Transform::from_translation(centre).looking_to(flat, Vec3::Y),
+            NotShadowCaster,
+            DespawnOnExit(AppState::Flight),
+        ))
+        .id();
+    commands.entity(root).add_child(screen);
 }

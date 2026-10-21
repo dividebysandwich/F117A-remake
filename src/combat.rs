@@ -1357,9 +1357,11 @@ struct EndOverlay {
     timer: f32,
 }
 
-/// Seconds the overlay stays before returning to the menu (any key after 1 s).
+/// Seconds the overlay stays before returning to the menu (any key, or in VR the trigger or A / X,
+/// after 1 s; at once after END MISSION in the in-flight menu, which shows EXITING... over it).
 const END_SECONDS: f32 = 8.0;
 
+#[allow(clippy::too_many_arguments)]
 fn end_overlay(
     mut commands: Commands,
     combat: Option<Res<Combat>>,
@@ -1368,12 +1370,20 @@ fn end_overlay(
     mut overlay: Query<&mut EndOverlay>,
     mut next: ResMut<NextState<AppState>>,
     mission: Option<Res<ActiveMission>>,
+    menu: Res<crate::flight_menu::FlightMenu>,
+    hands: Res<crate::cockpit3d::Hands>,
 ) {
     let Some(end) = combat.as_ref().and_then(|c| c.end.clone()) else { return };
+    let vr_pressed = hands
+        .hands
+        .iter()
+        .any(|h| h.trigger_pulled() || h.just_pressed(crate::cockpit3d::BUTTON_PRIMARY));
     match overlay.single_mut() {
         Ok(mut o) => {
             o.timer += real.delta_secs();
-            if o.timer > END_SECONDS || (o.timer > 1.0 && keys.get_just_pressed().next().is_some())
+            if menu.exiting
+                || o.timer > END_SECONDS
+                || (o.timer > 1.0 && (keys.get_just_pressed().next().is_some() || vr_pressed))
             {
                 if let Some(c) = &combat {
                     commands.insert_resource(crate::debrief::Debrief {

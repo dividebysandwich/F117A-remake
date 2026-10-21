@@ -131,6 +131,15 @@ pub struct Kneeboard {
     held: Option<(usize, Transform)>,
 }
 
+impl Kneeboard {
+    /// A new sortie (campaign): the maps are drawn again for its route.
+    pub fn new_mission(&mut self) {
+        self.route_map = None;
+        self.target_map = None;
+        self.dirty = true;
+    }
+}
+
 #[derive(Component)]
 struct Board;
 

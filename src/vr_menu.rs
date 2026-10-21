@@ -16,8 +16,8 @@ pub struct VrMenuPlugin;
 
 impl Plugin for VrMenuPlugin {
     fn build(&self, app: &mut App) {
-        let in_menu = |s: Option<Res<State<AppState>>>| {
-            s.is_some_and(|s| matches!(s.get(), AppState::Menu | AppState::Debrief))
+        let in_menu = |s: Option<Res<State<AppState>>>, panel: Option<Res<WorldPanel>>| {
+            panel.is_some() || s.is_some_and(|s| matches!(s.get(), AppState::Menu | AppState::Debrief))
         };
         let vr = |s: Res<Settings>| s.vr;
         app.add_systems(Update, (place_panel, pointer).chain().run_if(in_menu).run_if(vr))
@@ -32,6 +32,10 @@ impl Plugin for VrMenuPlugin {
             );
     }
 }
+
+/// The panel is up during the flight (the campaign's Ops screen), not only in the menus.
+#[derive(Resource)]
+pub struct WorldPanel;
 
 /// Menu image size (pixels) and the panel's size (metres) and distance from the head.
 const W: u32 = 1600;

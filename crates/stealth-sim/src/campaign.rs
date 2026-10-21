@@ -150,7 +150,8 @@ impl Sim {
         }
         self.drones = None;
         self.deadline = 0;
-        self.targets = [TargetSlot { mission_type: 0, object: -1, base: -1, code: 0 }; 2];
+        let base = self.targets[0].base;
+        self.targets = [TargetSlot { mission_type: 0, object: -1, base, code: 0 }; 2];
         let seed = self.rng.hold ^ 0xCA4D_A1A1;
         self.campaign = Some(Box::new(CampaignSim {
             absent: true,
@@ -259,6 +260,7 @@ impl Sim {
         self.wreck = Wreck::default();
         self.smoke_src = -1;
         self.cms = [Countermeasure::default(); 4];
+        self.log.clear();
         self.targets = [
             TargetSlot {
                 mission_type: objective.map_or(0, |o| o.0),

@@ -192,7 +192,7 @@ impl CampaignState {
         self.repairs(&mut ev);
         self.expire_intel(&mut ev);
         self.enemy_air(view, &mut ev);
-        self.auto_insertion(&mut ev);
+        self.auto_insertion(view, &mut ev);
         if self.clock - self.board_at >= tuning::BOARD_REFRESH
             || ev.iter().any(|e| matches!(e, CampaignEvent::PlaceCaptured { .. }))
         {

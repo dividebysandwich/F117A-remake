@@ -132,7 +132,7 @@ struct MenuCamera;
 
 /// An OpenXR runtime is there, so "Fly in VR" can relaunch the game with `--vr`.
 #[derive(Resource)]
-struct VrAvailable(bool);
+pub struct VrAvailable(pub bool);
 
 fn vr_available() -> bool {
     #[cfg(feature = "xr")]
@@ -181,28 +181,10 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
     if let Some(c) = state.cloud_cover {
         cmd.args(["--cloud-cover", &c.to_string()]);
     }
-    for (on, flag) in [
-        (state.realistic(settings.aircraft), "--lockheed"),
-        (settings.modern_shading, "--modern"),
-        (settings.shadows, "--shadows"),
-        (settings.local_lights, "--local-lights"),
-        (settings.continuous_time, "--continuous-time"),
-        (settings.classic_cockpit, "--classic-cockpit"),
-        (settings.classic_hud, "--classic-hud"),
-        (settings.classic_avionics, "--classic-avionics"),
-        (settings.classic_flight, "--classic-flight"),
-        (settings.no_crashes, "--no-crashes"),
-        (settings.realistic_damage, "--realistic-damage"),
-        (settings.realistic_guidance, "--realistic-guidance"),
-        (settings.tacview, "--tacview"),
-        (settings.air_defence, "--air-defence"),
-    ] {
-        if on {
-            cmd.arg(flag);
-        }
+    if state.realistic(settings.aircraft) {
+        cmd.arg("--lockheed");
     }
-    cmd.args(["--vr-cockpit-scale", &format!("{:.0}", settings.vr_cockpit_scale * 100.0)]);
-    cmd.args(["--aircraft", settings.aircraft.id()]);
+    settings_args(&mut cmd, settings);
     if let Some(key) = &state.career {
         cmd.args(["--career", key]);
     }
@@ -223,6 +205,46 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         }
     }
     cmd.spawn().map(|_| ())
+}
+
+/// Starts the game again in VR, straight into a saved campaign.
+pub fn relaunch_campaign_in_vr(
+    name: &str,
+    settings: &crate::settings::Settings,
+) -> std::io::Result<()> {
+    let exe = match std::env::var_os("APPIMAGE") {
+        Some(appimage) => appimage.into(),
+        None => std::env::current_exe()?,
+    };
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["--vr", "--campaign", name]);
+    settings_args(&mut cmd, settings);
+    cmd.spawn().map(|_| ())
+}
+
+/// The settings a relaunched game takes over.
+fn settings_args(cmd: &mut std::process::Command, settings: &crate::settings::Settings) {
+    for (on, flag) in [
+        (settings.modern_shading, "--modern"),
+        (settings.shadows, "--shadows"),
+        (settings.local_lights, "--local-lights"),
+        (settings.continuous_time, "--continuous-time"),
+        (settings.classic_cockpit, "--classic-cockpit"),
+        (settings.classic_hud, "--classic-hud"),
+        (settings.classic_avionics, "--classic-avionics"),
+        (settings.classic_flight, "--classic-flight"),
+        (settings.no_crashes, "--no-crashes"),
+        (settings.realistic_damage, "--realistic-damage"),
+        (settings.realistic_guidance, "--realistic-guidance"),
+        (settings.tacview, "--tacview"),
+        (settings.air_defence, "--air-defence"),
+    ] {
+        if on {
+            cmd.arg(flag);
+        }
+    }
+    cmd.args(["--vr-cockpit-scale", &format!("{:.0}", settings.vr_cockpit_scale * 100.0)]);
+    cmd.args(["--aircraft", settings.aircraft.id()]);
 }
 
 fn spawn_menu_camera(
@@ -574,9 +596,10 @@ fn menu_ui(
         ResMut<crate::planner::Planner>,
         ResMut<crate::career::CareerWindow>,
         ResMut<crate::loadout::LoadoutWindow>,
+        ResMut<crate::campaign::CampaignWindow>,
     ),
 ) -> Result {
-    let (mut planner, mut career, mut loadout) = windows;
+    let (mut planner, mut career, mut loadout, mut campaign) = windows;
     // Generator data is loaded on first use.
     let Some(data) = data else {
         match MissionData::load() {
@@ -654,7 +677,7 @@ fn menu_ui(
         .max_width(width)
         .frame(egui::Frame::window(&ctx.global_style()).inner_margin(16.0))
         .show(ctx, |ui| {
-            if dialog.open || planner.open || career.open || loadout.open {
+            if dialog.open || planner.open || career.open || loadout.open || campaign.open {
                 ui.disable();
             }
             ui.horizontal(|ui| {
@@ -906,6 +929,9 @@ fn menu_ui(
                 }
                 if facts(ui.add(big_button("CAREER")), &["Pilot records: rank, decorations, sorties", "Tour of duty: 12 sorties in one theater", "What you destroy stays destroyed"]).clicked() {
                     career.show();
+                }
+                if facts(ui.add(big_button("CAMPAIGN")), &["Dynamic campaign in real time", "Take the enemy's cities and airfields", "Missions from the live situation"]).clicked() {
+                    campaign.show();
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

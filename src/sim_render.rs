@@ -404,6 +404,8 @@ fn spawn_model(
 struct AaaVisuals {
     units: Vec<Entity>,
     tracers: Vec<Entity>,
+    /// Campaign: the AI's missiles at AI aircraft (a glowing dot each).
+    ai_missiles: Vec<Entity>,
     material: Option<Handle<PaletteMaterial>>,
 }
 
@@ -475,8 +477,9 @@ fn sync_aaa(
         }
     }
 
-    // Tracers: the Shilkas' shells (an S-60 shell is only seen when it bursts).
-    let shells: Vec<_> = sim.aaa_shells().iter().filter(|s| !s.flak).collect();
+    // Tracers: the Shilkas' shells (an S-60 shell is only seen when it bursts), also those
+    // the guns fire at AI aircraft in a campaign.
+    let shells: Vec<_> = sim.aaa_shells().iter().chain(sim.ai_shells()).filter(|s| !s.flak).collect();
     let material = av
         .material
         .get_or_insert_with(|| {
@@ -509,6 +512,22 @@ fn sync_aaa(
         let streak = (at(back + TRACER_FRAMES * dt) - head).as_vec3();
         tf.rotation = Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
         tf.scale = Vec3::new(1.0, 1.0, streak.length().max(0.01));
+        vis.set_if_neq(Visibility::Inherited);
+    }
+
+    // The AI's missiles: the motor's glow.
+    let missiles = sim.ai_missiles();
+    while av.ai_missiles.len() < missiles.len() {
+        let dot = spawn_dot(&mut commands, &assets, material.clone(), &[Vec3::ZERO]);
+        av.ai_missiles.push(dot);
+    }
+    for (k, &dot) in av.ai_missiles.iter().enumerate() {
+        let Ok((mut pos, _, _, mut vis)) = q.get_mut(dot) else { continue };
+        let Some(m) = missiles.get(k) else {
+            vis.set_if_neq(Visibility::Hidden);
+            continue;
+        };
+        pos.0 = aaa_point(std::array::from_fn(|a| m.pos[a] - m.vel[a] * back));
         vis.set_if_neq(Visibility::Inherited);
     }
 }

@@ -133,6 +133,13 @@ impl TileOverrides {
             self.dirty.push((lod, col, row));
         }
     }
+
+    /// The tile object is drawn as built again (a campaign repair).
+    pub fn clear(&mut self, lod: usize, col: i32, row: i32, index: u16) {
+        if self.shapes.remove(&(lod, col, row, index)).is_some() {
+            self.dirty.push((lod, col, row));
+        }
+    }
 }
 
 /// Metres per original world unit.

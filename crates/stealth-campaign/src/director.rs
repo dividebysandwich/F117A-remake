@@ -296,14 +296,14 @@ impl CampaignState {
     }
 
     /// The campaign sends an insertion of its own when a front place is (nearly) undefended.
-    pub(crate) fn auto_insertion(&mut self, ev: &mut Vec<CampaignEvent>) {
+    pub(crate) fn auto_insertion(&mut self, view: &WorldView, ev: &mut Vec<CampaignEvent>) {
         if self.clock - self.auto_insert_at < AUTO_INSERT_EVERY {
             return;
         }
-        let candidate = self
-            .front(Side::Blue)
-            .into_iter()
-            .find(|&p| !self.active_insertion(p) && self.threat_of(p, None) <= AUTO_INSERT_THREAT);
+        // Guns count too: helicopters landing among them do not get through.
+        let candidate = self.front(Side::Blue).into_iter().find(|&p| {
+            !self.active_insertion(p) && self.threat_of(p, Some(view)) <= AUTO_INSERT_THREAT
+        });
         let Some(place) = candidate else { return };
         if let Ok(e) = self.order_insertion(None, place) {
             self.auto_insert_at = self.clock;

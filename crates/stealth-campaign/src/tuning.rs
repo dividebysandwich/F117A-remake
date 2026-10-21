@@ -36,7 +36,7 @@ pub const INSERTION_LEAD: f64 = 180.0;
 pub const CAPTURE_RADIUS: i32 = 0x60;
 /// The campaign sends an insertion on its own when a front place's threat is at most this, and
 /// not more often than this.
-pub const AUTO_INSERT_THREAT: i32 = 1;
+pub const AUTO_INSERT_THREAT: i32 = 0;
 pub const AUTO_INSERT_EVERY: f64 = 20.0 * 60.0;
 /// Insertions fly from bases at most this far from the target (helicopter range, 250 km).
 pub const INSERTION_RANGE: i32 = 0x3E80;

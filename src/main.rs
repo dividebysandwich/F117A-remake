@@ -3,6 +3,7 @@ mod asset_path;
 mod autoshot;
 mod avionics;
 mod camera;
+mod campaign;
 mod canvas;
 mod career;
 mod cockpit;
@@ -174,8 +175,10 @@ fn main() {
             terrain::TerrainPlugin,
             csar_view::CsarViewPlugin,
             stage::StagePlugin,
+            campaign::CampaignPlugin,
         ));
     mission::from_args(&mut app);
+    campaign::from_args(&mut app);
     if let Some(scale) = std::env::args()
         .collect::<Vec<_>>()
         .windows(2)

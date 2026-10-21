@@ -33,6 +33,7 @@ serde_json = "1"
 stealth-formats.workspace = true
 stealth-mission = { path = "crates/stealth-mission" }
 stealth-sim = { path = "crates/stealth-sim" }
+stealth-campaign = { path = "crates/stealth-campaign" }
 bevy_fast_clouds = { path = "crates/bevy_fast_clouds" }
 anyhow.workspace = true
 rand = "0.9"

@@ -103,9 +103,13 @@ pub fn prepare_map(
     mut contexts: EguiContexts,
     debrief: Option<Res<crate::debrief::Debrief>>,
     app_state: Res<State<crate::settings::AppState>>,
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
 ) {
-    // The planner's mission, or the one flown on the debrief's flight map.
-    let code = if *app_state.get() == crate::settings::AppState::Debrief {
+    // The planner's mission, the one flown on the debrief's flight map, or the campaign's
+    // theater (its war map).
+    let code = if *app_state.get() == crate::settings::AppState::Flight {
+        campaign.map(|c| c.mission.theater_code.clone())
+    } else if *app_state.get() == crate::settings::AppState::Debrief {
         debrief.as_ref().and_then(|d| d.mission.as_ref()).map(|m| m.theater_code.clone())
     } else if planner.open {
         match &state.mission {

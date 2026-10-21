@@ -10,6 +10,9 @@
 //!
 //! END MISSION keeps the flight paused and shows EXITING... until the debrief takes over.
 //!
+//! In a dynamic campaign the world goes on while the menu is open (nothing pauses), and END
+//! SORTIE ends the sortie: the campaign's debrief and mission board come up in the flight.
+//!
 //! In VR the end-of-mission overlay (a 2D overlay on the desktop) is a screen floating in front of
 //! the head, also in the outside views.
 
@@ -177,11 +180,13 @@ fn toggle(
     mut block: ResMut<InputBlock>,
     mut view: ResMut<ViewState>,
     sinks: Query<&AudioSink>,
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
 ) {
     let pressed = actions.read().filter(|a| a.0 == Action::Menu).count() % 2 == 1;
     if pressed && !menu.exiting {
         let open = !menu.open;
-        set_open(&mut menu, open, &settings, &mut time, &mut block, &sinks);
+        let pause = campaign.is_none();
+        set_open(&mut menu, open, pause, &settings, &mut time, &mut block, &sinks);
         if menu.open && view.view != View::Cockpit {
             view.view = View::Cockpit;
         }
@@ -191,6 +196,7 @@ fn toggle(
 fn set_open(
     menu: &mut FlightMenu,
     open: bool,
+    pause: bool,
     settings: &Settings,
     time: &mut Time<Virtual>,
     block: &mut InputBlock,
@@ -202,15 +208,19 @@ fn set_open(
     menu.open = open;
     block.0 = open;
     if open {
-        time.pause();
         menu.opened_with = Some(settings.clone());
-        for s in sinks {
-            s.pause();
+        if pause {
+            time.pause();
+            for s in sinks {
+                s.pause();
+            }
         }
     } else {
         time.unpause();
-        for s in sinks {
-            s.play();
+        if pause {
+            for s in sinks {
+                s.play();
+            }
         }
         if menu.opened_with.take().is_some_and(|before| switches(&before) != switches(settings)) {
             crate::prefs::Prefs::save_switches(settings);
@@ -333,10 +343,12 @@ fn navigate(
     mut block: ResMut<InputBlock>,
     mut actions: MessageWriter<ActionEvent>,
     sinks: Query<&AudioSink>,
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
 ) {
     if !menu.open || menu.exiting {
         return;
     }
+    let pause = campaign.is_none();
     let n = ITEMS.len();
     let mut step = 0i32;
     let mut adjust = 0i32;
@@ -448,7 +460,7 @@ fn navigate(
     let item = ITEMS[index];
     if !item.enabled(&settings) || !(select || clicked.is_some() || adjust != 0) {
         if close {
-            set_open(&mut menu, false, &settings, &mut time, &mut block, &sinks);
+            set_open(&mut menu, false, pause, &settings, &mut time, &mut block, &sinks);
         }
         return;
     }
@@ -481,6 +493,11 @@ fn navigate(
                 .clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
         }
         Item::Resume => close = true,
+        // A campaign sortie ends; the flight goes on with the campaign's board.
+        Item::EndMission if !pause => {
+            actions.write(ActionEvent(Action::Quit));
+            close = true;
+        }
         Item::EndMission => {
             // Stays open (paused and silent) showing EXITING... until the flight ends.
             menu.exiting = true;
@@ -491,7 +508,7 @@ fn navigate(
         }
     }
     if close {
-        set_open(&mut menu, false, &settings, &mut time, &mut block, &sinks);
+        set_open(&mut menu, false, pause, &settings, &mut time, &mut block, &sinks);
     }
 }
 
@@ -499,6 +516,7 @@ fn draw(
     menu: Res<FlightMenu>,
     settings: Res<Settings>,
     mut q: Query<(&mut CanvasTexture, &mut Visibility), With<MenuScreen>>,
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
 ) {
     let Ok((mut tex, mut vis)) = q.single_mut() else { return };
     vis.set_if_neq(if menu.open { Visibility::Inherited } else { Visibility::Hidden });
@@ -526,7 +544,7 @@ fn draw(
         c,
         W as f32 / 2.0,
         52.0,
-        "SETTINGS  -  PAUSED",
+        if campaign.is_some() { "SETTINGS  -  CAMPAIGN RUNS ON" } else { "SETTINGS  -  PAUSED" },
         26.0,
         3.2,
         BRIGHT,
@@ -540,7 +558,11 @@ fn draw(
         if i == menu.cursor {
             c.fill_rect(24, y as i32 + 3, W as i32 - 48, ROW as i32 - 6, ROW_BG);
         }
-        stroke_text_at(c, 48.0, mid, item.label(), 22.0, 2.8, col, Align::Left);
+        let label = match item {
+            Item::EndMission if campaign.is_some() => "END SORTIE",
+            _ => item.label(),
+        };
+        stroke_text_at(c, 48.0, mid, label, 22.0, 2.8, col, Align::Left);
         let v = item.value(&settings);
         if !v.is_empty() {
             stroke_text_at(c, W as f32 - 48.0, mid, &v, 22.0, 2.8, col, Align::Right);

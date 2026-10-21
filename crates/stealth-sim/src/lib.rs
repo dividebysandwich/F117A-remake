@@ -511,6 +511,11 @@ impl Sim {
     /// The player's start state: at the takeoff base, on the ground.
     pub fn start_state(&self) -> PlayerState {
         let b = self.targets[0].base.clamp(0, self.objects.len() as i32 - 1).max(0) as usize;
+        self.start_state_at(b)
+    }
+
+    /// The start state on the runway (or carrier deck) of base object `b`.
+    pub fn start_state_at(&self, b: usize) -> PlayerState {
         let o = self.objects.get(b).copied().unwrap_or_default();
         let t = self.ns;
         let mut x = (o.x << 5) + 2;
@@ -1051,6 +1056,11 @@ impl Sim {
             }
         }
         self.destroyed_at = d.positions.clone();
+    }
+
+    /// Events raised outside a step (by the campaign's calls), handed over once.
+    pub fn take_events(&mut self) -> Vec<SimEvent> {
+        std::mem::take(&mut self.events)
     }
 
     /// Debrief event log (for END).

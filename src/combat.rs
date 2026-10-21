@@ -96,7 +96,8 @@ pub struct Combat {
     accum: f32,
     /// One-shot commands collected since the last sim frame.
     pending: SimCommands,
-    quit: bool,
+    /// END MISSION was asked for (a campaign ends the sortie instead, `campaign.rs`).
+    pub quit: bool,
     /// Flight units and projectiles before the last step, for render interpolation.
     pub prev_flights: Vec<FlightUnit>,
     pub prev_proj: [Projectile; N_PROJ],
@@ -111,7 +112,13 @@ pub struct Combat {
     /// Signal flares the downed pilot fired in the steps of this frame (map x, map y).
     pub signal_flares: Vec<(i32, i32)>,
     /// Tile objects destroyed in earlier missions of a tour, still to be shown destroyed.
-    prior_tiles: Vec<stealth_sim::TileDamage>,
+    pub prior_tiles: Vec<stealth_sim::TileDamage>,
+    /// Campaign: the simulation's events the campaign follows, and the AAA units destroyed,
+    /// since the campaign last took them (`campaign.rs`).
+    pub campaign_events: Vec<SimEvent>,
+    pub aaa_killed: Vec<usize>,
+    /// Campaign: the sky's clock (seconds of the day), replacing the mission clock.
+    pub sky_seconds: Option<f32>,
     /// Things destroyed on the ground in the steps of this frame (they burn, fires.rs).
     pub kills: Vec<Kill>,
     /// Map position of the falling wreck (it burns where it lands).
@@ -179,9 +186,10 @@ fn apply_time_accel(
     mut time: ResMut<Time<Virtual>>,
     combat: Option<Res<Combat>>,
 ) {
-    // Waiting on the ground for the rescue goes faster.
+    // Waiting on the ground for the rescue goes faster; a campaign runs in real time.
+    let campaign = combat.as_ref().is_some_and(|c| c.sim.campaign().is_some());
     let fast = if combat.is_some_and(|c| c.sim.csar().is_some()) { 4.0 } else { 2.0 };
-    let want = accel.base * if accel.on { fast } else { 1.0 };
+    let want = accel.base * if accel.on && !campaign { fast } else { 1.0 };
     if time.relative_speed() != want {
         time.set_relative_speed(want);
     }
@@ -202,6 +210,7 @@ fn start_combat(
     loadout: Option<Res<crate::loadout::PlannedLoadout>>,
     career: Option<Res<crate::career::CareerFlight>>,
     settings: Res<crate::settings::Settings>,
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
 ) {
     accel.on = false;
     let Some(m) = mission else {
@@ -255,7 +264,9 @@ fn start_combat(
             external_stores,
             realistic_damage: settings.realistic_damage,
             realistic_guidance: settings.realistic_guidance,
-            air_defence: settings.air_defence,
+            // A campaign always has the low-level air defences (the friendly bases' too).
+            air_defence: settings.air_defence || campaign.is_some(),
+            campaign: campaign.is_some(),
             ..default()
         },
     );
@@ -312,6 +323,9 @@ fn start_combat(
     let names = m.world.names.clone();
     commands.insert_resource(Combat {
         prior_tiles,
+        campaign_events: Vec::new(),
+        aaa_killed: Vec::new(),
+        sky_seconds: None,
         prev_flights: sim.flights().to_vec(),
         prev_proj: *sim.projectiles(),
         proj_smooth: [None; N_PROJ],
@@ -537,7 +551,8 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     combat.kills.clear();
     combat.steps = 0;
     let Ok((mut a, pos)) = player.single_mut() else { return };
-    if combat.quit && combat.sim.mission_end().is_none() {
+    let campaign = combat.sim.campaign().is_some();
+    if combat.quit && combat.sim.mission_end().is_none() && !campaign {
         combat.sim.quit();
         combat.end = Some(end_info(&combat.sim, None::<MissionEnd>));
     }
@@ -559,12 +574,18 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         let aaa_before: Vec<bool> = combat.sim.aaa_units().iter().map(|u| u.destroyed).collect();
         let events = combat.sim.step(&ps, FS);
         // A destroyed gun or launcher burns like a vehicle.
-        for (u, was) in combat.sim.aaa_units().iter().zip(aaa_before) {
+        for (k, (u, was)) in combat.sim.aaa_units().iter().zip(aaa_before).enumerate() {
             if u.destroyed && !was {
                 combat.kills.push(Kill { x: u.x, y: u.y, vehicle: true });
+                if campaign {
+                    combat.aaa_killed.push(k);
+                }
             }
         }
         for e in events {
+            if campaign && crate::campaign::follows(&e) {
+                combat.campaign_events.push(e.clone());
+            }
             if combat.log {
                 log_event(&combat.data, &e, a.time);
             }
@@ -618,6 +639,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                 SimEvent::TileDestroyed(t) => {
                     tiles.set(t.level as usize, t.col, t.row, t.index, t.shape)
                 }
+                SimEvent::TileRestored(t) => tiles.clear(t.level as usize, t.col, t.row, t.index),
                 SimEvent::GroundDestroyed { object, .. } => {
                     if let Some(o) = combat.sim.objects().get(object) {
                         let name =
@@ -666,6 +688,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     if let Some(end) = a.ended
         && combat.end.is_none()
         && combat.sim.chute().is_none()
+        && !campaign
     {
         combat.flight_end_timer += time.delta_secs();
         if combat.flight_end_timer > 3.0 {
@@ -937,7 +960,10 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     }
     msgs.training = sim.invulnerable();
     msgs.accel = accel.on;
-    clock.elapsed = Some(sim.mission_tick() as f32);
+    match combat.sky_seconds {
+        Some(s) => *clock = MissionClock { start_seconds: 0.0, elapsed: Some(s) },
+        None => clock.elapsed = Some(sim.mission_tick() as f32),
+    }
 
     // Panel: EMV gauge, lights, countermeasures.
     let (egr, ear) = sim.signal_bars();

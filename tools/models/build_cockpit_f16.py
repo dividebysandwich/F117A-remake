@@ -12,7 +12,7 @@
 # buttons and keypad, the data entry display, the round instruments in their bezels and cases
 # with their setting knobs, the MFD bezels with their rocker switches, the main
 # panel with the faces and displays of `PanelLayout::f16` (src/cockpit3d/layout.rs; the layout
-# JSON is written by `UPDATE_F16_LAYOUT=1 cargo test f16_layout_file`), the side stick and the
+# JSON is written by `UPDATE_LAYOUT=1 cargo test layout_files`), the side stick and the
 # throttle, the centre pedestal between the legs with the knee wall's air vents, and the side
 # consoles' switch panels and yellow handles (dressing, after the F-16's).
 #

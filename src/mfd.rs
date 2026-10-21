@@ -70,6 +70,9 @@ pub const HIRES_SCALE: usize = 2;
 pub enum MfdSide {
     Left,
     Right,
+    /// The F-117A's third MFD, right of its large centre display (which is the right MFD):
+    /// the HSI page (`avionics::Format::Hsi`).
+    Third,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -283,6 +286,9 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
         (MfdSide::Right, 9) if s.right == RightMfd::Camera => {
             (cam_zoom_label(s.cam_zoom), cmd(MfdCmd::CamZoomCycle), s.cam_zoom.is_some())
         }
+        // The third MFD's HSI page: the steerpoint.
+        (MfdSide::Third, 0) => ("WP-", Action(crate::input::Action::LastWaypoint), false),
+        (MfdSide::Third, 1) => ("WP+", Action(crate::input::Action::NextWaypoint), false),
         _ => return None,
     })
 }
@@ -523,9 +529,12 @@ fn reset_mfd(
     mut raster: ResMut<MapRaster>,
     settings: Res<crate::settings::Settings>,
 ) {
+    let mut av = crate::avionics::AvionicsState::default();
+    av.set_third(settings.cockpit().0.third_mfd());
     *state = MfdState {
         hires: settings.hires_displays(),
         modern: !settings.classic_avionics,
+        av,
         ..default()
     };
     raster.invalidate();
@@ -550,6 +559,10 @@ fn mfd_keys(
         state.modern = !settings.classic_avionics;
         state.map_zoom = state.map_zoom.min(state.max_map_zoom());
         raster.invalidate();
+    }
+    let third = settings.cockpit().0.third_mfd();
+    if state.av.third != third {
+        state.av.set_third(third);
     }
     for ActionEvent(a) in actions.read() {
         let cmd = match a {
@@ -1147,6 +1160,17 @@ impl MfdParams<'_, '_> {
             (LeftMfd::Tac, false) => self.draw_tac(c, art, ac),
             (LeftMfd::Map, true) => self.draw_map_hires(c, art, fonts, ac, false),
             (LeftMfd::Tac, true) => self.draw_tac_hires(c, art, fonts, ac),
+        }
+    }
+
+    /// The third MFD: the HSI page with the original pages, any format with the modern
+    /// avionics.
+    pub fn draw_third(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
+        c.reset_clip();
+        if self.state.modern {
+            crate::avionics::draw(self, MfdSide::Third, c, art, fonts);
+        } else {
+            crate::avionics::draw_hsi_page(self, c, fonts);
         }
     }
 

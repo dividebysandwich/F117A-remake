@@ -4,8 +4,8 @@
 //! - Formats: HSD (horizontal situation display: route, threat rings, air and ground contacts),
 //!   HARM (the radars painting the aircraft, placed by danger like the RWR), TGP (the tracking
 //!   camera), MAP (the moving map in muted colours, or the waypoint table) and SMS (stores: the
-//!   WPN and ORD pages). The bottom bezel buttons pick the format; picking the one the other MFD
-//!   shows swaps the two. The top buttons are the format's own, the top right one makes the
+//!   WPN and ORD pages); on the F-117A's third MFD also HSI (`draw_hsi_page`). The bottom bezel
+//!   buttons pick the format; picking one another MFD shows swaps the two. The top buttons are the format's own, the top right one makes the
 //!   format the sensor of interest (SOI). The buttons' functions are drawn on the display next
 //!   to them, like the real ones.
 //! - SOI: HSD, HARM and the targeting pod can be the sensor of interest: the "sensor/cursor
@@ -63,10 +63,20 @@ pub enum Format {
     Tgp,
     Map,
     Sms,
+    /// Horizontal situation indicator: compass rose, course and bearing to the steerpoint.
+    Hsi,
 }
 
 /// The formats on the bottom bezel buttons, left to right.
 pub const FORMATS: [Format; 5] = [Format::Hsd, Format::Harm, Format::Tgp, Format::Map, Format::Sms];
+/// The third MFD's: the HSI instead of the targeting pod (which belongs on the centre display).
+pub const THIRD_FORMATS: [Format; 5] =
+    [Format::Hsi, Format::Hsd, Format::Harm, Format::Map, Format::Sms];
+
+/// The formats on an MFD's bottom bezel buttons.
+pub fn formats(side: MfdSide) -> [Format; 5] {
+    if side == MfdSide::Third { THIRD_FORMATS } else { FORMATS }
+}
 
 impl Format {
     pub fn label(self) -> &'static str {
@@ -76,6 +86,7 @@ impl Format {
             Format::Tgp => "TGP",
             Format::Map => "MAP",
             Format::Sms => "SMS",
+            Format::Hsi => "HSI",
         }
     }
 
@@ -90,6 +101,7 @@ impl Format {
             Format::Hsd | Format::Harm | Format::Map => Action::Maps,
             Format::Tgp => Action::CamAhead,
             Format::Sms => Action::Ordnance,
+            Format::Hsi => Action::SelectWaypoint,
         }
     }
 }
@@ -117,8 +129,10 @@ const HSD_RANGE_LABELS: [&str; 6] = ["10", "20", "40", "80", "160", "320"];
 
 #[derive(Debug, Clone)]
 pub struct AvionicsState {
-    /// Format on the left and on the right MFD (never the same).
-    pub formats: [Format; 2],
+    /// Format on the left, the right and the third MFD (never the same twice).
+    pub formats: [Format; 3],
+    /// The cockpit has the third MFD (the F-117A's); without it its format is never shown.
+    pub third: bool,
     /// The sensor of interest (a format on one of the MFDs).
     pub soi: Option<Format>,
     pub hsd_range: usize,
@@ -268,7 +282,8 @@ impl Default for AvionicsState {
     fn default() -> Self {
         let centre = Vec2::new(HIRES.0 as f32 / 2.0, HIRES.1 as f32 / 2.0);
         Self {
-            formats: [Format::Hsd, Format::Sms],
+            formats: [Format::Hsd, Format::Sms, Format::Hsi],
+            third: false,
             soi: Some(Format::Hsd),
             hsd_range: 2,
             hsd_centred: false,
@@ -299,13 +314,7 @@ fn index(side: MfdSide) -> usize {
     match side {
         MfdSide::Left => 0,
         MfdSide::Right => 1,
-    }
-}
-
-fn other(side: MfdSide) -> MfdSide {
-    match side {
-        MfdSide::Left => MfdSide::Right,
-        MfdSide::Right => MfdSide::Left,
+        MfdSide::Third => 2,
     }
 }
 
@@ -314,9 +323,31 @@ impl AvionicsState {
         self.formats[index(side)]
     }
 
+    /// The cockpit's MFDs, left to right on the F-16's panel (the F-117A's third is right of
+    /// its centre display, the right MFD).
+    pub fn sides(&self) -> &'static [MfdSide] {
+        if self.third {
+            &[MfdSide::Left, MfdSide::Right, MfdSide::Third]
+        } else {
+            &[MfdSide::Left, MfdSide::Right]
+        }
+    }
+
     /// The MFD showing a format.
     pub fn shown(&self, f: Format) -> Option<MfdSide> {
-        [MfdSide::Left, MfdSide::Right].into_iter().find(|&s| self.format(s) == f)
+        self.sides().iter().copied().find(|&s| self.format(s) == f)
+    }
+
+    /// The cockpit has the third MFD or not (its format: the HSI, or one not on another MFD).
+    pub fn set_third(&mut self, third: bool) {
+        self.third = third;
+        let [l, r, _] = self.formats;
+        self.formats[2] = if l != Format::Hsi && r != Format::Hsi {
+            Format::Hsi
+        } else {
+            THIRD_FORMATS.into_iter().find(|&f| f != l && f != r).unwrap_or(Format::Map)
+        };
+        self.fix_soi();
     }
 
     /// The sensor of interest if it is on an MFD.
@@ -324,13 +355,12 @@ impl AvionicsState {
         self.soi.filter(|&f| self.shown(f).is_some())
     }
 
-    /// Puts a format on an MFD; the other MFD gets this one's format if it showed the new one.
+    /// Puts a format on an MFD; the MFD showing the new one gets this one's format.
     pub fn select(&mut self, side: MfdSide, f: Format) {
-        let (i, o) = (index(side), index(other(side)));
-        if self.formats[o] == f {
-            self.formats.swap(i, o);
-        } else {
-            self.formats[i] = f;
+        let i = index(side);
+        match self.shown(f) {
+            Some(o) => self.formats.swap(i, index(o)),
+            None => self.formats[i] = f,
         }
         self.fix_soi();
     }
@@ -345,7 +375,7 @@ impl AvionicsState {
     /// The SOI stays on a displayed format that can be one.
     fn fix_soi(&mut self) {
         if self.soi_format().is_none() {
-            self.soi = self.formats.into_iter().find(|f| f.soi_capable());
+            self.soi = self.sides().iter().map(|&s| self.format(s)).find(|f| f.soi_capable());
         }
     }
 }
@@ -366,10 +396,15 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
                 av.soi = Some(f);
             }
         }
+        // To the next MFD round (left, right, third) with a format that can be the SOI.
         MfdCmd::SwapSoi => {
             let side = av.soi_format().and_then(|f| av.shown(f)).unwrap_or(MfdSide::Right);
-            let f = av.format(other(side));
-            if f.soi_capable() {
+            let sides = av.sides();
+            let at = sides.iter().position(|&s| s == side).unwrap_or(0);
+            let next = (1..sides.len())
+                .map(|k| av.format(sides[(at + k) % sides.len()]))
+                .find(|f| f.soi_capable());
+            if let Some(f) = next {
                 av.soi = Some(f);
             }
         }
@@ -464,7 +499,7 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
     let av = &s.av;
     let f = av.format(side);
     if slot >= 5 {
-        let g = FORMATS[slot as usize - 5];
+        let g = formats(side)[slot as usize - 5];
         return Some((g.label(), Cmd(MfdCmd::Format(side, g)), f == g));
     }
     let soi = ("SOI", Cmd(MfdCmd::Soi(side)), av.soi_format() == Some(f));
@@ -506,6 +541,8 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
         (Format::Sms, 3) if !av.sms_ord => {
             (crate::mfd::bomb_mode_label(s.ccrp), Action(A::BombMode), false)
         }
+        (Format::Hsi, 0) => ("WP-", Action(A::LastWaypoint), false),
+        (Format::Hsi, 1) => ("WP+", Action(A::NextWaypoint), false),
         _ => return None,
     })
 }
@@ -535,6 +572,7 @@ pub fn draw(p: &MfdParams, side: MfdSide, c: &mut Canvas, art: &CockpitArt, font
     match f {
         Format::Hsd => draw_hsd(p, c, ac, soi),
         Format::Harm => draw_harm(p, c, soi),
+        Format::Hsi => draw_hsi_page(p, c, fonts),
         _ => {
             // The original pages, between the label bands.
             let mut page = Canvas::scaled(c.w, c.h - 2 * BAND as usize, c.scale);
@@ -585,6 +623,152 @@ fn draw_labels(c: &mut Canvas, fonts: &Fonts, side: MfdSide, s: &MfdState) {
             c.fill_rect(x - 2, y - 2, w + 4, 14, GREEN);
         }
         fonts.text_scaled(c, x, y, &text, if lit { BLACK } else { GREEN }, 2);
+    }
+}
+
+/// HSI course deviation at full scale (km off the course, two dots).
+const HSI_FULL_SCALE_KM: f64 = 5.0;
+
+/// The HSI format (and the third MFD's page with the original pages): a heading-up compass
+/// rose with the digital heading over it; the course arrow along the leg to the steerpoint
+/// (from the previous one; to the first one, from the aircraft) with its deviation bar, two
+/// dots either side (`HSI_FULL_SCALE_KM`) and the TO / FROM arrow; the bearing pointer to the
+/// steerpoint (cyan); the steerpoint, distance and ETA left, bearing, course and ground speed
+/// right.
+pub fn draw_hsi_page(p: &MfdParams, c: &mut Canvas, fonts: &Fonts) {
+    c.clear(BLACK);
+    let Ok((a, pos)) = p.aircraft.single() else { return };
+    let heading = a.euler().0;
+    let (e, n, _) = bevy_to_wu(pos.0);
+    let own = DVec2::new(e, n);
+    let wps = &p.waypoints;
+    let steer = wps.target().map(|w| DVec2::new(w.east, w.north));
+    // Compass bearing (radians clockwise from north) of a world vector (east, north).
+    let compass = |v: DVec2| v.x.atan2(v.y) as f32;
+    let bearing = steer.map(|w| compass(w - own));
+    let from = match wps.current {
+        0 => None,
+        i => wps.points.get(i - 1).map(|w| DVec2::new(w.east, w.north)),
+    };
+    let course_dir = steer.zip(from).map(|(w, f)| w - f).filter(|d| d.length() > 1.0);
+    let course = course_dir.map(compass).or(bearing);
+
+    let o = Vec2::new(c.w as f32 / 2.0, c.h as f32 / 2.0 + 10.0);
+    let r = c.h as f32 / 2.0 - BAND as f32 - 14.0;
+    // Up the display = the nose.
+    let dir = |b: f32| Vec2::new((b - heading).sin(), -(b - heading).cos());
+    // The rose: a tick every 5 degrees, longer every 10, labelled every 30.
+    for k in 0..72 {
+        let b = (k as f32 * 5.0).to_radians();
+        let len = if k % 2 == 0 { 7.0 } else { 4.0 };
+        c.stroke(o + dir(b) * r, o + dir(b) * (r - len), 1.2, WHITE);
+        if k % 6 == 0 {
+            let label = match k * 5 {
+                0 => "N".to_string(),
+                90 => "E".to_string(),
+                180 => "S".to_string(),
+                270 => "W".to_string(),
+                d => (d / 10).to_string(),
+            };
+            let q = o + dir(b) * (r - 16.0);
+            stroke_text_at(c, q.x, q.y, &label, 10.0, 1.3, WHITE, Align::Centre);
+        }
+    }
+    // Fixed index marks every 45 degrees outside the rose, the lubber line at the top.
+    for k in 1..8 {
+        let d =
+            Vec2::from_angle(k as f32 * std::f32::consts::FRAC_PI_4 - std::f32::consts::FRAC_PI_2);
+        c.stroke(o + d * (r + 2.0), o + d * (r + 7.0), 1.2, GREY);
+    }
+    c.triangle(
+        [o - Vec2::Y * (r + 1.0), o + Vec2::new(-5.0, -r - 9.0), o + Vec2::new(5.0, -r - 9.0)],
+        WHITE,
+    );
+    // Digital heading in a box over the rose.
+    let hdg = format!("{:03}", (heading.to_degrees().rem_euclid(360.0).round() as i32) % 360);
+    let w = 2 * fonts.width(hdg.as_bytes()) - 2;
+    let top = (o.y - r) as i32 - 24;
+    c.frame(
+        Vec2::new(o.x - (w / 2 + 4) as f32, top as f32),
+        Vec2::new(o.x + (w / 2 + 4) as f32, top as f32 + 14.0),
+        1.2,
+        WHITE,
+    );
+    fonts.text_scaled(c, o.x as i32 - w / 2, top + 3, hdg.as_bytes(), WHITE, 2);
+
+    // Course arrow with its deviation bar and dots, the TO / FROM arrow.
+    if let (Some(crs), Some(w)) = (course, steer) {
+        let d = dir(crs);
+        let side = Vec2::new(-d.y, d.x);
+        let unit =
+            course_dir.map_or(DVec2::new(crs.sin() as f64, crs.cos() as f64), |v| v.normalize());
+        // Off the course to its right (km): the course is then left of the aircraft.
+        let off_km = (own - w).dot(DVec2::new(unit.y, -unit.x)) * WU / 1000.0;
+        let dot = r * 0.17;
+        for k in [-2.0, -1.0, 1.0, 2.0] {
+            c.ring(o + side * dot * k, 2.0, 1.0, GREY);
+        }
+        let head = o + d * (r - 20.0);
+        c.stroke(o + d * (r * 0.45), head, 1.8, GREEN);
+        c.triangle([head + d * 9.0, head + side * 5.0, head - side * 5.0], GREEN);
+        c.stroke(o - d * (r * 0.45), o - d * (r - 18.0), 1.8, GREEN);
+        let dev = (-off_km / HSI_FULL_SCALE_KM).clamp(-1.0, 1.0) as f32 * 2.0 * dot;
+        c.stroke(o + side * dev - d * (r * 0.4), o + side * dev + d * (r * 0.4), 1.8, GREEN);
+        let to = (w - own).dot(unit) > 0.0;
+        let t = if to { d } else { -d };
+        let tip = o + t * (r * 0.32) + side * (r * 0.22);
+        c.triangle([tip, tip - t * 8.0 + side * 4.0, tip - t * 8.0 - side * 4.0], GREEN);
+    }
+    // Bearing pointer to the steerpoint: head at the rose, tail opposite.
+    if let Some(b) = bearing {
+        let d = dir(b);
+        let side = Vec2::new(-d.y, d.x);
+        let head = o + d * (r - 1.0);
+        c.stroke(o + d * (r - 26.0), head - d * 6.0, 1.6, CYAN);
+        c.triangle([head, head - d * 10.0 + side * 5.0, head - d * 10.0 - side * 5.0], CYAN);
+        c.stroke(o - d * (r - 26.0), o - d * (r - 2.0), 1.6, CYAN);
+    }
+    // Aircraft symbol, fixed in the middle.
+    c.stroke(o - Vec2::X * 9.0, o + Vec2::X * 9.0, 1.8, WHITE);
+    c.stroke(o - Vec2::Y * 6.0, o + Vec2::Y * 9.0, 1.8, WHITE);
+    c.stroke(o + Vec2::new(-4.0, 8.0), o + Vec2::new(4.0, 8.0), 1.8, WHITE);
+
+    // Readouts: a caption over each value, left and right of the rose.
+    let km = steer.map(|w| ((w - own).length() * WU / 1000.0) as f32);
+    let t = p.clock.start_seconds + p.clock.elapsed.unwrap_or(a.time);
+    let ms = a.knots() * 0.5144;
+    let deg = |b: Option<f32>| {
+        b.map_or("---".to_string(), |b| {
+            format!("{:03}", (b.to_degrees().rem_euclid(360.0).round() as i32) % 360)
+        })
+    };
+    let left = [
+        ("STPT", if steer.is_some() { format!("{}", wps.current + 1) } else { "-".to_string() }),
+        (
+            "DIS",
+            km.map_or("---".to_string(), |k| {
+                if k < 100.0 { format!("{k:.1}") } else { format!("{k:.0}") }
+            }),
+        ),
+        (
+            "ETA",
+            km.filter(|_| ms > 1.0).map_or("--:--".to_string(), |k| {
+                let (h, m, _) = crate::mfd::hms(t + k * 1000.0 / ms);
+                format!("{h:02}:{m:02}")
+            }),
+        ),
+    ];
+    let right = [("BRG", deg(bearing)), ("CRS", deg(course)), ("GS", format!("{:.0}", a.knots()))];
+    for (row, ((lc, lv), (rc, rv))) in left.iter().zip(&right).enumerate() {
+        let y = BAND + 8 + row as i32 * 46;
+        for (x, caption, value, align_right) in [(4, lc, lv, false), (c.w as i32 - 4, rc, rv, true)]
+        {
+            for (dy, text, colour) in [(0, caption.to_string(), GREY), (12, value.clone(), GREEN)] {
+                let text = upper(&text);
+                let w = 2 * fonts.width(&text) - 2;
+                fonts.text_scaled(c, if align_right { x - w } else { x }, y + dy, &text, colour, 2);
+            }
+        }
     }
 }
 
@@ -1139,11 +1323,11 @@ mod tests {
     #[test]
     fn selecting_the_other_mfds_format_swaps() {
         let mut av = AvionicsState::default();
-        assert_eq!(av.formats, [Format::Hsd, Format::Sms]);
+        assert_eq!(av.formats[..2], [Format::Hsd, Format::Sms]);
         av.select(MfdSide::Right, Format::Hsd);
-        assert_eq!(av.formats, [Format::Sms, Format::Hsd]);
+        assert_eq!(av.formats[..2], [Format::Sms, Format::Hsd]);
         av.select(MfdSide::Left, Format::Harm);
-        assert_eq!(av.formats, [Format::Harm, Format::Hsd]);
+        assert_eq!(av.formats[..2], [Format::Harm, Format::Hsd]);
         // The SOI stays with its format.
         assert_eq!(av.soi_format(), Some(Format::Hsd));
         av.select(MfdSide::Right, Format::Map);
@@ -1156,6 +1340,51 @@ mod tests {
         assert_eq!(av.soi_format(), Some(Format::Tgp));
         av.select(MfdSide::Left, Format::Sms);
         assert_eq!(av.soi_format(), None);
+    }
+
+    /// With the F-117A's third MFD: it starts on the HSI, swaps with either other MFD, and
+    /// without it its format counts as shown nowhere.
+    #[test]
+    fn three_mfds() {
+        let mut av = AvionicsState::default();
+        assert_eq!(av.shown(Format::Hsi), None);
+        av.set_third(true);
+        assert_eq!(av.formats, [Format::Hsd, Format::Sms, Format::Hsi]);
+        av.select(MfdSide::Third, Format::Hsd);
+        assert_eq!(av.formats, [Format::Hsi, Format::Sms, Format::Hsd]);
+        assert_eq!(av.soi_format(), Some(Format::Hsd), "the SOI goes with its format");
+        av.select(MfdSide::Right, Format::Hsd);
+        assert_eq!(av.formats, [Format::Hsi, Format::Hsd, Format::Sms]);
+        av.select(MfdSide::Left, Format::Tgp);
+        assert_eq!(av.formats, [Format::Tgp, Format::Hsd, Format::Sms]);
+        // Removed and back, it shows the HSI again.
+        av.select(MfdSide::Third, Format::Hsi);
+        av.set_third(false);
+        av.set_third(true);
+        assert_eq!(av.format(MfdSide::Third), Format::Hsi);
+        // A third MFD whose HSI went to another MFD takes a format not shown elsewhere.
+        av.select(MfdSide::Left, Format::Hsi);
+        av.set_third(false);
+        av.set_third(true);
+        let [l, r, t] = av.formats;
+        assert!(t != l && t != r, "{:?}", av.formats);
+    }
+
+    /// The sensor of interest goes round the three MFDs' capable formats.
+    #[test]
+    fn soi_round_three_mfds() {
+        let mut s = MfdState { modern: true, ..default() };
+        let mut raster = MapRaster::default();
+        s.av.set_third(true);
+        s.av.select(MfdSide::Right, Format::Harm);
+        s.av.select(MfdSide::Third, Format::Tgp);
+        assert_eq!(s.av.soi_format(), Some(Format::Hsd));
+        apply(&mut s, &mut raster, MfdCmd::SwapSoi);
+        assert_eq!(s.av.soi_format(), Some(Format::Harm));
+        apply(&mut s, &mut raster, MfdCmd::SwapSoi);
+        assert_eq!(s.av.soi_format(), Some(Format::Tgp));
+        apply(&mut s, &mut raster, MfdCmd::SwapSoi);
+        assert_eq!(s.av.soi_format(), Some(Format::Hsd));
     }
 
     #[test]
@@ -1175,20 +1404,26 @@ mod tests {
 
     #[test]
     fn every_button_on_every_format() {
-        for f in FORMATS {
-            for (way, ord) in [(false, false), (true, true)] {
-                let mut s = MfdState { modern: true, ..default() };
-                s.av.select(MfdSide::Left, f);
-                s.av.map_way = way;
-                s.av.sms_ord = ord;
-                for slot in 0..crate::mfd::OSB_COUNT {
-                    if let Some((label, _, _)) = osb(MfdSide::Left, slot, &s) {
-                        assert!(label.len() <= 5, "{f:?} {slot}: {label}");
+        for side in [MfdSide::Left, MfdSide::Third] {
+            for f in formats(side) {
+                for (way, ord) in [(false, false), (true, true)] {
+                    let mut s = MfdState { modern: true, ..default() };
+                    s.av.set_third(true);
+                    s.av.select(side, f);
+                    s.av.map_way = way;
+                    s.av.sms_ord = ord;
+                    for slot in 0..crate::mfd::OSB_COUNT {
+                        if let Some((label, _, _)) = osb(side, slot, &s) {
+                            assert!(label.len() <= 5, "{f:?} {slot}: {label}");
+                        }
                     }
+                    assert!(osb(side, 5, &s).is_some());
                 }
-                assert!(osb(MfdSide::Left, 5, &s).is_some());
             }
         }
+        // The third MFD's bottom row: the HSI first.
+        let s = MfdState { modern: true, ..default() };
+        assert_eq!(osb(MfdSide::Third, 5, &s).map(|o| o.0), Some("HSI"));
     }
 
     #[test]

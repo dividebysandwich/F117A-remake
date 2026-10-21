@@ -13,9 +13,11 @@
 //! * `atlas`: a lamp, readout, label or bezel button face drawn live into the instrument atlas.
 //!   The object's `atlas_face` names the face (`layout`), `atlas_uv` the uv rectangle its UVs
 //!   were made for; they are moved to wherever the face is in the atlas.
-//! * `screen_left`, `screen_right`, `adi`, `approach`, `screen_rwr` (RWR scope), `hsi`, `ded`
-//!   (data entry display): live displays (UVs 0..1 over the screen).
-//! * `trackcam`, `trackcam_left`: the tracking camera picture behind the right / left screen.
+//! * `screen_left`, `screen_right`, `screen_third` (the F-117A's third MFD), `adi`, `approach`,
+//!   `screen_rwr` (RWR scope), `hsi`, `ded` (data entry display): live displays (UVs 0..1 over
+//!   the screen).
+//! * `trackcam`, `trackcam_left`, `trackcam_third`: the tracking camera picture behind the
+//!   right / left / third screen.
 //! * `hud_glass`: the HUD combiner glass (the HUD is drawn collimated through it).
 //! * `label_<TEXT>`: a side panel button label showing TEXT.
 //! * Anything else is used as modelled (base colour, roughness, metallic).
@@ -291,10 +293,12 @@ impl<'a> Spawner<'a> {
                 }
                 self.panel.atlas.clone()
             }
-            "screen_left" | "screen_right" | "adi" | "approach" | "screen_rwr" | "hsi" | "ded" => {
+            "screen_left" | "screen_right" | "screen_third" | "adi" | "approach" | "screen_rwr"
+            | "hsi" | "ded" => {
                 let role = match name {
                     "screen_left" => CanvasRole::Left,
                     "screen_right" => CanvasRole::Right,
+                    "screen_third" => CanvasRole::Third,
                     "adi" => CanvasRole::Adi,
                     "screen_rwr" => CanvasRole::Rwr,
                     "hsi" => CanvasRole::Hsi,
@@ -309,11 +313,11 @@ impl<'a> Spawner<'a> {
                 }
                 m
             }
-            "trackcam" | "trackcam_left" => {
-                let side = if name == "trackcam" {
-                    crate::mfd::MfdSide::Right
-                } else {
-                    crate::mfd::MfdSide::Left
+            "trackcam" | "trackcam_left" | "trackcam_third" => {
+                let side = match name {
+                    "trackcam" => crate::mfd::MfdSide::Right,
+                    "trackcam_left" => crate::mfd::MfdSide::Left,
+                    _ => crate::mfd::MfdSide::Third,
                 };
                 ec.insert((TrackCamScreen(side), Visibility::Hidden));
                 displays::trackcam_material(self.materials, self.tc_image)
@@ -435,7 +439,7 @@ impl<'a> Spawner<'a> {
 mod tests {
     use super::super::controls::parse_effect;
     use super::super::displays::atlas_faces;
-    use super::super::layout::PanelLayout;
+    use super::super::layout::{PanelLayout, PanelStyle};
 
     /// The JSON part of a .glb file.
     fn gltf_json(name: &str) -> serde_json::Value {
@@ -445,13 +449,14 @@ mod tests {
         serde_json::from_slice(&d[20..20 + len]).unwrap()
     }
 
-    /// The F-16 panel layout as the Blender build script reads it: every atlas face with its
-    /// rectangle (millimetres, x right / y down from the panel centre) and, for buttons, the
-    /// control it fires; the display rectangles.
-    fn f16_layout_json() -> serde_json::Value {
+    /// A generated panel's layout as its Blender build script reads it: every atlas face with
+    /// its rectangle (millimetres, x right / y down from the panel centre) and, for buttons,
+    /// the control it fires; the display rectangles (the F-117A's third MFD as `third`, the
+    /// F-16's HSI and RWR scope as `hsi` and `rwr`).
+    fn layout_json(style: PanelStyle) -> serde_json::Value {
         use super::super::displays::Face;
         use super::super::layout::Effect;
-        let l = PanelLayout::f16();
+        let l = PanelLayout::for_style(style);
         let r = |r: &super::super::layout::PxRect| serde_json::json!([r.x, r.y, r.w, r.h]);
         let faces: Vec<serde_json::Value> = atlas_faces(&l)
             .iter()
@@ -466,40 +471,44 @@ mod tests {
                 serde_json::json!({"key": format!("{face:?}"), "rect": r(rect), "control": control.map(|c| format!("{c:?}")), "kind": kind, "round": round})
             })
             .collect();
-        serde_json::json!({
-            "faces": faces,
-            "screens": {
-                "left": r(&l.mfds[0].screen),
-                "right": r(&l.mfds[1].screen),
-                "adi": r(&l.adi),
-                "hsi": r(&l.hsi.unwrap()),
-                "rwr": r(&l.rwr.unwrap()),
-                "ded": r(&l.ded.unwrap()),
-            },
-        })
+        let mut screens = serde_json::json!({"adi": r(&l.adi), "ded": r(&l.ded.unwrap())});
+        for (m, key) in l.mfds.iter().zip(["left", "right", "third"]) {
+            screens[key] = r(&m.screen);
+        }
+        for (rect, key) in [(l.hsi, "hsi"), (l.rwr, "rwr")] {
+            if let Some(rect) = rect {
+                screens[key] = r(&rect);
+            }
+        }
+        serde_json::json!({"faces": faces, "screens": screens})
     }
 
-    /// `assets-src/blend/cockpit_f16_layout.json` matches the layout (rewritten with
-    /// `UPDATE_F16_LAYOUT=1 cargo test f16_layout_file`, then rebuild the model).
+    /// `assets-src/blend/cockpit_f16_layout.json` and `cockpit_modern_layout.json` match the
+    /// layouts (rewritten with `UPDATE_LAYOUT=1 cargo test layout_files`, then rebuild the
+    /// models).
     #[test]
-    fn f16_layout_file() {
-        let path =
-            format!("{}/assets-src/blend/cockpit_f16_layout.json", env!("CARGO_MANIFEST_DIR"));
-        let want = serde_json::to_string_pretty(&f16_layout_json()).unwrap() + "\n";
-        if std::env::var_os("UPDATE_F16_LAYOUT").is_some() {
-            std::fs::write(&path, &want).unwrap();
+    fn layout_files() {
+        for (style, name, script) in [
+            (PanelStyle::F16, "cockpit_f16", "build_cockpit_f16"),
+            (PanelStyle::Modern, "cockpit_modern", "build_cockpit_f117"),
+        ] {
+            let path =
+                format!("{}/assets-src/blend/{name}_layout.json", env!("CARGO_MANIFEST_DIR"));
+            let want = serde_json::to_string_pretty(&layout_json(style)).unwrap() + "\n";
+            if std::env::var_os("UPDATE_LAYOUT").is_some() {
+                std::fs::write(&path, &want).unwrap();
+            }
+            let have = std::fs::read_to_string(&path).unwrap_or_default();
+            assert!(
+                have == want,
+                "{path} is stale: run UPDATE_LAYOUT=1 cargo test layout_files and tools/models/{script}.py"
+            );
         }
-        let have = std::fs::read_to_string(&path).unwrap_or_default();
-        assert!(
-            have == want,
-            "{path} is stale: run UPDATE_F16_LAYOUT=1 cargo test f16_layout_file and tools/models/build_cockpit_f16.py"
-        );
     }
 
     /// Every cockpit model has everything the game binds to, and nothing it can't read.
     #[test]
     fn cockpit_models() {
-        use crate::cockpit3d::layout::PanelStyle;
         for (name, style) in [
             ("cockpit_modern", PanelStyle::Modern),
             ("cockpit_classic", PanelStyle::Classic),
@@ -523,11 +532,14 @@ mod tests {
                 "trackcam",
                 "hud_glass",
             ];
-            // The F-16's MENU button is the LIST key of its up-front controls (an atlas face).
-            required.extend(if style == PanelStyle::F16 {
-                vec!["screen_rwr", "hsi", "ded", "trackcam_left", "label_NEAR"]
-            } else {
-                vec!["swatch", "label_MENU"]
+            // The generated cockpits' MENU buttons are caps of their up-front controls (atlas
+            // faces).
+            required.extend(match style {
+                PanelStyle::F16 => vec!["screen_rwr", "hsi", "ded", "trackcam_left", "label_NEAR"],
+                PanelStyle::Modern => {
+                    vec!["screen_third", "ded", "trackcam_left", "trackcam_third", "label_NEAR"]
+                }
+                PanelStyle::Classic => vec!["swatch", "label_MENU"],
             });
             for m in required {
                 assert!(materials.contains(&m), "{name}: no material {m}");
@@ -571,8 +583,8 @@ mod tests {
                     );
                 }
             }
-            if style == PanelStyle::F16 {
-                // The generated model has every face of its layout.
+            if style != PanelStyle::Classic {
+                // The generated models have every face of their layouts.
                 for k in &keys {
                     assert!(
                         extras.iter().any(|x| x["atlas_face"].as_str() == Some(k)),

@@ -18,7 +18,6 @@
 
 mod controls;
 mod displays;
-pub mod geometry;
 mod hud_glass;
 pub mod layout;
 mod levers;

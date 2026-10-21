@@ -10,7 +10,6 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
-use super::geometry::panel_rect;
 use super::hud_glass::HudGlassMaterial;
 use super::layout::{DED_CANVAS, Elem, PanelLayout, PanelStyle, Placed, PxRect};
 use super::shading::{CockpitMaterial, cockpit_material};
@@ -24,12 +23,12 @@ use crate::panel::{
 
 /// Emissive strength of the displays and lit lights when the cockpit is lit.
 const GLOW_NITS: f32 = 1.0;
-/// Instrument atlas texels per panel pixel (down; see `texels`), classic and modern panel.
+/// Instrument atlas texels per panel pixel, classic panel.
 pub(super) const TEXELS: i32 = 3;
-const MODERN_TEXELS: i32 = 4;
-/// Instrument atlas texels per millimetre on the F-16 panel (its large round instruments
-/// would not fit the atlas at 3; 2 is still more than a VR pixel per texel at the panel).
-const F16_TEXELS: i32 = 2;
+/// Instrument atlas texels per millimetre on the F-16 and F-117A panels (their large round
+/// instruments would not fit the atlas at 3; 2 is still more than a VR pixel per texel at the
+/// panel).
+const MM_TEXELS: i32 = 2;
 /// Largest label text scale (atlas texels per font pixel), so the labels match in size.
 const TEXT_SCALE: i32 = 3;
 /// Instrument atlas size (texels).
@@ -46,6 +45,7 @@ pub(super) enum CanvasRole {
     Glow,
     Left,
     Right,
+    Third,
     Adi,
     Hud,
     Approach,
@@ -104,16 +104,10 @@ fn pack(sizes: &[(i32, i32)]) -> Vec<[i32; 4]> {
     out
 }
 
-/// Atlas size of a face: `k` texels per panel pixel down, and across either the same (the
-/// classic panel keeps the original's tall pixels) or as many as make the texels square on the
-/// panel.
-fn texels(r: &PxRect, k: i32, square: bool) -> (i32, i32) {
-    let h = (r.h * k as f32).ceil();
-    if !square {
-        return ((r.w * k as f32).ceil() as i32, h as i32);
-    }
-    let (_, size) = panel_rect(r.x, r.y, r.w, r.h, 0.0);
-    ((h * size.x / size.y).round() as i32, h as i32)
+/// Atlas size of a face: `k` texels per layout unit (the classic panel keeps the original's
+/// tall pixels).
+fn texels(r: &PxRect, k: i32) -> (i32, i32) {
+    ((r.w * k as f32).ceil() as i32, (r.h * k as f32).ceil() as i32)
 }
 
 /// Yellow and black diagonal stripes.
@@ -196,8 +190,8 @@ pub(super) fn panel_materials(
 
     // Instrument atlas: every lamp, readout, label and bezel button face.
     let faces = atlas_faces(layout);
-    let (k, square) = atlas_scale(layout.style);
-    let slots = pack(&faces.iter().map(|(_, r)| texels(r, k, square)).collect::<Vec<_>>());
+    let k = atlas_scale(layout.style);
+    let slots = pack(&faces.iter().map(|(_, r)| texels(r, k)).collect::<Vec<_>>());
     let uv = |s: &[i32; 4]| {
         let n = ATLAS as f32;
         (
@@ -231,13 +225,11 @@ pub(super) fn panel_materials(
     PanelMaterials { solid, atlas, faces }
 }
 
-/// Atlas texels per layout unit, and whether a face's texels are made square on the F-117's
-/// panel plane (the F-16's millimetres are square already).
-fn atlas_scale(style: PanelStyle) -> (i32, bool) {
+/// Atlas texels per layout unit.
+fn atlas_scale(style: PanelStyle) -> i32 {
     match style {
-        PanelStyle::Classic => (TEXELS, false),
-        PanelStyle::Modern => (MODERN_TEXELS, true),
-        PanelStyle::F16 => (F16_TEXELS, false),
+        PanelStyle::Classic => TEXELS,
+        PanelStyle::Modern | PanelStyle::F16 => MM_TEXELS,
     }
 }
 
@@ -257,7 +249,7 @@ pub(super) fn atlas_faces(layout: &PanelLayout) -> Vec<(Face, PxRect)> {
     faces
 }
 
-/// A self-luminous screen: an MFD (`Left` / `Right`), the attitude ball, the RWR scope, the HSI
+/// A self-luminous screen: an MFD (`Left` / `Right` / `Third`), the attitude ball, the RWR scope, the HSI
 /// or the approach indexer, with its canvas.
 pub(super) fn screen(
     role: CanvasRole,
@@ -267,10 +259,12 @@ pub(super) fn screen(
     images: &mut Assets<Image>,
 ) -> (CanvasTexture, Handle<CockpitMaterial>) {
     let (canvas, transparent) = match role {
-        CanvasRole::Left | CanvasRole::Right if hires => {
+        CanvasRole::Left | CanvasRole::Right | CanvasRole::Third if hires => {
             (Canvas::scaled(HIRES.0, HIRES.1, crate::mfd::HIRES_SCALE), false)
         }
-        CanvasRole::Left | CanvasRole::Right => (Canvas::new(CLASSIC.0, CLASSIC.1), false),
+        CanvasRole::Left | CanvasRole::Right | CanvasRole::Third => {
+            (Canvas::new(CLASSIC.0, CLASSIC.1), false)
+        }
         CanvasRole::Adi | CanvasRole::Rwr | CanvasRole::Hsi => {
             let r = match role {
                 CanvasRole::Rwr => layout.rwr,
@@ -280,7 +274,7 @@ pub(super) fn screen(
             let n = (r.map_or(90.0, |r| r.w) * TEXELS as f32) as usize;
             (Canvas::new(n, n), true)
         }
-        // Only the F-16 has a data entry display.
+        // The classic cockpit has no data entry display.
         CanvasRole::Ded => (
             if layout.ded.is_some() {
                 Canvas::new(DED_CANVAS.0, DED_CANVAS.1)
@@ -419,6 +413,7 @@ pub(super) fn update_displays(
     for role in [
         CanvasRole::Left,
         CanvasRole::Right,
+        CanvasRole::Third,
         CanvasRole::Adi,
         CanvasRole::Hud,
         CanvasRole::Approach,
@@ -437,6 +432,10 @@ pub(super) fn update_displays(
             CanvasRole::Right => {
                 tex.transparent = d.mfd.camera_see_through(MfdSide::Right);
                 d.mfd.draw_right(&mut tex.canvas, &art, &fonts);
+            }
+            CanvasRole::Third => {
+                tex.transparent = d.mfd.camera_see_through(MfdSide::Third);
+                d.mfd.draw_third(&mut tex.canvas, &art, &fonts);
             }
             CanvasRole::Adi => {
                 d.panel.draw_adi(&mut tex.canvas, settings.cockpit().0 != PanelStyle::Classic)
@@ -572,10 +571,9 @@ mod tests {
     fn atlas_fits() {
         for style in [PanelStyle::Classic, PanelStyle::Modern, PanelStyle::F16] {
             let layout = PanelLayout::for_style(style);
-            let (k, square) = atlas_scale(style);
-            let slots = pack(
-                &atlas_faces(&layout).iter().map(|(_, r)| texels(r, k, square)).collect::<Vec<_>>(),
-            );
+            let k = atlas_scale(style);
+            let slots =
+                pack(&atlas_faces(&layout).iter().map(|(_, r)| texels(r, k)).collect::<Vec<_>>());
             let used = slots.iter().map(|s| s[1] + s[3]).max().unwrap_or(0);
             println!("{style:?}: {} faces, atlas rows used {used}/{ATLAS}", slots.len());
         }

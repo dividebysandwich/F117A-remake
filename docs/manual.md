@@ -162,7 +162,7 @@ The modes add their own symbols:
 The **classic HUD** (menu: *HUD: Classic*) is the original's low-resolution HUD, as in the
 classic cockpit picture above.
 
-![HUD mode buttons](images/panel_hud_caps.png)
+The HUD mode caps are the first four of the up-front display's top row (chapter 3.2):
 
 | Button | Function |
 |---|---|
@@ -173,41 +173,79 @@ classic cockpit picture above.
 
 F2 cycles through the modes; V declutters the HUD.
 
-### 3.2 Left side panel: targeting and weapons
+### 3.2 The F-117A's panel
 
-<img src="images/panel_left_side.png" width="240" alt="Left side panel">
+The panel is laid out like the real F-117A's, its upper corners falling steeply outwards under
+the canopy's front frames. Under the HUD the **up-front display** stands out of the panel: the
+**DED** (data entry display, as the F-16's: the radio channels, the current steerpoint and the
+target, the clock, the bearing, distance and ETA to the steerpoint and the fuel) between two
+rows of caps. Under it the large **centre display** shows the right MFD's pages (where the real
+one shows the infrared picture; chapter 4), between the **left MFD** and the **third MFD**,
+right of it, which starts on the **HSI** page (chapter 4.2).
+The warning lights are over the side MFDs' inner corners. The F-16's round instruments are down
+the outer edges: the airspeed indicator, the altimeter, the AOA tape (the approach band green)
+and the vertical velocity tape and the clock (local time) on the left; RPM, FTIT, oil pressure
+and nozzle position on the right. Under the left MFD the **attitude indicator** (a blue and
+brown ball with a pitch ladder, a bank scale and a small fixed aircraft symbol) and the master
+arm panel with the **BAY** cap; under the right MFD the fuel quantity, the fuel and thrust
+readouts and the radar bar graph. As in the F-16, sloped panels rise from the consoles to the
+main panel: the gear handle and the aircraft systems on the left one, the countermeasures on
+the right one. The side stick is on the right console, the throttle on the left one.
 
-| Button | Key | Function |
+| Up-front display, top row | Key | Function |
 |---|---|---|
-| NEAR | T | Lock the nearest target ahead. AIR or GND mode depends on the selected weapon. |
-| DESG | N | Designate a new target. |
-| NEXT | B | Select the next target. |
-| NONE | Shift B | Clear the target. No automatic acquisition until the next target or camera key. |
-| WPN | Space | Select the next weapon, after the last one the gun. |
+| NAV, AIR, GND, LOCK | F2, N | HUD modes and designation (chapter 3.1). |
+| DCLT | V | HUD declutter. |
+| NVG | F4 | Night vision goggles. |
+| ILS | F9 | Instrument landing system: the landing guidance on the centre display and, approaching a runway, the F-16-style ILS steering bars on the HUD (*ILS* at the bottom left): the localizer bar (upright) and glideslope bar (level) are referenced to the flight path marker; fly the marker to where they cross to be on the centreline and the 3° glide path. Each bar stops at full scale (2.5° off the centreline, 0.7° off the glide path). |
+
+| Up-front display, bottom row | Key | Function |
+|---|---|---|
 | MENU | Esc | Open or close the in-flight settings menu (chapter 3.8). |
+| VOL | Alt V | Sound level. |
+| TIME | Shift Z / Shift X | Time acceleration on/off. Acceleration ends automatically when a radar detects the aircraft or a weapon is released. |
+| STPT | F7 | Waypoints. |
+| ORD | F10 | Mission orders. |
+| COM, IFF | – | Not used. |
 
-The selected weapon is released with Enter, the gamepad's A button or the right VR trigger while
-the hand holds the stick.
+### 3.3 Warning lights
 
-The lever below the buttons is the landing gear lever; its arm shows the gear position (down = gear down).
-
-### 3.3 Warning lamps and countermeasures
-
-<img src="images/panel_lamps.png" width="240" alt="Warning and countermeasure block">
-
-The lamps are dark when inactive. Their layout from top to bottom:
-
-| Row | Lamps |
-|---|---|
-| 1 | **STALL** – airspeed below stall speed (blinks). |
-| 2 | **MW** missile warning · **ENG** engine damage · **FC** fire control damage |
-| 3 | **JAM** jammer damage (ECM and IRJ fail) · **FIRE** fire on board · **FUEL** fuel system damage |
-| 4 | **BD** bay door damage (doors stay open) · **AV** avionics damage · (unused) |
-| 5 | **RAD** radar-guided missile in flight · **IR** infrared missile in flight · **TRAK** enemy radar tracking the aircraft |
+The lights are dark when inactive. Left: **MASTER CAUTION** (missile warning), **STALL**
+(airspeed below stall speed, blinks), **TRACK** (an enemy radar tracks the aircraft), **IR**
+(an infrared missile is in flight) and **LAUNCH** (a radar-guided missile is in flight).
+Right: **ENG FIRE** (fire on board), **ENGINE** (engine damage), **FLCS** (fire control
+damage), **JAM** (jammer damage: ECM and IRJ fail) and **AV** (avionics damage). The caution
+lights at the top of the right slope: **FUEL** (fuel system damage), **BD** (bay door damage:
+the doors stay open); the others are not used.
 
 A fire on board also sounds the fire warning siren until the fire is out (with realistic damage
 a fire burns out or blows the aircraft up; with game damage it burns on, leaking fuel). A damaged aircraft
 trails smoke (grey, black when badly hit), and flames while it burns.
+
+### 3.4 Gear, aircraft systems and targeting (left slope)
+
+The gear handle (its arm shows the gear position: down = gear down) with the gear lights left
+of it (an aircraft outline with a green lamp at each wheel while the gear is down), the caps
+under them, and below them ahead of the throttle the target buttons. The **BAY** cap is under
+the left MFD.
+
+| Button | Key | Function |
+|---|---|---|
+| Gear handle | 6 | Landing gear. |
+| FLAPS | 9 | Flaps: extend over about 3 s; more lift and a higher angle of attack limit, about 20 % lower stall speed. |
+| BRAKE | 0 | Wheel brakes on the ground, speed brake in the air. |
+| AUTO | 7 | Autopilot: flies to the current waypoint. |
+| BAY | 8 | Weapon bay doors open/close. Weapons can only be released with open bays. |
+| NEAR | T | Lock the nearest target ahead. AIR or GND mode depends on the selected weapon. |
+| NEXT | B | Select the next target. |
+| NONE | Shift B | Clear the target. No automatic acquisition until the next target or camera key. |
+| WPN | Space | Select the next weapon, after the last one the gun. |
+| DTL | Alt D | Detail level. |
+
+The selected weapon is released with Enter, the gamepad's A button or the right VR trigger while
+the hand holds the stick.
+
+### 3.5 Countermeasures (right slope)
 
 | Control | Key | Function |
 |---|---|---|
@@ -217,41 +255,14 @@ trails smoke (grey, black when badly hit), and flames while it burns.
 | ECM | 4 | Radar jammer on/off (lit when on). |
 | IRJ | 3 | IR jammer on/off (lit when on). Switches itself off after 20 s of continuous use and must cool down. |
 
-### 3.4 Attitude indicator and aircraft systems
-
-<img src="images/panel_right_block.png" width="240" alt="Attitude indicator and systems">
-
-The attitude indicator (ball) shows pitch and bank. The buttons below it:
-
-| Button | Key | Function |
-|---|---|---|
-| BAY | 8 | Weapon bay doors open/close. Weapons can only be released with open bays. |
-| AUTO | 7 | Autopilot: flies to the current waypoint. |
-| FLAPS | 9 | Flaps: extend over about 3 s; more lift and a higher angle of attack limit, about 20 % lower stall speed. |
-| GEAR | 6 | Landing gear. |
-| BRAKE | 0 | Wheel brakes on the ground, speed brake in the air. |
-| LOW FUEL | – | Lamp: blinks below 1500 lbs of fuel. |
-
-### 3.5 Right side panel
-
-<img src="images/panel_right_side.png" width="240" alt="Right side panel">
-
-| Button | Key | Function |
-|---|---|---|
-| NVG | F4 | Night vision goggles. |
-| ILS | F9 | Instrument landing system: the landing guidance on the right MFD and, approaching a runway, the F-16-style ILS steering bars on the HUD (*ILS* at the bottom left): the localizer bar (upright) and glideslope bar (level) are referenced to the flight path marker; fly the marker to where they cross to be on the centreline and the 3° glide path. Each bar stops at full scale (2.5° off the centreline, 0.7° off the glide path). |
-| TIME | Shift Z / Shift X | Time acceleration on/off. Acceleration ends automatically when a radar detects the aircraft or a weapon is released. |
-| DCLT | V | HUD declutter. |
-| VOL | Alt V | Sound level. |
-| DTL | Alt D | Detail level. |
-
-### 3.6 Bottom strip: radar bar graph, fuel and thrust
+### 3.6 Fuel, thrust and the radar bar graph
 
 ![Bottom strip](images/panel_bottom.png)
 
-From left to right: the **EGR/EAR radar bar graph** (described in chapter 6.2), the **EMV** label
-with the EMV warning lamp (lit for 2 s after each detection), **FUEL** (fuel in lbs divided by
-10) and **THRUST** (in percent).
+Under the right MFD, right of the fuel quantity: **FUEL** (fuel in lbs divided by 10) with the
+**LOW FUEL** lamp (blinks below 1500 lbs of fuel) and **THRUST** (in percent); under them the
+**EGR/EAR radar bar graph** (described in chapter 6.2) with the **EMV** warning lamp (lit for
+2 s after each detection).
 
 ### 3.7 The F-16 cockpit
 
@@ -299,8 +310,8 @@ the air.
 
 ### 3.8 In-flight settings menu
 
-**Esc** (also Pause, Alt P, the gamepad's Start button, the **MENU** button of the F-117A's left
-side panel or the F-16C's **LIST** key) opens the settings menu and pauses the flight: in VR a screen in front of the pilot, on
+**Esc** (also Pause, Alt P, the gamepad's Start button, the **MENU** cap of the F-117A's up-front
+display or the F-16C's **LIST** key) opens the settings menu and pauses the flight: in VR a screen in front of the pilot, on
 the desktop over the middle of the window. In VR, touch an
 entry with a fingertip and pull the trigger, or use a thumbstick and A / X. On the desktop, click
 an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
@@ -321,7 +332,9 @@ Changes apply at once and are saved as the defaults for the next flight.
 
 ## 4. MFD pages
 
-The panel has two multi-function displays (MFDs). With the **classic avionics** (menu: Classic /
+The panel has two multi-function displays (MFDs), the F-117A's three: its right MFD is the large
+centre display, its third MFD right of that shows the HSI (chapter 4.2; with the modern avionics
+any format). With the **classic avionics** (menu: Classic /
 Modern, Avionics) they show the original's pages described here; the **modern avionics** are in
 chapter 4.1. The labelled buttons above and below each screen select the pages and their
 functions. The button of the active page is lit.
@@ -383,10 +396,11 @@ buildings appear bright.</td>
 
 ### 4.1 Modern avionics
 
-With the modern avionics either MFD can show any of five F-16 style formats, chosen with the
-bottom row of bezel buttons: **HSD**, **HARM**, **TGP**, **MAP** and **SMS**. The buttons'
-functions are written on the display next to them (lit = selected); the bezel caps are blank.
-Choosing the format the other MFD shows swaps the two. F3 cycles the left MFD through HSD, MAP
+With the modern avionics each MFD can show any of five F-16 style formats, chosen with the
+bottom row of bezel buttons: **HSD**, **HARM**, **TGP**, **MAP** and **SMS**; the F-117A's
+third MFD offers **HSI** in place of TGP. The buttons' functions are written on the display next
+to them (lit = selected); the bezel caps are blank. Choosing a format another MFD shows swaps
+the two. F3 cycles the left MFD through HSD, MAP
 and HARM; F5 / F10 bring up SMS, F6 and the camera keys the TGP, F7 the waypoint table.
 
 | Format | Top row buttons | Shows |
@@ -396,9 +410,10 @@ and HARM; F5 / F10 bring up SMS, F6 and the camera keys the TGP, F7 the waypoint
 | TGP | FLIR, ZM-, ZM+, CZ, SOI | The targeting pod (tracking camera), see below. The pod's mode (SLV / AREA / PNT) is shown bottom left, the zoom bottom right (AUTO: by range). |
 | MAP | NUP / HUP, ZM-, ZM+, WAY | The moving map in muted colours; WAY switches to the waypoint table (WP-, WP+, RST). |
 | SMS | WPN, ORD, SEL, CCIP / CCRP | Stores (WPN) and mission orders (ORD); on WPN the bombsight mode. |
+| HSI | WP-, WP+ | Horizontal situation indicator (chapter 4.2). |
 
 **Sensor of interest (SOI).** The HSD, the HARM display or the TGP is the SOI (white frame; the top right
-SOI button, or Alt S to move it to the other MFD). Its cursor, two short vertical lines, moves with
+SOI button, or Alt S to move it to the next MFD). Its cursor, two short vertical lines, moves with
 the **sensor/cursor slew** controls: the keypad (8 / 2 / 4 / 6 and diagonals), the left VR
 thumbstick, or two joystick axes bound in the CONTROLS dialog ("Sensor/cursor slew X/Y"). **Lock
 cursor target** (keypad Enter, left thumbstick click, or a bound button) locks what is under the
@@ -418,6 +433,17 @@ nothing is there) and the pod follows the lock again. CZ returns it to SLV looki
 something new is locked, so the next slew starts from straight ahead) and the zoom to AUTO.
 ZM- / ZM+ (also `[` / `]`, and Z / X while the pod is the SOI) zoom it from 1X to 6X. The HSD shows where
 the pod looks: a green diamond on its ground point with a dashed line from the aircraft.
+
+### 4.2 The HSI page (F-117A third MFD)
+
+A heading-up compass rose with the heading in a box over it. The green **course arrow** lies
+along the leg to the current steerpoint (from the previous one; on the way to the first one,
+the direct course); its middle part, the **deviation bar**, moves off the arrow towards the
+course when the aircraft is beside it: one dot 2.5 km, two dots (full scale) 5 km. The small
+green triangle beside the centre points along the arrow while the steerpoint is ahead (TO), the
+other way once it is passed (FROM). The cyan **bearing pointer** points at the steerpoint.
+Left: the steerpoint number, its distance (km) and the ETA; right: its bearing, the course and
+the ground speed (knots). WP- / WP+ select the previous / next steerpoint.
 
 ## 5. Targeting and weapons
 

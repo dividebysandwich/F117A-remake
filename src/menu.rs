@@ -1031,6 +1031,12 @@ fn main_screen(
             if facts(ui.add(wide("QUIT")), &["Exit to the desktop"]).clicked() {
                 exit.write(AppExit::Success);
             }
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(concat!("VERSION ", env!("CARGO_PKG_VERSION")))
+                    .size(11.0)
+                    .color(DIM),
+            );
         });
     });
 }

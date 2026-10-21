@@ -3,8 +3,10 @@
 //! Drawn for every view with a [`CloudCamera`] (both eyes in VR) between the opaque and the
 //! transparent pass, into the view's (multisampled) colour target: opaque geometry clips the
 //! march through the depth buffer, transparent geometry (glass, smoke, lights) is drawn over the
-//! clouds afterwards. With a resolution scale above 1 the march goes into a smaller texture per
-//! view first, which is then upsampled over the view at the same point.
+//! clouds afterwards. The march goes into a texture per view (smaller with a resolution scale
+//! above 1) with the distance at which the clouds turn opaque; it is upsampled over the view
+//! and that distance written into the view's depth, so transparent geometry behind the clouds
+//! is hidden.
 
 use std::collections::HashMap;
 
@@ -13,6 +15,7 @@ use bevy::{
     camera::Camera,
     core_pipeline::{
         Core3dSystems, FullscreenShader,
+        core_3d::CORE_3D_DEPTH_FORMAT,
         core_3d::{main_opaque_pass_3d, main_transparent_pass_3d},
         schedule::Core3d,
     },
@@ -384,15 +387,17 @@ pub(crate) fn upload_cloud_frame(
     }
 }
 
-/// Format of the reduced resolution cloud texture.
-const LOW_RES_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
+/// Formats of the cloud textures: premultiplied colour and coverage, and the view depth (view
+/// z, world units) at which a cloud turns opaque.
+const CLOUD_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
+const DISTANCE_FORMAT: TextureFormat = TextureFormat::R16Float;
+/// Cloud distance where no cloud is opaque (the largest half float).
+const NO_CLOUD: f32 = 65504.0;
 
-/// Pipelines per (target format, samples, depth, march steps, dither, shadow, resolution), each
-/// one per LOD for exterior and interior hulls.
+/// Hull pipelines per (depth, march steps, dither, shadow, resolution), each one per LOD for
+/// exterior and interior hulls.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct PipelineKey {
-    format: TextureFormat,
-    samples: u32,
     depth_multisampled: bool,
     steps: [u32; 4],
     dither: bool,
@@ -400,8 +405,8 @@ struct PipelineKey {
     scale: u32,
 }
 
-/// Composite of the reduced resolution clouds per (view format, samples, dither).
-type CompositeKey = (TextureFormat, u32, bool);
+/// Composite pipelines per (view format, samples): colour, then cloud depth.
+type CompositeKey = (TextureFormat, u32);
 
 #[derive(Resource)]
 struct CloudPipelines {
@@ -413,19 +418,19 @@ struct CloudPipelines {
     composite_layout: BindGroupLayoutDescriptor,
     composite_shader: Handle<Shader>,
     fullscreen: FullscreenShader,
-    composites: HashMap<CompositeKey, CachedRenderPipelineId>,
+    composites: HashMap<CompositeKey, [CachedRenderPipelineId; 2]>,
     /// Bilinear upsampling; nearest for the dithered look (chunky pixels).
     linear: Sampler,
     nearest: Sampler,
 }
 
-/// The view's pipelines: hulls and, at reduced resolution, the composite.
+/// The view's pipelines: hulls, then the composite's colour and depth.
 #[derive(Component)]
-struct ViewCloudPipelines([CachedRenderPipelineId; 8], Option<CachedRenderPipelineId>);
+struct ViewCloudPipelines([CachedRenderPipelineId; 8], [CachedRenderPipelineId; 2]);
 
-/// The view's reduced resolution cloud texture.
+/// The view's cloud textures: colour and distance.
 #[derive(Component)]
-struct ViewCloudTarget(CachedTexture);
+struct ViewCloudTarget(CachedTexture, CachedTexture);
 
 /// Premultiplied colour and coverage over what is there.
 const PREMULTIPLIED_OVER: BlendState = BlendState {
@@ -438,6 +443,20 @@ const PREMULTIPLIED_OVER: BlendState = BlendState {
         src_factor: BlendFactor::One,
         dst_factor: BlendFactor::OneMinusSrcAlpha,
         operation: BlendOperation::Add,
+    },
+};
+
+/// The nearest of overlapping clouds' distances.
+const NEAREST: BlendState = BlendState {
+    color: BlendComponent {
+        src_factor: BlendFactor::One,
+        dst_factor: BlendFactor::One,
+        operation: BlendOperation::Min,
+    },
+    alpha: BlendComponent {
+        src_factor: BlendFactor::One,
+        dst_factor: BlendFactor::One,
+        operation: BlendOperation::Min,
     },
 };
 
@@ -477,8 +496,6 @@ fn hull_pipeline(
     let layout = pipelines.layouts[key.depth_multisampled as usize].clone();
     let shader = pipelines.shader.clone();
     let kind = if interior { "interior" } else { "exterior" };
-    // Dithered fragments straight into the view are opaque or discarded.
-    let blend = (!key.dither || key.scale > 1).then_some(PREMULTIPLIED_OVER);
     pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
         label: Some(format!("malvar_ridge_{kind}_j{j_max}").into()),
         layout: vec![layout],
@@ -493,37 +510,58 @@ fn hull_pipeline(
             cull_mode: Some(if interior { Face::Front } else { Face::Back }),
             ..default()
         },
-        multisample: MultisampleState { count: key.samples, ..default() },
         fragment: Some(FragmentState {
             shader,
             shader_defs: defs,
-            targets: vec![Some(ColorTargetState {
-                format: key.format,
-                blend,
-                write_mask: ColorWrites::ALL,
-            })],
+            targets: vec![
+                Some(ColorTargetState {
+                    format: CLOUD_FORMAT,
+                    blend: Some(PREMULTIPLIED_OVER),
+                    write_mask: ColorWrites::ALL,
+                }),
+                Some(ColorTargetState {
+                    format: DISTANCE_FORMAT,
+                    blend: Some(NEAREST),
+                    write_mask: ColorWrites::RED,
+                }),
+            ],
             ..default()
         }),
         ..default()
     })
 }
 
+/// Upsampling the clouds over the view (depth tested always, not written), then their depth
+/// where they are opaque (tested, so nearer geometry keeps its own, colour not written).
 fn composite_pipeline(
     pipelines: &CloudPipelines,
     pipeline_cache: &PipelineCache,
-    (format, samples, _): CompositeKey,
+    (format, samples): CompositeKey,
+    depth_write: bool,
 ) -> CachedRenderPipelineId {
     pipeline_cache.queue_render_pipeline(RenderPipelineDescriptor {
-        label: Some("cloud_composite".into()),
+        label: Some(if depth_write { "cloud_depth" } else { "cloud_composite" }.into()),
         layout: vec![pipelines.composite_layout.clone()],
         vertex: pipelines.fullscreen.to_vertex_state(),
+        depth_stencil: Some(DepthStencilState {
+            format: CORE_3D_DEPTH_FORMAT,
+            depth_write_enabled: Some(depth_write),
+            depth_compare: Some(if depth_write {
+                CompareFunction::GreaterEqual
+            } else {
+                CompareFunction::Always
+            }),
+            stencil: default(),
+            bias: default(),
+        }),
         multisample: MultisampleState { count: samples, ..default() },
         fragment: Some(FragmentState {
             shader: pipelines.composite_shader.clone(),
+            entry_point: Some(if depth_write { "depth" } else { "fragment" }.into()),
             targets: vec![Some(ColorTargetState {
                 format,
                 blend: Some(PREMULTIPLIED_OVER),
-                write_mask: ColorWrites::ALL,
+                write_mask: if depth_write { ColorWrites::empty() } else { ColorWrites::ALL },
             })],
             ..default()
         }),
@@ -568,6 +606,7 @@ fn init_cloud_pipeline(
                     sampler(SamplerBindingType::Filtering),
                     uniform_buffer::<ViewUniform>(true),
                     uniform_buffer::<CloudGlobals>(false),
+                    texture_2d(TextureSampleType::Float { filterable: false }),
                 ),
             ),
         ),
@@ -603,10 +642,7 @@ fn queue_cloud_pipelines(
     pipeline_cache: Res<PipelineCache>,
 ) {
     for (entity, target, msaa) in &views {
-        let low_res = frame.resolution_scale > 1;
         let key = PipelineKey {
-            format: if low_res { LOW_RES_FORMAT } else { target.main_texture_format() },
-            samples: if low_res { 1 } else { msaa.samples() },
             depth_multisampled: msaa.samples() > 1,
             steps: frame.steps,
             dither: frame.dither,
@@ -624,22 +660,21 @@ fn queue_cloud_pipelines(
                 ids
             }
         };
-        let composite = low_res.then(|| {
-            let key = (target.main_texture_format(), msaa.samples(), frame.dither);
-            match pipelines.composites.get(&key) {
-                Some(id) => *id,
-                None => {
-                    let id = composite_pipeline(&pipelines, &pipeline_cache, key);
-                    pipelines.composites.insert(key, id);
-                    id
-                }
+        let key = (target.main_texture_format(), msaa.samples());
+        let composite = match pipelines.composites.get(&key) {
+            Some(ids) => *ids,
+            None => {
+                let p = &*pipelines;
+                let ids = [false, true].map(|d| composite_pipeline(p, &pipeline_cache, key, d));
+                pipelines.composites.insert(key, ids);
+                ids
             }
-        });
+        };
         commands.entity(entity).insert(ViewCloudPipelines(ids, composite));
     }
 }
 
-/// The reduced resolution cloud texture of each view.
+/// The cloud textures of each view (a reduced resolution with a resolution scale above 1).
 fn prepare_cloud_targets(
     mut commands: Commands,
     views: Query<(Entity, &ExtractedView), With<CloudCamera>>,
@@ -647,27 +682,29 @@ fn prepare_cloud_targets(
     mut cache: ResMut<TextureCache>,
     render_device: Res<RenderDevice>,
 ) {
-    let scale = frame.resolution_scale;
+    let scale = frame.resolution_scale.max(1);
     for (entity, view) in &views {
-        if scale <= 1 {
-            commands.entity(entity).remove::<ViewCloudTarget>();
-            continue;
-        }
         let size = ((view.viewport.zw() + (scale - 1)) / scale).max(UVec2::ONE);
-        let texture = cache.get(
-            &render_device,
-            TextureDescriptor {
-                label: Some("cloud_low_res"),
-                size: Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: TextureDimension::D2,
-                format: LOW_RES_FORMAT,
-                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            },
+        let mut texture = |label, format| {
+            cache.get(
+                &render_device,
+                TextureDescriptor {
+                    label: Some(label),
+                    size: Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format,
+                    usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                },
+            )
+        };
+        let target = ViewCloudTarget(
+            texture("cloud_colour", CLOUD_FORMAT),
+            texture("cloud_distance", DISTANCE_FORMAT),
         );
-        commands.entity(entity).insert(ViewCloudTarget(texture));
+        commands.entity(entity).insert(target);
     }
 }
 
@@ -697,7 +734,7 @@ fn draw_cloud_hulls(
         &ViewUniformOffset,
         &ViewCloudPipelines,
         &Msaa,
-        Option<&ViewCloudTarget>,
+        &ViewCloudTarget,
     )>,
     frame: Res<CloudFrame>,
     pipelines: Option<Res<CloudPipelines>>,
@@ -712,7 +749,7 @@ fn draw_cloud_hulls(
     if frame.volumes.is_empty() {
         return;
     }
-    let (camera, target, depth, view_offset, ids, msaa, low_res) = view.into_inner();
+    let (camera, target, depth, view_offset, ids, msaa, clouds) = view.into_inner();
     let mut hulls = [None; 8];
     for (hull, id) in hulls.iter_mut().zip(ids.0) {
         *hull = pipeline_cache.get_render_pipeline(id);
@@ -720,12 +757,11 @@ fn draw_cloud_hulls(
             return;
         }
     }
-    let composite = match (ids.1, low_res) {
-        (Some(id), Some(low)) => match pipeline_cache.get_render_pipeline(id) {
-            Some(p) => Some((p, low)),
-            None => return,
-        },
-        _ => None,
+    let (Some(composite), Some(depth_write)) = (
+        pipeline_cache.get_render_pipeline(ids.1[0]),
+        pipeline_cache.get_render_pipeline(ids.1[1]),
+    ) else {
+        return;
     };
     let (Some(view_binding), Some(globals), Some(volumes), Some(spheres)) = (
         view_uniforms.uniforms.binding(),
@@ -736,6 +772,7 @@ fn draw_cloud_hulls(
         return;
     };
 
+    // March into the cloud textures (the scene's depth is read here).
     let bind_group = ctx.render_device().create_bind_group(
         "cloud_hull_bind_group",
         &pipeline_cache.get_bind_group_layout(&pipelines.layouts[(msaa.samples() > 1) as usize]),
@@ -747,30 +784,24 @@ fn draw_cloud_hulls(
             spheres,
         )),
     );
-
-    // Straight into the view, or cleared low resolution texture first.
-    let attachment = match composite {
-        Some((_, low)) => RenderPassColorAttachment {
-            view: &low.0.default_view,
-            depth_slice: None,
-            resolve_target: None,
-            ops: Operations { load: LoadOp::Clear(Default::default()), store: StoreOp::Store },
-        },
-        None => target.get_color_attachment(),
+    let cleared = |view, clear| RenderPassColorAttachment {
+        view,
+        depth_slice: None,
+        resolve_target: None,
+        ops: Operations { load: LoadOp::Clear(clear), store: StoreOp::Store },
     };
+    let no_cloud = LinearRgba::gray(NO_CLOUD).into();
     let mut pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
         label: Some("malvar_ridge_hull_pass"),
-        color_attachments: &[Some(attachment)],
+        color_attachments: &[
+            Some(cleared(&clouds.0.default_view, LinearRgba::NONE.into())),
+            Some(cleared(&clouds.1.default_view, no_cloud)),
+        ],
         depth_stencil_attachment: None,
         timestamp_writes: None,
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    if composite.is_none()
-        && let Some(viewport) = camera.viewport.as_ref()
-    {
-        pass.set_camera_viewport(viewport);
-    }
     pass.set_bind_group(0, &bind_group, &[view_offset.offset]);
     for (batch, range) in frame.batches.iter().enumerate() {
         if range.y == 0 {
@@ -781,23 +812,23 @@ fn draw_cloud_hulls(
     }
     drop(pass);
 
-    let Some((composite, low)) = composite else {
-        return;
-    };
+    // Over the view, then into its depth buffer: transparent geometry behind the clouds (light
+    // dots, smoke) is hidden by them.
     let bind_group = ctx.render_device().create_bind_group(
         "cloud_composite_bind_group",
         &pipeline_cache.get_bind_group_layout(&pipelines.composite_layout),
         &BindGroupEntries::sequential((
-            &low.0.default_view,
+            &clouds.0.default_view,
             if frame.dither { &pipelines.nearest } else { &pipelines.linear },
             view_binding,
             globals,
+            &clouds.1.default_view,
         )),
     );
     let mut pass = ctx.begin_tracked_render_pass(RenderPassDescriptor {
         label: Some("cloud_composite_pass"),
         color_attachments: &[Some(target.get_color_attachment())],
-        depth_stencil_attachment: None,
+        depth_stencil_attachment: Some(depth.get_attachment(StoreOp::Store)),
         timestamp_writes: None,
         occlusion_query_set: None,
         multiview_mask: None,
@@ -805,7 +836,9 @@ fn draw_cloud_hulls(
     if let Some(viewport) = camera.viewport.as_ref() {
         pass.set_camera_viewport(viewport);
     }
-    pass.set_render_pipeline(composite);
     pass.set_bind_group(0, &bind_group, &[view_offset.offset]);
+    pass.set_render_pipeline(composite);
+    pass.draw(0..3, 0..1);
+    pass.set_render_pipeline(depth_write);
     pass.draw(0..3, 0..1);
 }

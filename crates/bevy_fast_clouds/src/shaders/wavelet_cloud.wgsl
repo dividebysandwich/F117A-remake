@@ -37,6 +37,16 @@ struct CloudGlobals {
     ramp: array<vec4<f32>, 16>,
 }
 
+struct FragOut {
+    // Premultiplied colour and coverage.
+    @location(0) color: vec4<f32>,
+    // View depth (world units) where the cloud turns opaque: what it hides behind it.
+    @location(1) distance: f32,
+}
+
+// No opaque cloud (the largest half float).
+const NO_CLOUD: f32 = 65504.0;
+
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) world: vec3<f32>,
@@ -332,7 +342,7 @@ fn scene_depth_at(pixel: vec2<i32>) -> f32 {
 }
 
 @fragment
-fn fragment(in: VsOut) -> @location(0) vec4<f32> {
+fn fragment(in: VsOut) -> FragOut {
     let vol = volumes[in.volume_index];
     let cam = view.world_position;
     let interior = vol.misc.w != 0u;
@@ -377,6 +387,7 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
     let shadow_reach = 0.3 * min(extent.x, min(extent.y, extent.z));
 
     var transmittance = 1.0;
+    var t_opaque = NO_CLOUD;
     var shade_sum = 0.0;
     var glow_sum = 0.0;
     for (var s = 0; s < MARCH_STEPS; s = s + 1) {
@@ -407,6 +418,9 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
         shade_sum += w * max(k, 0.0);
         glow_sum += w * line_glow(vol, p, shadow_reach);
         transmittance *= 1.0 - a;
+        if (transmittance < 0.5 && t_opaque == NO_CLOUD) {
+            t_opaque = t;
+        }
     }
 
     let alpha = 1.0 - transmittance;
@@ -427,9 +441,12 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
     if (globals.params0.w > 0.0) {
         rgb = lod_tint(vol.j_max, globals.params1.x);
     }
+    var out: FragOut;
+    out.distance = min(t_opaque * dot(rd, forward), NO_CLOUD);
 #ifdef DITHER
-    return vec4<f32>(rgb, 1.0);
+    out.color = vec4<f32>(rgb, 1.0);
 #else
-    return vec4<f32>(rgb * alpha, alpha);
+    out.color = vec4<f32>(rgb * alpha, alpha);
 #endif
+    return out;
 }

@@ -928,6 +928,7 @@ fn briefing(
 /// The route editor (the mission planner's): drag, add and remove waypoints over the radars
 /// friendly aircraft have detected (and that still stand), with their detection and missile
 /// ranges and the route's exposure; the campaign's places and air picture over the map.
+#[allow(clippy::too_many_arguments)]
 fn route_editor(
     ui: &mut egui::Ui,
     c: &ActiveCampaign,

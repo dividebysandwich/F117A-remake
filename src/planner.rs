@@ -325,6 +325,9 @@ pub fn planner_ui(ctx: &egui::Context, planner: &mut Planner, state: &mut MenuSt
     }
 }
 
+/// Drawn over the route editor's map instead of the mission's airfields.
+pub type MapOverlay<'a> = Option<&'a dyn Fn(&egui::Painter, &MapView)>;
+
 /// The route editor: the map with the known radars' coverage, the route's legs and its
 /// exposure (the menu's planner, the campaign's briefing). `known`: the radar sites (world
 /// object indices) to show; `overlay`: drawn over the map instead of the mission's airfields;
@@ -336,7 +339,7 @@ pub fn route_panel(
     m: &Mission,
     route: &mut PlannedRoute,
     known: &dyn Fn(usize) -> bool,
-    overlay: Option<&dyn Fn(&egui::Painter, &MapView)>,
+    overlay: MapOverlay,
     size: egui::Vec2,
     buttons: impl FnOnce(&mut egui::Ui),
 ) {
@@ -402,7 +405,7 @@ fn map_view(
     m: &Mission,
     route: &mut PlannedRoute,
     rings: &[Ring],
-    overlay: Option<&dyn Fn(&egui::Painter, &MapView)>,
+    overlay: MapOverlay,
     size: egui::Vec2,
 ) {
     let (resp, painter) = ui.allocate_painter(size, egui::Sense::click_and_drag());

@@ -195,6 +195,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.realistic_damage, "--realistic-damage"),
         (settings.realistic_guidance, "--realistic-guidance"),
         (settings.tacview, "--tacview"),
+        (settings.air_defence, "--air-defence"),
     ] {
         if on {
             cmd.arg(flag);
@@ -752,6 +753,19 @@ fn menu_ui(
                             "Missile guidance", "Classic: the original's missiles, flying straight at their target",
                             "Realistic: proportional navigation to the collision point; motors burn out and the missiles glide on, losing speed with every turn (smoke only while the motor burns)",
                             "Realistic: SAMs loft against distant targets; the AIM-120 flies straight for 3 s (pull up to lob it)",
+                        ],
+                    )
+                    .changed()
+                    {
+                        settings.set_changed();
+                    }
+                    let s = settings.bypass_change_detection();
+                    if facts(
+                        two_way_switch(ui, "Low level", &mut s.air_defence, ("CLASSIC", "REAL")),
+                        &[
+                            "Low-level air defences", "Classic: only the original's SAM sites and fighters",
+                            "Realistic: radar-laid ZSU-23-4 guns (their radar sees you like a SAM's) and S-60 flak batteries guard the airfields and the targets; MANPADS teams in the towns fire SA-14s at what they see",
+                            "Flying low over defended places becomes dangerous; bombs and guns destroy the guns",
                         ],
                     )
                     .changed()

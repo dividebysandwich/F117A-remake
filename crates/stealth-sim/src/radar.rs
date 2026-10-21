@@ -485,6 +485,7 @@ impl Sim {
                     && match source {
                         EmitterSource::Site(i) => m.launcher == i as i32,
                         EmitterSource::Aircraft(i) => m.launcher == -(i as i32) && i > 0,
+                        EmitterSource::Gun(_) => false,
                     }
             })
         };
@@ -566,6 +567,7 @@ impl Sim {
                 u.heat > 0xC0,
             );
         }
+        self.aaa_emitters(&mut out);
         out.sort_by_key(|e| std::cmp::Reverse(e.priority));
         out
     }

@@ -226,9 +226,14 @@ impl Sim {
     /// target, lofted against a distant one.
     pub(crate) fn launch_sam_flight(&mut self, s: usize, site: usize, tgt: V3) {
         let o = self.objects[site];
+        self.launch_flight_at(s, (o.x + 8, o.y), tgt);
+    }
+
+    /// [`Sim::launch_sam_flight`] from a launcher at a map position.
+    pub(crate) fn launch_flight_at(&mut self, s: usize, (x, y): (i32, i32), tgt: V3) {
         let spec = self.proj[s].spec;
         let Some(prof) = profile(spec) else { return };
-        let pos = [(o.x + 8) as f64 * 32.0 + 16.0, o.y as f64 * 32.0 + 16.0, RAIL_HEIGHT];
+        let pos = [x as f64 * 32.0 + 16.0, y as f64 * 32.0 + 16.0, RAIL_HEIGHT];
         let r = sub(tgt, pos);
         let range = r[0].hypot(r[1]);
         let elev = r[2].atan2(range);

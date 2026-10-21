@@ -20,6 +20,7 @@ const AIRCRAFT: u32 = 0x1000;
 const MISSILES: u32 = 0x2000;
 const SITES: u32 = 0x8000;
 const AIRFIELDS: u32 = 0x9000;
+const AAA: u32 = 0xA000;
 
 /// Degrees of a 16-bit angle (signed for pitch and roll).
 fn deg(bam: i32, signed: bool) -> f64 {
@@ -150,6 +151,21 @@ pub fn acmi(rec: &FlightRecord, m: &Mission, data: &SimData, aircraft: &str) -> 
         );
     }
 
+    for (i, (kind, x, y)) in rec.aaa.iter().enumerate() {
+        let ty = if *kind == stealth_sim::aaa::AaaKind::Manpads {
+            "Ground+Light+Human+Infantry"
+        } else {
+            "Ground+Heavy+Armor+AntiAircraft"
+        };
+        let _ = writeln!(
+            w,
+            "{:x},T={},Type={ty},Name={},Coalition=Enemies,Color=Red",
+            AAA + i as u32,
+            geo.map_t(*x as f64, *y as f64, 0.0),
+            kind.name(),
+        );
+    }
+
     let mut contacts = rec.contacts.iter().peekable();
     let mut marks = rec.marks.iter().peekable();
     let mut planes: HashMap<usize, ()> = HashMap::new();
@@ -271,6 +287,10 @@ pub fn acmi(rec: &FlightRecord, m: &Mission, data: &SimData, aircraft: &str) -> 
                 }
                 MarkKind::Hit => {
                     let _ = writeln!(w, "0,Event=Message|{PLAYER:x}|Hit");
+                }
+                MarkKind::AaaKill(i) => {
+                    let id = AAA + i as u32;
+                    let _ = writeln!(w, "0,Event=Destroyed|{id:x}|\n-{id:x}");
                 }
                 MarkKind::Tracked(i) => {
                     let _ = writeln!(w, "0,Event=Message|{:x}|Tracking", SITES + i as u32);

@@ -131,7 +131,12 @@ pub enum Blast {
     Bomb,
     /// Aircraft crash, the wreck hitting the ground.
     Crash,
+    /// An anti-aircraft shell bursting in the air: a flash and a black puff.
+    Flak,
 }
+
+/// Explosion kind of an anti-aircraft shell burst (`Combat::explosions`; not a sim kind).
+pub const FLAK: i32 = -2;
 
 impl Blast {
     /// The simulation's explosion kind (`SimEvent::Explosion`).
@@ -140,6 +145,7 @@ impl Blast {
             -1 => Blast::GunHit,
             0x10 => Blast::Kill,
             -6 => Blast::Bomb,
+            FLAK => Blast::Flak,
             _ => Blast::Crash,
         }
     }
@@ -597,11 +603,25 @@ fn spawn_blast(
         Blast::Kill => (14.0, 9, 28, 14, 7, 2.5),
         Blast::Bomb => (22.0, 12, 34, 22, 10, 3.0),
         Blast::Crash => (30.0, 16, 40, 30, 14, 3.5),
+        Blast::Flak => (0.0, 0, 0, 0, 0, 0.0),
     };
     let up = if ground { 0.7 } else { 0.0 };
     // Ground blasts sit on the ground (their middle a little above it).
     let centre = if ground { pos + DVec3::Y * (r as f64 * 0.4) } else { pos };
 
+    if blast == Blast::Flak {
+        // A short flash, then a ragged black puff that hangs in the air and slowly spreads.
+        p.puff(pos, Vec3::ZERO, 0.12, (3.0, 8.0), PuffLook::Flash, 0.0, 0.0, 0.9);
+        for _ in 0..6 {
+            let d = p.dir(0.0);
+            let o = (d * p.range(0.0, 3.0)).as_dvec3();
+            let life = p.range(5.0, 8.0);
+            let shade = p.range(0.0, 0.12);
+            let v = d * p.range(0.5, 2.5);
+            p.puff(pos + o, v, life, (3.0, 11.0), PuffLook::Trail(shade), 0.4, 0.3, 0.9);
+        }
+        return;
+    }
     if blast == Blast::GunHit {
         // A small bright yellow flash with yellow sparks.
         let at = pos + DVec3::Y * 0.5;

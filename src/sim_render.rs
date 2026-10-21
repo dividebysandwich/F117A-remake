@@ -27,10 +27,16 @@ pub struct SimRenderPlugin;
 impl Plugin for SimRenderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SimVisuals>()
+            .init_resource::<AaaVisuals>()
             .add_systems(OnExit(AppState::Flight), cleanup)
             .add_systems(
                 Update,
-                (sync_objects.run_if(resource_exists::<Combat>), world_model_state, own_shadow)
+                (
+                    sync_objects.run_if(resource_exists::<Combat>),
+                    sync_aaa.run_if(resource_exists::<Combat>),
+                    world_model_state,
+                    own_shadow,
+                )
                     .in_set(SimRenderSystems)
                     .after(CombatSystems)
                     .run_if(in_state(AppState::Flight)),
@@ -76,6 +82,16 @@ const HELICOPTER_MODEL: i32 = 25;
 /// The remake's own aircraft models (the Geran drones) are numbered from here, in
 /// `models/drones.glb` (tools/models/drones.py).
 const REMAKE_MODELS: i32 = 100;
+/// The low-level air defences' models (ZSU-23-4, S-60, MANPADS team) are numbered from here,
+/// in `models/aaa.glb` (tools/models/air_defence.py).
+const AAA_MODELS: i32 = 110;
+/// Their state slots: turret (or crew) azimuth and gun (or launcher) elevation.
+const AAA_TURRET_SLOT: usize = 21;
+const AAA_GUN_SLOT: usize = 22;
+/// A MANPADS team is not drawn further away than this (metres).
+const MANPADS_RANGE: f64 = 3000.0;
+/// Detail level range multiplier of the guns (seen from further than an aircraft's parts).
+const AAA_LOD_RANGE: f32 = 4.0;
 
 /// STFLT model drawn for an aircraft type's model number.
 fn aircraft_model(model: i32) -> i32 {
@@ -84,7 +100,13 @@ fn aircraft_model(model: i32) -> i32 {
 
 /// Model file (stem) holding a model number.
 fn model_file(model: i32) -> &'static str {
-    if model >= REMAKE_MODELS { "drones" } else { "stflt" }
+    if model >= AAA_MODELS {
+        "aaa"
+    } else if model >= REMAKE_MODELS {
+        "drones"
+    } else {
+        "stflt"
+    }
 }
 
 struct Cartridge {
@@ -136,7 +158,13 @@ impl SimVisuals {
     }
 }
 
-fn cleanup(mut commands: Commands, q: Query<Entity, With<SimObject>>, mut vis: ResMut<SimVisuals>) {
+fn cleanup(
+    mut commands: Commands,
+    q: Query<Entity, With<SimObject>>,
+    mut vis: ResMut<SimVisuals>,
+    mut aaa: ResMut<AaaVisuals>,
+) {
+    *aaa = AaaVisuals::default();
     for e in &q {
         commands.entity(e).try_despawn();
     }
@@ -369,6 +397,125 @@ fn spawn_model(
         Visibility::Inherited,
     ));
     Some(e)
+}
+
+/// The low-level air defences as drawn: a model per unit, a tracer per Shilka shell.
+#[derive(Resource, Default)]
+struct AaaVisuals {
+    units: Vec<Entity>,
+    tracers: Vec<(Entity, Entity)>,
+    material: Option<Handle<PaletteMaterial>>,
+}
+
+/// Bevy world position of a point in the air defences' metres (east, north, up).
+fn aaa_point(p: [f64; 3]) -> DVec3 {
+    let wu = crate::world::WU;
+    wu_to_bevy(p[0] / wu, p[1] / wu, p[2] / 0.3048)
+}
+
+/// A 16-bit angle of radians (clockwise).
+fn bam16(a: f32) -> i16 {
+    (a / std::f32::consts::TAU * 65536.0).round() as i32 as i16
+}
+
+/// The guns and MANPADS teams turn towards the player as they aim (each placed at its own
+/// heading), show their wreck once destroyed; the Shilkas' shells are tracers.
+#[allow(clippy::too_many_arguments)]
+fn sync_aaa(
+    mut commands: Commands,
+    combat: Res<Combat>,
+    mut av: ResMut<AaaVisuals>,
+    mut library: ResMut<ModelLibrary>,
+    server: Res<AssetServer>,
+    assets: ModelAssets,
+    mut materials: ResMut<Assets<PaletteMaterial>>,
+    player: Query<&WorldPos, (With<Player>, Without<SimObject>)>,
+    mut q: Query<
+        (&mut WorldPos, &mut Transform, Option<&mut ModelState>, &mut Visibility),
+        With<SimObject>,
+    >,
+) {
+    let sim = &combat.sim;
+    let units = sim.aaa_units();
+    if av.units.len() != units.len() {
+        for e in av.units.drain(..) {
+            commands.entity(e).try_despawn();
+        }
+        let file = library.load(&server, "aaa");
+        for u in units {
+            let model = AAA_MODELS + u.kind as i32;
+            let Some(e) = spawn_model(&mut commands, &assets, &file, model, false) else { break };
+            commands.entity(e).insert(crate::models::LodRange(AAA_LOD_RANGE));
+            av.units.push(e);
+        }
+        // Not loaded yet: again next frame.
+        if av.units.len() != units.len() {
+            for e in av.units.drain(..) {
+                commands.entity(e).try_despawn();
+            }
+            return;
+        }
+    }
+    let eye = player.single().map_or(DVec3::ZERO, |p| p.0);
+    for (i, (u, &e)) in units.iter().zip(&av.units).enumerate() {
+        let Ok((mut pos, mut tf, state, mut vis)) = q.get_mut(e) else { continue };
+        let at = map_point(u.x as f64 + 0.5, u.y as f64 + 0.5, 0.0);
+        pos.0 = at;
+        // Each unit stands at its own heading (golden-angle spread).
+        let heading = (i as f32 * 2.399_963).rem_euclid(std::f32::consts::TAU);
+        tf.rotation = Quat::from_rotation_y(-heading);
+        let hidden =
+            u.kind == stealth_sim::aaa::AaaKind::Manpads && at.distance(eye) > MANPADS_RANGE;
+        vis.set_if_neq(if hidden { Visibility::Hidden } else { Visibility::Inherited });
+        if let Some(mut s) = state {
+            s.0[1] = u.destroyed as i16;
+            s.0[AAA_TURRET_SLOT] = bam16(u.aim_az - heading);
+            s.0[AAA_GUN_SLOT] = bam16(-u.aim_el);
+        }
+    }
+
+    // Tracers: the Shilkas' shells (an S-60 shell is only seen when it bursts).
+    let shells: Vec<_> = sim.aaa_shells().iter().filter(|s| !s.flak).collect();
+    let material = av
+        .material
+        .get_or_insert_with(|| {
+            let globals = assets.palette.globals.clone();
+            materials.add(PaletteMaterial {
+                params: PaletteParams {
+                    word: 0xFF00 | ENEMY_TRACER as u32,
+                    flags: FLAG_LINE,
+                    ..default()
+                },
+                globals,
+            })
+        })
+        .clone();
+    while av.tracers.len() < shells.len() {
+        let dot = spawn_dot(&mut commands, &assets, material.clone(), &[Vec3::ZERO]);
+        let line = spawn_tracer(&mut commands, material.clone());
+        av.tracers.push((dot, line));
+    }
+    let dt = 1.0 / crate::combat::FS as f64;
+    let back = (1.0 - combat.alpha as f64) * dt;
+    for (k, &(dot, line)) in av.tracers.iter().enumerate() {
+        let shell = shells.get(k);
+        for e in [dot, line] {
+            let Ok((mut pos, mut tf, _, mut vis)) = q.get_mut(e) else { continue };
+            let Some(s) = shell else {
+                vis.set_if_neq(Visibility::Hidden);
+                continue;
+            };
+            let at = |t: f64| aaa_point(std::array::from_fn(|a| s.pos[a] - s.vel[a] * t));
+            let head = at(back);
+            pos.0 = head;
+            if e == line {
+                let streak = (at(back + TRACER_FRAMES * dt) - head).as_vec3();
+                tf.rotation = Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
+                tf.scale = Vec3::new(1.0, 1.0, streak.length().max(0.01));
+            }
+            vis.set_if_neq(Visibility::Inherited);
+        }
+    }
 }
 
 /// A camera-facing dot of constant screen size (a parent carrying the position).

@@ -1286,6 +1286,11 @@ fn emitter_ref(e: &EmitterView) -> ContactRef {
     match e.source {
         stealth_sim::EmitterSource::Site(i) => ContactRef::Object(i),
         stealth_sim::EmitterSource::Aircraft(i) => ContactRef::Unit(i),
+        // A Shilka: whatever lies where it stands.
+        stealth_sim::EmitterSource::Gun(_) => {
+            let (east, north) = (e.east, e.north);
+            ContactRef::Point((east / 32.0) as i32, (0x8000 as f64 - north / 32.0) as i32)
+        }
     }
 }
 

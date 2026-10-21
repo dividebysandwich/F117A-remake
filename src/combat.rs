@@ -255,6 +255,7 @@ fn start_combat(
             external_stores,
             realistic_damage: settings.realistic_damage,
             realistic_guidance: settings.realistic_guidance,
+            air_defence: settings.air_defence,
             ..default()
         },
     );
@@ -555,7 +556,14 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         combat.prev_flights.clear();
         combat.prev_flights.extend_from_slice(combat.sim.flights());
         combat.prev_proj = *combat.sim.projectiles();
+        let aaa_before: Vec<bool> = combat.sim.aaa_units().iter().map(|u| u.destroyed).collect();
         let events = combat.sim.step(&ps, FS);
+        // A destroyed gun or launcher burns like a vehicle.
+        for (u, was) in combat.sim.aaa_units().iter().zip(aaa_before) {
+            if u.destroyed && !was {
+                combat.kills.push(Kill { x: u.x, y: u.y, vehicle: true });
+            }
+        }
         for e in events {
             if combat.log {
                 log_event(&combat.data, &e, a.time);
@@ -585,6 +593,17 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                     // Crashed aircraft leave a burning wreck.
                     if kind == -16 {
                         combat.kills.push(Kill { x, y, vehicle: true });
+                    }
+                }
+                // An S-60 shell burst: a black puff where it went off (true altitude, ft).
+                SimEvent::Flak { x, y, alt } => {
+                    combat.explosions.push((x, y, alt, crate::explosions::FLAK));
+                    let p = combat.sim.player();
+                    if (x - p.mx).abs() + (y - p.my).abs() < 100 {
+                        sounds.write(crate::sound::PlaySound {
+                            id: crate::sound::AIRBURST,
+                            priority: 1,
+                        });
                     }
                 }
                 SimEvent::RoundImpact { x, y } => {
@@ -1084,6 +1103,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             let name = match e.source {
                 stealth_sim::EmitterSource::Site(_) => sim.threat_name(e.radar_type).to_string(),
                 stealth_sim::EmitterSource::Aircraft(i) => sim.aircraft_name(sim.flights()[i].spec),
+                stealth_sim::EmitterSource::Gun(_) => "ZSU-23-4".to_string(),
             };
             crate::rwr::view(e, &name, heading_bam)
         })

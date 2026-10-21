@@ -62,6 +62,8 @@ pub enum MarkKind {
     GroundKill {
         object: usize,
     },
+    /// A low-level air defence unit (`Sim::aaa_units` index) was destroyed.
+    AaaKill(usize),
     Photo,
     Objective {
         primary: bool,
@@ -115,6 +117,8 @@ pub struct FlightRecord {
     pub spans: Vec<Span>,
     /// The ground units by object index (empty names: not a radar).
     pub sites: Vec<SiteInfo>,
+    /// The low-level air defences: what and where (map units).
+    pub aaa: Vec<(stealth_sim::aaa::AaaKind, i32, i32)>,
     /// Open span per site.
     open: Vec<Option<usize>>,
     frame: u32,
@@ -186,6 +190,13 @@ impl FlightRecord {
                     }
                 })
                 .collect();
+            self.aaa = sim.aaa_units().iter().map(|u| (u.kind, u.x, u.y)).collect();
+        }
+        for (i, u) in sim.aaa_units().iter().enumerate() {
+            if u.destroyed && !self.marks.iter().any(|m| m.kind == MarkKind::AaaKill(i)) {
+                let (x, y) = (u.x as f32, u.y as f32);
+                self.marks.push(Mark { frame: self.frame, x, y, kind: MarkKind::AaaKill(i) });
+            }
         }
         let p = sim.player();
         let (margin, site) = margin(sim);
@@ -219,7 +230,7 @@ impl FlightRecord {
                 _ => {}
             }
         }
-        if self.frame % CONTACT_EVERY == 0 {
+        if self.frame.is_multiple_of(CONTACT_EVERY) {
             self.contacts.push(Contacts {
                 frame: self.frame,
                 // As drawn: not the destroyed ones nor those not yet placed.
@@ -242,7 +253,9 @@ impl FlightRecord {
         let kind = match *e {
             SimEvent::MissileLaunched { spec, launcher, .. } => match launcher {
                 Launcher::Site(i) => MarkKind::Launch { site: Some(i), spec },
-                Launcher::Aircraft(_) => MarkKind::Launch { site: None, spec },
+                Launcher::Aircraft(_) | Launcher::Manpads(_) => {
+                    MarkKind::Launch { site: None, spec }
+                }
                 Launcher::Player => return,
             },
             SimEvent::PlayerHit { .. } => MarkKind::Hit,

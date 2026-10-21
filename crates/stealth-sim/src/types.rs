@@ -210,6 +210,8 @@ pub enum EmitterSource {
     Site(usize),
     /// Aircraft (flight unit index).
     Aircraft(usize),
+    /// ZSU-23-4 Gun Dish radar (`Sim::aaa_units` index; not in the original).
+    Gun(usize),
 }
 
 /// A radar painting the player, for a radar warning receiver (not in the original).
@@ -472,6 +474,10 @@ pub struct SimOptions {
     /// burn out (the missile glides on), lofted SAM shots, the AIM-120 flying straight for 3 s.
     #[serde(default)]
     pub realistic_guidance: bool,
+    /// Low-level air defences (not in the original): ZSU-23-4 and S-60 guns around airfields
+    /// and targets, MANPADS in the towns ([`crate::aaa`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub air_defence: bool,
 }
 
 impl Default for SimOptions {
@@ -484,6 +490,7 @@ impl Default for SimOptions {
             external_stores: false,
             realistic_damage: false,
             realistic_guidance: false,
+            air_defence: false,
         }
     }
 }
@@ -562,6 +569,8 @@ pub enum Launcher {
     Site(usize),
     Aircraft(usize),
     Player,
+    /// A MANPADS team (`Sim::aaa_units` index; not in the original).
+    Manpads(usize),
 }
 
 /// Radar warning receiver tones.
@@ -610,6 +619,12 @@ pub enum SimEvent {
         y: i32,
         alt: i32,
         kind: i32,
+    },
+    /// An S-60 shell burst (map position, altitude ft; not in the original).
+    Flak {
+        x: i32,
+        y: i32,
+        alt: i32,
     },
     /// A gun round hit the ground here (a round's fine units: x east, y south).
     RoundImpact {

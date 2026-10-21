@@ -1243,3 +1243,136 @@ fn visual_range_follows_the_light() {
         assert_eq!(sim.visual_range(), (8 >> m.night as i32) >> shift);
     }
 }
+
+fn aaa_mission(d: &Data) -> (Mission, Sim) {
+    let s = MissionSettings {
+        theater: 3,
+        roe: 2,
+        opponents: 2,
+        kind: MissionKind::Strike,
+        weather: Some(stealth_mission::Sky::Clear),
+        ..Default::default()
+    };
+    let m = stealth_mission::generate(&d.gdata, &s, Seed::Srand(0x4321)).unwrap();
+    let sim = Sim::with_options(&d.sim, &m, SimOptions { air_defence: true, ..Default::default() });
+    (m, sim)
+}
+
+/// One unit of `kind` in a sandbox, the player hovering `north` map units north of it.
+fn aaa_duel(kind: aaa::AaaKind, north: i32, alt: u16, light: u8) -> Vec<SimEvent> {
+    let d = data();
+    let (m, mut sim) = aaa_mission(d);
+    let (x, y) = sandbox(&mut sim, &m);
+    sim.set_visual_light(Some(light));
+    let unit = aaa::AaaUnit {
+        kind,
+        x,
+        y,
+        destroyed: false,
+        tracking: false,
+        aim_az: 0.0,
+        aim_el: 0.0,
+        burst: 0,
+        cooldown: 0,
+    };
+    *sim.aaa_units_mut() = vec![unit];
+    let p = player_at(x, y - north, alt, 0x4000, 0);
+    let mut events = Vec::new();
+    for _ in 0..15 * 30 {
+        events.extend(sim.step(&p, 15));
+    }
+    events
+}
+
+#[test]
+fn air_defence_only_with_the_option() {
+    let d = data();
+    let (m, sim) = aaa_mission(d);
+    let units = sim.aaa_units();
+    assert!(units.iter().any(|u| u.kind == aaa::AaaKind::Zsu), "{units:?}");
+    assert!(units.iter().any(|u| u.kind == aaa::AaaKind::Manpads));
+    let plain = Sim::new(&d.sim, &m);
+    assert!(plain.aaa_units().is_empty());
+    // The same mission places the same units.
+    assert_eq!(aaa_mission(d).1.aaa_units(), units);
+}
+
+#[test]
+fn shilka_hits_low_and_slow_but_not_high() {
+    // 1.5 km away at 600 ft: hit within 30 s.
+    let low = aaa_duel(aaa::AaaKind::Zsu, 96, 600, 255);
+    assert!(low.contains(&SimEvent::Message("Hit by AAA".into())), "never hit");
+    // 20000 ft: above its reach, it does not even fire.
+    let high = aaa_duel(aaa::AaaKind::Zsu, 96, 20000, 255);
+    assert!(!high.iter().any(|e| matches!(e, SimEvent::Message(m) if m.starts_with("Hit"))));
+}
+
+#[test]
+fn s60_bursts_flak() {
+    let ev = aaa_duel(aaa::AaaKind::S60, 160, 8000, 255);
+    assert!(ev.iter().any(|e| matches!(e, SimEvent::Flak { .. })));
+}
+
+#[test]
+fn manpads_need_to_see_the_player() {
+    let fired = |ev: &[SimEvent]| {
+        ev.iter()
+            .any(|e| matches!(e, SimEvent::MissileLaunched { launcher: Launcher::Manpads(0), .. }))
+    };
+    // 3 km away at 2000 ft: by day the team sees and fires, on a moonless night it does not.
+    assert!(fired(&aaa_duel(aaa::AaaKind::Manpads, 192, 2000, 255)));
+    assert!(!fired(&aaa_duel(aaa::AaaKind::Manpads, 192, 2000, 0)));
+}
+
+/// The scripted ten-minute flights with the air defences, in every theater.
+#[test]
+fn ten_minute_missions_with_air_defence() {
+    let d = data();
+    let opts = SimOptions { air_defence: true, ..Default::default() };
+    let mut fired = 0;
+    for th in 0..9 {
+        let sim = ten_minute_mission(d, th, 1, 3, opts.clone());
+        assert!(!sim.aaa_units().is_empty(), "theater {th}");
+        fired += sim.aaa_units().iter().filter(|u| u.tracking).count();
+    }
+    eprintln!("units tracking at the end: {fired}");
+}
+
+/// The S-60s lead a crossing target: their shells burst around it, not where it was.
+#[test]
+fn flak_leads_a_moving_target() {
+    let d = data();
+    let (m, mut sim) = aaa_mission(d);
+    let (x, y) = sandbox(&mut sim, &m);
+    sim.set_visual_light(Some(255));
+    let unit = aaa::AaaUnit {
+        kind: aaa::AaaKind::S60,
+        x,
+        y,
+        destroyed: false,
+        tracking: false,
+        aim_az: 0.0,
+        aim_el: 0.0,
+        burst: 0,
+        cooldown: 0,
+    };
+    *sim.aaa_units_mut() = vec![unit];
+    let mut misses = Vec::new();
+    // Flying east at 15 map units a second (234 m/s), 1500 ft, 2.5 km north of the gun.
+    for f in 0..15 * 20 {
+        let px = x - 200 + f;
+        let p = player_at(px, y - 160, 1500, 0x4000, 450);
+        for e in sim.step(&p, 15) {
+            if let SimEvent::Flak { x: bx, y: by, alt } = e {
+                let dx = (bx - px) as f64 * 15.625;
+                let dy = (by - (y - 160)) as f64 * 15.625;
+                let dz = (alt - 1500) as f64 * 0.3048;
+                misses.push((dx * dx + dy * dy + dz * dz).sqrt());
+            }
+        }
+    }
+    misses.sort_by(f64::total_cmp);
+    assert!(misses.len() > 5);
+    let median = misses[misses.len() / 2];
+    assert!(median < 80.0, "median miss {median:.0} m of {misses:?}");
+}

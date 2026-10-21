@@ -483,7 +483,7 @@ fn mark(painter: &egui::Painter, p: egui::Pos2, kind: MarkKind) {
                 stroke(MISSILE_RED),
             );
         }
-        MarkKind::AirKill { .. } | MarkKind::GroundKill { .. } => {
+        MarkKind::AirKill { .. } | MarkKind::GroundKill { .. } | MarkKind::AaaKill(_) => {
             painter
                 .line_segment([p + egui::vec2(-5.0, 0.0), p + egui::vec2(5.0, 0.0)], stroke(GREEN));
             painter

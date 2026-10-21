@@ -1,3 +1,4 @@
+pub mod aaa;
 pub mod ballistics;
 pub mod data;
 pub mod math;
@@ -202,6 +203,16 @@ pub struct Sim {
     /// continuous time of day; None: the mission's day or night, as in the original.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) visual_light: Option<u8>,
+    /// Low-level air defences (`SimOptions::air_defence`), their shells and random stream.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) aaa: Vec<aaa::AaaUnit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) aaa_shells: Vec<aaa::Shell>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) aaa_rng: Option<Rng>,
+    /// The player's last position and smoothed velocity as the air defences track him.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) aaa_track: Option<([f64; 3], [f64; 3])>,
     /// Apron parking spots for the parked base traffic (not in the original): world x, y and
     /// heading; empty = parked on the base object as in the original.
     #[serde(default)]
@@ -413,6 +424,10 @@ impl Sim {
             csar: None,
             destroyed_at: Vec::new(),
             visual_light: None,
+            aaa: Vec::new(),
+            aaa_shells: Vec::new(),
+            aaa_rng: None,
+            aaa_track: None,
             drones: m.drones.as_ref().map(|d| drones::Drones {
                 defend: d.defend,
                 target: d.target as i32,
@@ -473,6 +488,9 @@ impl Sim {
             sim.bay_req = true;
             sim.door_anim = 2;
             sim.pflags |= pflags::BAY_OPEN;
+        }
+        if sim.opts.air_defence {
+            sim.place_aaa(m);
         }
         let st = sim.start_state();
         sim.ingest(&st);
@@ -723,10 +741,16 @@ impl Sim {
         }
         // Sites, aircraft, projectiles, countermeasures, gun rounds, lamps.
         self.update_sites();
+        if self.aaa_rng.is_some() {
+            self.update_aaa();
+        }
         self.update_aircraft();
         self.update_missiles();
         self.update_cm_timers();
         self.update_bullets(ps);
+        if self.aaa_rng.is_some() {
+            self.aaa_damage();
+        }
         self.update_light_timers();
         self.update_damage();
         if self.alarm_timer > 0 {

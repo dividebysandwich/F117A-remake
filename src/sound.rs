@@ -165,6 +165,9 @@ struct EngineDrone {
     sample_knots: f32,
 }
 
+/// Sound id of an anti-aircraft shell burst nearby (not an original sound).
+pub const AIRBURST: u8 = 110;
+
 fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     let mut bank = SoundBank::default();
     let Ok(dir) = std::fs::read_dir(crate::asset_path::asset("sounds")) else {
@@ -200,6 +203,9 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
             .exists()
             .then(|| server.load(format!("sounds/{name}")))
     };
+    if let Some(h) = optional("airburst.flac") {
+        bank.sfx.entry(AIRBURST).or_default().push(h);
+    }
     bank.beacon = optional("beacon.flac");
     bank.siren = optional("fire_siren.flac");
     bank.jet = optional("jet.flac");

@@ -9,7 +9,8 @@
 # the ejection and gear handles, five side panel buttons (the target buttons), the flood lamps
 # and the HUD glass. Everything else is built here, low-poly: the tub and
 # side consoles, the glare shield, the up-front controls' pedestal with its round override
-# buttons and keypad, the data entry display, the round instruments in their bezels, the main
+# buttons and keypad, the data entry display, the round instruments in their bezels and cases
+# with their setting knobs, the MFD bezels with their rocker switches, the main
 # panel with the faces and displays of `PanelLayout::f16` (src/cockpit3d/layout.rs; the layout
 # JSON is written by `UPDATE_F16_LAYOUT=1 cargo test f16_layout_file`), the side stick and the
 # throttle, the centre pedestal between the legs with the knee wall's air vents, and the side
@@ -276,6 +277,31 @@ def cylinder_mesh(name, r, h, mat, axis="-Y", centre=(0.0, 0.0, 0.0), n=KNOB, r2
     return me
 
 
+def loft_mesh(name, rings, mat, n=KNOB):
+    """A closed tube through rings (centre, a, b): each ring the points centre + a cos t + b sin t
+    (the grips of the stick and the throttle)."""
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    loops = []
+    for c, a, b in rings:
+        loops.append([bm.verts.new(Vector(c) + Vector(a) * math.cos(2 * math.pi * i / n) + Vector(b) * math.sin(2 * math.pi * i / n)) for i in range(n)])
+    for l0, l1 in zip(loops, loops[1:]):
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((l0[i], l0[j], l1[j], l1[i]))
+    bm.faces.new(loops[0][::-1])
+    bm.faces.new(loops[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    uv = bm.loops.layers.uv.new()
+    for f in bm.faces:
+        for l in f.loops:
+            l[uv].uv = (0.0, 0.0)
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(mats[mat])
+    return me
+
+
 def box(name, mat, centre, size, rot=Euler((0, 0, 0)), parent=root):
     return mesh_object(name, box_mesh(name, size, mat), centre, rot, parent=parent)
 
@@ -294,6 +320,11 @@ def bezel(r, offset, height=0.008, lip=0.003):
     x, y, w, h = r
     me = cylinder_mesh("black", min(w, h) / 2000 + lip, height, "black", n=ROUND)
     mesh_object("black", me, rect_point(r, offset), rotation(x + w / 2))
+    # The instrument's case behind it: an octagon, flats 2 mm outside the bezel.
+    flat = min(w, h) / 2000 + lip + 0.002
+    me = cylinder_mesh("dark", flat / math.cos(math.pi / 8), 0.004, "dark", n=8)
+    me.transform(Matrix.Rotation(math.pi / 8, 4, "Y"))
+    mesh_object("dark", me, rect_point(r, offset - 0.001), rotation(x + w / 2))
 
 
 def face(key, r, offset, round=False):
@@ -520,6 +551,8 @@ plates = [
     ("dark", (1146.0, -74.0, 80.0, 75.0)),  # countermeasures (right slope)
     ("black", (1146.0, 24.0, 110.0, 70.0)),  # switches under them
     ("black", (-326.0, 14.0, 52.0, 110.0)),  # switches low on the left wing
+    ("dark", (-84.0, -44.0, 168.0, 206.0)),  # flight instruments
+    ("dark", (218.0, -136.0, 102.0, 202.0)),  # engine instruments
 ]
 for mat, r in plates:
     panel_box(mat, mat, r, PLATE)
@@ -553,6 +586,24 @@ for key in ("left", "right"):
         for bx in (x - 9.0, x + w + 9.0):
             by = y + h * (k + 0.5) / 5
             panel_box("dark", "dark", (bx - 5.0, by - 4.0, 10.0, 8.0), 0.005, 0.0, -MFD_WELL)
+# Rims standing out of the panel down the wings' outer edges and along their lower edges.
+for s_ in (-1, 1):
+    panel_box("dark", "dark", (s_ * (WING - 6.0) - 6.0, TOP + BEVEL, 12.0, WING_BOTTOM - TOP - BEVEL), 0.007)
+    panel_box("dark", "dark", (HINGE if s_ > 0 else -WING, WING_BOTTOM - 6.0, WING - HINGE, 6.0), 0.007)
+# MFD bezels: side rims along the screen (thin ones over and under it, between it and the
+# buttons) and the four rocker switches (GAIN, SYM, BRT, CON) at the bezel's corners.
+for key in ("left", "right"):
+    x, y, w, h = scr[key]
+    for r in ((x - 4.0, y - 1.5, 4.0, h + 3.0), (x + w, y - 1.5, 4.0, h + 3.0), (x, y - 1.5, w, 1.5), (x, y + h, w, 1.5)):
+        panel_box("black", "black", r, 0.004, 0.0, -MFD_WELL)
+    for bx in (x - 9.0, x + w + 9.0):
+        for by in (y - 18.0, y + h + 10.0):
+            panel_box("dark", "dark", (bx - 5.0, by, 10.0, 16.0), 0.004, 0.0, -MFD_WELL)
+            panel_box("black", "black", (bx - 1.5, by + 2.0, 3.0, 12.0), 0.003, 0.0, -MFD_WELL + 0.004)
+# Setting knobs at instrument corners: airspeed and altimeter (barometric setting), the ADI
+# (pitch trim), the HSI (heading and course) and the clock.
+for u, v in ((-82.0, 6.0), (82.0, 6.0), (34.0, 30.0), (-34.0, 110.0), (34.0, 110.0), (20.0, 158.0)):
+    knob(u, v, 0.0045, 0.009, "dark", offset=PLATE)
 screen("screen_left", scr["left"], -MFD_WELL + 0.0035, "trackcam_left")
 screen("screen_right", scr["right"], -MFD_WELL + 0.0035, "trackcam")
 screen("adi", scr["adi"], 0.0, round=True)
@@ -608,8 +659,8 @@ for s in (-1, 1):
     side(0.208, 0.352, -0.204, -0.110 if s > 0 else -0.080, ["tttt", "kTk"] if s > 0 else ["tttt", "rgrg", "kk"])
 for rows, rect in (
     (["kk", "TT", "kr"], (-0.352, -0.208, -0.070, 0.062)),  # ahead of those, behind the throttle
-    (["k", "t", "r", "k"], (-0.354, -0.312, 0.080, 0.360)),  # outboard of the throttle rails
-    (["t", "k", "t"], (-0.250, -0.210, 0.190, 0.360)),  # inboard of them
+    (["k", "t", "r", "k"], (-0.354, -0.320, 0.080, 0.360)),  # outboard of the throttle rails
+    (["t", "k", "t"], (-0.242, -0.208, 0.190, 0.360)),  # inboard of them
     (["kk", "tt", "rr", "Kk"], (0.208, 0.260, -0.095, 0.150)),  # inboard of the arm rest
 ):
     console_panel(*rect, rows)
@@ -641,44 +692,74 @@ for s in (-1, 1):
         box("dark", "dark", (x, wall - 0.016, z - 0.015 + 0.015 * k), (0.08, 0.004, 0.006))
 
 # --- side stick (right console) and throttle (left console), after the F-16's
-# Stick: a boot on the console, the pivot above it; a short grip leaning forward with the
-# trigger guard in front, the pinky lever behind and the weapon release and trim hat on top.
+# Stick: a base plate and a bellows boot on the console, the pivot above it; a contoured grip
+# leaning forward (its centre GRIP_HEIGHT, src/cockpit3d/levers.rs, above the pivot) with the
+# trigger and its guard in front, the pinky switch behind, the weapon release (red), trim hat
+# and target management switch on top and the display and countermeasures switches under the
+# thumb.
 STICK = Vector((0.28, 0.22, CONSOLE_TOP))
-box("rubber", "rubber", STICK + Vector((0.0, 0.0, 0.013)), (0.09, 0.09, 0.026))
+box("dark", "dark", STICK + Vector((0.0, 0.0, 0.006)), (0.10, 0.10, 0.004))
+X, Y, Z = Vector((1.0, 0.0, 0.0)), Vector((0.0, 1.0, 0.0)), Vector((0.0, 0.0, 1.0))
+boot = [(0.008, 0.042), (0.014, 0.036), (0.019, 0.037), (0.024, 0.029), (0.028, 0.030), (0.033, 0.020), (0.036, 0.014)]
+mesh_object("rubber", loft_mesh("rubber", [(STICK + Z * z, X * r, Y * r) for z, r in boot], "rubber", n=12), (0, 0, 0))
 stick = empty("stick", STICK + Vector((0.0, 0.0, 0.025)), props={"stick": True})
-mesh_object("metal", cylinder_mesh("metal", 0.013, 0.055, "metal", axis="Z"), (0, 0, 0), parent=stick)
-lean = Euler((math.radians(-12.0), 0.0, 0.0))
-# The grip: a narrower lower part, the wider head leaning forward over it with a dished top.
-mesh_object("rubber", box_mesh("rubber", (0.036, 0.042, 0.065), "rubber", (0.0, 0.008, 0.085), lean.to_quaternion()), (0, 0, 0), parent=stick)
-mesh_object("rubber", box_mesh("rubber", (0.046, 0.058, 0.055), "rubber", (0.0, 0.02, 0.14), lean.to_quaternion()), (0, 0, 0), parent=stick)
-mesh_object("metal", box_mesh("metal", (0.012, 0.028, 0.024), "metal", (0.0, 0.04, 0.088)), (0, 0, 0), parent=stick)
-mesh_object("dark", box_mesh("dark", (0.01, 0.012, 0.03), "dark", (0.0, -0.016, 0.065)), (0, 0, 0), parent=stick)
-mesh_object("metal", box_mesh("metal", (0.013, 0.013, 0.008), "metal", (-0.011, 0.03, 0.17)), (0, 0, 0), parent=stick)
-mesh_object("dark", cylinder_mesh("dark", 0.0055, 0.009, "dark", axis="Z", centre=(0.012, 0.026, 0.167)), (0, 0, 0), parent=stick)
-mesh_object("dark", cylinder_mesh("dark", 0.004, 0.007, "dark", axis="Z", centre=(0.0, 0.006, 0.167)), (0, 0, 0), parent=stick)
+mesh_object("metal", cylinder_mesh("metal", 0.011, 0.05, "metal", axis="Z"), (0, 0, 0), parent=stick)
+
+
+def spine(z):
+    """The grip's centre line at height z above the pivot, leaning forward."""
+    return Vector((0.0, 0.006 + (z - 0.045) * 0.25, z))
+
+
+# (height, half width, half depth): the neck, the palm swell, the waist and the flared head.
+grip = [(0.042, 0.014, 0.016), (0.06, 0.018, 0.022), (0.085, 0.021, 0.026), (0.115, 0.020, 0.025), (0.14, 0.022, 0.028), (0.162, 0.024, 0.031), (0.178, 0.021, 0.027), (0.186, 0.014, 0.018)]
+mesh_object("rubber", loft_mesh("rubber", [(spine(z), X * rx, Y * ry) for z, rx, ry in grip], "rubber", n=10), (0, 0, 0), parent=stick)
+lean = Euler((math.radians(-14.0), 0.0, 0.0)).to_quaternion()
+front = lambda z, d=0.0: spine(z) + Y * (0.026 + d)  # noqa: E731
+mesh_object("metal", box_mesh("metal", (0.010, 0.010, 0.026), "metal", front(0.108, 0.004), lean), (0, 0, 0), parent=stick)
+# Trigger guard: a bar in front of the trigger on two arms.
+mesh_object("metal", box_mesh("metal", (0.006, 0.005, 0.052), "metal", front(0.105, 0.020), lean), (0, 0, 0), parent=stick)
+for z in (0.081, 0.13):
+    mesh_object("metal", box_mesh("metal", (0.006, 0.022, 0.005), "metal", front(z, 0.008)), (0, 0, 0), parent=stick)
+mesh_object("dark", box_mesh("dark", (0.012, 0.010, 0.022), "dark", spine(0.07) - Y * 0.026), (0, 0, 0), parent=stick)
+head = spine(0.184)
+mesh_object("red", cylinder_mesh("red", 0.0055, 0.008, "red", axis="Z", centre=head + Vector((-0.009, 0.014, -0.004))), (0, 0, 0), parent=stick)
+mesh_object("dark", cylinder_mesh("dark", 0.0055, 0.007, "dark", axis="Z", centre=head + Vector((0.007, -0.002, -0.002))), (0, 0, 0), parent=stick)
+mesh_object("metal", box_mesh("metal", (0.009, 0.003, 0.003), "metal", head + Vector((0.007, -0.002, 0.006))), (0, 0, 0), parent=stick)
+mesh_object("metal", box_mesh("metal", (0.003, 0.009, 0.003), "metal", head + Vector((0.007, -0.002, 0.006))), (0, 0, 0), parent=stick)
+mesh_object("dark", box_mesh("dark", (0.010, 0.008, 0.007), "dark", head + Vector((0.010, 0.016, -0.004))), (0, 0, 0), parent=stick)
+for z, r in ((0.162, 0.0045), (0.142, 0.004)):
+    mesh_object("dark", cylinder_mesh("dark", r, 0.006, "dark", axis="-X", centre=spine(z) - X * 0.021), (0, 0, 0), parent=stick)
 # Arm rest behind the stick.
 box("cushion", "cushion", (0.31, 0.03, CONSOLE_TOP + 0.015), (0.09, 0.26, 0.03))
-# Throttle: two rails along the left console; the handle slides on them from idle (its origin)
-# to full: a slider block, the post and the grip across the console sloping up inboard, with the
-# cut-off release at its inboard end, the radar cursor on top and the antenna elevation knob in
-# front.
+# Throttle: two rails in a quadrant along the left console (its cheeks with the idle, military
+# and afterburner marks); the handle slides on them from idle (its origin) to full: a slider
+# block, a tapered post and the contoured grip across the console sloping up inboard, with the
+# cut-off release under its inboard end, the radar cursor and the communications switch on top,
+# the antenna elevation wheel and the dogfight switch in front and the speed brake behind.
 for x in (-0.294, -0.266):
     box("metal", "metal", (x, 0.21, CONSOLE_TOP + 0.007), (0.005, 0.25, 0.006))
+for x in (-0.311, -0.249):
+    box("dark", "dark", (x, 0.215, CONSOLE_FACE + 0.012), (0.008, 0.31, 0.024))
+for y in (0.125, 0.265, 0.30):
+    box("metal", "metal", (-0.311, y, CONSOLE_FACE + 0.0245), (0.009, 0.003, 0.002))
 throttle = empty("throttle", (-0.28, 0.125, -0.50), props={"throttle": True})
 empty("throttle_full", (-0.28, 0.30, -0.50), props={"anchor": "throttle_full"})
 mesh_object("dark", box_mesh("dark", (0.05, 0.075, 0.03), "dark", (0.0, 0.0, -0.07)), (0, 0, 0), parent=throttle)
-mesh_object("metal", box_mesh("metal", (0.024, 0.03, 0.065), "metal", (0.0, 0.0, -0.035)), (0, 0, 0), parent=throttle)
-slope = Euler((math.radians(12.0), 0.0, 0.0))
-grip = [
-    mesh_object("rubber", box_mesh("rubber", (0.045, 0.12, 0.04), "rubber", (0.0, 0.01, 0.0), slope.to_quaternion()), (0, 0, 0), parent=throttle),
-    mesh_object("metal", box_mesh("metal", (0.018, 0.022, 0.014), "metal", (0.0, 0.056, 0.028)), (0, 0, 0), parent=throttle),
-    mesh_object("dark", cylinder_mesh("dark", 0.007, 0.012, "dark", axis="Z", centre=(-0.014, 0.012, 0.02)), (0, 0, 0), parent=throttle),
-    mesh_object("metal", cylinder_mesh("metal", 0.006, 0.01, "metal", axis="-X", centre=(-0.0225, -0.03, 0.0)), (0, 0, 0), parent=throttle),
-]
-# The grip and its switches turned 90 degrees clockwise seen from above (its long side across
-# the console); the slider block and the post stay along the rails.
-for o in grip:
-    o.data.transform(Matrix.Rotation(math.radians(-90.0), 4, "Z"))
+mesh_object("metal", loft_mesh("metal", [(Z * -0.056, X * 0.013, Y * 0.017), (Z * -0.012, X * 0.010, Y * 0.012)], "metal"), (0, 0, 0), parent=throttle)
+# The grip along x (inboard), its rings (x, half depth, half height), rising inboard.
+rings = [(-0.058, 0.012, 0.012), (-0.05, 0.020, 0.018), (-0.025, 0.028, 0.022), (0.01, 0.030, 0.024), (0.04, 0.026, 0.024), (0.056, 0.020, 0.020), (0.063, 0.010, 0.012)]
+mid = lambda x: Vector((x, 0.004, 0.004 + x * 0.18))  # noqa: E731
+mesh_object("rubber", loft_mesh("rubber", [(mid(x), Y * ry, Z * rz) for x, ry, rz in rings], "rubber", n=10), (0, 0, 0), parent=throttle)
+for mat, me in (
+    ("dark", cylinder_mesh("dark", 0.006, 0.006, "dark", axis="Z", centre=mid(0.03) + Z * 0.022)),
+    ("dark", box_mesh("dark", (0.010, 0.010, 0.007), "dark", mid(0.008) + Vector((0.0, -0.010, 0.024)))),
+    ("metal", cylinder_mesh("metal", 0.007, 0.006, "metal", axis="X", centre=mid(0.040) + Vector((0.0, 0.020, 0.010)), n=12)),
+    ("dark", box_mesh("dark", (0.008, 0.008, 0.012), "dark", mid(-0.005) + Y * 0.030)),
+    ("dark", box_mesh("dark", (0.012, 0.008, 0.008), "dark", mid(0.02) - Y * 0.028)),
+    ("metal", box_mesh("metal", (0.014, 0.016, 0.006), "metal", mid(0.05) - Z * 0.020)),
+):
+    mesh_object(mat, me, (0, 0, 0), parent=throttle)
 
 # --- the kept parts, moved into the F-16's cockpit
 objs = {o.name: o for o in root.children}

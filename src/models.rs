@@ -201,9 +201,11 @@ fn parse_conds(name: &str) -> Vec<(usize, i16)> {
 /// Distances used for the LOD choice. While the tracking camera is live, its own distance is
 /// divided by the zoom magnification (focal 256 << z vs. 256 for the main view), so zoomed-in
 /// targets get the detail of their on-screen size instead of disappearing past the last level.
+/// The recon cameras share the tracking camera's levels: the nearest of them counts.
 fn update_camera_distance(
-    cameras: Query<(&Camera, &GlobalTransform), Without<crate::trackcam::TrackCamera>>,
+    cameras: Query<(&Camera, &GlobalTransform), Without<crate::camera::OffscreenCamera>>,
     track: Query<(&Camera, &GlobalTransform), With<crate::trackcam::TrackCamera>>,
+    recon: Query<(&Camera, &GlobalTransform), With<crate::recon::ReconCamera>>,
     track_info: Option<Res<crate::mfd::TrackCam>>,
     mut models: Query<(&GlobalTransform, &mut CameraDistance)>,
 ) {
@@ -213,11 +215,15 @@ fn update_camera_distance(
         let z = info.zoom.saturating_sub(1).min(6);
         (t.translation(), (1u32 << z) as f32)
     });
+    let views: Vec<(Vec3, f32)> = zoomed
+        .into_iter()
+        .chain(recon.iter().filter(|(c, _)| c.is_active).map(|(_, t)| (t.translation(), 1.0)))
+        .collect();
     for (tf, mut d) in &mut models {
         let scale = tf.scale().x.max(1e-6);
         let p = tf.translation();
         d.main = p.distance(cam) / scale;
-        d.track = zoomed.map(|(t, mag)| p.distance(t) / mag / scale);
+        d.track = views.iter().map(|&(t, mag)| p.distance(t) / mag / scale).reduce(f32::min);
     }
 }
 

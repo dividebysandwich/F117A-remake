@@ -45,6 +45,7 @@ pub struct SceneryPlugin;
 impl Plugin for SceneryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Blocks>()
+            .init_resource::<SceneryBacklog>()
             .init_resource::<Airfields>()
             .init_resource::<PapiSites>()
             .add_systems(OnExit(AppState::Flight), cleanup)
@@ -90,6 +91,9 @@ fn counterpart(tier: Tier) -> Option<Tier> {
         Tier::Far => Some(Tier::Detail),
     }
 }
+
+/// Streaming radius around the stream sites (the recon photos' targets), metres.
+const SITE_RADIUS: f64 = 1500.0;
 
 /// Blocks built per frame (nearest first).
 const BUILDS_PER_FRAME: usize = 3;
@@ -163,6 +167,10 @@ impl Scenery {
 
 #[derive(Resource, Default)]
 struct Blocks(HashMap<(Tier, i32, i32), Entity>);
+
+/// Blocks wanted but not built yet (None until the scenery streams).
+#[derive(Resource, Default)]
+pub struct SceneryBacklog(pub Option<usize>);
 
 /// Where the ILS camera looks on an approach to each runway end (see `trackcam.rs`).
 #[derive(Resource, Default)]
@@ -273,7 +281,13 @@ fn build_scenery(
     commands.insert_resource(Scenery { style, ground, net, airfields: fields });
 }
 
-fn cleanup(mut commands: Commands, mut blocks: ResMut<Blocks>, mut airfields: ResMut<Airfields>) {
+fn cleanup(
+    mut commands: Commands,
+    mut blocks: ResMut<Blocks>,
+    mut airfields: ResMut<Airfields>,
+    mut backlog: ResMut<SceneryBacklog>,
+) {
+    backlog.0 = None;
     airfields.spawned = false;
     for e in blocks.0.drain().map(|(_, e)| e).chain(airfields.roots.drain(..)) {
         commands.entity(e).try_despawn();
@@ -282,19 +296,21 @@ fn cleanup(mut commands: Commands, mut blocks: ResMut<Blocks>, mut airfields: Re
     commands.insert_resource(PapiSites::default());
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stream_blocks(
     mut commands: Commands,
     scenery: Res<Scenery>,
     detail: Res<DetailLevel>,
     palette: Res<Palette>,
     anchor: Query<&WorldPos, With<WorldAnchor>>,
+    sites: Res<crate::world::StreamSites>,
     mut blocks: ResMut<Blocks>,
+    mut backlog: ResMut<SceneryBacklog>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let Ok(anchor) = anchor.single() else { return };
-    let (east, north, _) = bevy_to_wu(anchor.0);
-    let eye = bevy::math::DVec2::new(east, north) * WU;
-    let mut wanted = Vec::new();
+    // Wanted blocks by their distance from the nearest eye.
+    let mut wanted: HashMap<(Tier, i32, i32), f64> = HashMap::new();
     // Alt-D: detail 2 drops the trees, detail 0 and 1 all extra scenery.
     let fields = scenery.style.as_ref().is_some_and(|s| s.fields);
     let tiers: &[Tier] = match (scenery.style.is_some(), detail.0, fields) {
@@ -304,18 +320,25 @@ fn stream_blocks(
         (_, _, false) => &[Tier::Main, Tier::Detail, Tier::Far],
         (_, _, true) => &[Tier::Main, Tier::Detail, Tier::Far, Tier::Fields],
     };
-    for &tier in tiers {
-        let r = radius(tier);
-        let size = tier.block_size();
-        let (lo, hi) =
-            (((eye - r) / size).floor().as_ivec2(), ((eye + r) / size).floor().as_ivec2());
-        for by in lo.y..=hi.y {
-            for bx in lo.x..=hi.x {
-                let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * size;
-                let d = c.distance(eye);
-                let near_trees = tier == Tier::Far && d < radius(Tier::Detail) + size * 0.5;
-                if d < r + size * 0.5 && !near_trees {
-                    wanted.push((d, (tier, bx, by)));
+    let eyes =
+        std::iter::once((anchor.0, f64::MAX)).chain(sites.points.iter().map(|&p| (p, SITE_RADIUS)));
+    for (eye, max_r) in eyes {
+        let (east, north, _) = bevy_to_wu(eye);
+        let eye = bevy::math::DVec2::new(east, north) * WU;
+        for &tier in tiers {
+            let r = radius(tier).min(max_r);
+            let size = tier.block_size();
+            let (lo, hi) =
+                (((eye - r) / size).floor().as_ivec2(), ((eye + r) / size).floor().as_ivec2());
+            for by in lo.y..=hi.y {
+                for bx in lo.x..=hi.x {
+                    let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * size;
+                    let d = c.distance(eye);
+                    let near_trees = tier == Tier::Far && d < radius(Tier::Detail) + size * 0.5;
+                    if d < r + size * 0.5 && !near_trees {
+                        let w = wanted.entry((tier, bx, by)).or_insert(d);
+                        *w = w.min(d);
+                    }
                 }
             }
         }
@@ -326,16 +349,21 @@ fn stream_blocks(
         // A tree block switching tiers stays until its replacement is built.
         let waiting = counterpart(tier).is_some_and(|other| {
             let k = (other, bx, by);
-            !built.contains(&k) && wanted.iter().any(|(_, w)| *w == k)
+            !built.contains(&k) && wanted.contains_key(&k)
         });
-        let keep = waiting || wanted.iter().any(|(_, k)| *k == key);
+        let keep = waiting || wanted.contains_key(&key);
         if !keep {
             commands.entity(*e).try_despawn();
         }
         keep
     });
-    wanted.retain(|(_, k)| !blocks.0.contains_key(k));
+    let mut wanted: Vec<_> = wanted
+        .into_iter()
+        .filter(|(k, _)| !blocks.0.contains_key(k))
+        .map(|(k, d)| (d, k))
+        .collect();
     wanted.sort_by(|a, b| a.0.total_cmp(&b.0));
+    backlog.0 = Some(wanted.len().saturating_sub(BUILDS_PER_FRAME));
     for &(_, key @ (tier, bx, by)) in wanted.iter().take(BUILDS_PER_FRAME) {
         let geom = content::build(&scenery, bx, by, tier);
         let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * tier.block_size();
@@ -579,7 +607,7 @@ fn airfields(
 fn approach_sides(
     cameras: Query<
         (&Camera, &GlobalTransform),
-        (With<Camera3d>, Without<crate::trackcam::TrackCamera>),
+        (With<Camera3d>, Without<crate::camera::OffscreenCamera>),
     >,
     mut sides: Query<(&ApproachSide, &GlobalTransform, &mut Visibility)>,
 ) {
@@ -628,7 +656,7 @@ fn papi_lights(
     palette: Res<Palette>,
     cameras: Query<
         (&Camera, &GlobalTransform),
-        (With<Camera3d>, Without<crate::trackcam::TrackCamera>),
+        (With<Camera3d>, Without<crate::camera::OffscreenCamera>),
     >,
     mut lights: Query<(
         &Papi,

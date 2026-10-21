@@ -1,4 +1,5 @@
-//! Kneeboard: the briefing, the route, a map and the target area on a board strapped to the
+//! Kneeboard: the briefing, the route, a map and the targets (recon photos and the target area,
+//! `recon.rs`) on a board strapped to the
 //! pilot's left thigh in the 3D cockpit (look down; in VR touch a tab with a fingertip, or click
 //! one on the desktop). On the desktop K also shows it large over the view and turns its pages
 //! (after the last page it goes away); in VR the action shows or hides the board, and squeezing
@@ -18,6 +19,7 @@ use crate::flight::Player;
 use crate::font::{Align, stroke_text_at, stroke_width};
 use crate::input::{Action, ActionEvent};
 use crate::mission::{ActiveMission, PlannedRoute, RouteKind, RoutePoint, clean_text};
+use crate::recon::{PHOTO_H, PHOTO_W, ReconPhotos};
 use crate::settings::{AppState, Settings};
 use crate::world::WorldPos;
 
@@ -434,6 +436,21 @@ fn wrap(text: &str, width: f32, h: f32) -> Vec<String> {
     lines
 }
 
+/// What a target is (its shape's name, else the mission type).
+fn target_name(t: &stealth_mission::Target) -> String {
+    let name = clean_text(&t.shape_name).trim().to_ascii_uppercase();
+    if name.is_empty() { t.type_name.to_ascii_uppercase() } else { name }
+}
+
+/// `text` cut short to fit `width` pixels at height `h`.
+fn fit(text: &str, width: f32, h: f32) -> String {
+    let mut s = text.to_string();
+    while !s.is_empty() && stroke_width(&s, h) > width {
+        s.pop();
+    }
+    s
+}
+
 /// Text cursor down the page.
 struct Writer<'a> {
     c: &'a mut Canvas,
@@ -477,8 +494,12 @@ fn draw(
     clock_res: Res<crate::mfd::MissionClock>,
     player: Query<&WorldPos, With<Player>>,
     combat: Option<Res<crate::combat::Combat>>,
+    recon: Res<ReconPhotos>,
 ) {
     kb.timer += time.delta_secs();
+    if recon.is_changed() {
+        kb.dirty = true;
+    }
     let visible = !kb.hidden || kb.overlay;
     if !(kb.dirty || (visible && kb.timer >= 1.0)) {
         return;
@@ -488,6 +509,8 @@ fn draw(
     kb.timer = 0.0;
     kb.dirty = false;
     let m = &m.0;
+    tex.pictures.clear();
+    let tex = &mut *tex;
     let c = &mut tex.canvas;
     c.clear(BG);
     // Tabs.
@@ -672,24 +695,68 @@ fn draw(
             let mut w = Writer { c, y: TABS + 34.0 };
             w.para(&format!("{} - {}", t.type_name, t.place_name), GREEN);
             w.para(&b.primary_objective, WHITE);
-            let air = (5..=8).contains(&t.mission_type);
-            if air {
+            // Recon photos of the primary and the secondary target, side by side.
+            let top = w.y as i32 - 6;
+            let c = w.c;
+            let (pw, ph) = (PHOTO_W as i32, PHOTO_H as i32);
+            for (k, tgt) in [&m.primary, &m.secondary].into_iter().enumerate() {
+                let x = 16 + k as i32 * (MAP_W as i32 - pw);
+                let mid = Vec2::new((x + pw / 2) as f32, (top + ph / 2) as f32);
+                match &recon.photos[k] {
+                    Some(photo) => {
+                        tex.pictures.push((UVec2::new(x as u32, top as u32), photo.clone()))
+                    }
+                    None => {
+                        c.fill_rect(x, top, pw, ph, TAB_BG);
+                        let note = if crate::recon::airborne(tgt) {
+                            "AIRBORNE"
+                        } else if recon.developing(k) {
+                            "DEVELOPING..."
+                        } else {
+                            "NO PHOTO"
+                        };
+                        stroke_text_at(c, mid.x, mid.y, note, 18.0, 2.4, GREY, Align::Centre);
+                    }
+                }
+                let (a, z) = (
+                    Vec2::new(x as f32, top as f32),
+                    Vec2::new((x + pw) as f32, (top + ph) as f32),
+                );
+                c.frame(a, z, 2.0, GREY);
+                let label =
+                    fit(&format!("{} {}", ["PRI", "SEC"][k], target_name(tgt)), pw as f32, 16.0);
+                let col = if k == 0 { GREEN } else { CYAN };
+                stroke_text_at(
+                    c,
+                    x as f32,
+                    (top + ph) as f32 + 20.0,
+                    &label,
+                    16.0,
+                    2.2,
+                    col,
+                    Align::Left,
+                );
+            }
+            let top = top + ph + 44;
+            if crate::recon::airborne(t) {
+                let mut w = Writer { c, y: top as f32 + 10.0 };
                 w.heading("AIRBORNE TARGET");
                 w.para(&b.primary_summary, GREY);
             } else if let Some(pic) = &kb.target_map {
-                let top = (w.y + 8.0) as i32;
-                let c = w.c;
-                c.copy_rect(&pic.canvas, 0, 0, MAP_W as i32, MAP_W as i32, 16, top);
-                let centre = Vec2::new(16.0 + MAP_W as f32 / 2.0, top as f32 + MAP_W as f32 / 2.0);
+                // The target map's middle, as tall as leaves room for the summary.
+                let h = (H as i32 - 150 - top).clamp(160, MAP_W as i32);
+                let sy = (MAP_W as i32 - h) / 2;
+                c.copy_rect(&pic.canvas, 0, sy, MAP_W as i32, h, 16, top);
+                let centre = Vec2::new(16.0 + MAP_W as f32 / 2.0, (top + h / 2) as f32);
                 c.ring(centre, 26.0, 3.0, GREEN);
                 c.frame(
                     Vec2::new(16.0, top as f32),
-                    Vec2::new(16.0 + MAP_W as f32, (top as usize + MAP_W) as f32),
+                    Vec2::new(16.0 + MAP_W as f32, (top + h) as f32),
                     2.0,
                     GREY,
                 );
                 let km = 2.0 * 64.0 / pic.scale as f32;
-                let y = (top as usize + MAP_W) as f32 + 30.0;
+                let y = (top + h) as f32 + 30.0;
                 c.stroke(Vec2::new(28.0, y), Vec2::new(28.0 + km, y), 3.0, WHITE);
                 stroke_text_at(c, 40.0 + km, y, "2 KM", 18.0, 2.4, WHITE, Align::Left);
                 let p = m.waypoints[1];

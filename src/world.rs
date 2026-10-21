@@ -182,6 +182,7 @@ impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<FloatingOrigin>()
             .init_resource::<StreamedCells>()
+            .init_resource::<StreamSites>()
             .init_resource::<TileOverrides>()
             .add_systems(OnEnter(AppState::Flight), load_theater.in_set(SetupSet::World))
             .add_systems(OnExit(AppState::Flight), unload_theater)
@@ -388,7 +389,17 @@ fn apply_world_positions(
     }
 }
 
-/// Spawns/despawns tile objects around the anchor, per LOD level.
+/// Places streamed like the anchor while something looks at them from afar (the recon photos
+/// of the targets): their own cells of each level, without the ships' range.
+#[derive(Resource, Default)]
+pub struct StreamSites {
+    pub points: Vec<DVec3>,
+    /// The tile objects around `points` are spawned.
+    pub streamed: bool,
+}
+
+/// Spawns/despawns tile objects around the anchor and the stream sites, per LOD level.
+#[allow(clippy::too_many_arguments)]
 fn stream_tiles(
     mut commands: Commands,
     theater: Res<Theater>,
@@ -399,6 +410,7 @@ fn stream_tiles(
     mut streamed: ResMut<StreamedCells>,
     mut overrides: ResMut<TileOverrides>,
     handles: Res<ShapeHandles>,
+    mut sites: ResMut<StreamSites>,
 ) {
     let Ok(anchor) = anchor.single() else { return };
     let file = library.load(&server, &theater.id);
@@ -406,19 +418,31 @@ fn stream_tiles(
     if assets.gltfs.get(&photo).is_none() || !assets.terrain.ready(&theater.id) {
         return; // models still loading or being refined (terrain.rs)
     }
-    let (east, north, _) = bevy_to_wu(anchor.0);
     // Cells wanted: (lod, col, row) -> ships only (beyond the level's own radius).
     let mut wanted: HashMap<(usize, i32, i32), bool> = HashMap::new();
-    for lod in 1..=4usize {
-        let cell = 4096.0 * LEVEL_UNIT[lod];
-        let (cx, cy) = ((east / cell).floor() as i32, (north / cell).floor() as i32);
-        let lo = if lod == 4 { -2 } else { 0 };
-        let r = CELL_RADIUS[lod];
-        let far = if lod <= 2 { ((SHIP_RANGE_M / (cell * WU)).ceil() as i32).max(r) } else { r };
-        for row in cy - far..=cy + far {
-            for col in cx - far..=cx + far {
-                if col >= lo && row >= lo && col < GRID_DIM[lod] + lo && row < GRID_DIM[lod] + lo {
-                    wanted.insert((lod, col, row), (col - cx).abs() > r || (row - cy).abs() > r);
+    let eyes = std::iter::once((anchor.0, true)).chain(sites.points.iter().map(|&p| (p, false)));
+    for (eye, ships) in eyes {
+        let (east, north, _) = bevy_to_wu(eye);
+        for lod in 1..=4usize {
+            let cell = 4096.0 * LEVEL_UNIT[lod];
+            let (cx, cy) = ((east / cell).floor() as i32, (north / cell).floor() as i32);
+            let lo = if lod == 4 { -2 } else { 0 };
+            let r = CELL_RADIUS[lod];
+            let far = if ships && lod <= 2 {
+                ((SHIP_RANGE_M / (cell * WU)).ceil() as i32).max(r)
+            } else {
+                r
+            };
+            for row in cy - far..=cy + far {
+                for col in cx - far..=cx + far {
+                    if col >= lo
+                        && row >= lo
+                        && col < GRID_DIM[lod] + lo
+                        && row < GRID_DIM[lod] + lo
+                    {
+                        let ships_only = (col - cx).abs() > r || (row - cy).abs() > r;
+                        *wanted.entry((lod, col, row)).or_insert(ships_only) &= ships_only;
+                    }
                 }
             }
         }
@@ -495,6 +519,9 @@ fn stream_tiles(
         }
         streamed.cells.insert(key, (ships_only, entities));
         streamed.pending = true;
+    }
+    if !sites.streamed {
+        sites.streamed = true;
     }
 }
 

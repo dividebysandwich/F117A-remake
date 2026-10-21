@@ -92,6 +92,7 @@ fn spawn_camera(
     let cam = commands
         .spawn((
             TrackCamera,
+            crate::camera::OffscreenCamera,
             Camera3d::default(),
             Camera {
                 order: -1,

@@ -23,13 +23,13 @@ use stealth_mission::weather::{CELL, Cloud, CloudKind, STORM_CELL};
 use stealth_mission::{Sky, Weather};
 
 use crate::camera::EyeCamera;
+use crate::camera::OffscreenCamera;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
 use crate::palette_material::{
     FLAG_CLOUD, FLAG_CLOUD_COVERAGE, PaletteMaterial, PaletteParams, mesh_tag,
 };
 use crate::settings::{AppState, SetupSet};
-use crate::trackcam::TrackCamera;
 use crate::world::{FloatingOrigin, WU, WorldPos, wu_to_bevy};
 
 pub struct WeatherPlugin;
@@ -342,7 +342,7 @@ type Eyes<'w, 's> = Query<
     'w,
     's,
     (&'static GlobalTransform, Has<EyeCamera>),
-    (Or<(With<EyeCamera>, With<Camera3d>)>, Without<TrackCamera>),
+    (Or<(With<EyeCamera>, With<Camera3d>)>, Without<OffscreenCamera>),
 >;
 
 fn eye_position(eyes: &Eyes, origin: &FloatingOrigin) -> Option<DVec3> {

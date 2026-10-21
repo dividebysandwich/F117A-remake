@@ -2,6 +2,8 @@
 //! textures through the active palette. Cockpit panel, HUD and MFDs draw into canvases; the
 //! textures are shown on world-space quads (so they also work in VR).
 
+use std::sync::Arc;
+
 use bevy::asset::RenderAssetUsages;
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
@@ -430,6 +432,13 @@ fn clip_segment(a: Vec2, b: Vec2, lo: Vec2, hi: Vec2) -> Option<(Vec2, Vec2)> {
     (t0 <= t1).then(|| (a + d * t0, a + d * t1))
 }
 
+/// A true-colour picture (8-bit sRGB RGBA, row by row) shown over a canvas past its palette.
+pub struct Picture {
+    pub w: usize,
+    pub h: usize,
+    pub rgba: Vec<u8>,
+}
+
 /// A canvas shown through a texture. Set `dirty` after drawing.
 #[derive(Component)]
 pub struct CanvasTexture {
@@ -439,12 +448,24 @@ pub struct CanvasTexture {
     pub transparent: bool,
     /// Optional per-pixel mask: index 0 is only transparent where the mask is true.
     pub mask: Option<Vec<bool>>,
+    /// Pictures laid over the canvas at these texels (photos on the kneeboard).
+    pub pictures: Vec<(UVec2, Arc<Picture>)>,
     pub dirty: bool,
     /// Mip levels of the texture (1: none; the others are built from the canvas on every upload).
     mips: usize,
-    /// The pixels and transparency last uploaded: a redraw that changed nothing (most frames
-    /// for the instrument atlas) skips the conversion and the texture upload.
-    shown: Option<(Vec<u8>, bool)>,
+    /// The pixels, transparency and pictures last uploaded: a redraw that changed nothing (most
+    /// frames for the instrument atlas) skips the conversion and the texture upload.
+    shown: Option<(Vec<u8>, bool, Placed)>,
+}
+
+/// Picture positions and identities (`CanvasTexture::pictures`).
+type Placed = Vec<(UVec2, usize)>;
+
+impl CanvasTexture {
+    /// Where the pictures are and which they are.
+    fn placed(&self) -> Placed {
+        self.pictures.iter().map(|(at, p)| (*at, Arc::as_ptr(p) as usize)).collect()
+    }
 }
 
 impl CanvasTexture {
@@ -466,6 +487,7 @@ impl CanvasTexture {
             image: images.add(image),
             transparent,
             mask: None,
+            pictures: Vec::new(),
             dirty: true,
             mips: 1,
             shown: None,
@@ -506,6 +528,7 @@ impl CanvasTexture {
             image: images.add(image),
             transparent,
             mask: None,
+            pictures: Vec::new(),
             dirty: true,
             mips: levels.len(),
             shown: None,
@@ -578,8 +601,10 @@ fn upload_canvases(
         }
         let ct = ct.bypass_change_detection();
         ct.dirty = false;
-        let unchanged =
-            ct.shown.as_ref().is_some_and(|(px, t)| *t == ct.transparent && *px == ct.canvas.px);
+        let placed = ct.placed();
+        let unchanged = ct.shown.as_ref().is_some_and(|(px, t, pics)| {
+            *t == ct.transparent && *px == ct.canvas.px && *pics == placed
+        });
         if !all && ct.mask.is_none() && unchanged {
             continue;
         }
@@ -601,6 +626,15 @@ fn upload_canvases(
                 }
             }
         }
+        let (pw, ph) = (ct.canvas.pw(), ct.canvas.ph());
+        for (at, pic) in &ct.pictures {
+            let (x0, y0) = (at.x as usize, at.y as usize);
+            let w = pic.w.min(pw.saturating_sub(x0));
+            for y in 0..pic.h.min(ph.saturating_sub(y0)) {
+                let o = ((y0 + y) * pw + x0) * 4;
+                data[o..o + w * 4].copy_from_slice(&pic.rgba[y * pic.w * 4..][..w * 4]);
+            }
+        }
         if ct.mips > 1 {
             build_mips(data, ct.canvas.pw(), ct.canvas.ph(), ct.mips);
             mips.0.push((
@@ -612,11 +646,12 @@ fn upload_canvases(
             ));
         }
         match &mut ct.shown {
-            Some((px, t)) => {
+            Some((px, t, pics)) => {
                 px.clone_from(&ct.canvas.px);
                 *t = ct.transparent;
+                *pics = placed;
             }
-            None => ct.shown = Some((ct.canvas.px.clone(), ct.transparent)),
+            None => ct.shown = Some((ct.canvas.px.clone(), ct.transparent, placed)),
         }
     }
 }

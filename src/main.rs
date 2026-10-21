@@ -39,6 +39,7 @@ mod planner;
 mod player;
 mod prefs;
 mod profile;
+mod recon;
 mod recorder;
 mod rwr;
 mod scenery;
@@ -159,6 +160,7 @@ fn main() {
             explosions::ExplosionsPlugin,
             flight_menu::FlightMenuPlugin,
             kneeboard::KneeboardPlugin,
+            recon::ReconPlugin,
         ))
         .add_plugins((
             sky::SkyPlugin,

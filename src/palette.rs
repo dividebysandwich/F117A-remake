@@ -308,7 +308,7 @@ fn msaa_override() -> Option<Msaa> {
 /// 2x in VR (4x cost the Steam Frame 2 ms per frame, over its 72 Hz budget).
 fn apply_msaa(
     settings: Res<Settings>,
-    mut cams: Query<&mut Msaa, (With<Camera3d>, Without<crate::trackcam::TrackCamera>)>,
+    mut cams: Query<&mut Msaa, (With<Camera3d>, Without<crate::camera::OffscreenCamera>)>,
     added: Query<(), Added<Camera3d>>,
 ) {
     if !settings.is_changed() && added.is_empty() {

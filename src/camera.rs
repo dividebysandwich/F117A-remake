@@ -184,6 +184,13 @@ pub const VR_MIP_BIAS: f32 = -1.25;
 /// picked by both views stay on layer 0.
 pub const MAIN_LOD_LAYER: usize = 3;
 pub const TRACKCAM_LOD_LAYER: usize = 4;
+/// Background spheres of the recon cameras (one layer per target).
+pub const RECON_BACKGROUND_LAYER: [usize; 2] = [5, 6];
+
+/// A 3D camera rendering into a texture (the tracking camera, the recon cameras): not the
+/// main view.
+#[derive(Component)]
+pub struct OffscreenCamera;
 
 /// Spawns the background sphere (sky bands and ground gradient) as a child of a camera, on
 /// its own render layer so each camera only sees its own sphere.

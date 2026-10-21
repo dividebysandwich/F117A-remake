@@ -9,9 +9,9 @@ use std::collections::VecDeque;
 
 use bevy::prelude::*;
 
+use crate::camera::OffscreenCamera;
 use crate::flight::{Aircraft, Player};
 use crate::settings::AppState;
-use crate::trackcam::TrackCamera;
 
 /// Seconds between status lines.
 const INTERVAL: f64 = 5.0;
@@ -92,7 +92,7 @@ impl Frame {
 /// Direction of the first active view camera relative to the aircraft's nose.
 fn look(
     a: &Aircraft,
-    cameras: &Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<TrackCamera>)>,
+    cameras: &Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<OffscreenCamera>)>,
 ) -> Option<(f32, f32)> {
     let (_, tf) = cameras.iter().filter(|(c, _)| c.is_active).max_by_key(|(c, _)| c.order)?;
     let d = a.orientation.inverse() * tf.forward().as_vec3();
@@ -110,7 +110,7 @@ fn status(
     materials: Res<Assets<StandardMaterial>>,
     cockpit_materials: Res<Assets<crate::cockpit3d::CockpitMaterial>>,
     player: Query<&Aircraft, With<Player>>,
-    cameras: Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<TrackCamera>)>,
+    cameras: Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<OffscreenCamera>)>,
     lamps: Query<(&crate::scenery::LampBatch, &InheritedVisibility)>,
 ) {
     let now = time.elapsed_secs_f64();

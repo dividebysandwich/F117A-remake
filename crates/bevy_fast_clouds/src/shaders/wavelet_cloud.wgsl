@@ -277,18 +277,25 @@ fn hg_phase(cos_theta: f32, g: f32) -> f32 {
     return (1.0 - g2) / max(pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5), 0.001);
 }
 
-// Light of the line light at p (a bright core around the channel and a wide, weaker halo).
-fn line_glow(p: vec3<f32>) -> f32 {
+// Light of the line light at p: a bright core around the channel, and the puffs facing it lit
+// out to its reach, shadowed by the cloud between them and the channel (one occupancy sample
+// towards it).
+fn line_glow(vol: GpuVolume, p: vec3<f32>, shadow_reach: f32) -> f32 {
     let i = globals.line_a.w;
     if (i <= 0.0) { return 0.0; }
     let a = globals.line_a.xyz;
     let ab = globals.line_b.xyz - a;
     let t = sat(dot(p - a, ab) / max(dot(ab, ab), 1e-3));
-    let d = length(p - (a + ab * t));
+    let to_channel = a + ab * t - p;
+    let d = length(to_channel);
     let reach = globals.line_b.w;
     let core = d / (reach * 0.06);
-    let halo = d / (reach * 0.3);
-    return i * (1.0 - smoothstep(0.3 * reach, reach, d)) * (1.6 / (1.0 + core * core) + 0.3 / (1.0 + halo * halo));
+    let halo = d / (reach * 0.25);
+    let fade = 1.0 - smoothstep(0.5 * reach, 1.5 * reach, d);
+    if (fade <= 0.0) { return 0.0; }
+    let towards = p + to_channel / max(d, 1.0) * min(0.5 * d, shadow_reach);
+    let lit = 1.0 - 0.9 * occupancy_volume(vol, towards);
+    return i * fade * (1.6 / (1.0 + core * core) + 2.0 * lit / (1.0 + halo * halo));
 }
 
 fn ramp(k: f32) -> vec3<f32> {
@@ -366,10 +373,8 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
     // Forward scattering lightens clouds seen towards the sun.
     let forward_lift = 0.8 * (hg_phase(dot(rd, sun), globals.params0.z) - 1.0);
     let extent = max(vol.aabb_max - vol.aabb_min, vec3<f32>(0.001));
-#ifdef SUN_SHADOW
-    // Self shadow: occupancy a little way towards the sun.
+    // Self shadow: occupancy a little way towards the light.
     let shadow_reach = 0.3 * min(extent.x, min(extent.y, extent.z));
-#endif
 
     var transmittance = 1.0;
     var shade_sum = 0.0;
@@ -400,7 +405,7 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
             k -= t / haze * 15.0;
         }
         shade_sum += w * max(k, 0.0);
-        glow_sum += w * line_glow(p);
+        glow_sum += w * line_glow(vol, p, shadow_reach);
         transmittance *= 1.0 - a;
     }
 

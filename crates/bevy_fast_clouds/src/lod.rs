@@ -34,6 +34,11 @@ pub struct CloudRenderSettings {
     /// Classic look: whole ramp colours and screen-door coverage with a 4x4 ordered dither
     /// instead of blending.
     pub dither: bool,
+    /// Self shadow from a second occupancy sample towards the sun at every step.
+    pub sun_shadow: bool,
+    /// View pixels per marched pixel along each axis (1: full resolution; 2 marches a quarter
+    /// of the pixels and upsamples them).
+    pub resolution_scale: u32,
 }
 
 impl Default for CloudRenderSettings {
@@ -49,6 +54,8 @@ impl Default for CloudRenderSettings {
             phase_g: 0.4,
             lod_false_color: false,
             dither: false,
+            sun_shadow: true,
+            resolution_scale: 1,
         }
     }
 }

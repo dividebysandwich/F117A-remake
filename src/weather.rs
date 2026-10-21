@@ -451,8 +451,10 @@ const CLOUD_RAMP: u8 = 0xE0;
 
 /// The volumetric clouds' light and colours, from the same globals as the palette shader:
 /// the live palette's cloud ramp (it changes with the time of day), the sun, the haze, the
-/// lightning; in classic mode whole ramp colours, dithered. `SM89_CLOUD_STEPS` sets the
-/// march steps.
+/// lightning; in classic mode whole ramp colours, dithered. For measuring: `SM89_CLOUD_STEPS`
+/// (march steps), `SM89_CLOUD_JCAP` (finest wavelet scale 0..3), `SM89_CLOUD_SHADOW=0|1`,
+/// `SM89_CLOUD_SCALE` (view pixels per marched pixel).
+#[allow(clippy::too_many_arguments)]
 fn shade_clouds(
     palette: Res<Palette>,
     lighting: Res<crate::lighting::LightingState>,
@@ -479,13 +481,20 @@ fn shade_clouds(
         line_b,
         line_color: BOLT_COLOR * flash_scale,
     };
-    let steps = std::env::var("SM89_CLOUD_STEPS").ok().and_then(|v| v.parse().ok());
+    // VR (two large eye views on a mobile GPU): marched at a third of the resolution, coarse
+    // scales only, fewer steps, no second occupancy sample for the self shadow.
+    let vr = settings.vr;
+    let env = |name: &str| std::env::var(name).ok().and_then(|v| v.parse::<u32>().ok());
     let want = CloudRenderSettings {
-        step_count: steps.unwrap_or(if settings.vr { 12 } else { 16 }),
+        j_cap: env("SM89_CLOUD_JCAP").unwrap_or(if vr { 1 } else { 3 }),
+        h_cap: if vr { 2 } else { 4 },
+        step_count: env("SM89_CLOUD_STEPS").unwrap_or(if vr { 6 } else { 16 }),
         max_march_span: 30_000.0,
         interior_span: 3_000.0,
         sigma_t: 0.02,
         dither: !settings.modern_shading,
+        sun_shadow: env("SM89_CLOUD_SHADOW").map_or(!vr, |v| v != 0),
+        resolution_scale: env("SM89_CLOUD_SCALE").unwrap_or(if vr { 3 } else { 1 }),
         ..default()
     };
     if *render != want {

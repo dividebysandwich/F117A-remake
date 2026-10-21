@@ -1,6 +1,8 @@
 // Hull march. J1/J2/J3 compile out fine scales, MARCH_STEPS is set per LOD, MULTISAMPLED
 // reads a multisampled depth buffer, DITHER draws whole ramp colours and screen-door coverage
-// with a 4x4 ordered dither (no blending).
+// with a 4x4 ordered dither (no blending), SUN_SHADOW samples the occupancy towards the sun
+// for self shadowing (otherwise the occupancy at the sample stands in). RES_SCALE > 1 marches
+// one pixel per RES_SCALE x RES_SCALE view pixels (clipped at the nearest of them).
 
 #import bevy_render::view::View
 
@@ -22,6 +24,8 @@ struct CloudGlobals {
     params0: vec4<f32>,
     // j cap, keep alpha, interior span, frame counter.
     params1: vec4<f32>,
+    // Resolution scale.
+    params2: vec4<f32>,
     flash: vec4<f32>,
     // Line light: one end and intensity, the other end and reach, colour.
     line_a: vec4<f32>,
@@ -52,6 +56,7 @@ const HALF_PI: f32 = 1.5707963267948966;
 const INV_SQRT3: f32 = 0.57735026919;
 const INV_SQRT2: f32 = 0.70710678118;
 const MARCH_STEPS: i32 = #{MARCH_STEPS};
+const RES_SCALE: i32 = #{RES_SCALE};
 
 const N0: vec3<f32> = vec3<f32>(1.0, 0.0, 0.0);
 const E1_0: vec3<f32> = vec3<f32>(0.0, 1.0, 0.0);
@@ -197,11 +202,12 @@ fn ridge_band(
     );
 }
 
-fn density_volume(vol: GpuVolume, p: vec3<f32>, rd: vec3<f32>) -> f32 {
+// Density and occupancy at p.
+fn density_volume(vol: GpuVolume, p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
     let fill = max(vol.fill.x, 0.05);
     let occ = sat(occupancy_volume(vol, p) * fill);
     if occ < 0.02 {
-        return 0.0;
+        return vec2<f32>(0.0, occ);
     }
     let extent = max(vol.aabb_max - vol.aabb_min, vec3<f32>(0.001));
     let uv_raw = (p - vol.aabb_min) / extent;
@@ -227,7 +233,7 @@ fn density_volume(vol: GpuVolume, p: vec3<f32>, rd: vec3<f32>) -> f32 {
 #endif
     // Solid core from the occupancy, the ridges eroding and billowing its edges.
     let core = vol.fill.y;
-    return max(mix(rho * (0.35 + 0.75 * occ), occ * 1.4 - 0.45 + rho * 0.9, core), 0.0) * inside * fill;
+    return vec2<f32>(max(mix(rho * (0.35 + 0.75 * occ), occ * 1.4 - 0.45 + rho * 0.9, core), 0.0) * inside * fill, occ);
 }
 
 fn ray_aabb(ro: vec3<f32>, rd: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>) -> vec2<f32> {
@@ -239,6 +245,24 @@ fn ray_aabb(ro: vec3<f32>, rd: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>) -> v
     let tmin = max(max(tmin3.x, tmin3.y), tmin3.z);
     let tmax = min(min(tmax3.x, tmax3.y), tmax3.z);
     return vec2<f32>(tmin, tmax);
+}
+
+// Where the ray is inside any of the volume's spheres: (first entry, last exit).
+fn sphere_span(vol: GpuVolume, ro: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
+    var span = vec2<f32>(1e20, -1e20);
+    let last = arrayLength(&spheres) - 1u;
+    for (var i = 0u; i < 12u; i++) {
+        if (i >= vol.misc.y) { break; }
+        let s = spheres[min(vol.misc.x + i, last)];
+        let oc = ro - s.xyz;
+        let b = dot(oc, rd);
+        let h = b * b - (dot(oc, oc) - s.w * s.w);
+        if (h > 0.0) {
+            let q = sqrt(h);
+            span = vec2<f32>(min(span.x, -b - q), max(span.y, -b + q));
+        }
+    }
+    return span;
 }
 
 fn lod_tint(j_max: f32, j_cap: f32) -> vec3<f32> {
@@ -283,6 +307,21 @@ fn ign(p: vec2<f32>) -> f32 {
     return fract(52.9829189 * fract(dot(q, vec2<f32>(0.06711056, 0.00583715))));
 }
 
+// Depth of the scene under a cloud pixel: at reduced resolution the nearest of its block's
+// corners, so clouds never spread over the edges of nearer geometry.
+fn scene_depth_at(pixel: vec2<i32>) -> f32 {
+    if (RES_SCALE == 1) {
+        return textureLoad(depth_texture, pixel, 0);
+    }
+    let last = vec2<i32>(textureDimensions(depth_texture)) - 1;
+    let p = pixel * RES_SCALE;
+    let q = min(p + (RES_SCALE - 1), last);
+    return max(
+        max(textureLoad(depth_texture, min(p, last), 0), textureLoad(depth_texture, vec2(q.x, p.y), 0)),
+        max(textureLoad(depth_texture, vec2(p.x, q.y), 0), textureLoad(depth_texture, q, 0)),
+    );
+}
+
 @fragment
 fn fragment(in: VsOut) -> @location(0) vec4<f32> {
     let vol = volumes[in.volume_index];
@@ -292,8 +331,7 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
     let rd = to_hull / max(length(to_hull), 1e-5);
 
     // Distance to the opaque scene along the ray (reverse infinite z: depth = near / view z).
-    let pixel = vec2<i32>(in.clip.xy);
-    let scene_depth = textureLoad(depth_texture, pixel, 0);
+    let scene_depth = scene_depth_at(vec2<i32>(in.clip.xy));
     let near = view.clip_from_view[3][2];
     let forward = -view.world_from_view[2].xyz;
     let t_scene = select(1e9, near / scene_depth / max(dot(rd, forward), 1e-4), scene_depth > 0.0);
@@ -305,7 +343,10 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
         t0 = 0.0;
         span_cap = globals.params1.z;
     }
-    let t1 = min(min(hull.y, t_scene), t0 + span_cap);
+    // Only where the ray passes through the spheres (the box's corners are empty).
+    let spheres_hit = sphere_span(vol, cam, rd);
+    t0 = max(t0, spheres_hit.x);
+    let t1 = min(min(min(hull.y, spheres_hit.y), t_scene), t0 + span_cap);
     if (t1 <= t0) { discard; }
     let span = t1 - t0;
     let step = span / f32(MARCH_STEPS);
@@ -323,8 +364,10 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
     // Forward scattering lightens clouds seen towards the sun.
     let forward_lift = 0.8 * (hg_phase(dot(rd, sun), globals.params0.z) - 1.0);
     let extent = max(vol.aabb_max - vol.aabb_min, vec3<f32>(0.001));
+#ifdef SUN_SHADOW
     // Self shadow: occupancy a little way towards the sun.
     let shadow_reach = 0.3 * min(extent.x, min(extent.y, extent.z));
+#endif
 
     var transmittance = 1.0;
     var shade_sum = 0.0;
@@ -335,7 +378,8 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
         }
         let t = t0 + (f32(s) + jitter) * step;
         let p = cam + rd * t;
-        let dens = density_volume(vol, p, rd);
+        let d = density_volume(vol, p, rd);
+        let dens = d.x;
         if (dens <= 0.0) {
             continue;
         }
@@ -343,7 +387,11 @@ fn fragment(in: VsOut) -> @location(0) vec4<f32> {
         let w = transmittance * a;
         // Ramp entry: tops lit, bases and the side away from the sun in shadow.
         let height = sat((p.y - vol.aabb_min.y) / extent.y);
+#ifdef SUN_SHADOW
         let shadow = occupancy_volume(vol, p + sun * shadow_reach);
+#else
+        let shadow = 0.7 * d.y;
+#endif
         var k = 1.0 + 6.0 * shadow + 4.0 * (1.0 - height) - forward_lift * (1.0 - shadow);
         // Haze: down the ramp towards entry 0 with distance.
         if (haze > 0.0) {

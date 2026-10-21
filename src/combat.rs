@@ -185,11 +185,14 @@ fn apply_time_accel(
     accel: Res<TimeAccel>,
     mut time: ResMut<Time<Virtual>>,
     combat: Option<Res<Combat>>,
+    link: Option<Res<NetLink>>,
 ) {
-    // Waiting on the ground for the rescue goes faster; a campaign runs in real time.
+    // Waiting on the ground for the rescue goes faster; a campaign runs in real time, a coop
+    // game (everybody's clock is the server's) without `--time-scale` either.
     let campaign = combat.as_ref().is_some_and(|c| c.sim.campaign().is_some());
     let fast = if combat.is_some_and(|c| c.sim.csar().is_some()) { 4.0 } else { 2.0 };
-    let want = accel.base * if accel.on && !campaign { fast } else { 1.0 };
+    let base = if link.is_some() { 1.0 } else { accel.base };
+    let want = base * if accel.on && !campaign { fast } else { 1.0 };
     if time.relative_speed() != want {
         time.set_relative_speed(want);
     }

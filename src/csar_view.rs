@@ -106,6 +106,10 @@ fn compass(x: i32, y: i32, tx: i32, ty: i32) -> &'static str {
 
 fn status(combat: &Combat) -> Option<Vec<String>> {
     let sim = &combat.sim;
+    // A campaign has no rescue: the sortie ends when the parachute is down.
+    if sim.campaign().is_some() {
+        return None;
+    }
     let (x, y, alt) = sim.chute()?;
     let Some(c) = sim.csar() else {
         return Some(vec![if alt > 0 {

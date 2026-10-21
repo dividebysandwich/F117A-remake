@@ -797,9 +797,12 @@ fn handle(c: &mut ActiveCampaign, s: &mut Session, events: Vec<HostEvent>) {
             }
             HostEvent::SortieFinished { player, debrief } if player == me => {
                 s.msgs.show(debrief.title.clone());
+                // Down under the parachute: the debrief at once (the pilotless aircraft is
+                // nothing to watch); else the end stays in view a few seconds.
+                let ejected = debrief.record.end == stealth_campaign::SortieEnd::Ejected;
                 c.debrief = Some(debrief);
                 c.landed = None;
-                c.end_timer = Some(0.0);
+                c.end_timer = Some(if ejected { END_SECONDS } else { 0.0 });
             }
             HostEvent::Landed { player, base } if player == me && c.phase == Phase::Sortie => {
                 c.landed = Some(base);

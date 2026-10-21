@@ -442,8 +442,12 @@ fn fire_siren(
     virt: Res<Time<Virtual>>,
     siren: Query<(Entity, Option<&AudioSink>), With<FireSiren>>,
 ) {
+    // Out of the aircraft: ejected, or (campaign) back at the board with the damage of the
+    // sortie still on record until the next one.
     let burning = combat.as_deref().is_some_and(|c| {
-        c.sim.damage_effects().bits & stealth_sim::dmg::FIRE != 0 && c.end.is_none()
+        c.sim.damage_effects().bits & stealth_sim::dmg::FIRE != 0
+            && c.end.is_none()
+            && !c.sim.player_absent()
     }) && !has_ejected(combat.as_deref())
         && player.single().is_ok_and(|a| a.ended.is_none())
         && level.0 > 0;

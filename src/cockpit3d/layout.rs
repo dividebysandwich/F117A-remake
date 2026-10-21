@@ -408,8 +408,9 @@ impl PanelLayout {
         put(Elem::Gauge, rect(132.0, 138.0, 84.0, 13.0), None, false);
         put(Elem::Label("EMV", 47, 33), rect(218.0, 138.0, 20.0, 13.0), None, false);
         put(Elem::Lamp(EmvWarn, None), rect(240.0, 138.0, 18.0, 13.0), None, false);
-        // Left slope (as the F-16's): the gear lights, FLAPS, BRAKE and AUTO under them.
-        put(Elem::GearLights, rect(-746.0, -104.0, 40.0, 32.0), None, false);
+        // Left slope: the gear lights and under them FLAPS, BRAKE and AUTO, a column clear of
+        // the slope's outer edge (it comes in towards the top) and of the gear handle right of it.
+        put(Elem::GearLights, rect(-732.0, -110.0, 40.0, 32.0), None, false);
         for (k, (id, action)) in
             [(Flaps, Action::Flaps), (Brake, Action::Brakes), (Auto, Action::Autopilot)]
                 .into_iter()
@@ -417,7 +418,7 @@ impl PanelLayout {
         {
             put(
                 Elem::Lamp(id, None),
-                rect(-764.0, -62.0 + 18.0 * k as f32, 38.0, 14.0),
+                rect(-731.0, -68.0 + 18.0 * k as f32, 38.0, 14.0),
                 Some(E::Action(action)),
                 false,
             );
@@ -438,7 +439,7 @@ impl PanelLayout {
         {
             put(
                 elem,
-                rect(1150.0 + 35.0 * (k % 3) as f32, -118.0 + 17.0 * (k / 3) as f32, 32.0, 14.0),
+                rect(1132.0 + 35.0 * (k % 3) as f32, -118.0 + 17.0 * (k / 3) as f32, 32.0, 14.0),
                 None,
                 false,
             );

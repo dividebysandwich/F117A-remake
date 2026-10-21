@@ -46,10 +46,15 @@ WALL_X = 0.36
 # Canopy sills (top), from the rear of the cockpit to the coaming's back.
 SILL = -0.24
 SILL_REAR = -0.40
-# Consoles (the stick and the throttle stand on them): x, y and their top.
+# Consoles (the stick and the throttle stand on them): x, y and their top (low enough for the
+# VR hands on the stick and throttle to stay clear of the arm rests).
 CONSOLE_X = (0.19, 0.354)
 CONSOLE_Y = (-0.269, 0.241)
-CONSOLE_TOP = -0.51
+CONSOLE_TOP = -0.578
+# The kept stick and throttle with their rails and boot, moved with the consoles' top; the
+# stick's pivot stands this far over it (the cockpit's scale).
+LEVERS = ("stick", "throttle", "throttle_full", "black_549", "metal_550", "metal_551", "rubber_543")
+PIVOT_OVER_CONSOLE = 0.01
 # The panel's centre column (|x| <= HINGE) and its wings out to WING either side (flat, in the
 # panel's plane), down to WING_BOTTOM and CENTRE_BOTTOM (layout mm).
 HINGE = 100.0
@@ -622,9 +627,9 @@ plates = [
     ("dark", (274.0, -40.0, 52.0, 188.0)),  # engine instruments
     ("black", (-166.0, 88.0, 52.0, 64.0)),  # master arm panel
     ("dark", (106.0, 84.0, 156.0, 72.0)),  # fuel, engine readouts, EMV
-    ("dark", (-750.0, -108.0, 48.0, 40.0)),  # gear lights (left slope)
-    ("dark", (-768.0, -66.0, 46.0, 54.0)),  # flaps, brakes and autopilot under them
-    ("dark", (1146.0, -122.0, 108.0, 40.0)),  # caution lights (right slope)
+    ("dark", (-736.0, -114.0, 48.0, 40.0)),  # gear lights (left slope)
+    ("dark", (-735.0, -72.0, 46.0, 54.0)),  # flaps, brakes and autopilot under them
+    ("dark", (1128.0, -122.0, 108.0, 40.0)),  # caution lights (right slope)
     ("dark", (1146.0, -74.0, 80.0, 75.0)),  # countermeasures
     ("black", (1146.0, 24.0, 110.0, 70.0)),  # switches under them
 ]
@@ -786,6 +791,9 @@ for o in list(root.children):
 
 # --- the kept parts
 objs = {o.name: o for o in root.children}
+rise = CONSOLE_TOP * SCALE + PIVOT_OVER_CONSOLE - objs["stick"].location.z
+for n in LEVERS:
+    objs[n].location.z += rise
 # Target buttons on the left slope, ahead of the throttle, faces up towards the pilot; the gear
 # handle right of the gear lights above them.
 for i, n in enumerate(["button_NEAR", "button_NEXT", "button_NONE", "button_WPN", "button_DTL"]):
@@ -796,9 +804,9 @@ for i, n in enumerate(["button_NEAR", "button_NEXT", "button_NONE", "button_WPN"
     o.rotation_mode = "QUATERNION"
     o.rotation_quaternion = rotation(u)
 g = objs["control_Action_Gear_.001"]
-g.location = point(-672.0, -80.0, 0.002) * SCALE
+g.location = point(-668.0, -94.0, 0.002) * SCALE
 g.rotation_mode = "QUATERNION"
-g.rotation_quaternion = rotation(-672.0)
+g.rotation_quaternion = rotation(-668.0)
 # HUD frame posts down to the coaming.
 for n in ("frame_84", "frame_85"):
     o = objs[n]

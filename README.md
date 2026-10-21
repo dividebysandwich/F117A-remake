@@ -1,6 +1,6 @@
 # Stealth Mission 89
 
-<img width="1684" height="1204" alt="image" src="https://github.com/user-attachments/assets/c6cc829d-3e1d-46ab-be9e-2e11dbe84a67" />
+<img width="1988" height="1411" alt="image" src="https://github.com/user-attachments/assets/bb262243-cd4e-427b-8b9a-e59e0863a1af" />
 
 A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations with VR support
 
@@ -132,7 +132,7 @@ object custom properties (buttons, levers, lamps); the conventions are listed in
 * Classic HUD
 * Classic rendering
 
-<img width="1681" height="1342" alt="image" src="https://github.com/user-attachments/assets/1d783e0c-12fa-4f75-93a8-327b0d952782" />
+<img width="1842" height="1269" alt="image" src="https://github.com/user-attachments/assets/5c706024-1f8b-46f8-ad07-95373a8a8056" />
 
 
 ## Testing

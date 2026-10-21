@@ -13,6 +13,7 @@ use stealth_mission::world::flags as F;
 use stealth_sim::SimData;
 
 use crate::canvas::Canvas;
+use crate::map_draw::{self, MapView, UAV_PINK, drone_cross, missile_circle};
 use crate::menu::{AMBER, BRIGHT, DIM, GREEN, MenuState, big_button, section};
 use crate::mfd::{MapModel, map_models, rasterise_map};
 use crate::mission::{PlannedRoute, RouteKind, RoutePoint};
@@ -81,6 +82,11 @@ impl Planner {
     pub fn opened(open: bool) -> Self {
         Self { open, ..default() }
     }
+
+    /// The map picture of theater `id`, once prepared.
+    pub fn map_texture(&self, id: &str) -> Option<&egui::TextureHandle> {
+        self.texture.as_ref().filter(|(t, _)| t == id).map(|(_, t)| t)
+    }
 }
 
 /// Prepares the map texture of the menu's theater while the planner is open.
@@ -95,12 +101,22 @@ pub fn prepare_map(
     meshes: Res<Assets<GltfMesh>>,
     mesh_data: Res<Assets<Mesh>>,
     mut contexts: EguiContexts,
+    debrief: Option<Res<crate::debrief::Debrief>>,
+    app_state: Res<State<crate::settings::AppState>>,
 ) {
-    if !planner.open {
-        return;
-    }
-    let Some(Ok(m)) = &state.mission else { return };
-    let id = m.theater_code.to_ascii_lowercase();
+    // The planner's mission, or the one flown on the debrief's flight map.
+    let code = if *app_state.get() == crate::settings::AppState::Debrief {
+        debrief.as_ref().and_then(|d| d.mission.as_ref()).map(|m| m.theater_code.clone())
+    } else if planner.open {
+        match &state.mission {
+            Some(Ok(m)) => Some(m.theater_code.clone()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let Some(code) = code else { return };
+    let id = code.to_ascii_lowercase();
     if planner.texture.as_ref().is_some_and(|(t, _)| *t == id) {
         return;
     }
@@ -350,41 +366,16 @@ fn map_view(
             lo = lo.min(egui::vec2(p.x as f32, p.y as f32));
             hi = hi.max(egui::vec2(p.x as f32, p.y as f32));
         }
-        planner.centre = (lo + hi) / 2.0;
-        planner.scale =
-            ((hi.x - lo.x) / rect.width()).max((hi.y - lo.y) / rect.height()).max(4.0) * 1.4;
+        (planner.centre, planner.scale) = MapView::fit(rect, lo, hi);
         planner.fitted = Some(route.mission.clone());
     }
-    let (centre, scale) = (planner.centre, planner.scale);
-    let to_screen = move |x: f32, y: f32| rect.center() + (egui::vec2(x, y) - centre) / scale;
-    let to_map = move |p: egui::Pos2| centre + (p - rect.center()) * scale;
+    let view = MapView { rect, centre: planner.centre, scale: planner.scale };
+    let scale = view.scale;
+    let to_screen = |x: f32, y: f32| view.to_screen(x, y);
+    let to_map = |p: egui::Pos2| view.to_map(p);
     let painter = painter.with_clip_rect(rect);
 
-    // Map picture.
-    match &planner.texture {
-        Some((_, tex)) => {
-            let r = egui::Rect::from_min_max(
-                to_screen(0.0, 0.0),
-                to_screen(0x8000 as f32, 0x8000 as f32),
-            );
-            painter.image(
-                tex.id(),
-                r,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-        }
-        None => {
-            painter.text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "LOADING MAP...",
-                egui::FontId::monospace(18.0),
-                DIM,
-            );
-        }
-    }
-    let red = MISSILE_RED;
+    map_draw::picture(&painter, &view, planner.texture.as_ref().map(|(_, t)| t));
     // Threat coverage: filled radar detection circles, dotted missile range circles; dim when
     // off the air.
     for ring in rings {
@@ -399,34 +390,9 @@ fn map_view(
                 egui::Stroke::new(1.5, AMBER.gamma_multiply(alpha)),
             );
         }
-        painter.circle_filled(c, 3.0, red.gamma_multiply(alpha));
-        if 1.0 / scale > 0.02 {
-            painter.text(
-                c + egui::vec2(5.0, -5.0),
-                egui::Align2::LEFT_BOTTOM,
-                &ring.name,
-                egui::FontId::monospace(11.0),
-                red.gamma_multiply(alpha),
-            );
-        }
+        map_draw::site(&painter, &view, c, &ring.name, alpha);
     }
-    // Airfields.
-    for o in m.world.objects.iter().filter(|o| o.flags & F::AIRFIELD != 0) {
-        let p = to_screen(o.x as u16 as f32, o.y as u16 as f32);
-        let colour = if o.flags & F::FRIENDLY != 0 {
-            egui::Color32::from_rgb(90, 160, 255)
-        } else if o.flags & F::NEUTRAL != 0 {
-            DIM
-        } else {
-            red
-        };
-        painter.rect_stroke(
-            egui::Rect::from_center_size(p, egui::vec2(8.0, 8.0)),
-            0.0,
-            egui::Stroke::new(1.5, colour),
-            egui::StrokeKind::Middle,
-        );
-    }
+    map_draw::airfields(&painter, &view, m);
     // Drones on their way (drone defense).
     if let Some(d) = &m.drones {
         let t = &m.world.objects[d.target as usize];
@@ -481,13 +447,6 @@ fn map_view(
         })
     };
     if let Some(pos) = resp.hover_pos() {
-        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll != 0.0 {
-            // Zoom around the cursor.
-            let before = to_map(pos);
-            planner.scale = (planner.scale * (-scroll * 0.002).exp()).clamp(1.0, 64.0);
-            planner.centre = before - (pos - rect.center()) * planner.scale;
-        }
         if hit_point(pos).is_some_and(|i| route.points[i].kind == RouteKind::Nav) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         } else if hit_leg(pos).is_some() {
@@ -503,17 +462,18 @@ fn map_view(
             .filter(|&i| route.points[i].kind == RouteKind::Nav)
             .map(|i| (i, pts[i] - pos));
     }
-    if resp.dragged() {
-        match planner.drag {
-            Some((i, offset)) => {
-                if let Some(pos) = resp.interact_pointer_pos() {
-                    let p = to_map(pos + offset);
-                    route.points[i].x = p.x.clamp(0x100 as f32, 0x7F00 as f32) as i32;
-                    route.points[i].y = p.y.clamp(0x100 as f32, 0x7F00 as f32) as i32;
-                }
+    match planner.drag {
+        Some((i, offset)) => {
+            if resp.dragged()
+                && let Some(pos) = resp.interact_pointer_pos()
+            {
+                let p = to_map(pos + offset);
+                route.points[i].x = p.x.clamp(0x100 as f32, 0x7F00 as f32) as i32;
+                route.points[i].y = p.y.clamp(0x100 as f32, 0x7F00 as f32) as i32;
             }
-            None => planner.centre -= resp.drag_delta() * planner.scale,
         }
+        // Wheel zoom around the cursor; a drag that grabbed no point pans.
+        None => view.pan_zoom(ui, &resp, &mut planner.centre, &mut planner.scale),
     }
     if resp.drag_stopped() {
         planner.drag = None;
@@ -536,30 +496,6 @@ fn map_view(
     }
 }
 
-const MISSILE_RED: egui::Color32 = egui::Color32::from_rgb(255, 70, 50);
-const UAV_PINK: egui::Color32 = egui::Color32::from_rgb(255, 120, 200);
-
-/// A SAM site's missile range: a dotted red circle.
-fn missile_circle(c: egui::Pos2, r: f32, alpha: f32) -> Vec<egui::Shape> {
-    let n = ((r * std::f32::consts::TAU / 2.0) as usize).clamp(24, 720);
-    let pts: Vec<egui::Pos2> = (0..=n)
-        .map(|k| c + egui::Vec2::angled(k as f32 / n as f32 * std::f32::consts::TAU) * r)
-        .collect();
-    egui::Shape::dashed_line(
-        &pts,
-        egui::Stroke::new(1.4, MISSILE_RED.gamma_multiply(alpha * 0.8)),
-        3.0,
-        4.0,
-    )
-}
-
-/// A drone on the map: a pink cross.
-fn drone_cross(painter: &egui::Painter, p: egui::Pos2) {
-    let stroke = egui::Stroke::new(1.5, UAV_PINK);
-    painter.line_segment([p + egui::vec2(-4.0, -4.0), p + egui::vec2(4.0, 4.0)], stroke);
-    painter.line_segment([p + egui::vec2(-4.0, 4.0), p + egui::vec2(4.0, -4.0)], stroke);
-}
-
 #[derive(Clone, Copy)]
 enum Legend {
     Detection,
@@ -569,17 +505,11 @@ enum Legend {
 
 /// A map legend line: the symbol as drawn on the map, then its meaning.
 fn legend(ui: &mut egui::Ui, symbol: Legend, text: &str) {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(18.0, 14.0), egui::Sense::hover());
-        let painter = ui.painter_at(rect.expand(1.0));
-        let c = rect.center();
-        match symbol {
-            Legend::Detection => {
-                painter.circle(c, 6.0, AMBER.gamma_multiply(0.18), egui::Stroke::new(1.5, AMBER));
-            }
-            Legend::Missile => painter.extend(missile_circle(c, 6.0, 1.0)),
-            Legend::Drone => drone_cross(&painter, c),
+    map_draw::legend(ui, text, |painter, c| match symbol {
+        Legend::Detection => {
+            painter.circle(c, 6.0, AMBER.gamma_multiply(0.18), egui::Stroke::new(1.5, AMBER));
         }
-        ui.label(egui::RichText::new(text).small().color(BRIGHT));
+        Legend::Missile => painter.extend(missile_circle(c, 6.0, 1.0)),
+        Legend::Drone => drone_cross(painter, c),
     });
 }

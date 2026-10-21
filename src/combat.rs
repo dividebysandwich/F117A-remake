@@ -125,6 +125,8 @@ pub struct Combat {
     /// WLD names of the mission world (object type names).
     names: Vec<String>,
     log: bool,
+    /// The flight so far, for the debrief and the Tacview export.
+    pub record: crate::recorder::FlightRecord,
 }
 
 /// Something destroyed on the ground: map position and whether it was a vehicle (else a
@@ -330,6 +332,7 @@ fn start_combat(
         lockheed: m.settings.plane == stealth_mission::Plane::Lockheed,
         names,
         log: std::env::args().any(|a| a == "--log-flight" || a == "--log-sim"),
+        record: default(),
     });
 }
 
@@ -557,6 +560,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
             if combat.log {
                 log_event(&combat.data, &e, a.time);
             }
+            combat.record.event(&combat.sim, &e);
             match e {
                 SimEvent::Message(s) => msgs.show(s),
                 SimEvent::CancelTimeAccel => accel.on = false,
@@ -627,6 +631,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                 _ => {}
             }
         }
+        combat.record.sample(&combat.sim);
         let w = combat.sim.wreck();
         if w.alt > 0 && w.x != 0 {
             combat.wreck = Some((w.x, w.y));
@@ -1392,6 +1397,7 @@ fn end_overlay(
                         damage: Some(c.sim.world_damage()),
                         mission: mission.as_ref().map(|m| m.0.clone()),
                         career: Vec::new(),
+                        record: c.record.clone(),
                     });
                 }
                 next.set(AppState::Debrief);

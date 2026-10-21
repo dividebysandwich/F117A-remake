@@ -25,6 +25,7 @@ struct AutoShot {
     frames: u32,
     time: Option<f32>,
     taken: Option<u32>,
+    debrief: bool,
 }
 
 impl Plugin for AutoShotPlugin {
@@ -34,6 +35,7 @@ impl Plugin for AutoShotPlugin {
             frames: self.frames,
             time: self.time,
             taken: None,
+            debrief: std::env::args().any(|a| a == "--shot-debrief"),
         })
         .init_resource::<ShotRequest>();
         if self.times.is_empty() {
@@ -57,7 +59,12 @@ fn shoot(
     aircraft: Query<&Aircraft, With<Player>>,
     request: Res<ShotRequest>,
     mut exit: MessageWriter<AppExit>,
+    state: Res<State<crate::settings::AppState>>,
 ) {
+    // `--shot-debrief`: the frames count from the debrief on.
+    if shot.debrief && *state.get() != crate::settings::AppState::Debrief {
+        return;
+    }
     *frame += 1;
     let due = request.0
         || match shot.time {

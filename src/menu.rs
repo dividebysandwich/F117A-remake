@@ -38,7 +38,11 @@ impl Plugin for MenuPlugin {
             .insert_resource(crate::career::CareerWindow::opened(
                 std::env::args().any(|a| a == "--open-career"),
             ))
-            .add_systems(Update, crate::planner::prepare_map.run_if(in_state(AppState::Menu)))
+            .add_systems(
+                Update,
+                crate::planner::prepare_map
+                    .run_if(in_state(AppState::Menu).or_else(in_state(AppState::Debrief))),
+            )
             .add_systems(EguiPrimaryContextPass, menu_ui.run_if(in_state(AppState::Menu)));
     }
 }

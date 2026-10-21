@@ -448,6 +448,8 @@ fn clouds_enabled() -> bool {
 const BOLT_COLOR: Vec3 = Vec3::new(0.55, 0.58, 0.75);
 /// The palette's grey cloud ramp (`CLOUD_RAMP` in palette.wgsl).
 const CLOUD_RAMP: u8 = 0xE0;
+/// Upper sky band (`band` in palette.wgsl): what night clouds are lit like.
+const NIGHT_SKY: u8 = 0x8B;
 
 /// The volumetric clouds' light and colours, from the same globals as the palette shader:
 /// the live palette's cloud ramp (it changes with the time of day), the sun, the haze, the
@@ -469,11 +471,22 @@ fn shade_clouds(
     let tint = |c: Vec3| if nvg { nvg_color(c, lighting.daylight) } else { c };
     let flash_scale = 1.0 + (0.3 - 1.0) * lighting.daylight.clamp(0.0, 1.0);
     let (line_a, line_b) = state.bolt_light(origin.origin);
+    let linear = |i: u8| {
+        let c = palette.color(i).to_linear();
+        Vec3::new(c.red, c.green, c.blue)
+    };
+    // The night palette's cloud ramp is all but black: by night the clouds are lit by the
+    // moon and the sky instead, tops brighter than the sky behind them, bases darker.
+    let night = 1.0 - lighting.daylight.clamp(0.0, 1.0);
+    let sky = linear(NIGHT_SKY);
+    // Moonlight is greyer than the sky.
+    let sky = sky.lerp(Vec3::splat(sky.dot(Vec3::new(0.2126, 0.7152, 0.0722))), 0.5);
     *shading = CloudShading {
         sun_dir: lighting.sun.truncate(),
         ramp: std::array::from_fn(|i| {
-            let c = palette.color(CLOUD_RAMP + i as u8).to_linear();
-            tint(Vec3::new(c.red, c.green, c.blue)).extend(1.0)
+            let k = i as f32 / 15.0;
+            let moonlit = (sky * (1.8 - 1.3 * k) + Vec3::splat(0.004 * (1.0 - k))) * night;
+            tint(linear(CLOUD_RAMP + i as u8).max(moonlit)).extend(1.0)
         }),
         haze_distance: (state.weather.vis_km as f32 * 1000.0).max(4000.0),
         flash: BOLT_COLOR * state.flash * flash_scale,

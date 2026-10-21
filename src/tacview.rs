@@ -214,6 +214,11 @@ impl AcmiWriter {
         }
     }
 
+    /// Whether `rec` started over since the last call (a new campaign sortie in the same flight).
+    pub fn restarted(&self, rec: &FlightRecord) -> bool {
+        rec.samples.len() < self.samples
+    }
+
     /// Appends to `w` the frames recorded since the last call (nothing before the first sample).
     pub fn advance(
         &mut self,

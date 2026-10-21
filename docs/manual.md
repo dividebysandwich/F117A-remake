@@ -867,7 +867,7 @@ roughly where the real places are.
 game hosts a Tacview session and sends it the same data while you fly. In Tacview, choose
 *Record > Real-Time Telemetry* and connect to address `127.0.0.1`, port `42674`, with an empty
 password. Tacview can join from the menu, before the flight, or during it: it then first
-receives the flight so far. The session lasts one flight: when it ends, Tacview is disconnected
+receives the flight so far. The session lasts one flight (in the campaign, one sortie): when it ends, Tacview is disconnected
 (it keeps what it received) and has to connect again for the next one. To watch from another
 computer, start the game with `--tacview-address 0.0.0.0` (or `<ip>:<port>`) and let it through
 the firewall; `--tacview-password <text>` makes Tacview give that password to join.

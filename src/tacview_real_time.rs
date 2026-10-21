@@ -292,6 +292,10 @@ fn stream(
     let (Some(combat), Some(mission)) = (combat, mission) else { return };
     let telemetry = &mut *telemetry;
     let Some(server) = &telemetry.server else { return };
+    // A new campaign sortie: its clients are let go like at the end of a flight.
+    if telemetry.writer.take_if(|w| w.restarted(&combat.record)).is_some() {
+        server.send(Msg::End);
+    }
     let writer = telemetry.writer.get_or_insert_with(|| {
         server.send(Msg::Begin);
         AcmiWriter::new(&mission.0)

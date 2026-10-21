@@ -254,6 +254,22 @@ fn start_combat(
         .unwrap_or_else(|| crate::loadout::PlannedLoadout::of(m, settings.aircraft));
     sim.set_loadout(&loadout.stations());
     sim.select_bay(loadout.first_choice(m));
+    // Test aid (`--damage bits,hits`): start damaged (bits as in `stealth_sim::dmg`, 0x20 fire).
+    let args: Vec<String> = std::env::args().collect();
+    if let Some((bits, hits)) =
+        args.windows(2).find(|w| w[0] == "--damage").and_then(|w| w[1].split_once(',')).and_then(
+            |(b, h)| {
+                let b = b.trim();
+                let bits = match b.strip_prefix("0x") {
+                    Some(hex) => u8::from_str_radix(hex, 16).ok()?,
+                    None => b.parse().ok()?,
+                };
+                Some((bits, h.trim().parse::<i32>().ok()?))
+            },
+        )
+    {
+        sim.set_damage(bits, hits);
+    }
     // The player starts at the sim's start state (the same formula as `mission::start_pose`).
     let st = sim.start_state();
     setup.start = Some(StartPose {

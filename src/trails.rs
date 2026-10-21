@@ -6,6 +6,8 @@
 //!
 //! * Missiles (all projectiles but bombs and dropped equipment) trail smoke.
 //! * Aircraft (AI and the player) above `CONTRAIL_VIEW_Z` leave two contrails.
+//! * The damaged player aircraft trails smoke: grey, black when badly hit or on fire. It fades
+//!   in behind the smoke puffs of [`crate::explosions`] and hangs in the air for a minute.
 
 use std::collections::HashMap;
 
@@ -122,6 +124,8 @@ struct Style {
     spacing: f64,
     /// Alpha at the emitter (contrails form a little behind the engines).
     head_alpha: f32,
+    /// Seconds a segment takes to fade in (0: born opaque).
+    fade_in: f32,
 }
 
 const SMOKE: Style = Style {
@@ -133,6 +137,7 @@ const SMOKE: Style = Style {
     fade: 20.0,
     spacing: 12.0,
     head_alpha: 1.0,
+    fade_in: 0.0,
 };
 
 const CONTRAIL: Style = Style {
@@ -144,7 +149,37 @@ const CONTRAIL: Style = Style {
     fade: 60.0,
     spacing: 30.0,
     head_alpha: 0.0,
+    fade_in: 0.0,
 };
+
+/// Smoke of the damaged player aircraft: light and heavy damage (or fire).
+const DAMAGE_SMOKE: Style = Style {
+    colour: 7,
+    opacity: 0.45,
+    width: (1.5, 22.0),
+    grow: 40.0,
+    fade_after: 20.0,
+    fade: 40.0,
+    spacing: 20.0,
+    head_alpha: 0.0,
+    fade_in: 4.0,
+};
+
+const HEAVY_DAMAGE_SMOKE: Style = Style {
+    colour: 8,
+    opacity: 0.7,
+    width: (2.5, 30.0),
+    grow: 40.0,
+    fade_after: 30.0,
+    fade: 40.0,
+    spacing: 20.0,
+    head_alpha: 0.0,
+    fade_in: 4.0,
+};
+
+/// Where the damaged aircraft's smoke and fire come out (aircraft frame, metres: behind the
+/// middle, at the engines).
+pub const DAMAGE_EMITTER: Vec3 = Vec3::new(0.0, 0.3, 8.0);
 
 /// Contrail emitters: behind the aircraft centre, left and right (aircraft frame, metres).
 const ENGINES: [Vec3; 2] = [Vec3::new(-3.0, 0.0, 8.0), Vec3::new(3.0, 0.0, 8.0)];
@@ -157,6 +192,8 @@ enum Source {
     Aircraft(usize, usize),
     /// Player engine.
     Player(usize),
+    /// Damaged player aircraft (heavy smoke).
+    PlayerSmoke(bool),
 }
 
 struct Trail {
@@ -201,7 +238,10 @@ impl Trail {
             .iter()
             .map(|&(p, t)| {
                 let age = now - t;
-                let alpha = 1.0 - ((age - s.fade_after) / s.fade).clamp(0.0, 1.0);
+                let mut alpha = 1.0 - ((age - s.fade_after) / s.fade).clamp(0.0, 1.0);
+                if s.fade_in > 0.0 {
+                    alpha *= (age / s.fade_in).clamp(0.0, 1.0);
+                }
                 let w = s.width.0 + (s.width.1 - s.width.0) * (age / s.grow).clamp(0.0, 1.0).sqrt();
                 (p, w, alpha)
             })
@@ -240,7 +280,8 @@ struct Trails {
     active: HashMap<Source, Trail>,
     /// Trails left behind, fading out.
     detached: Vec<Trail>,
-    materials: Vec<(u8, Handle<TrailMaterial>)>,
+    /// By colour and opacity.
+    materials: Vec<((u8, u32), Handle<TrailMaterial>)>,
 }
 
 /// Missiles trail smoke; bombs (28..30) and dropped equipment (38) do not.
@@ -314,6 +355,18 @@ fn update_trails(
             emitters.push((Source::Player(k), &CONTRAIL, pos.0 + (a.orientation * o).as_dvec3()));
         }
     }
+    let d = sim.damage_effects();
+    if let Ok((a, pos)) = player.single()
+        && d.bits != 0
+        && a.ended.is_none()
+    {
+        let heavy = d.bits & stealth_sim::dmg::FIRE != 0 || d.hits >= 4;
+        emitters.push((
+            Source::PlayerSmoke(heavy),
+            if heavy { &HEAVY_DAMAGE_SMOKE } else { &DAMAGE_SMOKE },
+            pos.0 + (a.orientation * DAMAGE_EMITTER).as_dvec3(),
+        ));
+    }
 
     // Detach the trails whose emitter is gone.
     let live: Vec<Source> = emitters.iter().map(|e| e.0).collect();
@@ -328,14 +381,15 @@ fn update_trails(
 
     for (src, style, p) in emitters {
         if !trails.active.contains_key(&src) {
-            let material = match trails.materials.iter().find(|(c, _)| *c == style.colour) {
+            let key = (style.colour, style.opacity.to_bits());
+            let material = match trails.materials.iter().find(|(k, _)| *k == key) {
                 Some((_, m)) => m.clone(),
                 None => {
                     let m = materials.add(TrailMaterial {
                         params: Vec4::new(style.colour as f32, style.opacity, 0.0, 0.0),
                         globals: palette.globals.clone(),
                     });
-                    trails.materials.push((style.colour, m.clone()));
+                    trails.materials.push((key, m.clone()));
                     m
                 }
             };

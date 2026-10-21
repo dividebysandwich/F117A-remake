@@ -42,7 +42,7 @@ const ATTRIBUTE_LOOK: MeshVertexAttribute =
     MeshVertexAttribute::new("ParticleLook", 0x7A12_0003, VertexFormat::Float32x2);
 
 /// Most translucent puffs alive at once (the oldest smoke goes first).
-const MAX_PUFFS: usize = 700;
+const MAX_PUFFS: usize = 1000;
 /// Most solid particles alive at once.
 const MAX_CHUNKS: usize = 260;
 /// Gravity (m/s²).
@@ -60,7 +60,11 @@ impl Plugin for ExplosionsPlugin {
             .add_systems(OnExit(AppState::Flight), cleanup)
             .add_systems(
                 Update,
-                (spawn_blasts.run_if(resource_exists::<Combat>), simulate)
+                (
+                    spawn_blasts.run_if(resource_exists::<Combat>),
+                    damage_trail.run_if(resource_exists::<Combat>),
+                    simulate,
+                )
                     .chain()
                     .after(CombatSystems)
                     .after(crate::sim_render::SimRenderSystems)
@@ -157,6 +161,8 @@ enum PuffLook {
     GunFlash,
     /// Smoke of the given darkness (0 black .. 1 light grey).
     Smoke(f32),
+    /// Smoke trailing from a damaged aircraft: like `Smoke`, without the fire's glow.
+    Trail(f32),
     /// Brown dust thrown up by ground impacts.
     Dust,
 }
@@ -205,6 +211,11 @@ impl Puff {
                 let c = Vec3::splat(g) + Vec3::new(0.6, 0.25, 0.05) * warm;
                 (c, self.opacity * fade_in * (1.0 - smooth(0.35, 1.0, t)), warm * 0.6)
             }
+            PuffLook::Trail(shade) => (
+                Vec3::splat(0.04 + 0.32 * shade),
+                self.opacity * fade_in * (1.0 - smooth(0.3, 1.0, t)),
+                0.0,
+            ),
             PuffLook::Dust => (
                 Vec3::new(0.30, 0.24, 0.17),
                 self.opacity * fade_in * (1.0 - smooth(0.3, 1.0, t)),
@@ -254,6 +265,9 @@ struct Particles {
     smoke_clock: [f32; 16],
     /// Flash lights: entity, age, life, strength.
     lights: Vec<(Entity, f32, f32, f32)>,
+    /// The damaged player aircraft's trail: last emitter point and the puffs owed (smoke, fire).
+    trail: Option<DVec3>,
+    trail_owed: (f32, f32),
     rng: u32,
 }
 
@@ -419,6 +433,76 @@ fn spawn_blasts(
             let r = 6.0 + 1.5 * ((s.age & 0xE) >> 1) as f32;
             let life = p.range(5.0, 8.0);
             p.puff(pos, Vec3::Y * 2.0, life, (r, r * 3.0), PuffLook::Smoke(shade), 0.3, 1.5, 0.75);
+        }
+    }
+}
+
+/// Where the damaged aircraft's smoke and fire come out (aircraft frame, metres: behind the
+/// middle, at the engines).
+/// Metres flown per smoke puff and per flame puff.
+const SMOKE_SPACING: f32 = 4.0;
+const FIRE_SPACING: f32 = 2.5;
+
+/// The player's aircraft trails smoke once it is damaged, and flames while it is on fire. The
+/// smoke puffs billow for a few seconds and fade into the long smoke ribbon
+/// ([`crate::trails`]) that carries the trail on for kilometres.
+fn damage_trail(
+    combat: Res<Combat>,
+    mut p: ResMut<Particles>,
+    time: Res<Time>,
+    player: Query<(&crate::flight::Aircraft, &WorldPos), With<crate::flight::Player>>,
+) {
+    let p = &mut *p;
+    let dt = time.delta_secs();
+    let d = combat.sim.damage_effects();
+    let Ok((a, pos)) = player.single() else { return };
+    if d.bits == 0 || dt <= 0.0 || a.ended.is_some() {
+        p.trail = None;
+        p.trail_owed = (0.0, 0.0);
+        return;
+    }
+    let at = pos.0 + (a.orientation * crate::trails::DAMAGE_EMITTER).as_dvec3();
+    // A jump (a respawn, the floating origin) starts a new trail.
+    let last = p.trail.filter(|l| l.distance(at) < 400.0).unwrap_or(at);
+    p.trail = Some(at);
+    let seg = at - last;
+    let vel = (seg / dt as f64).as_vec3();
+    let len = seg.length() as f32;
+    let fire = d.bits & stealth_sim::dmg::FIRE != 0;
+    let hits = d.hits.max(1) as f32;
+    // Severity 0 (one hit) .. 1 (eight or more).
+    let sev = ((hits - 1.0) / 7.0).clamp(0.0, 1.0);
+    let heavy = if fire { 1.0 } else { sev };
+
+    // Smoke: drifts in the air where it was left, growing and fading; light grey and thin at
+    // first, darker and thicker with more damage or a fire.
+    p.trail_owed.0 += len / SMOKE_SPACING + dt * 4.0;
+    let n = p.trail_owed.0.floor();
+    p.trail_owed.0 -= n;
+    for i in 0..n as usize {
+        let k = (i as f64 + p.rand() as f64) / n as f64;
+        let o = last + seg * k + (p.dir(0.0) * 0.6).as_dvec3();
+        let shade = (0.75 - 0.7 * heavy) * p.range(0.7, 1.1);
+        let life = p.range(4.0, 6.0);
+        let r = 1.2 + 1.3 * heavy;
+        let v = vel * 0.1 + p.dir(0.0) * 1.5;
+        let opacity = 0.25 + 0.45 * heavy;
+        p.puff(o, v, life, (r, r * 5.0), PuffLook::Trail(shade), 0.8, 0.3, opacity);
+    }
+
+    // Flames: short lived glowing puffs streaming back from the engines.
+    if fire {
+        p.trail_owed.1 += len / FIRE_SPACING + dt * 30.0;
+        let n = p.trail_owed.1.floor();
+        p.trail_owed.1 -= n;
+        for i in 0..n as usize {
+            let k = (i as f64 + p.rand() as f64) / n as f64;
+            let o = last + seg * k + (p.dir(0.0) * 0.4).as_dvec3();
+            // Most of the aircraft's speed, so the flame stays close behind it.
+            let v = vel * p.range(0.75, 0.9) + p.dir(0.0) * 1.5;
+            let life = p.range(0.15, 0.3);
+            let s = p.range(0.7, 1.2);
+            p.puff(o, v, life, (s, s * 1.8), PuffLook::Fire, 1.5, 1.0, 0.85);
         }
     }
 }

@@ -54,7 +54,15 @@ impl Plugin for SceneryPlugin {
                     build_scenery
                         .run_if(resource_exists::<Theater>)
                         .run_if(not(resource_exists::<Scenery>)),
-                    (stream_blocks, airfields, lamps_at_night, papi_lights, share_parking)
+                    (
+                        stream_blocks,
+                        airfields,
+                        lamps_at_night,
+                        papi_lights,
+                        approach_sides,
+                        clear_approaches,
+                        share_parking,
+                    )
                         .run_if(resource_exists::<Scenery>),
                 )
                     .chain()
@@ -170,6 +178,18 @@ struct Airfields {
 /// A batch of approach flashers lit in its turn of the sequence.
 #[derive(Component)]
 struct Strobe(usize);
+
+/// The approach lighting of one runway end, shown only from that side of the runway (the far
+/// end's would face away): horizontal unit vector from the runway towards the approach.
+#[derive(Component)]
+struct ApproachSide(Vec3);
+
+/// A theater model's dot light checked against the approach lighting areas.
+#[derive(Component)]
+struct ApproachChecked;
+
+/// Approach flashers are drawn this many times the size of other lights.
+const STROBE_DOT_SCALE: u32 = 3;
 
 /// A PAPI light unit (a one-dot batch at its transform; data from `geom::PapiLight`).
 #[derive(Component)]
@@ -326,6 +346,7 @@ fn stream_blocks(
             geom,
             DVec3::new(c.x, 0.0, -c.y),
             tier,
+            0,
         );
         blocks.0.insert(key, e);
     }
@@ -343,7 +364,26 @@ fn spawn_block(
     geom: Geom,
     origin: DVec3,
     tier: Tier,
+    lamp_tag: u32,
 ) -> Entity {
+    let root = commands
+        .spawn((SceneryBlock, WorldPos(origin), Transform::default(), Visibility::default()))
+        .id();
+    let children = spawn_geom(commands, meshes, palette, geom, tier, lamp_tag);
+    commands.entity(root).add_children(&children);
+    root
+}
+
+/// The meshes of a block's geometry (block-local positions); `lamp_tag` adds mesh tag bits to
+/// its lamps.
+fn spawn_geom(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    palette: &Palette,
+    geom: Geom,
+    tier: Tier,
+    lamp_tag: u32,
+) -> Vec<Entity> {
     // Haze like the original's LOD1 objects, starting a little further out (whole blocks share
     // their centre's haze level); farmland is ground and hazes like the coarse terrain levels.
     let tag = MeshTag(match tier {
@@ -351,9 +391,6 @@ fn spawn_block(
         Tier::Main => mesh_tag(1, 6, false),
         _ => mesh_tag(1, 5, false),
     });
-    let root = commands
-        .spawn((SceneryBlock, WorldPos(origin), Transform::default(), Visibility::default()))
-        .id();
     let mut children = Vec::new();
     // Buildings and structures (main tier) are warm in the FLIR picture, trees are not.
     let solid_tag = if tier == Tier::Main { MeshTag(tag.0 | TAG_WARM) } else { tag.clone() };
@@ -395,7 +432,8 @@ fn spawn_block(
                 .id(),
         );
     }
-    let dots = (MeshTag(tag.0 | TAG_DOT), bevy::light::NotShadowCaster, Visibility::Hidden);
+    let dot_tag = tag.0 | TAG_DOT;
+    let dots = (bevy::light::NotShadowCaster, Visibility::Hidden);
     // All lamps of the block in one mesh with per-vertex colours, so they keep their drawing
     // order (dots don't write depth: the later of two overlapping lamps is on top, e.g. a mast's
     // red beacon over its flood lamp).
@@ -409,6 +447,7 @@ fn spawn_block(
                     Mesh3d(m),
                     MeshMaterial3d(palette.line_material(first)),
                     dots.clone(),
+                    MeshTag(dot_tag | lamp_tag),
                     LampBatch { points, colours, radius },
                 ))
                 .id(),
@@ -422,13 +461,13 @@ fn spawn_block(
                     Mesh3d(m),
                     MeshMaterial3d(palette.line_material(airfield::STROBE)),
                     dots.clone(),
+                    MeshTag(dot_tag | dot_scale(STROBE_DOT_SCALE)),
                     Strobe(phase),
                 ))
                 .id(),
         );
     }
-    commands.entity(root).add_children(&children);
-    root
+    children
 }
 
 /// Lamps come on with the original's lights (sky dark enough); the approach flashers run
@@ -498,7 +537,18 @@ fn airfields(
                 geom,
                 DVec3::new(c.x, 0.0, -c.y),
                 Tier::Main,
+                0,
             );
+            for end in [-1.0, 1.0] {
+                let (geom, toward) = airfield::approach_lights(a, end);
+                let children =
+                    spawn_geom(&mut commands, &mut meshes, &palette, geom, Tier::Main, 0);
+                let side = commands
+                    .spawn((ApproachSide(toward), Transform::default(), Visibility::Hidden))
+                    .add_children(&children)
+                    .id();
+                commands.entity(e).add_child(side);
+            }
             for l in papi {
                 let light = commands
                     .spawn((
@@ -519,6 +569,53 @@ fn airfields(
     for &e in &airfields.roots {
         if let Ok(mut vis) = vis.get_mut(e) {
             vis.set_if_neq(v);
+        }
+    }
+}
+
+/// Shows the approach lighting of the runway end on the main view's side of each runway.
+#[allow(clippy::type_complexity)]
+fn approach_sides(
+    cameras: Query<
+        (&Camera, &GlobalTransform),
+        (With<Camera3d>, Without<crate::trackcam::TrackCamera>),
+    >,
+    mut sides: Query<(&ApproachSide, &GlobalTransform, &mut Visibility)>,
+) {
+    let Some((_, eye)) = cameras.iter().find(|(c, _)| c.is_active) else { return };
+    let eye = eye.translation();
+    for (side, tf, mut vis) in &mut sides {
+        let seen = (eye - tf.translation()).dot(side.0) > 0.0;
+        vis.set_if_neq(if seen { Visibility::Inherited } else { Visibility::Hidden });
+    }
+}
+
+/// Hides the theater models' runway lights in the approach lighting areas (their centreline
+/// lights would drown out the approach lights).
+#[allow(clippy::type_complexity)]
+fn clear_approaches(
+    mut commands: Commands,
+    scenery: Res<Scenery>,
+    origin: Res<crate::world::FloatingOrigin>,
+    dots: Query<
+        (Entity, &GlobalTransform, &MeshTag),
+        (With<crate::dots::DotLight>, Without<ApproachChecked>),
+    >,
+) {
+    for (e, tf, tag) in &dots {
+        // Not placed yet (transforms propagate after Update); aircraft lights move.
+        if *tf == GlobalTransform::IDENTITY {
+            continue;
+        }
+        let mut entity = commands.entity(e);
+        entity.insert(ApproachChecked);
+        if tag.0 & 7 == crate::palette_material::LEVEL_AIRCRAFT {
+            continue;
+        }
+        let p = tf.translation().as_dvec3() + origin.origin;
+        let ground = DVec2::new(p.x, -p.z);
+        if scenery.airfields.iter().any(|a| airfield::in_approach(a, ground)) {
+            entity.insert(Visibility::Hidden);
         }
     }
 }

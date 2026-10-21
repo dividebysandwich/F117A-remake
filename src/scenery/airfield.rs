@@ -514,7 +514,6 @@ pub fn build(a: &Airfield) -> Geom {
             g.lamp(RED, f.at(ax.at(end * (l - 3.0), v), 0.5));
             v += 6.0;
         }
-        approach(&mut g, &f, &ax, end, l, w);
     }
     // PAPI units: housings and the lights facing the approach.
     for papi in &a.papi {
@@ -575,6 +574,25 @@ pub fn build(a: &Airfield) -> Geom {
         building(b, &f, &mut g);
     }
     g
+}
+
+/// The approach lighting beyond one runway end (`end` -1 or 1), around the runway centre like
+/// `build`, and the horizontal unit vector from the runway towards its approach (Bevy axes).
+pub fn approach_lights(a: &Airfield, end: f64) -> (Geom, Vec3) {
+    let rw = &a.runway;
+    let ax = Axes::new(rw);
+    let mut g = Geom::default();
+    approach(&mut g, &Frame::around(rw.c), &ax, end, rw.half_len, rw.half_width);
+    (g, dir3(ax.u) * end as f32)
+}
+
+/// Whether a ground point lies in the approach lighting area beyond either runway end (where
+/// the theater models' own runway lights would crowd the approach lights).
+pub fn in_approach(a: &Airfield, p: DVec2) -> bool {
+    let rw = &a.runway;
+    let d = p - rw.c;
+    let beyond = d.dot(rw.axis).abs() - rw.half_len;
+    beyond > 5.0 && beyond < APPROACH + 60.0 && d.dot(rw.axis.perp()).abs() < 40.0
 }
 
 fn inside_quad(q: &[DVec2; 4], p: DVec2) -> bool {

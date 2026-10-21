@@ -107,6 +107,10 @@ struct VertexOutput {
 // Dot lights: size relative to one original pixel (320x200 screen) and lower bound in pixels.
 const DOT_SIZE: f32 = 0.6;
 const DOT_MIN_PIXELS: f32 = 2.0;
+// Aircraft lights (level code 5) up close: drawn as a lamp this many metres across, up to
+// AIRCRAFT_DOT_MAX times their size far away.
+const AIRCRAFT_DOT_METRES: f32 = 0.3;
+const AIRCRAFT_DOT_MAX: f32 = 5.0;
 
 // World units per model unit, by level code in the mesh tag (bits 0..2):
 // 0: LOD0 (0.5), 1: LOD1 (1), 2: LOD2 (4), 3: LOD3 (16), 4: LOD4 (64), 5: aircraft (1/8)
@@ -164,6 +168,10 @@ fn vertex(v: Vertex) -> VertexOutput {
         var px = max(vp.y / 200.0 * DOT_SIZE, DOT_MIN_PIXELS);
         if (globals.dots.x > 0.0) {
             px = min(px, max(globals.dots.x * 0.5 * vp.y * view.clip_from_view[1][1], DOT_MIN_PIXELS));
+        }
+        if ((tag & 7u) == 5u) {
+            let lamp = AIRCRAFT_DOT_METRES * 0.5 * vp.y * view.clip_from_view[1][1] / max(clip.w, 0.01);
+            px = max(px, min(lamp, px * AIRCRAFT_DOT_MAX));
         }
         // Larger lights (PAPI): size multiplier in tag bits 8..10.
         px = px * f32(((tag >> 8u) & 7u) + 1u);

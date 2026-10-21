@@ -7,6 +7,8 @@
 # Lights sit on the skin: a ray down or up the centreline at a station (`top`, `bottom`), the
 # front of a fin tip (`fin`), or just aft of the wingtip navigation lights (`wingtips`).
 # Model units, Blender axes: +x right, +y forward, +z up.
+# Also removes the original models' steady white tail lights (colour 149 on the navigation-light
+# slot 12), leaving the red/green wingtip lights and the flashing anti-collision lights.
 import bmesh
 import bpy
 from mathutils import Vector
@@ -99,11 +101,22 @@ def points(lod0, bm, bvh, spec):
     raise SystemExit(f"unknown light position {kind}")
 
 
+def remove(o):
+    """Removes an object and its mesh (a leftover mesh would take the name of its replacement)."""
+    data = o.data
+    bpy.data.objects.remove(o)
+    if data is not None and data.users == 0:
+        bpy.data.meshes.remove(data)
+
+
+for o in [o for o in bpy.data.objects if "_s12v1_dots_pal_149" in o.name]:
+    remove(o)
+
 for model, specs in LIGHTS.items():
     name = f"stflt_{model:03}_lod0"
     lod0 = bpy.data.objects[name]
     for o in [o for o in lod0.children_recursive if any(f"_s{s}v1" in o.name for s in (SINGLE, DOUBLE, BEACON))]:
-        bpy.data.objects.remove(o)
+        remove(o)
     bm = body(lod0)
     bvh = BVHTree.FromBMesh(bm)
     lights = {}

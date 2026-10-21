@@ -252,8 +252,19 @@ fn carry(
     mut kb: ResMut<Kneeboard>,
     mut hands: ResMut<Hands>,
     mut boards: Query<&mut Transform, With<Board>>,
+    hide: Option<Res<crate::camera::HideOwnAircraft>>,
 ) {
     let Ok(mut t) = boards.single_mut() else { return };
+    // The cockpit is not there (VR, the campaign's Ops screen): the board is let go and stays.
+    if hide.is_some_and(|h| h.0) {
+        if kb.held.take().is_some() {
+            kb.placed = Some(*t);
+        }
+        for h in hands.hands.iter_mut() {
+            h.carrying = false;
+        }
+        return;
+    }
     let at = anchors.eject + FROM_EJECT;
     let rest = kb.placed.unwrap_or(Transform::from_translation(at).looking_to(at, Vec3::NEG_Z));
     if let Some((i, _)) = kb.held {

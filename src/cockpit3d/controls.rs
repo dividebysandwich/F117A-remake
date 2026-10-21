@@ -232,8 +232,25 @@ pub(super) fn interact(
     cams: Query<(&Camera, &GlobalTransform), With<EyeCamera>>,
     root: Query<&GlobalTransform, With<CockpitRoot>>,
     menu: Res<crate::flight_menu::FlightMenu>,
+    hide: Option<Res<crate::camera::HideOwnAircraft>>,
 ) {
     let dt = time.delta_secs();
+    // The cockpit is not there (VR, the campaign's Ops screen): nothing to touch.
+    if hide.is_some_and(|h| h.0) {
+        presses.clear();
+        for hand in hands.hands.iter_mut() {
+            hand.touching = false;
+        }
+        *was_touching = [None; 2];
+        for (_, mut c, _) in &mut controls {
+            c.click = 0.0;
+            c.depth = 0.0;
+            if c.touched {
+                c.touched = false;
+            }
+        }
+        return;
+    }
     // With the menu open only the MENU button works (it closes the menu again).
     let usable = |c: &Control| !menu.open || c.effect == Effect::Action(Action::Menu);
     for PressControl(a) in presses.read() {

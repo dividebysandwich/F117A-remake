@@ -153,7 +153,29 @@ pub(super) fn grab_levers(
     aircraft: Query<&Aircraft, With<Player>>,
     block: Res<crate::input::InputBlock>,
     anchors: Res<CockpitAnchors>,
+    hide: Option<Res<crate::camera::HideOwnAircraft>>,
 ) {
+    // The cockpit is not there (VR, the campaign's Ops screen): nothing is held, and of the
+    // mapped buttons only the in-flight menu's works.
+    if hide.is_some_and(|h| h.0) {
+        *grabs = Grabs::default();
+        for hand in hands.hands.iter_mut() {
+            hand.lever = false;
+        }
+        let [left, right] = &hands.hands;
+        for (side, hand) in [(VrHand::Left, left), (VrHand::Right, right)] {
+            for m in config.vr_buttons.iter().filter(|m| m.hand == side) {
+                if hand.active
+                    && m.target == ButtonTarget::Action(Action::Menu)
+                    && m.input != VrInput::Trigger
+                    && hand.just_pressed(vr_bit(m.input))
+                {
+                    actions.write(ActionEvent(Action::Menu));
+                }
+            }
+        }
+        return;
+    }
     let set_thrust = aircraft.single().map_or(0.0, |a| a.set_thrust / 100.0);
     let brakes_on = aircraft.single().is_ok_and(|a| a.brakes);
     let [left, right] = &mut hands.hands;

@@ -28,13 +28,14 @@ impl Sim {
 
     /// Clear line of sight from the player.
     pub(crate) fn player_sees(&self, x: i32, y: i32, alt: i32) -> bool {
-        self.sees((self.p.mx, self.p.my, self.p.view_z), (x, y, alt))
+        self.sees((self.pl.p.mx, self.pl.p.my, self.pl.p.view_z), (x, y, alt))
     }
 
     /// An optical-seeker missile is only launched at a player its launcher can see.
     pub(crate) fn may_launch(&self, spec: i32, from: (i32, i32, i32)) -> bool {
         let cls = self.missile(spec).class as i32;
-        !optical_seeker(spec, cls) || self.sees(from, (self.p.mx, self.p.my, self.p.view_z))
+        !optical_seeker(spec, cls)
+            || self.sees(from, (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z))
     }
 
     /// Storms halve visual ranges.

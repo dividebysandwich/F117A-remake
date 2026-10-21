@@ -640,6 +640,8 @@ pub enum SimEvent {
     AircraftDestroyed {
         unit: usize,
         spec: i32,
+        /// The pilot whose weapon it was (None: not a pilot's).
+        by: Option<u8>,
     },
     AircraftCrashed {
         unit: usize,
@@ -663,6 +665,7 @@ pub enum SimEvent {
     GroundDestroyed {
         object: usize,
         shape: i32,
+        by: Option<u8>,
     },
     /// A plain tile object was destroyed or replaced.
     TileDestroyed(TileDamage),
@@ -699,6 +702,12 @@ pub enum SimEvent {
         unit: usize,
         tag: u32,
         by_player: bool,
+        by: Option<u8>,
+    },
+    /// A low-level air defence unit was destroyed (`Sim::aaa_units` index).
+    AaaDestroyed {
+        unit: usize,
+        by: Option<u8>,
     },
     /// Campaign: an aircraft the campaign launched landed (map position).
     CampaignFlightLanded {

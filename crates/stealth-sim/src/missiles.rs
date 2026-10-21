@@ -2,7 +2,7 @@ use crate::ballistics;
 use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, sign, view_z_f};
 use crate::types::*;
 use crate::weather::optical_seeker;
-use crate::{N_PROJ, Sim};
+use crate::{ENEMY_SLOTS, Sim};
 
 impl Sim {
     /// Seeker acquisition of a target at (tx, ty, talt) for class `cls`. Sets `acq_aim` always and `acq_range` on
@@ -21,7 +21,7 @@ impl Sim {
             }
             return false;
         }
-        if cls == 0 && abs16(s16(m.heading - self.p.heading)) > 0x2000 {
+        if cls == 0 && abs16(s16(m.heading - self.pl.p.heading)) > 0x2000 {
             return false;
         }
         if optical_seeker(m.spec, cls) && !self.sees((m.x, m.y, m.alt), (tx, ty, talt)) {
@@ -31,316 +31,342 @@ impl Sim {
         true
     }
 
-    pub(crate) fn update_missiles(&mut self) {
-        let saved0 = self.objects.first().copied();
-        self.lights.rad = false;
-        self.lights.ir = false;
-        self.lights.klaxon = false;
-        self.lights.rad_threat = false;
-        self.lights.ir_threat = false;
+    pub(crate) fn update_missiles(&mut self, present: &[usize]) {
+        let mut saved0 = Vec::new();
+        for &k in present {
+            self.activate(k);
+            saved0.push((k, self.objects.first().copied()));
+            self.pl.lights.rad = false;
+            self.pl.lights.ir = false;
+            self.pl.lights.klaxon = false;
+            self.pl.lights.rad_threat = false;
+            self.pl.lights.ir_threat = false;
+        }
+        // Enemy missiles, each against the pilot it was fired at.
+        for s in 0..ENEMY_SLOTS {
+            if self.proj[s].ttl == 0 {
+                continue;
+            }
+            let k = self.proj_pilot[s] as usize;
+            if present.len() > 1 && present.contains(&k) {
+                self.activate(k);
+            }
+            self.missile_frame(s);
+        }
+        // Each pilot's own weapons: their kills are his.
+        for &k in present {
+            self.activate(k);
+            self.credit = Some(self.pl.id);
+            for s in Self::own_slots() {
+                if self.proj[s].ttl != 0 {
+                    self.missile_frame(s);
+                }
+            }
+            self.credit = None;
+        }
+        for (k, o) in saved0 {
+            self.activate(k);
+            if let (Some(first), Some(o)) = (self.objects.first_mut(), o) {
+                *first = o;
+            }
+        }
+    }
+
+    /// One frame of the projectile in slot `s`.
+    fn missile_frame(&mut self, s: usize) {
         let (tgx, tgy) = if self.decoy_active() {
-            (self.cms[0].x, self.cms[0].y)
+            (self.pl.cms[0].x, self.pl.cms[0].y)
         } else {
-            (self.p.mx, self.p.my)
+            (self.pl.p.mx, self.pl.p.my)
         };
         let fs = self.fs;
-        for s in 0..N_PROJ {
-            if self.proj[s].ttl == 0 {
-                continue;
+        if self.proj[s].ttl == 0 {
+            return;
+        }
+        if self.proj[s].fall.is_some() {
+            self.fall_bomb(s);
+            return;
+        }
+        let spec = self.proj[s].spec;
+        let mt = self.missile(spec).clone();
+        let cls = mt.class as i32;
+        // Realistic guidance flies this one (`guidance`).
+        let guided = self.proj[s].flight.is_some();
+        let mut locked = false;
+        let mut aim = 0;
+        let mut best;
+        let mut alt0 = 0;
+        let mut hit: i32 = -1;
+        if s < 8 {
+            // ---- enemy missile ----
+            alt0 = self.pl.p.view_z;
+            locked = self.acquire(s, tgx, tgy, self.pl.p.view_z, cls);
+            best = self.acq_range;
+            aim = self.acq_aim;
+            let jam = (self.ecm_on() && cls > 0)
+                || (self.irj_on() && cls <= 0)
+                || (self.alarm_recent() > self.alarm_timer && spec != 0x21);
+            if jam && ((self.diff << 8) + 0x180 < best || cls == 1 || cls == -1) {
+                aim = self.proj[s].heading;
+                locked = false;
             }
-            if self.proj[s].fall.is_some() {
-                self.fall_bomb(s);
-                continue;
-            }
-            let spec = self.proj[s].spec;
-            let mt = self.missile(spec).clone();
-            let cls = mt.class as i32;
-            // Realistic guidance flies this one (`guidance`).
-            let guided = self.proj[s].flight.is_some();
-            let mut locked = false;
-            let mut aim = 0;
-            let mut best;
-            let mut alt0 = 0;
-            let mut hit: i32 = -1;
-            if s < 8 {
-                // ---- enemy missile ----
-                alt0 = self.p.view_z;
-                locked = self.acquire(s, tgx, tgy, self.p.view_z, cls);
-                best = self.acq_range;
-                aim = self.acq_aim;
-                let jam = (self.ecm_on() && cls > 0)
-                    || (self.irj_on() && cls <= 0)
-                    || (self.alarm_recent() > self.alarm_timer && spec != 0x21);
-                if jam && ((self.diff << 8) + 0x180 < best || cls == 1 || cls == -1) {
-                    aim = self.proj[s].heading;
-                    locked = false;
-                }
-                for k in 1..4 {
-                    let c = self.cms[k];
-                    if c.ttl <= 0 {
-                        continue;
-                    }
-                    let attract = (c.kind == 1 && cls <= 0)
-                        || (c.kind == 2
-                            && (cls == 1
-                                || cls == 2
-                                || (cls == 3
-                                    && (hi8s(s16(aim - self.p.heading)).abs() - 0x40).abs()
-                                        < 0x40 - 12 * self.diff)));
-                    if attract && self.acquire(s, c.x, c.y, self.p.view_z, cls) {
-                        aim = 1;
-                        locked = false;
-                    }
-                }
-                if best > 0x200 {
-                    let l = self.proj[s].launcher;
-                    if l > 2 && self.obj(l).flags & oflags::TRACKING == 0 {
-                        locked = false;
-                    }
-                    if l <= 0
-                        && self
-                            .flights
-                            .get((-l) as usize)
-                            .is_none_or(|u| u.flags & fflags::CONTACT == 0)
-                    {
-                        locked = false;
-                    }
-                }
-                if !guided && self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0
-                {
-                    self.proj[s].speed += 1;
-                }
-            } else {
-                // ---- player weapon ----
-                best = 0x7FFF;
-                if cls == 7 {
-                    for j in 0..self.flights.len() {
-                        let u = self.flights[j];
-                        if u.flags & fflags::AIRBORNE == 0 || u.speed == 0 {
-                            continue;
-                        }
-                        if self.acquire(s, u.x, u.y, u.alt, cls) && self.acq_range < best {
-                            aim = self.acq_aim;
-                            best = self.acq_range;
-                            hit = j as i32;
-                            alt0 = u.alt;
-                            locked = true;
-                            if best < 0x180 {
-                                self.flights[j].flags |= fflags::HIT;
-                            }
-                        }
-                    }
-                    // Guided: the target locked at launch while the seeker sees it.
-                    let d = self.proj[s].target;
-                    if guided && d >= 0 && d != hit && (d as usize) < self.flights.len() {
-                        let u = self.flights[d as usize];
-                        if u.flags & fflags::AIRBORNE != 0
-                            && u.flags & fflags::DESTROYED == 0
-                            && u.speed != 0
-                            && self.acquire(s, u.x, u.y, u.alt, cls)
-                        {
-                            aim = self.acq_aim;
-                            best = self.acq_range;
-                            hit = d;
-                            alt0 = u.alt;
-                            locked = true;
-                        }
-                    }
-                }
-                if !guided && self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0
-                {
-                    self.proj[s].speed += 1;
-                    aim = self.proj[s].heading;
-                }
-                let t = self.proj[s].target;
-                if matches!(cls, 4..=6) && t != -1 {
-                    if t == 0 {
-                        let (gx, gy) = (self.proj[s].tgt_x, self.proj[s].tgt_y);
-                        if self.objects.first().is_some_and(|o| (o.x, o.y) != (gx, gy)) {
-                            self.find_object_at(gx, gy);
-                            self.objects[0].flags = 0;
-                        }
-                    }
-                    let o = self.obj(t);
-                    if self.acquire(s, o.x, o.y, 0, cls) {
-                        aim = self.acq_aim;
-                        best = self.acq_range;
-                        hit = t;
-                        alt0 = 0;
-                        locked = true;
-                    }
-                }
-                let gl = self.gnd_lock;
-                if spec == 28 && gl >= 0 && (gl as usize) < self.objects.len() {
-                    let o = self.obj(gl);
-                    // The laser spot needs the designator's line of sight too.
-                    if self.player_sees(o.x, o.y, 0) && self.acquire(s, o.x, o.y, 0, 28) {
-                        aim = self.acq_aim;
-                        best = self.acq_range;
-                        hit = gl;
-                        alt0 = 0;
-                        locked = true;
-                    }
-                }
-            }
-            if self.proj[s].ttl == 0 {
-                // Overshot in acquire.
-                continue;
-            }
-            // Warning lights / klaxon.
-            if locked
-                && s < 8
-                && abs16(s16(self.acq_aim - self.proj[s].heading)) < 0x1000
-                && self.damage & dmg::MW == 0
-                && !self.decoy_active()
-            {
-                self.lights.rad_threat |= cls != 0;
-                self.lights.ir_threat |= cls <= 0;
-                if cls <= 0 && self.frame & 2 != 0 {
-                    self.lights.ir = true;
-                }
-                if cls != 0 && self.frame & 2 == 0 {
-                    self.lights.rad = true;
-                }
-                if self.frame & 3 == 0 && (self.proj[s].speed << 4) > best {
-                    self.lights.klaxon = true;
-                    // Site launchers are object indices > 2, aircraft are -flight index.
-                    let tone = if self.proj[s].launcher > 2 {
-                        RwrTone::SamLaunch
-                    } else {
-                        RwrTone::AirLaunch
-                    };
-                    self.emit(SimEvent::Rwr(tone));
-                }
-            }
-            // Steering.
-            let fused = if guided {
-                let target = if s < 8 {
-                    Some(if self.decoy_active() {
-                        let c = self.cms[0];
-                        let p =
-                            [c.x as f64 * 32.0 + 16.0, c.y as f64 * 32.0 + 16.0, self.p.alt as f64];
-                        crate::guidance::Target { p, v: [0.0; 3] }
-                    } else {
-                        self.player_target()
-                    })
-                } else if hit < 0 {
-                    None
-                } else if cls == 7 {
-                    Some(self.unit_target(hit as usize))
-                } else {
-                    Some(self.object_target(hit))
-                };
-                // The fuse goes off near the player whatever the seeker sees.
-                let fuse = if s < 8 { Some(self.player_target()) } else { target };
-                let fused = self.fly_guided(s, target.filter(|_| locked && aim != 0), fuse);
-                if self.proj[s].ttl == 0 {
+            for k in 1..4 {
+                let c = self.pl.cms[k];
+                if c.ttl <= 0 {
                     continue;
                 }
-                fused
-            } else {
-                let diff = self.diff;
-                let turn = mt.turn as i32;
-                let m = &mut self.proj[s];
-                m.locked = locked;
-                if aim != 0 && locked {
-                    let mut d = s16(aim - m.heading);
-                    if s < 8 {
-                        d = clamp_q(d, -(diff + 1) << 8, (diff + 1) << 8);
+                let attract = (c.kind == 1 && cls <= 0)
+                    || (c.kind == 2
+                        && (cls == 1
+                            || cls == 2
+                            || (cls == 3
+                                && (hi8s(s16(aim - self.pl.p.heading)).abs() - 0x40).abs()
+                                    < 0x40 - 12 * self.diff)));
+                if attract && self.acquire(s, c.x, c.y, self.pl.p.view_z, cls) {
+                    aim = 1;
+                    locked = false;
+                }
+            }
+            if best > 0x200 {
+                let l = self.proj[s].launcher;
+                if l > 2 && self.obj(l).flags & oflags::TRACKING == 0 {
+                    locked = false;
+                }
+                if l <= 0
+                    && self
+                        .flights
+                        .get((-l) as usize)
+                        .is_none_or(|u| u.flags & fflags::CONTACT == 0)
+                {
+                    locked = false;
+                }
+            }
+            if !guided && self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0 {
+                self.proj[s].speed += 1;
+            }
+        } else {
+            // ---- player weapon ----
+            best = 0x7FFF;
+            if cls == 7 {
+                for j in 0..self.flights.len() {
+                    let u = self.flights[j];
+                    if u.flags & fflags::AIRBORNE == 0 || u.speed == 0 {
+                        continue;
                     }
-                    d = clamp_q(d, -turn << 7, turn << 7);
-                    m.heading = s16(m.heading + cdiv(d * 4, fs));
-                    m.roll = s16(d * 2);
-                    let ab = best.abs();
-                    let pa = if s < 8 && best < 0x400 {
-                        bearing(s16(alt0 - m.alt) >> 4, ab)
-                    } else {
-                        bearing((s16(alt0 - m.alt) >> 5) + if ab > 0x140 { ab >> 3 } else { 0 }, ab)
-                    };
-                    let mut dp = s16(pa - m.pitch);
-                    if s < 8 {
-                        dp = clamp_q(dp, -(diff + 1) << 9, (diff + 1) << 9);
-                    }
-                    dp = clamp_q(dp, -turn << 8, turn << 8);
-                    m.pitch = s16(m.pitch + cdiv(dp * 4, fs));
-                } else if m.pitch > 0 && m.spec != 30 {
-                    m.pitch = s16(m.pitch - cdiv(sign(m.pitch) * 0x800, fs));
-                }
-                if m.spec == 28 {
-                    m.pitch = m.pitch.min(-0x800);
-                }
-                if m.spec == 30 || m.alt == 1 {
-                    m.pitch = s16(m.pitch - cdiv(0x800, fs)).max(s16(m.launcher));
-                }
-                let step = cdiv(self.trig.cos_mul(m.pitch, m.speed) * 4, fs);
-                m.x = (m.x + self.trig.sin_mul(m.heading, step)) & 0xFFFF;
-                m.y = (m.y - self.trig.cos_mul(m.heading, step)) & 0xFFFF;
-                m.alt += self.trig.sin_mul(m.pitch, cdiv(m.speed << 7, fs));
-                m.ttl -= 1;
-                // Terrain contact: flat world, objects are not tested.
-                if self.proj[s].alt < 0 {
-                    self.ground_impact(s);
-                }
-                let m = self.proj[s];
-                locked && (s16(alt0 - m.alt).abs() >> 5) + best < cdiv(m.speed << 3, fs)
-            };
-            // Proximity fuse.
-            let m = self.proj[s];
-            if fused {
-                if s < 8 {
-                    if m.ttl > 4 * fs {
-                        self.flash = Flash { x: m.x, y: m.y, alt: m.alt, timer: 0x10 };
-                        self.emit(SimEvent::Explosion { x: m.x, y: m.y, alt: m.alt, kind: 0x10 });
-                        self.proj[s].ttl = if guided { 0 } else { 2 * fs };
-                        if !self.decoy_active() {
-                            self.msg(format!("Hit by {}", mt.name));
-                            self.player_hit(true);
-                            if !self.training() {
-                                self.log_event(5, spec);
-                            }
+                    if self.acquire(s, u.x, u.y, u.alt, cls) && self.acq_range < best {
+                        aim = self.acq_aim;
+                        best = self.acq_range;
+                        hit = j as i32;
+                        alt0 = u.alt;
+                        locked = true;
+                        if best < 0x180 {
+                            self.flights[j].flags |= fflags::HIT;
                         }
                     }
-                } else if cls == 7 {
-                    if hit >= 0 {
-                        let u = self.flights[hit as usize];
-                        let pm = &mut self.proj[s];
-                        pm.x = u.x;
-                        pm.y = u.y;
-                        pm.alt = u.alt;
-                        pm.ttl = 2 * fs;
-                        self.flash = Flash { x: u.x, y: u.y, alt: u.alt, timer: 0x10 };
-                        self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: u.alt, kind: 0x10 });
-                        self.destroy_aircraft(hit as usize);
-                        let n = self.ac_type(u.spec).name.clone();
-                        self.msg(format!("{n} hit by {}", mt.name));
-                        if self.opts.fix_original_bugs {
-                            // Original: the missile sits on the wreck for 2 s, still locked, and
-                            // repeats the hit every frame. Fixed: it is spent.
-                            self.proj[s].ttl = 0;
-                        }
+                }
+                // Guided: the target locked at launch while the seeker sees it.
+                let d = self.proj[s].target;
+                if guided && d >= 0 && d != hit && (d as usize) < self.flights.len() {
+                    let u = self.flights[d as usize];
+                    if u.flags & fflags::AIRBORNE != 0
+                        && u.flags & fflags::DESTROYED == 0
+                        && u.speed != 0
+                        && self.acquire(s, u.x, u.y, u.alt, cls)
+                    {
+                        aim = self.acq_aim;
+                        best = self.acq_range;
+                        hit = d;
+                        alt0 = u.alt;
+                        locked = true;
                     }
-                } else if hit >= 0 {
-                    let o = self.obj(hit);
-                    self.flash = Flash { x: o.x, y: o.y, alt: 0, timer: 0x10 };
-                    self.emit(SimEvent::Explosion { x: o.x, y: o.y, alt: 0, kind: 0x10 });
-                    self.proj[s].ttl = 0;
-                    let r = self.rng.random(4);
-                    let text = if self.compat(m.weapon, hit) > r {
-                        self.destroy_ground(hit);
-                        self.place_name(hit as usize)
-                    } else {
-                        "Ineffective".to_string()
-                    };
-                    self.alarm_timer = self.alarm_init();
-                    self.ref_x = o.x;
-                    self.ref_y = o.y;
-                    self.ref_alt = 3000;
-                    self.msg(format!("{text} hit by {}", mt.name));
+                }
+            }
+            if !guided && self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0 {
+                self.proj[s].speed += 1;
+                aim = self.proj[s].heading;
+            }
+            let t = self.proj[s].target;
+            if matches!(cls, 4..=6) && t != -1 {
+                if t == 0 {
+                    let (gx, gy) = (self.proj[s].tgt_x, self.proj[s].tgt_y);
+                    if self.objects.first().is_some_and(|o| (o.x, o.y) != (gx, gy)) {
+                        self.find_object_at(gx, gy);
+                        self.objects[0].flags = 0;
+                    }
+                }
+                let o = self.obj(t);
+                if self.acquire(s, o.x, o.y, 0, cls) {
+                    aim = self.acq_aim;
+                    best = self.acq_range;
+                    hit = t;
+                    alt0 = 0;
+                    locked = true;
+                }
+            }
+            let gl = self.pl.gnd_lock;
+            if spec == 28 && gl >= 0 && (gl as usize) < self.objects.len() {
+                let o = self.obj(gl);
+                // The laser spot needs the designator's line of sight too.
+                if self.player_sees(o.x, o.y, 0) && self.acquire(s, o.x, o.y, 0, 28) {
+                    aim = self.acq_aim;
+                    best = self.acq_range;
+                    hit = gl;
+                    alt0 = 0;
+                    locked = true;
                 }
             }
         }
-        if let (Some(o), Some(s)) = (self.objects.first_mut(), saved0) {
-            *o = s;
+        if self.proj[s].ttl == 0 {
+            // Overshot in acquire.
+            return;
+        }
+        // Warning lights / klaxon.
+        if locked
+            && s < 8
+            && abs16(s16(self.acq_aim - self.proj[s].heading)) < 0x1000
+            && self.pl.damage & dmg::MW == 0
+            && !self.decoy_active()
+        {
+            self.pl.lights.rad_threat |= cls != 0;
+            self.pl.lights.ir_threat |= cls <= 0;
+            if cls <= 0 && self.frame & 2 != 0 {
+                self.pl.lights.ir = true;
+            }
+            if cls != 0 && self.frame & 2 == 0 {
+                self.pl.lights.rad = true;
+            }
+            if self.frame & 3 == 0 && (self.proj[s].speed << 4) > best {
+                self.pl.lights.klaxon = true;
+                // Site launchers are object indices > 2, aircraft are -flight index.
+                let tone =
+                    if self.proj[s].launcher > 2 { RwrTone::SamLaunch } else { RwrTone::AirLaunch };
+                self.emit(SimEvent::Rwr(tone));
+            }
+        }
+        // Steering.
+        let fused = if guided {
+            let target = if s < 8 {
+                Some(if self.decoy_active() {
+                    let c = self.pl.cms[0];
+                    let p =
+                        [c.x as f64 * 32.0 + 16.0, c.y as f64 * 32.0 + 16.0, self.pl.p.alt as f64];
+                    crate::guidance::Target { p, v: [0.0; 3] }
+                } else {
+                    self.player_target()
+                })
+            } else if hit < 0 {
+                None
+            } else if cls == 7 {
+                Some(self.unit_target(hit as usize))
+            } else {
+                Some(self.object_target(hit))
+            };
+            // The fuse goes off near the player whatever the seeker sees.
+            let fuse = if s < 8 { Some(self.player_target()) } else { target };
+            let fused = self.fly_guided(s, target.filter(|_| locked && aim != 0), fuse);
+            if self.proj[s].ttl == 0 {
+                return;
+            }
+            fused
+        } else {
+            let diff = self.diff;
+            let turn = mt.turn as i32;
+            let m = &mut self.proj[s];
+            m.locked = locked;
+            if aim != 0 && locked {
+                let mut d = s16(aim - m.heading);
+                if s < 8 {
+                    d = clamp_q(d, -(diff + 1) << 8, (diff + 1) << 8);
+                }
+                d = clamp_q(d, -turn << 7, turn << 7);
+                m.heading = s16(m.heading + cdiv(d * 4, fs));
+                m.roll = s16(d * 2);
+                let ab = best.abs();
+                let pa = if s < 8 && best < 0x400 {
+                    bearing(s16(alt0 - m.alt) >> 4, ab)
+                } else {
+                    bearing((s16(alt0 - m.alt) >> 5) + if ab > 0x140 { ab >> 3 } else { 0 }, ab)
+                };
+                let mut dp = s16(pa - m.pitch);
+                if s < 8 {
+                    dp = clamp_q(dp, -(diff + 1) << 9, (diff + 1) << 9);
+                }
+                dp = clamp_q(dp, -turn << 8, turn << 8);
+                m.pitch = s16(m.pitch + cdiv(dp * 4, fs));
+            } else if m.pitch > 0 && m.spec != 30 {
+                m.pitch = s16(m.pitch - cdiv(sign(m.pitch) * 0x800, fs));
+            }
+            if m.spec == 28 {
+                m.pitch = m.pitch.min(-0x800);
+            }
+            if m.spec == 30 || m.alt == 1 {
+                m.pitch = s16(m.pitch - cdiv(0x800, fs)).max(s16(m.launcher));
+            }
+            let step = cdiv(self.trig.cos_mul(m.pitch, m.speed) * 4, fs);
+            m.x = (m.x + self.trig.sin_mul(m.heading, step)) & 0xFFFF;
+            m.y = (m.y - self.trig.cos_mul(m.heading, step)) & 0xFFFF;
+            m.alt += self.trig.sin_mul(m.pitch, cdiv(m.speed << 7, fs));
+            m.ttl -= 1;
+            // Terrain contact: flat world, objects are not tested.
+            if self.proj[s].alt < 0 {
+                self.ground_impact(s);
+            }
+            let m = self.proj[s];
+            locked && (s16(alt0 - m.alt).abs() >> 5) + best < cdiv(m.speed << 3, fs)
+        };
+        // Proximity fuse.
+        let m = self.proj[s];
+        if fused {
+            if s < 8 {
+                if m.ttl > 4 * fs {
+                    self.flash = Flash { x: m.x, y: m.y, alt: m.alt, timer: 0x10 };
+                    self.emit(SimEvent::Explosion { x: m.x, y: m.y, alt: m.alt, kind: 0x10 });
+                    self.proj[s].ttl = if guided { 0 } else { 2 * fs };
+                    if !self.decoy_active() {
+                        self.msg(format!("Hit by {}", mt.name));
+                        self.player_hit(true);
+                        if !self.training() {
+                            self.log_event(5, spec);
+                        }
+                    }
+                }
+            } else if cls == 7 {
+                if hit >= 0 {
+                    let u = self.flights[hit as usize];
+                    let pm = &mut self.proj[s];
+                    pm.x = u.x;
+                    pm.y = u.y;
+                    pm.alt = u.alt;
+                    pm.ttl = 2 * fs;
+                    self.flash = Flash { x: u.x, y: u.y, alt: u.alt, timer: 0x10 };
+                    self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: u.alt, kind: 0x10 });
+                    self.destroy_aircraft(hit as usize);
+                    let n = self.ac_type(u.spec).name.clone();
+                    self.msg(format!("{n} hit by {}", mt.name));
+                    if self.opts.fix_original_bugs {
+                        // Original: the missile sits on the wreck for 2 s, still locked, and
+                        // repeats the hit every frame. Fixed: it is spent.
+                        self.proj[s].ttl = 0;
+                    }
+                }
+            } else if hit >= 0 {
+                let o = self.obj(hit);
+                self.flash = Flash { x: o.x, y: o.y, alt: 0, timer: 0x10 };
+                self.emit(SimEvent::Explosion { x: o.x, y: o.y, alt: 0, kind: 0x10 });
+                self.proj[s].ttl = 0;
+                let r = self.rng.random(4);
+                let text = if self.compat(m.weapon, hit) > r {
+                    self.destroy_ground(hit);
+                    self.place_name(hit as usize)
+                } else {
+                    "Ineffective".to_string()
+                };
+                self.alarm_timer = self.alarm_init();
+                self.ref_x = o.x;
+                self.ref_y = o.y;
+                self.ref_alt = 3000;
+                self.msg(format!("{text} hit by {}", mt.name));
+            }
         }
     }
 
@@ -400,11 +426,11 @@ impl Sim {
             // Intended airdrop rule, unreachable in the original.
             let mut delivered = false;
             for k in 0..2 {
-                let t = self.targets[k];
+                let t = self.pl.targets[k];
                 let o = self.obj(t.object);
                 if approx(ex - o.x, ey - o.y) < 0x100
                     && t.mission_type == 3
-                    && self.mission_tick < self.deadline
+                    && self.mission_tick < self.pl.deadline
                 {
                     self.msg("Equipment Delivered");
                     self.mark_target_reached(k);
@@ -420,7 +446,7 @@ impl Sim {
             let o = self.find_object_at(ex, ey);
             if o != -1 && self.obj(o).flags & oflags::DESTROYED == 0 {
                 let (tx, ty) =
-                    self.last_tile.map_or((self.obj(o).x, self.obj(o).y), |t| t.map_pos());
+                    self.pl.last_tile.map_or((self.obj(o).x, self.obj(o).y), |t| t.map_pos());
                 let dist = approx(tx - ex, ty - ey);
                 let lim = (self.compat(m.weapon, o) << 6) / (self.diff + 2);
                 if (lim as u16) > (dist as u16) {
@@ -431,7 +457,7 @@ impl Sim {
                 }
             }
             self.msg(text);
-            let d = approx(self.p.mx - ex, self.p.my - ey) + (self.p.view_z >> 5);
+            let d = approx(self.pl.p.mx - ex, self.pl.p.my - ey) + (self.pl.p.view_z >> 5);
             if self.diff * 32 > d {
                 // The original builds a "Blast damage" message after the miss text but never shows it.
                 self.player_hit(false);
@@ -444,7 +470,7 @@ impl Sim {
 
     /// Countermeasure timers: only the first active slot counts down.
     pub(crate) fn update_cm_timers(&mut self) {
-        if let Some(c) = self.cms.iter_mut().find(|c| c.ttl > 0) {
+        if let Some(c) = self.pl.cms.iter_mut().find(|c| c.ttl > 0) {
             c.ttl -= 1;
         }
     }

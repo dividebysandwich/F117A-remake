@@ -3,9 +3,12 @@ use crate::math::{abs16, approx, bearing, cdiv, clamp_q, s16};
 use crate::types::*;
 
 impl Sim {
-    pub(crate) fn update_aircraft(&mut self) {
-        self.threat_count_last = self.threat_count;
-        self.threat_count = 0;
+    pub(crate) fn update_aircraft(&mut self, present: &[usize]) {
+        for &k in present {
+            self.activate(k);
+            self.pl.threat_count_last = self.pl.threat_count;
+            self.pl.threat_count = 0;
+        }
         let eslot = self.n_bullets + ((self.frame & 0xC) >> 2) as usize;
         if let Some(b) = self.bullets.get_mut(eslot) {
             *b = Bullet::default();
@@ -22,6 +25,10 @@ impl Sim {
                 self.scramble(i);
                 continue;
             }
+            if present.len() > 1 {
+                let k = self.flight_target(i);
+                self.activate(k as usize);
+            }
             let alive = self.flights[i].flags & fflags::DESTROYED == 0;
             match kind {
                 crate::AircraftKind::Drone if alive => self.fly_drone(i),
@@ -31,13 +38,30 @@ impl Sim {
         }
     }
 
+    /// The pilot flight unit `i` goes for: the one its radar holds, else the one the alarm is
+    /// about, else the nearest.
+    fn flight_target(&mut self, i: usize) -> u8 {
+        if self.flight_pilot.len() < self.flights.len() {
+            self.flight_pilot.resize(self.flights.len(), 0);
+        }
+        let u = self.flights[i];
+        let cur = self.flight_pilot[i];
+        let k = if u.flags & fflags::CONTACT == 0 && self.alarm_timer != 0 {
+            self.nearest_pilot(self.alarm_pilot, true, u.x, u.y)
+        } else {
+            self.nearest_pilot(cur, u.flags & fflags::CONTACT != 0, u.x, u.y)
+        };
+        self.flight_pilot[i] = k;
+        k
+    }
+
     fn fly(&mut self, i: usize) {
         let fs = self.fs;
         let nf = self.flights.len();
         let n = self.objects.len() as i32;
         let t = self.ac_type(self.flights[i].spec).clone();
         let agil = t.agility as i32;
-        let (px, py, pz) = (self.p.mx, self.p.my, self.p.view_z);
+        let (px, py, pz) = (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z);
         let mut u = self.flights[i];
         // --- target selection ---
         let (tx, ty, tz, mode);
@@ -58,8 +82,8 @@ impl Sim {
         {
             mode = 1;
             if self.decoy_active() {
-                tx = self.cms[0].x;
-                ty = self.cms[0].y;
+                tx = self.pl.cms[0].x;
+                ty = self.pl.cms[0].y;
                 tz = clamp_q(pz, 1000, 30000);
             } else {
                 tx = self.ref_x;
@@ -141,22 +165,21 @@ impl Sim {
         // --- steering ---
         let mut roll_cmd;
         if mode == 1 && rng < 0x400 {
-            self.threat_count += 1;
+            self.pl.threat_count += 1;
             if rng < 0x200
                 && self.frame & 3 == 0
                 && self.alarm_timer > self.alarm_recent()
                 && abs16(s16(u.heading - brg)) < 0x400
                 && abs16(s16(u.pitch - pitch_cmd)) < 0x400
-                && self.sees((u.x, u.y, u.alt), (self.p.mx, self.p.my, self.p.view_z))
+                && self.sees((u.x, u.y, u.alt), (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z))
             {
                 self.fire_gun(&u);
             }
             let ag = if i == 0 { 1 } else { clamp_q((i as i32 & 3) + self.diff, 0, 2) };
             let h = s16(u.heading + if abs16(u.bank) < 0x4000 { u.bank >> 2 } else { 0 });
             let rel = (s16(brg - h) >> 13) & 7;
-            let ph = s16(
-                self.p.heading + if abs16(self.p.roll) < 0x4000 { self.p.roll >> 1 } else { 0 }
-            );
+            let ph = s16(self.pl.p.heading
+                + if abs16(self.pl.p.roll) < 0x4000 { self.pl.p.roll >> 1 } else { 0 });
             let asp = ((s16(u.heading - ph) >> 13) + 4) & 7;
             let v =
                 self.maneuver.get((ag * 64 + asp * 8 + rel) as usize).copied().unwrap_or(0) as i32;
@@ -178,13 +201,13 @@ impl Sim {
             }
         } else {
             roll_cmd = clamp_q(s16(brg - u.heading), -0x2000, 0x2000) * 2;
-            if mode == 1 && 2 * self.diff < self.threat_count_last {
+            if mode == 1 && 2 * self.diff < self.pl.threat_count_last {
                 roll_cmd = 0x3000;
             }
         }
         if mode == 1
-            && self.obj(self.nearest_base).flags & oflags::FRIENDLY != 0
-            && self.nearest_base_dist < 0x780
+            && self.obj(self.pl.nearest_base).flags & oflags::FRIENDLY != 0
+            && self.pl.nearest_base_dist < 0x780
         {
             roll_cmd = 0x3000;
         }
@@ -236,7 +259,7 @@ impl Sim {
         u.flags &= !fflags::HIT;
         let mut mv = (((0x8000 - u.pitch) & 0xFFFF) * u.speed) >> 15;
         mv -= self.trig.sin_mul(u.bank, mv).abs() >> 1;
-        if mode == 1 && self.diff >= self.threat_count_last {
+        if mode == 1 && self.diff >= self.pl.threat_count_last {
             mv += mv >> 1;
         }
         mv = cdiv(mv * 4, fs) >> 2;
@@ -254,8 +277,8 @@ impl Sim {
             self.flash = Flash { x: u.x, y: u.y, alt: 0, timer: -16 };
             self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: 0, kind: -16 });
             self.emit(SimEvent::AircraftCrashed { unit: i });
-            if i as i32 == self.air_lock {
-                self.air_lock = -1;
+            if i as i32 == self.pl.air_lock {
+                self.pl.air_lock = -1;
             }
         }
         if rng < 0x10 && mode == 2 {
@@ -279,14 +302,15 @@ impl Sim {
             u.bank = 0;
             u.pitch = 0;
             u.heading = if self.ns == 1 { 0 } else { s16(0x8000) };
-            u.alt = if self.obj(self.nearest_base).flags & oflags::CARRIER != 0 { 140 } else { 12 };
+            u.alt =
+                if self.obj(self.pl.nearest_base).flags & oflags::CARRIER != 0 { 140 } else { 12 };
             if u.speed > 0 {
                 u.speed -= cdiv(60, fs);
             } else {
                 u.flags &= 0x1C1;
-                if i == 0 && (5..=8).contains(&self.targets[0].mission_type) {
+                if i == 0 && (5..=8).contains(&self.pl.targets[0].mission_type) {
                     u.flags = 0;
-                    self.target_escaped = true;
+                    self.pl.target_escaped = true;
                 }
             }
             if self.is_traffic(i) && u.speed < 100 {
@@ -418,7 +442,7 @@ impl Sim {
     /// Base traffic: the last 4 flight units of the mission live at the nearest friendly base.
     pub(crate) fn update_base_traffic(&mut self) {
         let Some([t0, t1, t2, t3]) = self.traffic_slots() else { return };
-        let b = self.nearest_base;
+        let b = self.pl.nearest_base;
         if b == self.traffic_base {
             return;
         }

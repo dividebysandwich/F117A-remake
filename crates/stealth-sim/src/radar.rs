@@ -1,6 +1,6 @@
-use crate::Sim;
 use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, u16v};
 use crate::types::*;
+use crate::{ENEMY_SLOTS, Sim};
 
 /// Pure EMV function, bit-exact with the original game.
 /// `flags` = player flags, `view_z` = compressed altitude, `velocity` = knots*27.
@@ -93,13 +93,13 @@ fn detected_tone(doppler: bool) -> RwrTone {
 impl Sim {
     pub(crate) fn detect_ctx(&self) -> DetectCtx<'_> {
         DetectCtx {
-            px: self.p.mx,
-            py: self.p.my,
-            view_z: self.p.view_z,
-            heading: self.p.heading,
-            velocity: self.p.velocity,
+            px: self.pl.p.mx,
+            py: self.pl.p.my,
+            view_z: self.pl.p.view_z,
+            heading: self.pl.p.heading,
+            velocity: self.pl.p.velocity,
             diff: self.diff,
-            lockheed: self.lockheed,
+            lockheed: self.pl.lockheed,
             grid: &self.grid,
         }
     }
@@ -117,8 +117,8 @@ impl Sim {
             .threat_type(o.unit_type)
             .map(|t| ((t.lethality as i32 * tenths / 10).max(1), t.tier as i32, t.flags as i32));
         let r = detect(o.x, o.y, 0, o.unit_type, th, &self.detect_ctx());
-        let pre = if self.lockheed { r.0 * 2 } else { r.0 };
-        if pre + self.emv > 100 {
+        let pre = if self.pl.lockheed { r.0 * 2 } else { r.0 };
+        if pre + self.pl.emv > 100 {
             self.emit(SimEvent::CancelTimeAccel);
         }
         r
@@ -128,30 +128,37 @@ impl Sim {
     pub(crate) fn detect(&mut self, sx: i32, sy: i32, salt: i32, typ: i32) -> (i32, i32, i32) {
         let r = self.detect_pure(sx, sy, salt, typ);
         // The cancel test runs before the Lockheed halving.
-        let pre = if self.lockheed { r.0 * 2 } else { r.0 };
-        if typ != 0 && typ != -1 && pre + self.emv > 100 {
+        let pre = if self.pl.lockheed { r.0 * 2 } else { r.0 };
+        if typ != 0 && typ != -1 && pre + self.pl.emv > 100 {
             self.emit(SimEvent::CancelTimeAccel);
         }
         r
     }
 
     pub(crate) fn compute_emv(&mut self) {
-        self.emv =
-            emv(self.p.view_z, self.p.velocity, self.p.roll, self.pflags, self.diff, self.lockheed);
+        self.pl.emv = emv(
+            self.pl.p.view_z,
+            self.pl.p.velocity,
+            self.pl.p.roll,
+            self.pl.pflags,
+            self.diff,
+            self.pl.lockheed,
+        );
     }
 
     /// Raise the theater alarm: note where the player (or decoy) is and put the sites on alert.
     pub(crate) fn alarm(&mut self) {
         self.alarm_timer = self.alarm_init();
+        self.alarm_pilot = self.pl.id;
         if self.decoy_active() {
-            self.ref_x = self.cms[0].x;
-            self.ref_y = self.cms[0].y;
+            self.ref_x = self.pl.cms[0].x;
+            self.ref_y = self.pl.cms[0].y;
         } else {
-            self.ref_x = self.p.mx;
-            self.ref_y = self.p.my;
+            self.ref_x = self.pl.p.mx;
+            self.ref_y = self.pl.p.my;
         }
-        self.ref_alt = self.p.view_z;
-        self.ref_heading = self.p.heading;
+        self.ref_alt = self.pl.p.view_z;
+        self.ref_heading = self.pl.p.heading;
         self.alarm_window = 0xFF;
         let lo = (self.roe + self.diff - 1) << 4;
         for o in self.objects.iter_mut().take(self.woc) {
@@ -176,12 +183,16 @@ impl Sim {
                 u.flags & fflags::AIRBORNE != 0 && u.flags & fflags::EXISTS != 0 && u.heat > 0xC0
             })
             .count();
-        self.tracking = (sites + air) as i32;
+        self.pl.tracking = (sites + air) as i32;
     }
 
-    /// Ground site loop, every frame.
-    pub(crate) fn update_sites(&mut self) {
+    /// Ground site loop, every frame. A site sweeps for the pilot it is bound to: the one it
+    /// tracks while he is in the world, else the one it sees best.
+    pub(crate) fn update_sites(&mut self, present: &[usize]) {
         let fs = self.fs;
+        if self.site_pilot.len() < self.ground_units {
+            self.site_pilot.resize(self.ground_units, present.first().map_or(0, |&k| k as u8));
+        }
         for i in 0..self.ground_units {
             let o = self.objects[i];
             if o.unit_type == 0 || o.flags & oflags::DESTROYED != 0 {
@@ -199,22 +210,56 @@ impl Sim {
             if s.timer <= 0 {
                 s.timer = s16((fs << 8) / ((s.alert >> 2) + 16) + i as i32);
             }
-            if s.timer == 4 && self.sweep_anim < 0 {
-                self.site_sweep(i);
-                self.objects[i].flags |= oflags::SWEPT;
+            if s.timer == 4 {
+                if present.len() > 1 {
+                    let k = self.site_target(i, present);
+                    self.site_pilot[i] = k as u8;
+                    self.activate(k);
+                }
+                if self.pl.sweep_anim < 0 {
+                    self.site_sweep(i);
+                    self.objects[i].flags |= oflags::SWEPT;
+                }
             }
         }
-        self.sweep_anim = s16(self.sweep_anim - 1);
-        if self.sweep_anim < 0 {
-            self.egr = None;
-            self.ear = None;
-        }
-        if let Some(a) = &mut self.arc {
-            a.frames_left = self.sweep_anim.max(0);
-            if self.sweep_anim < 0 {
-                self.arc = None;
+        for &k in present {
+            self.activate(k);
+            self.pl.sweep_anim = s16(self.pl.sweep_anim - 1);
+            if self.pl.sweep_anim < 0 {
+                self.pl.egr = None;
+                self.pl.ear = None;
+            }
+            if let Some(a) = &mut self.pl.arc {
+                a.frames_left = self.pl.sweep_anim.max(0);
+                if self.pl.sweep_anim < 0 {
+                    self.pl.arc = None;
+                }
             }
         }
+    }
+
+    /// The pilot site `i` sweeps for: the one it tracks while he is in the world, else the
+    /// one it would see best (the nearest of equals).
+    fn site_target(&mut self, i: usize, present: &[usize]) -> usize {
+        let cur = self.site_pilot.get(i).copied().unwrap_or(0) as usize;
+        let o = self.objects[i];
+        if o.flags & oflags::TRACKING != 0 && present.contains(&cur) {
+            return cur;
+        }
+        let mut best = (i32::MIN, i32::MAX, cur);
+        for &k in present {
+            self.activate(k);
+            let (score, _, range) = self.detect_pure(o.x, o.y, 0, o.unit_type);
+            let score = score + self.pl.emv;
+            if score > best.0 || (score == best.0 && range < best.1) {
+                best = (score, range, k);
+            }
+        }
+        if best.2 != cur {
+            // Detected someone else so far: news for the new one.
+            self.objects[i].flags &= !oflags::PAINTED;
+        }
+        best.2
     }
 
     /// Radar sweep of ground site `i`.
@@ -225,7 +270,7 @@ impl Sim {
         } else {
             self.detect(o.x, o.y, 0, o.unit_type)
         };
-        let emv = self.emv;
+        let emv = self.pl.emv;
         let doppler = self.threat_type(o.unit_type).is_some_and(|t| t.flags & 1 != 0);
         if score > 0 {
             let colour = if emv + score > 100 {
@@ -235,10 +280,10 @@ impl Sim {
             } else {
                 42
             };
-            self.egr = Some(SignalBar { length: score.min(99), colour });
-            self.sweep_anim = self.fs;
+            self.pl.egr = Some(SignalBar { length: score.min(99), colour });
+            self.pl.sweep_anim = self.fs;
             let h = hi8s(brg);
-            self.arc = Some(RadarArc {
+            self.pl.arc = Some(RadarArc {
                 source: i as i32,
                 x: o.x,
                 y: o.y,
@@ -255,7 +300,7 @@ impl Sim {
             }
         }
         if score + emv > 100 {
-            self.emv_lamp = 2 * self.fs;
+            self.pl.emv_lamp = 2 * self.fs;
             self.emit(SimEvent::Rwr(detected_tone(doppler)));
             let gain = ((self.roe + self.diff + 1) << 4) >> (self.ecm_on() as i32);
             let alert = (self.objects[i].alert + gain).min(255);
@@ -264,15 +309,15 @@ impl Sim {
                 self.alarm();
             }
             let alert = self.objects[i].alert;
-            if self.threat_count_last <= self.diff
+            if self.pl.threat_count_last <= self.diff
                 && alert > 0xC0
                 && o.unit_type != 21
-                && self.nearest_base_dist > 0x500
+                && self.pl.nearest_base_dist > 0x500
             {
-                self.tracking += 1;
+                self.pl.tracking += 1;
                 if self.objects[i].flags & oflags::RADAR_ID == 0 && alert >= 0xFA {
                     self.objects[i].flags |= oflags::RADAR_ID;
-                    self.radar_ids += 1;
+                    self.pl.radar_ids += 1;
                     let n = self.place_name(i);
                     self.msg(format!("{n} - Radar ID"));
                     self.emit(SimEvent::Rwr(detected_tone(doppler)));
@@ -329,7 +374,8 @@ impl Sim {
         let n = self.place_name(i);
         let sam = self.missile(spec).name.clone();
         self.msg(format!("{n} firing {sam}"));
-        self.launches += 1;
+        self.proj_pilot[k] = self.pl.id;
+        self.pl.launches += 1;
         self.emit(SimEvent::MissileLaunched { slot: k, spec, launcher: Launcher::Site(i) });
     }
 
@@ -341,7 +387,7 @@ impl Sim {
         let u = self.flights[i];
         let rt = self.ac_type(u.spec).radar as i32;
         let (mut score, brg, range) = self.detect(u.x, u.y, u.alt, rt);
-        let emv = self.emv;
+        let emv = self.pl.emv;
         let doppler = self.threat_type(rt).is_some_and(|t| t.flags & 1 != 0);
         if score > 0 {
             let omni = self.threat_type(rt).is_some_and(|t| t.flags & 2 != 0);
@@ -358,9 +404,9 @@ impl Sim {
                 arc = Some((h - 0x20, h + 0x20));
             }
             let colour = if emv + score > 100 { 15 } else { 11 };
-            self.ear = Some(SignalBar { length: score.min(99), colour });
-            self.sweep_anim = self.fs;
-            self.arc = Some(RadarArc {
+            self.pl.ear = Some(SignalBar { length: score.min(99), colour });
+            self.pl.sweep_anim = self.fs;
+            self.pl.arc = Some(RadarArc {
                 source: -1 - i as i32,
                 x: u.x,
                 y: u.y,
@@ -372,26 +418,26 @@ impl Sim {
             });
         }
         if score + emv > 100 {
-            self.emv_lamp = 2 * self.fs;
+            self.pl.emv_lamp = 2 * self.fs;
             self.emit(SimEvent::Rwr(detected_tone(doppler)));
             let gain = ((self.roe + self.diff + 2) << 4) >> (self.ecm_on() as i32);
             self.flights[i].heat += gain;
             if self.flights[i].heat > 0xC0 {
-                self.tracking += 1;
+                self.pl.tracking += 1;
                 self.flights[i].flags |= fflags::SAW_PLAYER;
                 self.alarm();
                 if self.flights[i].flags & fflags::VISUAL_ID == 0
                     && self.visual_range() > range
-                    && self.sees((u.x, u.y, u.alt), (self.p.mx, self.p.my, self.p.view_z))
+                    && self.sees((u.x, u.y, u.alt), (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z))
                 {
                     self.flights[i].flags |= fflags::VISUAL_ID;
-                    self.visual_ids += 1;
+                    self.pl.visual_ids += 1;
                     let n = self.ac_type(u.spec).name.clone();
                     self.msg(format!("Visual ID - {n}"));
                     self.sound(7, 1);
                     self.log_event(6, u.spec);
                 }
-                if 2 * self.diff >= self.threat_count_last {
+                if 2 * self.diff >= self.pl.threat_count_last {
                     let k = i & 7;
                     let w = u.missile;
                     if w > 0
@@ -451,7 +497,8 @@ impl Sim {
         }
         let ty = self.ac_type(u.spec).name.clone();
         self.msg(format!("{} fired by {ty}", t.name));
-        self.launches += 1;
+        self.proj_pilot[k] = self.pl.id;
+        self.pl.launches += 1;
         self.emit(SimEvent::MissileLaunched {
             slot: k,
             spec: u.missile,
@@ -464,34 +511,34 @@ impl Sim {
         let (mut best, mut bd) = (-1, 0x7FFF);
         for (i, o) in self.objects.iter().enumerate().skip(3) {
             if o.flags & 0x201 != 0 && (o.flags >> 8) & 5 != 0 {
-                let d = approx(self.p.mx - o.x, self.p.my - o.y);
+                let d = approx(self.pl.p.mx - o.x, self.pl.p.my - o.y);
                 if d < bd {
                     bd = d;
                     best = i as i32;
                 }
             }
         }
-        self.nearest_base = best;
-        self.nearest_base_dist = bd;
+        self.pl.nearest_base = best;
+        self.pl.nearest_base_dist = bd;
     }
 
     /// Lamp timers and the light states.
     pub(crate) fn update_light_timers(&mut self) {
-        for t in [&mut self.chaff_lamp, &mut self.flare_lamp, &mut self.emv_lamp] {
+        for t in [&mut self.pl.chaff_lamp, &mut self.pl.flare_lamp, &mut self.pl.emv_lamp] {
             if *t > 0 {
                 *t -= 1;
             }
         }
-        let l = &mut self.lights;
-        l.emv_warning = self.emv_lamp > 0;
-        l.chaff = self.chaff_lamp > 0;
-        l.flare = self.flare_lamp > 0;
-        l.trak = self.tracking != 0 && self.frame & 1 != 0;
-        l.ecm = self.pflags & pflags::ECM != 0;
-        l.irj = self.pflags & pflags::IRJ != 0;
-        l.irj_hot = self.irj_heat > 0;
-        l.decoy = self.cms[0].ttl >= 1;
-        l.bay = self.pflags & pflags::BAY_OPEN != 0;
+        let l = &mut self.pl.lights;
+        l.emv_warning = self.pl.emv_lamp > 0;
+        l.chaff = self.pl.chaff_lamp > 0;
+        l.flare = self.pl.flare_lamp > 0;
+        l.trak = self.pl.tracking != 0 && self.frame & 1 != 0;
+        l.ecm = self.pl.pflags & pflags::ECM != 0;
+        l.irj = self.pl.pflags & pflags::IRJ != 0;
+        l.irj_hot = self.pl.irj_heat > 0;
+        l.decoy = self.pl.cms[0].ttl >= 1;
+        l.bay = self.pl.pflags & pflags::BAY_OPEN != 0;
     }
 }
 
@@ -500,10 +547,12 @@ impl Sim {
     /// range), most dangerous first: launching, then tracking, then the ones whose missiles
     /// reach the player, the higher threat tiers and the closer ones.
     pub fn emitters(&self) -> Vec<Emitter> {
-        let (px, py) = (self.p.mx, self.p.my);
+        let (px, py) = (self.pl.p.mx, self.pl.p.my);
+        let me = self.pl.id;
         let launched = |source: EmitterSource| {
-            self.proj[..8].iter().any(|m| {
+            self.proj[..ENEMY_SLOTS].iter().zip(&self.proj_pilot).any(|(m, &k)| {
                 m.ttl != 0
+                    && k == me
                     && match source {
                         EmitterSource::Site(i) => m.launcher == i as i32,
                         EmitterSource::Aircraft(i) => m.launcher == -(i as i32) && i > 0,
@@ -561,7 +610,9 @@ impl Sim {
             {
                 continue;
             }
-            let tracking = o.flags & oflags::TRACKING != 0 || o.alert > 0xC0;
+            // Painting and tracking someone else is no signal for this pilot.
+            let mine = self.site_pilot.get(i).is_none_or(|&k| k == me);
+            let tracking = mine && (o.flags & oflags::TRACKING != 0 || o.alert > 0xC0);
             let missile = self.site_missile(o.unit_type);
             push(
                 EmitterSource::Site(i),
@@ -570,11 +621,12 @@ impl Sim {
                 0,
                 o.unit_type,
                 missile,
-                o.flags & oflags::PAINTED != 0,
+                mine && o.flags & oflags::PAINTED != 0,
                 tracking,
             );
         }
         for (i, u) in self.flights.iter().enumerate() {
+            let mine = self.flight_pilot.get(i).is_none_or(|&k| k == me);
             let radar = self.ac_type(u.spec).radar as i32;
             if u.flags & (fflags::EXISTS | fflags::AIRBORNE) != fflags::EXISTS | fflags::AIRBORNE
                 || u.flags & fflags::DESTROYED != 0
@@ -589,8 +641,8 @@ impl Sim {
                 u.alt,
                 radar,
                 u.missile,
-                u.flags & fflags::CONTACT != 0,
-                u.heat > 0xC0,
+                mine && u.flags & fflags::CONTACT != 0,
+                mine && u.heat > 0xC0,
             );
         }
         self.aaa_emitters(&mut out);

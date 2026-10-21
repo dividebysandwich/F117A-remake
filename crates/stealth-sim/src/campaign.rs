@@ -19,12 +19,12 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::Sim;
 use crate::aaa::{AaaKind, AaaUnit, M_PER_MAP, SA14, Shell, lead};
 use crate::csar::BLACKHAWK;
 use crate::math::{approx, s16};
 use crate::rng::Rng;
 use crate::types::*;
+use crate::{ENEMY_SLOTS, Sim};
 
 const M_PER_WU: f64 = M_PER_MAP / 32.0;
 const G: f64 = 9.81;
@@ -70,6 +70,9 @@ pub struct CampaignFlight {
     /// Shot down by the AI (else by the player), and reported.
     pub killed_by_ai: bool,
     pub reported: bool,
+    /// The pilot who shot it down.
+    #[serde(default)]
+    pub killed_by: Option<u8>,
 }
 
 /// A missile of the AI against an AI aircraft (metres, x east, y north, z up).
@@ -96,8 +99,6 @@ pub struct AiShell {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CampaignSim {
-    /// The player is not in the world (between sorties).
-    pub absent: bool,
     pub(crate) rng: Rng,
     /// Each object's radar type and shape as built (for repairs).
     pub(crate) original: Vec<(i32, i32)>,
@@ -149,12 +150,11 @@ impl Sim {
             }
         }
         self.drones = None;
-        self.deadline = 0;
-        let base = self.targets[0].base;
-        self.targets = [TargetSlot { mission_type: 0, object: -1, base, code: 0 }; 2];
+        self.pl.deadline = 0;
+        let base = self.pl.targets[0].base;
+        self.pl.targets = [TargetSlot { mission_type: 0, object: -1, base, code: 0 }; 2];
         let seed = self.rng.hold ^ 0xCA4D_A1A1;
         self.campaign = Some(Box::new(CampaignSim {
-            absent: true,
             rng: Rng::new(seed),
             original: self.objects.iter().map(|o| (o.unit_type, o.shape)).collect(),
             intel: vec![false; n],
@@ -170,56 +170,84 @@ impl Sim {
         self.leave_world();
     }
 
-    /// The player is not in the world (campaign, between sorties).
+    /// The active pilot is not in the world (campaign, between sorties).
     pub fn player_absent(&self) -> bool {
-        self.campaign.as_ref().is_some_and(|c| c.absent)
+        self.campaign.is_some() && self.pl.absent
+    }
+
+    /// Pilot `id` is not in the world.
+    pub fn pilot_absent(&self, id: u8) -> bool {
+        let p = self.pilot_ref(id as usize);
+        p.id != id || p.absent
     }
 
     pub fn campaign(&self) -> Option<&CampaignSim> {
         self.campaign.as_deref()
     }
 
-    /// The player leaves the world: what was after him is called off.
+    /// The active pilot leaves the world: what was after him is called off.
     fn leave_world(&mut self) {
-        if let Some(c) = &mut self.campaign {
-            c.absent = true;
+        let me = self.pl.id;
+        self.pl.absent = true;
+        let alone = self.present().is_empty();
+        for s in Self::own_slots() {
+            self.proj[s] = Projectile::default();
         }
-        for p in self.proj.iter_mut() {
-            *p = Projectile::default();
+        for s in 0..ENEMY_SLOTS {
+            if alone || self.proj_pilot[s] == me {
+                self.proj[s] = Projectile::default();
+            }
         }
-        for b in self.bullets.iter_mut() {
+        let nb = if alone { self.bullets.len() } else { self.n_bullets };
+        for b in self.bullets[..nb].iter_mut() {
             *b = Bullet::default();
         }
-        self.alarm_timer = 0;
-        self.air_lock = -1;
-        self.gnd_lock = -1;
+        if alone {
+            self.alarm_timer = 0;
+            self.aaa_shells.clear();
+        } else {
+            self.aaa_shells.retain(|s| s.pilot != me);
+        }
+        for (i, o) in self.objects.iter_mut().enumerate().take(self.ground_units) {
+            if !alone && self.site_pilot.get(i).is_some_and(|&k| k == me) {
+                o.flags &= !(oflags::PAINTED | oflags::TRACKING);
+            }
+        }
+        self.pl.air_lock = -1;
+        self.pl.gnd_lock = -1;
         self.csar = None;
-        self.eject = 0;
-        self.threat_count = 0;
-        self.tracking = 0;
-        self.egr = None;
-        self.ear = None;
-        self.arc = None;
-        self.aaa_shells.clear();
-        self.aaa_track = None;
+        self.pl.eject = 0;
+        self.pl.threat_count = 0;
+        self.pl.tracking = 0;
+        self.pl.egr = None;
+        self.pl.ear = None;
+        self.pl.arc = None;
+        self.pl.aaa_track = None;
     }
 
     /// Campaign: ends the player's sortie from outside (abort, or the flight model's crash) with
     /// the original's outcome codes; nothing if he is not flying.
     pub fn end_sortie(&mut self, outcome: u8) {
-        if self.campaign.is_none() || self.player_absent() {
-            return;
+        self.end_sortie_pilot(self.pl.id, outcome);
+    }
+
+    /// Campaign: ends pilot `id`'s sortie from outside.
+    pub fn end_sortie_pilot(&mut self, id: u8, outcome: u8) {
+        let back = self.pl.id as usize;
+        self.activate(id as usize);
+        if self.campaign.is_some() && self.pl.id == id && !self.player_absent() {
+            let e = MissionEnd {
+                outcome,
+                landing_type: self.pl.landing_type,
+                map_x: self.pl.p.mx,
+                map_y: self.pl.p.my,
+                damage: self.pl.damage,
+                hits: self.pl.hits,
+            };
+            self.emit(SimEvent::SortieEnded(e));
+            self.leave_world();
         }
-        let e = MissionEnd {
-            outcome,
-            landing_type: self.landing_type,
-            map_x: self.p.mx,
-            map_y: self.p.my,
-            damage: self.damage,
-            hits: self.hits,
-        };
-        self.emit(SimEvent::SortieEnded(e));
-        self.leave_world();
+        self.activate(back);
     }
 
     /// Campaign `finalize`: the sortie ends, the simulation goes on.
@@ -233,35 +261,64 @@ impl Sim {
     /// photo or 2 destroy, object) in the primary slot. Returns the start state for the flight
     /// model.
     pub fn respawn_player(&mut self, base: usize, objective: Option<(i32, usize)>) -> PlayerState {
-        let Some(c) = &mut self.campaign else { return self.start_state() };
-        c.absent = false;
+        let (lockheed, external) = (self.pl.lockheed, self.pl.external_stores);
+        self.respawn_pilot(self.pl.id, base, objective, lockheed, external)
+    }
+
+    /// Campaign: pilot `id`'s new sortie (as [`Sim::respawn_player`]) in an aircraft with or
+    /// without a cannon (`lockheed`: the real F-117A) and with its weapons in a bay or outside.
+    pub fn respawn_pilot(
+        &mut self,
+        id: u8,
+        base: usize,
+        objective: Option<(i32, usize)>,
+        lockheed: bool,
+        external_stores: bool,
+    ) -> PlayerState {
+        if self.campaign.is_none() {
+            return self.start_state();
+        }
+        if id as usize >= self.pilot_count() {
+            self.add_pilot(id);
+        }
+        let back = self.pl.id as usize;
+        self.activate(id as usize);
+        let Some(c) = &self.campaign else { return self.start_state() };
         let (stores, gun) = (c.stores_init, c.gun_init);
-        self.damage = 0;
-        self.hits = 2;
-        self.control_fault = ControlFault::default();
-        self.fire_frames = 0;
-        self.breakup_frames = 0;
-        self.irj_heat = 0;
-        self.stores = stores;
-        self.gun_ammo = gun;
-        self.gun_firing = false;
-        self.pflags &= pflags::BAY_OPEN;
-        self.eject = 0;
-        self.chute = (0, 0, 0);
-        self.landing_type = 1;
-        self.armed_landing = 0;
-        self.corridor = true;
-        self.photo_timer = 0;
-        self.photo_frames = 0;
-        self.cue_timers = [0; 2];
-        self.waypoint = 0;
-        self.targeting = TargetingState::default();
-        self.target_hold = false;
+        self.pl.absent = false;
+        self.pl.lockheed = lockheed;
+        self.pl.external_stores = external_stores;
+        self.pl.damage = 0;
+        self.pl.hits = 2;
+        self.pl.control_fault = ControlFault::default();
+        self.pl.fire_frames = 0;
+        self.pl.breakup_frames = 0;
+        self.pl.irj_heat = 0;
+        self.pl.stores = stores;
+        self.pl.gun_ammo = gun;
+        self.pl.gun_firing = false;
+        self.pl.pflags &= pflags::BAY_OPEN;
+        if external_stores {
+            self.pl.bay_req = true;
+            self.pl.door_anim = 2;
+            self.pl.pflags |= pflags::BAY_OPEN;
+        }
+        self.pl.eject = 0;
+        self.pl.chute = (0, 0, 0);
+        self.pl.landing_type = 1;
+        self.pl.armed_landing = 0;
+        self.pl.corridor = true;
+        self.pl.photo_timer = 0;
+        self.pl.photo_frames = 0;
+        self.pl.cue_timers = [0; 2];
+        self.pl.waypoint = 0;
+        self.pl.targeting = TargetingState::default();
+        self.pl.target_hold = false;
         self.wreck = Wreck::default();
         self.smoke_src = -1;
-        self.cms = [Countermeasure::default(); 4];
-        self.log.clear();
-        self.targets = [
+        self.pl.cms = [Countermeasure::default(); 4];
+        self.pl.log.clear();
+        self.pl.targets = [
             TargetSlot {
                 mission_type: objective.map_or(0, |o| o.0),
                 object: objective.map_or(-1, |o| o.1 as i32),
@@ -271,27 +328,44 @@ impl Sim {
             TargetSlot { mission_type: 0, object: -1, base: base as i32, code: 0 },
         ];
         self.leave_world();
-        if let Some(c) = &mut self.campaign {
-            c.absent = false;
-        }
+        self.pl.absent = false;
         let st = self.start_state();
-        self.on_ground = true;
-        self.prev_on_ground = true;
+        self.pl.on_ground = true;
+        self.pl.prev_on_ground = true;
+        self.pl.last_input = st.clone();
+        self.activate(back);
         st
     }
 
     /// Campaign: rearm and refuel on a friendly base (the game refuels the flight model).
     pub fn rearm(&mut self, stations: &[(i32, i32)]) {
+        self.rearm_pilot(self.pl.id, stations);
+    }
+
+    /// Campaign: pilot `id` rearms.
+    pub fn rearm_pilot(&mut self, id: u8, stations: &[(i32, i32)]) {
+        let back = self.pl.id as usize;
+        self.activate(id as usize);
         if let Some(c) = &self.campaign {
-            self.stores = c.stores_init;
-            self.gun_ammo = c.gun_init;
+            self.pl.stores = c.stores_init;
+            self.pl.gun_ammo = c.gun_init;
         }
-        self.damage = 0;
-        self.hits = 2;
-        self.control_fault = ControlFault::default();
+        self.pl.damage = 0;
+        self.pl.hits = 2;
+        self.pl.control_fault = ControlFault::default();
         self.set_loadout(stations);
-        self.armed_landing = 0;
+        self.pl.armed_landing = 0;
         self.emit(SimEvent::Resupplied);
+        self.activate(back);
+    }
+
+    /// Pilot `id`'s stores (as [`Sim::set_loadout`]) and the selected station.
+    pub fn set_pilot_loadout(&mut self, id: u8, stations: &[(i32, i32)], select: usize) {
+        let back = self.pl.id as usize;
+        self.activate(id as usize);
+        self.set_loadout(stations);
+        self.select_bay(select);
+        self.activate(back);
     }
 
     /// Campaign: who holds object `i` (cities, airfields).
@@ -346,7 +420,7 @@ impl Sim {
         let shape = self.wreck_shape(i as i32);
         self.display_shape[i] = shape;
         self.destroyed_at.push((o.x, o.y));
-        self.emit(SimEvent::GroundDestroyed { object: i, shape });
+        self.emit(SimEvent::GroundDestroyed { object: i, shape, by: None });
         if self.tiles.is_some()
             && let Some(t) = self.find_nearest_tile(o.x << 5, (0x8000 - o.y) << 5)
         {
@@ -507,6 +581,7 @@ impl Sim {
             cooldown: 0,
             missiles: 0,
             killed_by_ai: false,
+            killed_by: None,
             reported: false,
         });
         self.emit(SimEvent::AircraftTakeoff { unit: i, base: from });
@@ -544,6 +619,7 @@ impl Sim {
             cooldown: 0,
             missiles: FIGHTER_MISSILES,
             killed_by_ai: false,
+            killed_by: None,
             reported: false,
         });
         i
@@ -618,6 +694,7 @@ impl Sim {
                     unit: i,
                     tag: f.tag,
                     by_player: !f.killed_by_ai,
+                    by: if f.killed_by_ai { None } else { f.killed_by },
                 });
             }
             // Down, or stopped at the end of its landing roll.
@@ -630,7 +707,9 @@ impl Sim {
                 *slot = None;
             }
         }
-        self.events.extend(ev);
+        for e in ev {
+            self.emit(e);
+        }
     }
 
     /// Once a second: sites, guns and fighters pick their AI targets; sites and fighters fire.
@@ -802,6 +881,7 @@ impl Sim {
                         vel: mul(dir, v0),
                         ttl: ((ttl * fs as f64) as i32).max(1),
                         flak,
+                        pilot: 0,
                     },
                     target: j,
                 });
@@ -913,7 +993,7 @@ impl Sim {
         let name = self.ac_type(u.spec).name.clone();
         self.msg(format!("{name} shot down"));
         self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: u.alt, kind: 0x10 });
-        self.emit(SimEvent::AircraftDestroyed { unit: j, spec: u.spec });
+        self.emit(SimEvent::AircraftDestroyed { unit: j, spec: u.spec, by: None });
     }
 
     /// The AI's missiles in flight (metres east, north, up; velocity).
@@ -927,14 +1007,14 @@ impl Sim {
     }
 
     /// Campaign frame without the player: the world goes on.
-    pub(crate) fn step_absent(&mut self) -> Vec<SimEvent> {
+    pub(crate) fn step_absent(&mut self) {
         if self.frame & 7 == 0 {
             self.update_base_traffic();
         }
         if self.frame & 0x7F == 0x40 && self.traffic_base >= 0 {
             self.spawn_traffic();
         }
-        self.update_aircraft();
+        self.update_aircraft(&[]);
         self.update_campaign();
         self.update_effects();
         self.tick_frames += 1;
@@ -943,7 +1023,6 @@ impl Sim {
             self.mission_tick += 1;
         }
         self.frame = (self.frame + 1) & 0xFFFF;
-        std::mem::take(&mut self.events)
     }
 }
 

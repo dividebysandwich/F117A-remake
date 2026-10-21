@@ -114,7 +114,7 @@ impl Sim {
             }
             if best.0 >= 0 {
                 let o = self.objects[best.0 as usize];
-                self.last_tile = Some(TileHit {
+                self.pl.last_tile = Some(TileHit {
                     shape: o.shape & 0x7F,
                     base_shape: o.shape & 0x7F,
                     dist: 0,
@@ -127,12 +127,12 @@ impl Sim {
                     damaged: o.flags & oflags::DESTROYED != 0,
                 });
             } else {
-                self.last_tile = None;
+                self.pl.last_tile = None;
             }
             return best.0;
         }
         let res = self.find_nearest_tile(x << 5, (0x8000 - y) << 5);
-        self.last_tile = res;
+        self.pl.last_tile = res;
         let Some(t) = res else { return -1 };
         let (mx, my) = t.map_pos();
         let (mx, my) = (mx & 0xFFFF, my & 0xFFFF);
@@ -212,7 +212,7 @@ impl Sim {
         let mut ev = 1;
         if self.objects[iu].flags & oflags::DESTROYED == 0 {
             if self.objects[iu].flags & oflags::RADAR_ID != 0 {
-                self.radar_ids -= 1;
+                self.pl.radar_ids -= 1;
             }
             let o = self.objects[iu];
             self.destroyed_at.push((o.x, o.y));
@@ -229,20 +229,20 @@ impl Sim {
                 self.objects[iu].flags |= oflags::DESTROYED;
                 self.objects[iu].unit_type = 0;
                 for k in 0..2 {
-                    if self.targets[k].mission_type == 2 && self.targets[k].object == i {
+                    if self.pl.targets[k].mission_type == 2 && self.pl.targets[k].object == i {
                         self.mark_target_reached(k);
                         ev |= if k == 0 { 0x80 } else { 0x40 };
                         self.sound(4, 2);
-                        self.cue_timers[k] = 4 * self.fs;
+                        self.pl.cue_timers[k] = 4 * self.fs;
                     }
                 }
                 self.log_event(ev, i);
                 shape = self.wreck_shape(i);
                 self.display_shape[iu] = shape;
-                self.emit(SimEvent::GroundDestroyed { object: iu, shape });
+                self.emit(SimEvent::GroundDestroyed { object: iu, shape, by: self.credit });
             } else {
                 // Scratch tile object.
-                let t = self.last_tile;
+                let t = self.pl.last_tile;
                 if !self.tile_is_intact(&t) {
                     return;
                 }
@@ -258,17 +258,17 @@ impl Sim {
                 };
                 shape = s | 0x100;
                 self.objects[0].shape = shape;
-                self.emit(SimEvent::GroundDestroyed { object: 0, shape });
+                self.emit(SimEvent::GroundDestroyed { object: 0, shape, by: self.credit });
             }
-            let res = if i == 0 { self.last_tile } else { res };
+            let res = if i == 0 { self.pl.last_tile } else { res };
             if let Some(t) = res {
                 self.set_tile_shape(t, shape);
             }
         }
         self.smoke_src = i;
         self.sound(5, 2);
-        if self.hud_mode == HudMode::Gnd && i == self.gnd_lock {
-            self.targeting.target_killed = true;
+        if self.pl.hud_mode == HudMode::Gnd && i == self.pl.gnd_lock {
+            self.pl.targeting.target_killed = true;
         }
         if self.diff < 2 {
             self.alarm();
@@ -285,16 +285,19 @@ impl Sim {
             let spec = (u.spec.max(0) as usize).min(self.aircraft_types.len() - 1);
             self.aircraft_types[spec].kills = self.aircraft_types[spec].kills.wrapping_add(1);
             if u.flags & fflags::VISUAL_ID != 0 {
-                self.visual_ids -= 1;
+                self.pl.visual_ids -= 1;
             }
             if j as i32 == self.escort_leader {
                 self.escort_leader = -1;
             }
             self.flights[j].flags |= fflags::DESTROYED;
+            if let Some(Some(f)) = self.campaign.as_mut().and_then(|c| c.flights.get_mut(j)) {
+                f.killed_by = self.credit;
+            }
             self.smoke_src = -1;
             self.wreck = Wreck { x: u.x, y: u.y, alt: u.alt, vel: 0x80 };
             let mut ev = 3;
-            if (5..=8).contains(&self.targets[0].mission_type) && j == 0 {
+            if (5..=8).contains(&self.pl.targets[0].mission_type) && j == 0 {
                 self.mark_target_reached(0);
                 ev = 0x83;
             }
@@ -302,12 +305,12 @@ impl Sim {
             if u.speed == 0 {
                 self.flights[j].flags &= 0x1C1;
             }
-            self.emit(SimEvent::AircraftDestroyed { unit: j, spec: u.spec });
+            self.emit(SimEvent::AircraftDestroyed { unit: j, spec: u.spec, by: self.credit });
             self.drone_killed(j);
         }
         self.sound(5, 2);
-        if self.hud_mode == HudMode::Air && j as i32 == self.air_lock {
-            self.targeting.target_killed = true;
+        if self.pl.hud_mode == HudMode::Air && j as i32 == self.pl.air_lock {
+            self.pl.targeting.target_killed = true;
         }
     }
 
@@ -320,13 +323,13 @@ impl Sim {
             self.missile_damage();
             return;
         }
-        let before = self.damage;
+        let before = self.pl.damage;
         let mut bits = 0u8;
         for _ in 0..=self.diff {
             let b = 1u8 << self.rng.random(8).clamp(0, 7);
             bits |= b;
-            self.damage |= b;
-            self.hits += 1;
+            self.pl.damage |= b;
+            self.pl.hits += 1;
         }
         if self.opts.realistic_damage {
             self.new_damage(bits, before);

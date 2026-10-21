@@ -10,69 +10,69 @@ impl Sim {
     pub(crate) fn handle_keys(&mut self, ps: &PlayerState) {
         let c = &ps.cmd;
         // HUD mode changes (F2): entering AIR clears both locks, entering GND the ground lock.
-        if self.hud_mode != self.prev_hud_mode {
-            match self.hud_mode {
+        if self.pl.hud_mode != self.pl.prev_hud_mode {
+            match self.pl.hud_mode {
                 HudMode::Air => {
-                    self.air_lock = -1;
-                    self.gnd_lock = -1;
+                    self.pl.air_lock = -1;
+                    self.pl.gnd_lock = -1;
                 }
-                HudMode::Gnd => self.gnd_lock = -1,
+                HudMode::Gnd => self.pl.gnd_lock = -1,
                 HudMode::Nav => {}
             }
         }
         // After ejecting, the flare key fires the pilot's signal flares (csar.rs).
-        if c.flare && self.eject == 0 {
+        if c.flare && self.pl.eject == 0 {
             self.release_cm(1);
         }
-        if c.chaff && self.eject == 0 {
+        if c.chaff && self.pl.eject == 0 {
             self.release_cm(2);
         }
-        if c.decoy && self.eject == 0 {
+        if c.decoy && self.pl.eject == 0 {
             self.release_cm(3);
         }
         if c.toggle_irj {
-            self.pflags ^= pflags::IRJ;
+            self.pl.pflags ^= pflags::IRJ;
         }
         if c.toggle_ecm {
-            self.pflags ^= pflags::ECM;
+            self.pl.pflags ^= pflags::ECM;
         }
-        if c.toggle_bay && self.damage & dmg::BD == 0 && !self.opts.external_stores {
-            self.bay_req = !self.bay_req;
+        if c.toggle_bay && self.pl.damage & dmg::BD == 0 && !self.pl.external_stores {
+            self.pl.bay_req = !self.pl.bay_req;
             self.sound(0x1F, 1);
         }
         if c.next_bay {
             self.next_weapon();
         }
         if c.designate {
-            self.target_hold = false;
-            self.pflags ^= pflags::DESIGNATE;
-            if self.camera_mfd {
+            self.pl.target_hold = false;
+            self.pl.pflags ^= pflags::DESIGNATE;
+            if self.pl.camera_mfd {
                 self.camera_key(0);
             }
         }
         if c.next_target {
-            self.target_hold = false;
-            self.targeting.target_killed = false;
-            self.gnd_lock |= 0x80;
-            self.air_lock |= 0x80;
+            self.pl.target_hold = false;
+            self.pl.targeting.target_killed = false;
+            self.pl.gnd_lock |= 0x80;
+            self.pl.air_lock |= 0x80;
         }
         if let Some(d) = c.camera_dir {
             self.camera_key(d as i32);
         }
         if c.nearest_target {
-            self.target_hold = false;
+            self.pl.target_hold = false;
             self.camera_key(0);
-            self.nearest_req = NEAREST_WAIT;
+            self.pl.nearest_req = NEAREST_WAIT;
         }
         if c.clear_target {
-            self.air_lock = -1;
-            self.gnd_lock = -1;
-            self.nearest_req = 0;
-            self.pflags &= !pflags::DESIGNATE;
-            self.target_hold = true;
+            self.pl.air_lock = -1;
+            self.pl.gnd_lock = -1;
+            self.pl.nearest_req = 0;
+            self.pl.pflags &= !pflags::DESIGNATE;
+            self.pl.target_hold = true;
         }
         if c.toggle_training {
-            self.pflags ^= pflags::TRAINING;
+            self.pl.pflags ^= pflags::TRAINING;
         }
         if c.resupply && self.training() {
             self.resupply();
@@ -83,11 +83,11 @@ impl Sim {
         // Display locks, after the HUD mode change above has cleared the old ones.
         if let Some(o) = c.lock_object.map(usize::from) {
             if self.objects.get(o).is_some_and(|ob| ob.flags & oflags::DESTROYED == 0) {
-                self.gnd_lock = o as i32;
-                self.target_hold = true;
-                self.nearest_req = 0;
-                self.targeting.target_killed = false;
-                self.pflags &= !pflags::DESIGNATE;
+                self.pl.gnd_lock = o as i32;
+                self.pl.target_hold = true;
+                self.pl.nearest_req = 0;
+                self.pl.targeting.target_killed = false;
+                self.pl.pflags &= !pflags::DESIGNATE;
             } else {
                 self.msg("No target");
             }
@@ -99,11 +99,11 @@ impl Sim {
             } else if !self.player_sees(self.obj(o).x, self.obj(o).y, 0) {
                 self.msg("Target obscured");
             } else {
-                self.gnd_lock = o;
-                self.target_hold = true;
-                self.nearest_req = 0;
-                self.targeting.target_killed = false;
-                self.pflags &= !pflags::DESIGNATE;
+                self.pl.gnd_lock = o;
+                self.pl.target_hold = true;
+                self.pl.nearest_req = 0;
+                self.pl.targeting.target_killed = false;
+                self.pl.pflags &= !pflags::DESIGNATE;
                 if self.smoke_src == 0 {
                     self.smoke_src = -1;
                 }
@@ -113,9 +113,9 @@ impl Sim {
             if self.flights.get(u).is_some_and(|f| {
                 f.flags & fflags::AIRBORNE != 0 && f.flags & fflags::DESTROYED == 0
             }) {
-                self.air_lock = u as i32;
-                self.target_hold = true;
-                self.nearest_req = 0;
+                self.pl.air_lock = u as i32;
+                self.pl.target_hold = true;
+                self.pl.nearest_req = 0;
             } else {
                 self.msg("No target");
             }
@@ -127,20 +127,21 @@ impl Sim {
     /// each).
     fn next_weapon(&mut self) {
         // Entries: the first station of each weapon, then the cannon (index n).
-        let n = self.bays.len();
+        let n = self.pl.bays.len();
         let first_of =
             |b: &[(i32, i32)], i: usize| b[i].0 >= 0 && !b[..i].iter().any(|o| o.0 == b[i].0);
-        let cur = if self.gun_selected { n } else { self.cur_bay };
-        let cur_w = if self.gun_selected { -2 } else { self.bays.get(cur).map_or(-1, |b| b.0) };
+        let cur = if self.pl.gun_selected { n } else { self.pl.cur_bay };
+        let cur_w =
+            if self.pl.gun_selected { -2 } else { self.pl.bays.get(cur).map_or(-1, |b| b.0) };
         let gun = self.has_gun();
         let next = (1..=n + 1).map(|k| (cur + k) % (n + 1)).find(|&i| {
-            if i == n { gun } else { first_of(&self.bays, i) && self.bays[i].0 != cur_w }
+            if i == n { gun } else { first_of(&self.pl.bays, i) && self.pl.bays[i].0 != cur_w }
         });
         match next {
-            Some(i) if i == n => self.gun_selected = true,
+            Some(i) if i == n => self.pl.gun_selected = true,
             Some(i) => {
-                self.cur_bay = i;
-                self.gun_selected = false;
+                self.pl.cur_bay = i;
+                self.pl.gun_selected = false;
             }
             None => {}
         }
@@ -148,14 +149,14 @@ impl Sim {
 
     /// The selected weapon (-1 none or the cannon) and its rounds on all stations.
     pub(crate) fn selected_weapon(&self) -> (i32, i32) {
-        if self.gun_selected {
+        if self.pl.gun_selected {
             return (-1, 0);
         }
-        let w = self.bays.get(self.cur_bay).map_or(-1, |b| b.0);
+        let w = self.pl.bays.get(self.pl.cur_bay).map_or(-1, |b| b.0);
         if w < 0 {
             return (-1, 0);
         }
-        (w, self.bays.iter().filter(|b| b.0 == w).map(|b| b.1).sum())
+        (w, self.pl.bays.iter().filter(|b| b.0 == w).map(|b| b.1).sum())
     }
 
     /// Missile table index of the selected weapon (0: none or guns).
@@ -168,98 +169,99 @@ impl Sim {
 
     /// Camera keys.
     fn camera_key(&mut self, dir: i32) {
-        if self.pflags & pflags::CAMERA_VIEW != 0 {
+        if self.pl.pflags & pflags::CAMERA_VIEW != 0 {
             return;
         }
-        self.targeting.target_killed = false;
-        self.target_hold = false;
-        self.maverick_view = false;
-        self.cam_dir = s16(dir);
-        self.air_lock = -1;
-        self.gnd_lock = -1;
+        self.pl.targeting.target_killed = false;
+        self.pl.target_hold = false;
+        self.pl.maverick_view = false;
+        self.pl.cam_dir = s16(dir);
+        self.pl.air_lock = -1;
+        self.pl.gnd_lock = -1;
     }
 
     /// Alt-R: resupply (repair, reload bays and gun).
     fn resupply(&mut self) {
-        self.damage = 0;
-        self.hits = 0;
-        self.control_fault = ControlFault::default();
-        self.fire_frames = 0;
-        self.breakup_frames = 0;
-        for b in self.bays.iter_mut() {
+        self.pl.damage = 0;
+        self.pl.hits = 0;
+        self.pl.control_fault = ControlFault::default();
+        self.pl.fire_frames = 0;
+        self.pl.breakup_frames = 0;
+        for b in self.pl.bays.iter_mut() {
             b.1 = if b.0 < 16 { 9 } else { 1 };
         }
-        self.gun_ammo = 1000;
+        self.pl.gun_ammo = 1000;
         self.emit(SimEvent::Resupplied);
     }
 
     /// Per-frame systems: JAM damage, IR jammer heat, bay doors.
     pub(crate) fn update_systems(&mut self) {
-        if self.damage & dmg::JAM != 0 {
-            self.pflags &= !(pflags::ECM | pflags::IRJ);
+        if self.pl.damage & dmg::JAM != 0 {
+            self.pl.pflags &= !(pflags::ECM | pflags::IRJ);
         }
         if self.irj_on() {
-            self.irj_heat += 1;
-            if self.irj_heat > 20 * self.fs {
-                self.pflags &= !pflags::IRJ;
+            self.pl.irj_heat += 1;
+            if self.pl.irj_heat > 20 * self.fs {
+                self.pl.pflags &= !pflags::IRJ;
             }
-        } else if self.irj_heat > 0 {
-            self.irj_heat -= 1;
+        } else if self.pl.irj_heat > 0 {
+            self.pl.irj_heat -= 1;
         }
-        if self.damage & dmg::BD != 0 {
-            self.bay_req = true;
-            self.door_anim = 2;
+        if self.pl.damage & dmg::BD != 0 {
+            self.pl.bay_req = true;
+            self.pl.door_anim = 2;
         }
-        if self.bay_req {
-            if self.door_anim == 2 {
-                self.pflags |= pflags::BAY_OPEN;
+        if self.pl.bay_req {
+            if self.pl.door_anim == 2 {
+                self.pl.pflags |= pflags::BAY_OPEN;
             } else {
-                self.door_anim += 1;
+                self.pl.door_anim += 1;
             }
-        } else if self.door_anim == 0 {
-            self.pflags &= !(pflags::BAY_OPEN | pflags::CAMERA_VIEW);
+        } else if self.pl.door_anim == 0 {
+            self.pl.pflags &= !(pflags::BAY_OPEN | pflags::CAMERA_VIEW);
         } else {
-            self.door_anim -= 1;
+            self.pl.door_anim -= 1;
         }
     }
 
     /// Fire handling at the end of the key handling.
     pub(crate) fn handle_fire(&mut self, ps: &PlayerState) {
-        if self.fire_cooldown > 0 {
-            self.fire_cooldown -= 1;
+        if self.pl.fire_cooldown > 0 {
+            self.pl.fire_cooldown -= 1;
         }
         let ccrp = ps.ccrp
-            && self.hud_mode == HudMode::Gnd
+            && self.pl.hud_mode == HudMode::Gnd
             && ballistics::drag(self.selected_spec(), self.opts.fix_original_bugs).is_some();
-        if ps.cmd.fire && self.fire_cooldown == 0 && self.eject == 0 {
+        if ps.cmd.fire && self.pl.fire_cooldown == 0 && self.pl.eject == 0 {
             if !ccrp {
                 self.fire_missile();
-                self.fire_cooldown = 4;
+                self.pl.fire_cooldown = 4;
             } else if self.ccrp_solution().is_none() {
                 self.msg("No target designated");
             }
         }
         // CCRP: with the button held, the bomb goes when the impact point reaches the target.
         let along = if ccrp { self.ccrp_solution().map(|s| s.0) } else { None };
-        if let (Some(last), Some(now)) = (self.ccrp_last, along)
+        if let (Some(last), Some(now)) = (self.pl.ccrp_last, along)
             && last > 0.0
             && now <= 0.0
             && ps.cmd.trigger
-            && self.eject == 0
+            && self.pl.eject == 0
         {
             self.fire_missile();
         }
-        self.ccrp_last = along;
+        self.pl.ccrp_last = along;
     }
 
     /// CCRP release solution against the ground lock: the ground distance (ft) the impact
     /// point of a bomb released now still has to go to the target along the flight path (<= 0
     /// at and past the release point) and the seconds to the release point.
     pub(crate) fn ccrp_solution(&self) -> Option<(f64, f64)> {
-        let g = self.gnd_lock;
+        let g = self.pl.gnd_lock;
         let o = self.objects.get(usize::try_from(g).ok()?)?;
         let (ix, iy) = self.bomb_impact()?;
-        let v = ballistics::release_velocity(self.p.heading, self.p.velocity, self.p.climb);
+        let v =
+            ballistics::release_velocity(self.pl.p.heading, self.pl.p.velocity, self.pl.p.climb);
         let vh = v[0].hypot(v[1]);
         if vh < 1.0 {
             return None;
@@ -272,7 +274,7 @@ impl Sim {
 
     /// Release the selected store.
     fn fire_missile(&mut self) {
-        if abs16(self.p.roll) > 0x3000 {
+        if abs16(self.pl.p.roll) > 0x3000 {
             return;
         }
         let (w, count) = self.selected_weapon();
@@ -280,9 +282,9 @@ impl Sim {
             return;
         }
         // From the station with the most left (pairs of pylons release in turn).
-        let mut bay = self.cur_bay;
-        for (i, b) in self.bays.iter().enumerate() {
-            if b.0 == w && b.1 > self.bays[bay].1 {
+        let mut bay = self.pl.cur_bay;
+        for (i, b) in self.pl.bays.iter().enumerate() {
+            if b.0 == w && b.1 > self.pl.bays[bay].1 {
                 bay = i;
             }
         }
@@ -291,19 +293,20 @@ impl Sim {
         if spec == 0 || spec == -1 {
             return;
         }
-        if self.pflags & pflags::BAY_OPEN == 0 && spec != -2 {
+        if self.pl.pflags & pflags::BAY_OPEN == 0 && spec != -2 {
             self.sound(0x20, 1);
             self.msg("Bay closed");
             return;
         }
-        if self.p.alt == 0
-            || (self.obj(self.nearest_base).flags & oflags::CARRIER != 0 && self.p.alt == 0x80)
+        if self.pl.p.alt == 0
+            || (self.obj(self.pl.nearest_base).flags & oflags::CARRIER != 0
+                && self.pl.p.alt == 0x80)
         {
             self.sound(0x20, 1);
             self.msg("Insufficient Altitude");
             return;
         }
-        self.bays[bay].1 -= 1;
+        self.pl.bays[bay].1 -= 1;
         if spec == -2 {
             self.emit(SimEvent::FuelTransfer { lbs: 0x76C });
             self.msg("Fuel transfer");
@@ -320,13 +323,13 @@ impl Sim {
             ttl = 999;
         }
         let mut pr = Projectile {
-            x: self.p.mx,
-            y: self.p.my,
-            alt: self.p.view_z - 20,
-            speed: self.p.velocity >> 10,
-            heading: self.p.heading,
-            pitch: self.p.pitch,
-            roll: self.p.roll,
+            x: self.pl.p.mx,
+            y: self.pl.p.my,
+            alt: self.pl.p.view_z - 20,
+            speed: self.pl.p.velocity >> 10,
+            heading: self.pl.p.heading,
+            pitch: self.pl.p.pitch,
+            roll: self.pl.p.roll,
             ttl,
             spec,
             weapon: w,
@@ -339,14 +342,14 @@ impl Sim {
             flight: None,
         };
         if spec == 27 {
-            self.maverick_view = true;
+            self.pl.maverick_view = true;
         }
         if matches!(spec, 28 | 29 | 30 | 38) {
             pr.speed >>= 1;
         }
-        let gl = self.gnd_lock;
+        let gl = self.pl.gnd_lock;
         if gl >= 0 && (gl as usize) < self.objects.len() {
-            if self.targeting.lock_valid {
+            if self.pl.targeting.lock_valid {
                 let c = mt.class as i32;
                 if c == 6
                     || (c == 4 && self.objects[gl as usize].unit_type != 0)
@@ -365,11 +368,15 @@ impl Sim {
             // original flew free-fall bombs at half speed, turning down to a floor set by the
             // release altitude, and dropped retarded ones straight down at speed 1.
             let f = ROUND_FINE as f64;
-            let v = ballistics::release_velocity(self.p.heading, self.p.velocity, self.p.climb);
+            let v = ballistics::release_velocity(
+                self.pl.p.heading,
+                self.pl.p.velocity,
+                self.pl.p.climb,
+            );
             let fall = BombFall {
-                x: self.p.wx * ROUND_FINE,
-                y: (0x100000 - self.p.wy) * ROUND_FINE,
-                alt: ((self.p.alt as f64 - ballistics::RELEASE_DROP) * f) as i32,
+                x: self.pl.p.wx * ROUND_FINE,
+                y: (0x100000 - self.pl.p.wy) * ROUND_FINE,
+                alt: ((self.pl.p.alt as f64 - ballistics::RELEASE_DROP) * f) as i32,
                 vx: (v[0] * f).round() as i32,
                 vy: (v[1] * f).round() as i32,
                 vz: (v[2] * f).round() as i32,
@@ -381,44 +388,48 @@ impl Sim {
         self.proj[slot] = pr;
         if self.guided(spec) {
             // Off the aircraft along its nose with its speed (pull up to lob a missile).
-            let pos = [self.p.wx as f64, (0x100000 - self.p.wy) as f64, self.p.alt as f64 - 20.0];
-            let vel = crate::guidance::direction(self.p.heading, self.p.pitch)
-                .map(|d| d * self.p.velocity as f64 / 16.0);
+            let pos = [
+                self.pl.p.wx as f64,
+                (0x100000 - self.pl.p.wy) as f64,
+                self.pl.p.alt as f64 - 20.0,
+            ];
+            let vel = crate::guidance::direction(self.pl.p.heading, self.pl.p.pitch)
+                .map(|d| d * self.pl.p.velocity as f64 / 16.0);
             // An air-to-air missile goes for the radar's target.
-            let lock = self.air_lock;
+            let lock = self.pl.air_lock;
             if mt.class == 7 && lock >= 0 && (lock as usize) < self.flights.len() {
                 self.proj[slot].target = lock;
             }
             self.start_flight(slot, pos, vel);
         }
-        self.last_missile_slot = slot as i32;
+        self.pl.last_missile_slot = slot as i32;
         self.msg(format!("{} fired", wt.long_name));
         self.sound(if mt.lock_range == 0 { 0x10 } else { 0x0D }, 2);
     }
 
     /// Release a countermeasure `kind`: 1 flare, 2 chaff, 3 decoy.
     pub(crate) fn release_cm(&mut self, kind: usize) {
-        let count = self.stores[kind];
-        self.stores[kind] -= 1;
+        let count = self.pl.stores[kind];
+        self.pl.stores[kind] -= 1;
         if count <= 0 {
-            self.stores[kind] = 0;
+            self.pl.stores[kind] = 0;
             self.msg("Stores exhausted");
             return;
         }
         let slot = if kind == 3 {
-            (self.cms[0].ttl == 0 && self.damage & dmg::JAM == 0).then_some(0)
+            (self.pl.cms[0].ttl == 0 && self.pl.damage & dmg::JAM == 0).then_some(0)
         } else {
-            (1..4).rev().find(|&k| self.cms[k].ttl == 0)
+            (1..4).rev().find(|&k| self.pl.cms[k].ttl == 0)
         };
         if let Some(k) = slot {
             let mut ttl = (9 - 2 * self.diff) * self.fs;
             let name = match kind {
                 1 => {
-                    self.flare_lamp = 3 * self.fs;
+                    self.pl.flare_lamp = 3 * self.fs;
                     "Flare"
                 }
                 2 => {
-                    self.chaff_lamp = 3 * self.fs;
+                    self.pl.chaff_lamp = 3 * self.fs;
                     "Chaff"
                 }
                 _ => {
@@ -426,7 +437,8 @@ impl Sim {
                     "Decoy"
                 }
             };
-            self.cms[k] = Countermeasure { x: self.p.mx, y: self.p.my, kind: kind as i32, ttl };
+            self.pl.cms[k] =
+                Countermeasure { x: self.pl.p.mx, y: self.pl.p.my, kind: kind as i32, ttl };
             self.msg(format!("{name} released"));
         }
         self.sound(15, 2);
@@ -447,81 +459,114 @@ impl Sim {
         (GUN_GRAVITY / WU_METRES * ROUND_FINE as f64 / (fs * fs) as f64).round() as i32
     }
 
-    /// Cannon and all gun rounds: move, then the hit tests.
-    pub(crate) fn update_bullets(&mut self, ps: &PlayerState) {
+    /// The active pilot's cannon and gun rounds: move, then the hit tests (his kills).
+    pub(crate) fn update_own_rounds(&mut self, ps: &PlayerState) {
         let fs = self.fs;
         let nb = self.n_bullets;
         let f = ROUND_FINE;
         // A round every frame while the trigger is held (the original fired every other frame);
         // each slot is reused after `nb` frames, which ends the round there.
-        if !self.lockheed {
+        if !self.pl.lockheed {
             let slot = (self.frame as usize) % nb;
-            let trigger = ps.cmd.gun || (self.gun_selected && ps.cmd.trigger);
-            if trigger && self.gun_ammo > 0 && self.eject == 0 {
-                self.gun_ammo = clamp_v(self.gun_ammo + cdiv(-20, fs), 0, 1000);
+            let trigger = ps.cmd.gun || (self.pl.gun_selected && ps.cmd.trigger);
+            if trigger && self.pl.gun_ammo > 0 && self.pl.eject == 0 {
+                self.pl.gun_ammo = clamp_v(self.pl.gun_ammo + cdiv(-20, fs), 0, 1000);
                 self.sound(6, 2);
-                let (vx, vy, vz) =
-                    Self::gun_round_velocity(self.p.heading, self.p.pitch, self.p.knots, fs);
+                let (vx, vy, vz) = Self::gun_round_velocity(
+                    self.pl.p.heading,
+                    self.pl.p.pitch,
+                    self.pl.p.knots,
+                    fs,
+                );
                 let (vx, vy, vz) = (vx.round() as i32, vy.round() as i32, vz.round() as i32);
-                let (x, y) = (self.p.wx * f, (0x100000 - self.p.wy) * f);
-                self.bullets[slot] =
-                    Bullet { x: x + vx, y: y + vy, alt: (self.p.view_z - 2) * f + vz, vx, vy, vz };
-                self.gun_firing = true;
+                let (x, y) = (self.pl.p.wx * f, (0x100000 - self.pl.p.wy) * f);
+                self.bullets[slot] = Bullet {
+                    x: x + vx,
+                    y: y + vy,
+                    alt: (self.pl.p.view_z - 2) * f + vz,
+                    vx,
+                    vy,
+                    vz,
+                };
+                self.pl.gun_firing = true;
             } else {
                 self.bullets[slot].x = 0;
-                self.gun_firing = false;
+                self.pl.gun_firing = false;
             }
         }
         let g = Self::gun_round_gravity(fs);
-        for (i, b) in self.bullets.iter_mut().enumerate() {
+        for b in self.bullets[..nb].iter_mut() {
             if b.x != 0 {
                 b.x += b.vx;
                 b.y += b.vy;
                 b.alt += b.vz;
-                if i < nb {
-                    b.vz -= g;
-                }
+                b.vz -= g;
             }
         }
         // Hit tests (the original only tests rounds that project on screen). A player round
         // hits what passes within the hit radius of its path over this frame.
         let r = GUN_HIT_RADIUS[self.diff.clamp(0, 3) as usize] / WU_METRES;
-        for i in 0..self.bullets.len() {
+        self.credit = Some(self.pl.id);
+        for i in 0..nb {
             let b = self.bullets[i];
             if b.x == 0 {
                 continue;
             }
-            if i < nb {
-                for j in 0..self.flights.len() {
-                    let u = self.flights[j];
-                    // A falling wreck is not shot down again.
-                    if u.flags & fflags::AIRBORNE == 0 || u.flags & fflags::DESTROYED != 0 {
-                        continue;
-                    }
-                    let fine = f as f64;
-                    let end = [b.x as f64 / fine, b.y as f64 / fine, b.alt as f64 / fine];
-                    let step = [b.vx as f64 / fine, b.vy as f64 / fine, b.vz as f64 / fine];
-                    let to = [u.wx as f64 - end[0], u.wy as f64 - end[1], u.alt as f64 - end[2]];
-                    // Closest point of the segment end - step .. end.
-                    let len2 = step.iter().map(|s| s * s).sum::<f64>().max(1e-9);
-                    let k = (-(to[0] * step[0] + to[1] * step[1] + to[2] * step[2]) / len2)
-                        .clamp(0.0, 1.0);
-                    let d2: f64 = (0..3).map(|a| (to[a] + k * step[a]).powi(2)).sum();
-                    if d2 < r * r {
-                        self.flights[j].flags |= fflags::HIT;
-                        self.destroy_aircraft(j);
-                        let n = self.ac_type(u.spec).name.clone();
-                        self.msg(format!("{n} destroyed by gunfire"));
-                        self.bullets[i].x = 0;
-                        self.flash = Flash { x: u.x, y: u.y, alt: u.alt, timer: 0x10 };
-                        self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: u.alt, kind: 0x10 });
-                    }
+            for j in 0..self.flights.len() {
+                let u = self.flights[j];
+                // A falling wreck is not shot down again.
+                if u.flags & fflags::AIRBORNE == 0 || u.flags & fflags::DESTROYED != 0 {
+                    continue;
                 }
-            } else {
+                let fine = f as f64;
+                let end = [b.x as f64 / fine, b.y as f64 / fine, b.alt as f64 / fine];
+                let step = [b.vx as f64 / fine, b.vy as f64 / fine, b.vz as f64 / fine];
+                let to = [u.wx as f64 - end[0], u.wy as f64 - end[1], u.alt as f64 - end[2]];
+                // Closest point of the segment end - step .. end.
+                let len2 = step.iter().map(|s| s * s).sum::<f64>().max(1e-9);
+                let k =
+                    (-(to[0] * step[0] + to[1] * step[1] + to[2] * step[2]) / len2).clamp(0.0, 1.0);
+                let d2: f64 = (0..3).map(|a| (to[a] + k * step[a]).powi(2)).sum();
+                if d2 < r * r {
+                    self.flights[j].flags |= fflags::HIT;
+                    self.destroy_aircraft(j);
+                    let n = self.ac_type(u.spec).name.clone();
+                    self.msg(format!("{n} destroyed by gunfire"));
+                    self.bullets[i].x = 0;
+                    self.flash = Flash { x: u.x, y: u.y, alt: u.alt, timer: 0x10 };
+                    self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: u.alt, kind: 0x10 });
+                }
+            }
+            self.round_on_ground(i);
+        }
+        self.credit = None;
+    }
+
+    /// The enemy aircraft's gun rounds: move, then the hit tests against every pilot.
+    pub(crate) fn update_enemy_rounds(&mut self, present: &[usize]) {
+        let nb = self.n_bullets;
+        let f = ROUND_FINE;
+        for b in self.bullets[nb..].iter_mut() {
+            if b.x != 0 {
+                b.x += b.vx;
+                b.y += b.vy;
+                b.alt += b.vz;
+            }
+        }
+        for i in nb..self.bullets.len() {
+            if self.bullets[i].x == 0 {
+                continue;
+            }
+            let mut hit = false;
+            for &k in present {
+                if present.len() > 1 {
+                    self.activate(k);
+                }
+                let b = self.bullets[i];
                 let (bx, by) = b.map_xy();
-                let d = (s16(bx - self.p.mx).abs()
-                    + s16(by - self.p.my).abs()
-                    + (s16(b.alt / f - self.p.view_z).abs() >> 5))
+                let d = (s16(bx - self.pl.p.mx).abs()
+                    + s16(by - self.pl.p.my).abs()
+                    + (s16(b.alt / f - self.pl.p.view_z).abs() >> 5))
                     .abs();
                 if d < 0x20 {
                     self.msg("Hit by gunfire");
@@ -531,38 +576,46 @@ impl Sim {
                     let (bx, by) = b.map_xy();
                     self.emit(SimEvent::Explosion { x: bx, y: by, alt: b.alt / f, kind: -1 });
                     self.bullets[i].x = 0;
-                    continue;
+                    hit = true;
+                    break;
                 }
             }
-            let b = self.bullets[i];
-            if b.x != 0 && b.alt < 0 {
-                let (bx, by) = b.map_xy();
-                // Where the path over this frame crossed the ground.
-                let above = (b.alt - b.vz) as f64;
-                let k = if above > 0.0 {
-                    (above / (above - b.alt as f64)).clamp(0.0, 1.0) - 1.0
-                } else {
-                    0.0
-                };
-                let at = |p: i32, v: i32| p + (v as f64 * k).round() as i32;
-                self.emit(SimEvent::RoundImpact { x: at(b.x, b.vx), y: at(b.y, b.vy) });
-                self.bullets[i].x = 0;
-                let o = self.find_object_at(bx, by);
-                if o == -1 || self.obj(o).flags & oflags::DESTROYED != 0 {
-                    continue;
-                }
-                let t = self.last_tile;
-                if !self.tile_is_intact(&t) {
-                    continue;
-                }
-                let (tx, ty) = t.map_or((self.obj(o).x, self.obj(o).y), |t| t.map_pos());
-                let d = approx(tx - bx, ty - by);
-                if self.compat(18, o) * 6 / (self.diff + 2) > d {
-                    self.destroy_ground(o);
-                    let n = self.place_name(o as usize);
-                    self.msg(format!("{n} destroyed by gunfire"));
-                    self.emit(SimEvent::Explosion { x: tx, y: ty, alt: 0, kind: 0x10 });
-                }
+            if !hit {
+                self.round_on_ground(i);
+            }
+        }
+    }
+
+    /// Gun round `i` below the ground: its impact, and what it destroys there.
+    fn round_on_ground(&mut self, i: usize) {
+        let b = self.bullets[i];
+        if b.x != 0 && b.alt < 0 {
+            let (bx, by) = b.map_xy();
+            // Where the path over this frame crossed the ground.
+            let above = (b.alt - b.vz) as f64;
+            let k = if above > 0.0 {
+                (above / (above - b.alt as f64)).clamp(0.0, 1.0) - 1.0
+            } else {
+                0.0
+            };
+            let at = |p: i32, v: i32| p + (v as f64 * k).round() as i32;
+            self.emit(SimEvent::RoundImpact { x: at(b.x, b.vx), y: at(b.y, b.vy) });
+            self.bullets[i].x = 0;
+            let o = self.find_object_at(bx, by);
+            if o == -1 || self.obj(o).flags & oflags::DESTROYED != 0 {
+                return;
+            }
+            let t = self.pl.last_tile;
+            if !self.tile_is_intact(&t) {
+                return;
+            }
+            let (tx, ty) = t.map_or((self.obj(o).x, self.obj(o).y), |t| t.map_pos());
+            let d = approx(tx - bx, ty - by);
+            if self.compat(18, o) * 6 / (self.diff + 2) > d {
+                self.destroy_ground(o);
+                let n = self.place_name(o as usize);
+                self.msg(format!("{n} destroyed by gunfire"));
+                self.emit(SimEvent::Explosion { x: tx, y: ty, alt: 0, kind: 0x10 });
             }
         }
     }

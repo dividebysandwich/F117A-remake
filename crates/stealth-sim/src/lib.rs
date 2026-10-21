@@ -14,6 +14,7 @@ pub mod guidance;
 pub mod lights;
 mod missiles;
 mod objectives;
+mod pilot;
 mod radar;
 pub mod score;
 mod targeting;
@@ -24,6 +25,7 @@ mod weather;
 pub use data::{
     AircraftKind, AircraftType, MissileType, SimData, TheaterTiles, ThreatType, WeaponType,
 };
+pub use pilot::{Pilot, PilotEvent};
 pub use radar::emv;
 pub use rng::Rng;
 pub use types::*;
@@ -32,8 +34,13 @@ use math::{s16, view_z};
 use serde::{Deserialize, Serialize};
 use stealth_mission::Mission;
 
-/// Number of projectile slots (0..7 enemy, 8..11 player).
+/// Number of projectile slots (0..7 enemy, 8..11 the active pilot's).
 pub const N_PROJ: usize = 12;
+/// Enemy missile slots (shared by all the pilots they go for) and each pilot's own.
+pub const ENEMY_SLOTS: usize = 8;
+pub const PILOT_SLOTS: usize = N_PROJ - ENEMY_SLOTS;
+/// Pilots a simulation takes at most (coop players).
+pub const MAX_PILOTS: usize = 8;
 
 /// Player-derived values of the current frame (in the original game's units).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -77,7 +84,6 @@ pub struct Sim {
     pub(crate) diff: i32,
     pub(crate) roe: i32,
     pub(crate) night: bool,
-    pub(crate) lockheed: bool,
     pub theater: usize,
     /// Runway direction of the theater (+1 / -1).
     pub(crate) ns: i32,
@@ -91,47 +97,26 @@ pub struct Sim {
     pub(crate) fs: i32,
 
     // ---- player ----
-    pub(crate) p: PlayerView,
-    /// Player flags (`pflags`).
-    pub(crate) pflags: i32,
-    pub(crate) emv: i32,
-    pub(crate) damage: u8,
-    pub(crate) hits: i32,
-    /// Realistic damage: damaged control surfaces; frames until a fire is decided (burns out
-    /// or blows the aircraft up) and until the destroyed airframe breaks up (0 = none).
+    /// The pilot whose turn it is (one per player; see `pilot.rs`).
+    pub(crate) pl: Pilot,
+    /// All the pilots by id; the active one's entry is a placeholder.
     #[serde(default)]
-    pub(crate) control_fault: ControlFault,
+    pub(crate) parked: Vec<Pilot>,
+    /// The pilot each enemy missile slot, flight unit, ground site and AAA unit goes for.
     #[serde(default)]
-    pub(crate) fire_frames: i32,
+    pub(crate) proj_pilot: [u8; ENEMY_SLOTS],
     #[serde(default)]
-    pub(crate) breakup_frames: i32,
-    pub(crate) irj_heat: i32,
-    pub(crate) door_anim: i32,
-    pub(crate) bay_req: bool,
-    /// Bays or pylon stations (weapon type, count; type -1 empty).
-    pub(crate) bays: Vec<(i32, i32)>,
-    /// Selected station: the first one carrying the selected weapon.
-    pub(crate) cur_bay: usize,
-    /// The cannon is the selected weapon (not in the original: Space steps to it after the
-    /// stores, and the fire button fires it).
+    pub(crate) flight_pilot: Vec<u8>,
     #[serde(default)]
-    pub(crate) gun_selected: bool,
-    /// Countermeasure stores ([1] flare, [2] chaff, [3] decoy).
-    pub(crate) stores: [i32; 4],
-    pub(crate) gun_ammo: i32,
-    pub(crate) gun_firing: bool,
-    pub(crate) fire_cooldown: i32,
-    pub(crate) prev_fire: bool,
-    /// CCRP: ground distance (ft) the bomb's impact point still had to go to the target last
-    /// frame (None: no CCRP solution).
+    pub(crate) site_pilot: Vec<u8>,
     #[serde(default)]
-    pub(crate) ccrp_last: Option<f64>,
-    pub(crate) prev_hud_mode: HudMode,
-    pub(crate) hud_mode: HudMode,
-    pub(crate) camera_mfd: bool,
-    pub(crate) external_view: bool,
-    pub(crate) prev_on_ground: bool,
-    pub(crate) on_ground: bool,
+    pub(crate) aaa_pilot: Vec<u8>,
+    /// The pilot the theater alarm is about.
+    #[serde(default)]
+    pub(crate) alarm_pilot: u8,
+    /// The pilot whose weapon is being flown (kills are his).
+    #[serde(skip)]
+    pub(crate) credit: Option<u8>,
 
     // ---- world ----
     pub(crate) objects: Vec<GroundObject>,
@@ -152,15 +137,12 @@ pub struct Sim {
     pub(crate) bullets: Vec<Bullet>,
     /// Number of player gun-round slots (enemy rounds follow them).
     pub(crate) n_bullets: usize,
-    pub(crate) cms: [Countermeasure; 4],
     pub(crate) smoke: [Smoke; 16],
     /// Smoke source object (-1 aircraft / none).
     pub(crate) smoke_src: i32,
     pub(crate) wreck: Wreck,
     pub(crate) flash: Flash,
     pub(crate) tile_damage: Vec<TileDamage>,
-    /// Result of the last tile search.
-    pub(crate) last_tile: Option<tiles::TileHit>,
 
     // ---- threat state ----
     /// Theater alarm timer, frames left.
@@ -173,18 +155,6 @@ pub struct Sim {
     pub(crate) ref_y: i32,
     pub(crate) ref_alt: i32,
     pub(crate) ref_heading: i32,
-    /// Frames left on the radar sweep animation, -1 idle.
-    pub(crate) sweep_anim: i32,
-    /// Aircraft engaging the player: last frame / this frame.
-    pub(crate) threat_count_last: i32,
-    pub(crate) threat_count: i32,
-    /// TRAK count, radar IDs and visual IDs held against the player.
-    pub(crate) tracking: i32,
-    pub(crate) radar_ids: i32,
-    pub(crate) visual_ids: i32,
-    /// Nearest base object and its distance; base used for traffic.
-    pub(crate) nearest_base: i32,
-    pub(crate) nearest_base_dist: i32,
     pub(crate) traffic_base: i32,
     pub(crate) traffic_toggle: bool,
     /// Flight units of the mission (its last 4 are the base traffic); units added later
@@ -211,9 +181,6 @@ pub struct Sim {
     pub(crate) aaa_shells: Vec<aaa::Shell>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) aaa_rng: Option<Rng>,
-    /// The player's last position and smoothed velocity as the air defences track him.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) aaa_track: Option<([f64; 3], [f64; 3])>,
     /// Apron parking spots for the parked base traffic (not in the original): world x, y and
     /// heading; empty = parked on the base object as in the original.
     #[serde(default)]
@@ -221,60 +188,26 @@ pub struct Sim {
     /// Realtime dynamic campaign (`SimOptions::campaign`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) campaign: Option<Box<campaign::CampaignSim>>,
-    /// Lamp timers: chaff / flare / EMV.
-    pub(crate) chaff_lamp: i32,
-    pub(crate) flare_lamp: i32,
-    pub(crate) emv_lamp: i32,
-    pub(crate) egr: Option<SignalBar>,
-    pub(crate) ear: Option<SignalBar>,
-    pub(crate) arc: Option<RadarArc>,
-    pub(crate) lights: Lights,
     /// Per-frame seeker acquisition results (range / aim bearing).
     pub(crate) acq_range: i32,
     pub(crate) acq_aim: i32,
-    /// Missile launches against the player.
-    pub launches: i32,
 
     // ---- targeting ----
-    /// Air / ground target locks (bit 0x80 = reselect, -1 none).
-    pub(crate) air_lock: i32,
-    pub(crate) gnd_lock: i32,
-    pub(crate) targeting: TargetingState,
-    pub(crate) gnd_cooldown: i32,
-    /// Frames left for a nearest-target request to wait for the HUD mode (`Commands::nearest_target`).
-    pub(crate) nearest_req: u8,
-    /// Locks cleared on request (`Commands::clear_target`): no automatic acquisition.
-    pub(crate) target_hold: bool,
-    /// Camera view direction relative to the nose.
-    pub(crate) cam_dir: i32,
-    pub(crate) last_missile_slot: i32,
-    pub(crate) maverick_view: bool,
 
     // ---- objectives / end ----
-    pub(crate) targets: [TargetSlot; 2],
-    pub(crate) waypoint: i32,
-    pub(crate) deadline: i32,
-    pub(crate) cue_timers: [i32; 2],
-    pub(crate) photo_timer: i32,
-    pub(crate) photo_frames: i32,
-    pub(crate) deadline_done: [bool; 2],
-    pub(crate) time_expired_shown: bool,
-    pub(crate) target_escaped: bool,
-    pub(crate) corridor: bool,
-    /// Landing state: 0 until airborne, 1 once airborne, then counts frames on a friendly runway.
-    pub(crate) armed_landing: i32,
-    /// Frames since ejection (counting from 1), 0 = not ejected.
-    pub(crate) eject: i32,
-    pub(crate) chute: (i32, i32, i32),
-    pub(crate) landing_type: u8,
     pub(crate) ended: Option<MissionEnd>,
     /// Clouds (not in the original; clear = original behaviour).
     #[serde(default)]
     pub(crate) weather: stealth_mission::Weather,
-    pub(crate) log: Vec<LogEvent>,
 
     #[serde(skip)]
     pub(crate) events: Vec<SimEvent>,
+    /// Per event: the active pilot when it happened.
+    #[serde(skip)]
+    pub(crate) event_pilot: Vec<u8>,
+    /// Per event: the pilot whose weapon caused it.
+    #[serde(skip)]
+    pub(crate) event_credit: Vec<Option<u8>>,
 }
 
 impl Sim {
@@ -330,6 +263,7 @@ impl Sim {
         let display_shape = objects.iter().map(|o| o.shape).collect();
         let theater = s.theater;
         let seed = opts.seed.unwrap_or(m.rng.holdrand_exit);
+        let external_stores = opts.external_stores;
         let mut sim = Self {
             threats: data.threats.clone(),
             aircraft_types: data.aircraft.clone(),
@@ -343,7 +277,6 @@ impl Sim {
             diff: s.opponents.min(3) as i32,
             roe: s.roe.min(2) as i32,
             night: m.night,
-            lockheed,
             theater,
             // Remake theaters use the original airbase models, laid out like Central Europe's.
             ns: data.start_dir.get(theater).copied().unwrap_or(1) as i32,
@@ -352,38 +285,103 @@ impl Sim {
             mission_tick: 0,
             tick_frames: 0,
             fs: 15,
-            p: PlayerView::default(),
-            pflags: if m.invulnerable { pflags::TRAINING } else { 0 },
+            parked: vec![Pilot::default()],
+            proj_pilot: [0; ENEMY_SLOTS],
+            flight_pilot: Vec::new(),
+            site_pilot: Vec::new(),
+            aaa_pilot: Vec::new(),
+            alarm_pilot: 0,
+            credit: None,
+            pl: Pilot {
+                id: 0,
+                absent: false,
+                external_stores,
+                scratch0: GroundObject::default(),
+                rounds: Vec::new(),
+                missiles: Default::default(),
+                last_input: PlayerState::default(),
+                lockheed,
+                p: PlayerView::default(),
+                pflags: if m.invulnerable { pflags::TRAINING } else { 0 },
+                emv: 0,
+                damage: 0,
+                hits: 2,
+                control_fault: ControlFault::default(),
+                fire_frames: 0,
+                breakup_frames: 0,
+                irj_heat: 0,
+                door_anim: 0,
+                bay_req: false,
+                bays,
+                cur_bay: 0,
+                gun_selected: false,
+                stores: [
+                    data.stores_init[0] as i32,
+                    data.stores_init[1] as i32,
+                    data.stores_init[2] as i32,
+                    data.stores_init[3] as i32,
+                ],
+                gun_ammo: data.gun_ammo_init as i32,
+                gun_firing: false,
+                fire_cooldown: 0,
+                prev_fire: false,
+                ccrp_last: None,
+                prev_hud_mode: HudMode::Nav,
+                hud_mode: HudMode::Nav,
+                camera_mfd: false,
+                external_view: false,
+                prev_on_ground: true,
+                on_ground: true,
+                cms: [Countermeasure::default(); 4],
+                last_tile: None,
+                sweep_anim: -1,
+                threat_count_last: 0,
+                threat_count: 0,
+                tracking: 0,
+                radar_ids: 0,
+                visual_ids: 0,
+                nearest_base: -1,
+                nearest_base_dist: 0x7FFF,
+                aaa_track: None,
+                chaff_lamp: 0,
+                flare_lamp: 0,
+                emv_lamp: 0,
+                egr: None,
+                ear: None,
+                arc: None,
+                lights: Lights::default(),
+                launches: 0,
+                air_lock: -1,
+                gnd_lock: -1,
+                targeting: TargetingState::default(),
+                gnd_cooldown: 0,
+                nearest_req: 0,
+                target_hold: false,
+                cam_dir: 0,
+                last_missile_slot: -1,
+                maverick_view: false,
+                targets: [m.primary.clone(), m.secondary.clone()].map(|t| TargetSlot {
+                    mission_type: t.mission_type as i32,
+                    object: t.object_index as i32,
+                    base: t.base_index as i32,
+                    code: t.code as i32,
+                }),
+                waypoint: 0,
+                deadline: m.time.deadline_ticks as i32,
+                cue_timers: [0; 2],
+                photo_timer: 0,
+                photo_frames: 0,
+                deadline_done: [false; 2],
+                time_expired_shown: false,
+                target_escaped: false,
+                corridor: true,
+                armed_landing: 0,
+                eject: 0,
+                chute: (0, 0, 0),
+                landing_type: 1,
+                log: Vec::new(),
+            },
             weather: m.weather,
-            emv: 0,
-            damage: 0,
-            hits: 2,
-            control_fault: ControlFault::default(),
-            fire_frames: 0,
-            breakup_frames: 0,
-            irj_heat: 0,
-            door_anim: 0,
-            bay_req: false,
-            bays,
-            cur_bay: 0,
-            gun_selected: false,
-            stores: [
-                data.stores_init[0] as i32,
-                data.stores_init[1] as i32,
-                data.stores_init[2] as i32,
-                data.stores_init[3] as i32,
-            ],
-            gun_ammo: data.gun_ammo_init as i32,
-            gun_firing: false,
-            fire_cooldown: 0,
-            prev_fire: false,
-            ccrp_last: None,
-            prev_hud_mode: HudMode::Nav,
-            hud_mode: HudMode::Nav,
-            camera_mfd: false,
-            external_view: false,
-            prev_on_ground: true,
-            on_ground: true,
             ground_units: (w.ground_unit_count as usize).min(objects.len()),
             woc: (w.world_object_count as usize).min(objects.len()),
             objects,
@@ -399,13 +397,11 @@ impl Sim {
             proj: [Projectile::default(); N_PROJ],
             bullets: Vec::new(),
             n_bullets: 0,
-            cms: [Countermeasure::default(); 4],
             smoke: [Smoke::default(); 16],
             smoke_src: -1,
             wreck: Wreck::default(),
             flash: Flash::default(),
             tile_damage: Vec::new(),
-            last_tile: None,
             alarm_timer: 0,
             alarm_window: 0,
             alarm_last: 0,
@@ -413,14 +409,6 @@ impl Sim {
             ref_y: 0,
             ref_alt: 0,
             ref_heading: 0,
-            sweep_anim: -1,
-            threat_count_last: 0,
-            threat_count: 0,
-            tracking: 0,
-            radar_ids: 0,
-            visual_ids: 0,
-            nearest_base: -1,
-            nearest_base_dist: 0x7FFF,
             traffic_base: -1,
             traffic_toggle: false,
             mission_flights: w.flights.len()
@@ -431,7 +419,6 @@ impl Sim {
             aaa: Vec::new(),
             aaa_shells: Vec::new(),
             aaa_rng: None,
-            aaa_track: None,
             drones: m.drones.as_ref().map(|d| drones::Drones {
                 defend: d.defend,
                 target: d.target as i32,
@@ -443,56 +430,21 @@ impl Sim {
             }),
             parking: Vec::new(),
             campaign: None,
-            chaff_lamp: 0,
-            flare_lamp: 0,
-            emv_lamp: 0,
-            egr: None,
-            ear: None,
-            arc: None,
-            lights: Lights::default(),
             acq_range: 0,
             acq_aim: 0,
-            launches: 0,
-            air_lock: -1,
-            gnd_lock: -1,
-            targeting: TargetingState::default(),
-            gnd_cooldown: 0,
-            nearest_req: 0,
-            target_hold: false,
-            cam_dir: 0,
-            last_missile_slot: -1,
-            maverick_view: false,
-            targets: [m.primary.clone(), m.secondary.clone()].map(|t| TargetSlot {
-                mission_type: t.mission_type as i32,
-                object: t.object_index as i32,
-                base: t.base_index as i32,
-                code: t.code as i32,
-            }),
-            waypoint: 0,
-            deadline: m.time.deadline_ticks as i32,
-            cue_timers: [0; 2],
-            photo_timer: 0,
-            photo_frames: 0,
-            deadline_done: [false; 2],
-            time_expired_shown: false,
-            target_escaped: false,
-            corridor: true,
-            armed_landing: 0,
-            eject: 0,
-            chute: (0, 0, 0),
-            landing_type: 1,
             ended: None,
-            log: Vec::new(),
             events: Vec::new(),
+            event_pilot: Vec::new(),
+            event_credit: Vec::new(),
         };
         sim.set_fs(15);
         if let Some(d) = sim.opts.prior_damage.clone() {
             sim.apply_damage(&d);
         }
-        if sim.opts.external_stores {
-            sim.bay_req = true;
-            sim.door_anim = 2;
-            sim.pflags |= pflags::BAY_OPEN;
+        if sim.pl.external_stores {
+            sim.pl.bay_req = true;
+            sim.pl.door_anim = 2;
+            sim.pl.pflags |= pflags::BAY_OPEN;
         }
         if sim.opts.campaign {
             let st = data.stores_init.map(|v| v as i32);
@@ -505,12 +457,14 @@ impl Sim {
         sim.find_nearest_base();
         sim.log_event(8, 0);
         sim.events.clear();
+        sim.event_pilot.clear();
+        sim.event_credit.clear();
         sim
     }
 
     /// The player's start state: at the takeoff base, on the ground.
     pub fn start_state(&self) -> PlayerState {
-        let b = self.targets[0].base.clamp(0, self.objects.len() as i32 - 1).max(0) as usize;
+        let b = self.pl.targets[0].base.clamp(0, self.objects.len() as i32 - 1).max(0) as usize;
         self.start_state_at(b)
     }
 
@@ -560,44 +514,46 @@ impl Sim {
     }
 
     pub(crate) fn decoy_active(&self) -> bool {
-        self.cms[0].ttl > 0
+        self.pl.cms[0].ttl > 0
     }
 
     pub(crate) fn ecm_on(&self) -> bool {
-        self.pflags & pflags::ECM != 0
+        self.pl.pflags & pflags::ECM != 0
     }
 
     pub(crate) fn irj_on(&self) -> bool {
-        self.pflags & pflags::IRJ != 0
+        self.pl.pflags & pflags::IRJ != 0
     }
 
     pub(crate) fn training(&self) -> bool {
-        self.pflags & pflags::TRAINING != 0
+        self.pl.pflags & pflags::TRAINING != 0
     }
 
     pub(crate) fn emit(&mut self, e: SimEvent) {
         self.events.push(e);
+        self.event_pilot.push(self.pl.id);
+        self.event_credit.push(self.credit);
     }
 
     pub(crate) fn msg(&mut self, s: impl Into<String>) {
-        self.events.push(SimEvent::Message(s.into()));
+        self.emit(SimEvent::Message(s.into()));
     }
 
     pub(crate) fn sound(&mut self, id: u8, priority: u8) {
-        self.events.push(SimEvent::Sound { id, priority });
+        self.emit(SimEvent::Sound { id, priority });
     }
 
     /// Append an event to the debrief log.
     pub(crate) fn log_event(&mut self, kind: i32, arg: i32) {
         let e = LogEvent {
             tick: self.mission_tick,
-            x: (self.p.mx >> 7) as u8,
-            y: (self.p.my >> 7) as u8,
+            x: (self.pl.p.mx >> 7) as u8,
+            y: (self.pl.p.my >> 7) as u8,
             kind: kind as u8,
             arg: arg as u8,
         };
-        self.log.push(e);
-        self.events.push(SimEvent::Log(e));
+        self.pl.log.push(e);
+        self.emit(SimEvent::Log(e));
     }
 
     /// WLD name of object i.
@@ -681,7 +637,7 @@ impl Sim {
     /// Copy the flight model's state into the per-frame player view and flags.
     fn ingest(&mut self, ps: &PlayerState) {
         let alt = ps.altitude as i32;
-        self.p = PlayerView {
+        self.pl.p = PlayerView {
             wx: ps.x,
             wy: ps.y,
             mx: (ps.x >> 5) & 0xFFFF,
@@ -703,7 +659,7 @@ impl Sim {
             | pflags::TRAINING
             | pflags::PRIMARY_DONE
             | pflags::SECONDARY_DONE;
-        let mut f = self.pflags & keep;
+        let mut f = self.pl.pflags & keep;
         if ps.gear_up {
             f |= pflags::GEAR_UP;
         }
@@ -713,36 +669,64 @@ impl Sim {
         if ps.brakes {
             f |= pflags::BRAKES;
         }
-        self.pflags = f;
-        self.prev_on_ground = self.on_ground;
-        self.on_ground = ps.on_ground;
-        self.prev_hud_mode = self.hud_mode;
-        self.hud_mode = ps.hud_mode;
-        self.camera_mfd = ps.camera_mfd;
-        self.external_view = ps.external_view;
+        self.pl.pflags = f;
+        self.pl.prev_on_ground = self.pl.on_ground;
+        self.pl.on_ground = ps.on_ground;
+        self.pl.prev_hud_mode = self.pl.hud_mode;
+        self.pl.hud_mode = ps.hud_mode;
+        self.pl.camera_mfd = ps.camera_mfd;
+        self.pl.external_view = ps.external_view;
     }
 
     /// Advance one frame. `fs` = nominal frames per sim second (normally 15).
     pub fn step(&mut self, ps: &PlayerState, fs: u8) -> Vec<SimEvent> {
+        let id = self.pl.id;
+        self.step_pilots(&[(id, ps.clone())], fs).into_iter().map(|e| e.event).collect()
+    }
+
+    /// Advance one frame with every pilot in the world: `inputs` are their flight models'
+    /// reports (a pilot without one this frame flies on with his last). Each pilot takes his
+    /// turn in each phase, so with one pilot this is the original's frame.
+    pub fn step_pilots(&mut self, inputs: &[(u8, PlayerState)], fs: u8) -> Vec<PilotEvent> {
         self.events.clear();
+        self.event_pilot.clear();
+        self.event_credit.clear();
         if self.ended.is_some() {
             return Vec::new();
         }
         if fs as i32 != self.fs {
             self.set_fs(fs as i32);
         }
-        if self.player_absent() {
-            return self.step_absent();
+        let present = self.present();
+        if present.is_empty() {
+            self.step_absent();
+            return self.take_pilot_events();
         }
-        self.ingest(ps);
-        // Key commands and per-frame systems.
-        self.handle_keys(ps);
-        self.update_systems();
-        self.handle_fire(ps);
-        // EMV every frame.
-        self.compute_emv();
+        let first = present[0];
+        let input = |sim: &Sim, k: usize| -> PlayerState {
+            match inputs.iter().find(|(id, _)| *id as usize == k) {
+                Some((_, ps)) => ps.clone(),
+                None => PlayerState { cmd: Commands::default(), ..sim.pl.last_input.clone() },
+            }
+        };
+        for &k in &present {
+            self.activate(k);
+            let ps = input(self, k);
+            self.ingest(&ps);
+            // Key commands and per-frame systems.
+            self.handle_keys(&ps);
+            self.update_systems();
+            self.handle_fire(&ps);
+            // EMV every frame.
+            self.compute_emv();
+            self.pl.last_input = ps;
+        }
         if self.frame & 7 == 0 {
-            self.find_nearest_base();
+            for &k in &present {
+                self.activate(k);
+                self.find_nearest_base();
+            }
+            self.activate(first);
             self.update_base_traffic();
         }
         if self.frame & 0x7F == 0 {
@@ -750,35 +734,60 @@ impl Sim {
             self.alarm_window = 0;
         }
         if self.fs > 0 && self.frame % (4 * self.fs) == 0 {
-            self.rebuild_tracking();
+            for &k in &present {
+                self.activate(k);
+                self.rebuild_tracking();
+            }
         }
+        self.activate(first);
         if self.frame & 0x7F == 0x40 && self.traffic_base >= 0 {
             self.spawn_traffic();
         }
         // Sites, aircraft, projectiles, countermeasures, gun rounds, lamps.
-        self.update_sites();
+        self.update_sites(&present);
         if self.aaa_rng.is_some() {
-            self.update_aaa();
+            self.update_aaa(&present);
         }
-        self.update_aircraft();
+        self.update_aircraft(&present);
         if self.campaign.is_some() {
+            self.activate(first);
             self.update_campaign();
         }
-        self.update_missiles();
-        self.update_cm_timers();
-        self.update_bullets(ps);
+        self.update_missiles(&present);
+        for &k in &present {
+            self.activate(k);
+            self.update_cm_timers();
+        }
+        for &k in &present {
+            self.activate(k);
+            let ps = self.pl.last_input.clone();
+            self.update_own_rounds(&ps);
+        }
+        self.update_enemy_rounds(&present);
         if self.aaa_rng.is_some() {
             self.aaa_damage();
         }
-        self.update_light_timers();
-        self.update_damage();
+        for &k in &present {
+            self.activate(k);
+            self.update_light_timers();
+            self.update_damage();
+        }
         if self.alarm_timer > 0 {
             self.alarm_timer -= 1;
         }
         // Draw-list pass and HUD overlay.
-        self.update_targeting(ps);
+        for &k in &present {
+            self.activate(k);
+            let ps = self.pl.last_input.clone();
+            self.update_targeting(&ps);
+        }
+        self.activate(first);
         self.update_effects();
-        self.update_objectives(ps);
+        for &k in &present {
+            self.activate(k);
+            let ps = self.pl.last_input.clone();
+            self.update_objectives(&ps);
+        }
         // Clock.
         self.tick_frames += 1;
         if self.tick_frames >= self.fs {
@@ -786,34 +795,51 @@ impl Sim {
             self.mission_tick += 1;
         }
         self.frame = (self.frame + 1) & 0xFFFF;
+        self.activate(0);
+        self.take_pilot_events()
+    }
+
+    /// The events so far with their pilots.
+    pub fn take_pilot_events(&mut self) -> Vec<PilotEvent> {
+        let pilots = std::mem::take(&mut self.event_pilot);
+        self.event_credit.clear();
         std::mem::take(&mut self.events)
+            .into_iter()
+            .enumerate()
+            .map(|(i, event)| PilotEvent { pilot: pilots.get(i).copied().unwrap_or(0), event })
+            .collect()
     }
 
     // ---------------------------------------------------------------- accessors
 
     /// Player EMV.
     pub fn emv(&self) -> i32 {
-        self.emv
+        self.pl.emv
     }
 
     /// EMV gauge bar lengths: (blue from the left, red from the right), rows 187..197.
     pub fn emv_gauge(&self) -> (i32, i32) {
-        let e = self.emv.clamp(0, 99);
+        let e = self.pl.emv.clamp(0, 99);
         ((100 - e) / 2, e / 2)
     }
 
     /// Ground (EGR) and air (EAR) signal bars of the sweep being displayed.
     pub fn signal_bars(&self) -> (Option<SignalBar>, Option<SignalBar>) {
-        (self.egr, self.ear)
+        (self.pl.egr, self.pl.ear)
     }
 
     /// MAP radar arc of the sweep being displayed.
     pub fn radar_arc(&self) -> Option<RadarArc> {
-        self.arc
+        self.pl.arc
+    }
+
+    /// Missile launches against the player.
+    pub fn launches(&self) -> i32 {
+        self.pl.launches
     }
 
     pub fn lights(&self) -> Lights {
-        self.lights
+        self.pl.lights
     }
 
     /// World objects (sites, bases, ships, targets) with their live state.
@@ -889,35 +915,35 @@ impl Sim {
     }
 
     pub fn countermeasures(&self) -> &[Countermeasure; 4] {
-        &self.cms
+        &self.pl.cms
     }
 
     /// Flare, chaff, decoy stores left.
     pub fn stores(&self) -> (i32, i32, i32) {
-        (self.stores[1], self.stores[2], self.stores[3])
+        (self.pl.stores[1], self.pl.stores[2], self.pl.stores[3])
     }
 
     pub fn gun_ammo(&self) -> i32 {
-        self.gun_ammo
+        self.pl.gun_ammo
     }
 
     pub fn gun_firing(&self) -> bool {
-        self.gun_firing
+        self.pl.gun_firing
     }
 
     /// The aircraft has a cannon (the real F-117A has none).
     pub fn has_gun(&self) -> bool {
-        !self.lockheed
+        !self.pl.lockheed
     }
 
     /// The cannon is the selected weapon.
     pub fn gun_selected(&self) -> bool {
-        self.gun_selected
+        self.pl.gun_selected
     }
 
     /// Bays or stations (weapon index, count; -1 empty) and the selected one.
     pub fn bays(&self) -> (&[(i32, i32)], usize) {
-        (&self.bays, self.cur_bay)
+        (&self.pl.bays, self.pl.cur_bay)
     }
 
     /// The weapons carried (weapon index, rounds on all stations), in station order, and the
@@ -925,14 +951,14 @@ impl Sim {
     pub fn weapon_groups(&self) -> (Vec<(i32, i32)>, Option<usize>) {
         let mut groups: Vec<(i32, i32)> = Vec::new();
         let mut selected = None;
-        for (i, &(w, n)) in self.bays.iter().enumerate() {
+        for (i, &(w, n)) in self.pl.bays.iter().enumerate() {
             if w < 0 {
                 continue;
             }
             match groups.iter().position(|g| g.0 == w) {
                 Some(k) => groups[k].1 += n,
                 None => {
-                    if i == self.cur_bay && !self.gun_selected {
+                    if i == self.pl.cur_bay && !self.pl.gun_selected {
                         selected = Some(groups.len());
                     }
                     groups.push((w, n));
@@ -945,10 +971,10 @@ impl Sim {
     /// Replaces the mission's bays with these stations (weapon index, count; -1 empty), e.g.
     /// the player's loadout or an aircraft's pylons.
     pub fn set_loadout(&mut self, stations: &[(i32, i32)]) {
-        self.bays =
+        self.pl.bays =
             stations.iter().map(|&(w, n)| if w < 0 { (-1, 0) } else { (w, n.max(0)) }).collect();
-        self.cur_bay = self.bays.iter().position(|b| b.0 >= 0).unwrap_or(0);
-        self.gun_selected = self.has_gun() && !self.bays.iter().any(|b| b.0 >= 0);
+        self.pl.cur_bay = self.pl.bays.iter().position(|b| b.0 >= 0).unwrap_or(0);
+        self.pl.gun_selected = self.has_gun() && !self.pl.bays.iter().any(|b| b.0 >= 0);
     }
 
     pub fn weapon_types(&self) -> &[WeaponType] {
@@ -956,12 +982,12 @@ impl Sim {
     }
 
     pub fn bay_doors_open(&self) -> bool {
-        self.pflags & pflags::BAY_OPEN != 0
+        self.pl.pflags & pflags::BAY_OPEN != 0
     }
 
     /// Door animation 0 (closed) .. 2 (open).
     pub fn bay_door_anim(&self) -> i32 {
-        self.door_anim
+        self.pl.door_anim
     }
 
     pub fn ecm(&self) -> bool {
@@ -985,13 +1011,13 @@ impl Sim {
     }
 
     pub fn targeting(&self) -> TargetingState {
-        self.targeting
+        self.pl.targeting
     }
 
     /// The right MFD should show the Maverick seeker of this slot.
     pub fn maverick_view_slot(&self) -> Option<usize> {
-        let s = self.last_missile_slot;
-        (self.maverick_view
+        let s = self.pl.last_missile_slot;
+        (self.pl.maverick_view
             && s > 8
             && (s as usize) < N_PROJ
             && self.proj[s as usize].ttl != 0
@@ -1001,34 +1027,34 @@ impl Sim {
 
     pub fn objectives(&self) -> Objectives {
         Objectives {
-            primary_done: self.pflags & pflags::PRIMARY_DONE != 0,
-            secondary_done: self.pflags & pflags::SECONDARY_DONE != 0,
-            waypoint: self.waypoint,
+            primary_done: self.pl.pflags & pflags::PRIMARY_DONE != 0,
+            secondary_done: self.pl.pflags & pflags::SECONDARY_DONE != 0,
+            waypoint: self.pl.waypoint,
             tick: self.mission_tick,
-            deadline: self.deadline,
-            target_escaped: self.target_escaped,
+            deadline: self.pl.deadline,
+            target_escaped: self.pl.target_escaped,
         }
     }
 
     pub fn damage_effects(&self) -> DamageEffects {
-        let d = self.damage;
+        let d = self.pl.damage;
         DamageEffects {
             bits: d,
-            hits: self.hits,
-            throttle_cap: if self.breakup_frames > 0 {
+            hits: self.pl.hits,
+            throttle_cap: if self.pl.breakup_frames > 0 {
                 Some(0)
             } else {
-                (d & dmg::ENG != 0).then(|| ((25 - self.hits) * 4).max(0))
+                (d & dmg::ENG != 0).then(|| ((25 - self.pl.hits) * 4).max(0))
             },
-            stick_jitter: if d & dmg::FC != 0 { (self.hits * 4).clamp(0, 32) } else { 0 },
+            stick_jitter: if d & dmg::FC != 0 { (self.pl.hits * 4).clamp(0, 32) } else { 0 },
             autopilot_failed: d & dmg::AV != 0,
             doors_jammed: d & dmg::BD != 0,
-            fuel_leak: if d & dmg::FIRE != 0 { self.hits } else { 0 },
+            fuel_leak: if d & dmg::FIRE != 0 { self.pl.hits } else { 0 },
             jammers_failed: d & dmg::JAM != 0,
-            heavy_stall: self.hits > 8,
-            fragile: self.hits > 4,
-            controls: self.control_fault,
-            destroyed: self.breakup_frames > 0,
+            heavy_stall: self.pl.hits > 8,
+            fragile: self.pl.hits > 4,
+            controls: self.pl.control_fault,
+            destroyed: self.pl.breakup_frames > 0,
         }
     }
 
@@ -1060,12 +1086,14 @@ impl Sim {
 
     /// Events raised outside a step (by the campaign's calls), handed over once.
     pub fn take_events(&mut self) -> Vec<SimEvent> {
+        self.event_pilot.clear();
+        self.event_credit.clear();
         std::mem::take(&mut self.events)
     }
 
     /// Debrief event log (for END).
     pub fn event_log(&self) -> &[LogEvent] {
-        &self.log
+        &self.pl.log
     }
 
     pub fn mission_end(&self) -> Option<MissionEnd> {
@@ -1084,12 +1112,12 @@ impl Sim {
 
     /// Radar IDs / visual IDs held against the player and the TRAK count.
     pub fn identification(&self) -> (i32, i32, i32) {
-        (self.radar_ids, self.visual_ids, self.tracking)
+        (self.pl.radar_ids, self.pl.visual_ids, self.pl.tracking)
     }
 
     /// Parachute position (map x, map y, alt) while ejected.
     pub fn chute(&self) -> Option<(i32, i32, i32)> {
-        (self.eject != 0).then_some(self.chute)
+        (self.pl.eject != 0).then_some(self.pl.chute)
     }
 
     pub fn frame(&self) -> i32 {
@@ -1118,7 +1146,7 @@ impl Sim {
     }
 
     pub fn player(&self) -> PlayerView {
-        self.p
+        self.pl.p
     }
 
     pub fn invulnerable(&self) -> bool {
@@ -1142,49 +1170,49 @@ impl Sim {
 
     /// Test / tool hook: set the damage bits and hit counter.
     pub fn set_damage(&mut self, bits: u8, hits: i32) {
-        self.damage = bits;
-        self.hits = hits;
+        self.pl.damage = bits;
+        self.pl.hits = hits;
     }
 
     /// Test / tool hook: load a bay.
     pub fn set_bay(&mut self, bay: usize, weapon: i32, count: i32) {
-        if bay < self.bays.len() {
-            self.bays[bay] = (weapon, count);
+        if bay < self.pl.bays.len() {
+            self.pl.bays[bay] = (weapon, count);
         }
     }
 
     /// Test / tool hook: select the current bay.
     pub fn select_bay(&mut self, bay: usize) {
-        self.cur_bay = bay.min(self.bays.len().saturating_sub(1));
-        self.gun_selected = false;
+        self.pl.cur_bay = bay.min(self.pl.bays.len().saturating_sub(1));
+        self.pl.gun_selected = false;
     }
 
     /// Test / tool hook: set the ground lock.
     pub fn set_ground_lock(&mut self, obj: Option<usize>) {
-        self.gnd_lock = obj.map_or(-1, |o| o as i32);
+        self.pl.gnd_lock = obj.map_or(-1, |o| o as i32);
     }
 
     /// Test / tool hook: switch invulnerability.
     pub fn set_training(&mut self, on: bool) {
         if on {
-            self.pflags |= pflags::TRAINING;
+            self.pl.pflags |= pflags::TRAINING;
         } else {
-            self.pflags &= !pflags::TRAINING;
+            self.pl.pflags &= !pflags::TRAINING;
         }
     }
 
     /// Test / tool hook: the objective slots.
     pub fn target_slots(&self) -> [TargetSlot; 2] {
-        self.targets
+        self.pl.targets
     }
 
     pub fn target_slots_mut(&mut self) -> &mut [TargetSlot; 2] {
-        &mut self.targets
+        &mut self.pl.targets
     }
 
     /// Test / tool hook: set the mission deadline (ticks).
     pub fn set_deadline(&mut self, ticks: i32) {
-        self.deadline = ticks;
+        self.pl.deadline = ticks;
     }
 
     /// Test / tool hook: raise the theater alarm now.

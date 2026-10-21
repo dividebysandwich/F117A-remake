@@ -576,7 +576,7 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
                 let by = (c.phase == Phase::Sortie).then_some(ME);
                 reports.push(Report::ObjectDestroyed { object: object as u16, by });
             }
-            SimEvent::CampaignFlightDestroyed { unit, tag, by_player } => {
+            SimEvent::CampaignFlightDestroyed { unit, tag, by_player, .. } => {
                 let u = s.combat.sim.flights().get(unit).copied().unwrap_or_default();
                 let blue = s.combat.sim.campaign_flight(unit).is_some_and(|f| f.blue);
                 reports.push(Report::FlightDestroyed {

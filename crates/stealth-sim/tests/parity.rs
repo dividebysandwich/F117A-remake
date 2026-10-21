@@ -52,7 +52,7 @@ fn fnv(h: u64, s: &str) -> u64 {
 /// One frame's digest line.
 fn frame_line(sim: &Sim, events: &[SimEvent]) -> String {
     let mut s = String::new();
-    for e in events {
+    for e in events.iter().filter(|e| !matches!(e, SimEvent::AaaDestroyed { .. })) {
         let _ = write!(s, "{};", event_text(e));
     }
     let _ = write!(
@@ -70,7 +70,8 @@ fn frame_line(sim: &Sim, events: &[SimEvent]) -> String {
         sim.chute(),
         sim.objectives(),
     );
-    let _ = write!(s, "|em {:?} sb {:?} arc {:?}", sim.emitters(), sim.signal_bars(), sim.radar_arc());
+    let _ =
+        write!(s, "|em {:?} sb {:?} arc {:?}", sim.emitters(), sim.signal_bars(), sim.radar_arc());
     for (k, m, _, _) in sim.active_projectiles() {
         let _ = write!(
             s,
@@ -96,7 +97,13 @@ fn frame_line(sim: &Sim, events: &[SimEvent]) -> String {
     for u in sim.aaa_units() {
         h = fnv(h, &format!("{u:?}"));
     }
-    let _ = write!(s, "|w {h:016x} {:?} {:?} {:?}", sim.wreck(), sim.alarm_state(), sim.identification());
+    let _ = write!(
+        s,
+        "|w {h:016x} {:?} {:?} {:?}",
+        sim.wreck(),
+        sim.alarm_state(),
+        sim.identification()
+    );
     s
 }
 

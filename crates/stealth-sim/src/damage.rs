@@ -33,16 +33,16 @@ impl Sim {
             self.airframe_destroyed();
             return;
         }
-        let before = self.damage;
+        let before = self.pl.damage;
         let mut bits = 0u8;
         for _ in 0..self.diff + 3 {
             bits |= 1u8 << self.rng.random(8).clamp(0, 7);
-            self.hits += 1;
+            self.pl.hits += 1;
         }
         if self.rng.random(100) < FIRE_CHANCE {
             bits |= dmg::FIRE;
         }
-        self.damage |= bits;
+        self.pl.damage |= bits;
         self.new_damage(bits, before);
         self.emit(SimEvent::PlayerHit { bits });
         self.emit(SimEvent::DamageFlash);
@@ -52,9 +52,9 @@ impl Sim {
     /// What this hit's damage `bits` do beyond the original's effects (`before`: the damage
     /// bits before the hit).
     pub(crate) fn new_damage(&mut self, bits: u8, before: u8) {
-        if bits & dmg::FIRE != 0 && before & dmg::FIRE == 0 && self.breakup_frames == 0 {
+        if bits & dmg::FIRE != 0 && before & dmg::FIRE == 0 && self.pl.breakup_frames == 0 {
             let (lo, hi) = FIRE_SECS;
-            self.fire_frames = (lo + self.rng.random(hi - lo)) * self.fs;
+            self.pl.fire_frames = (lo + self.rng.random(hi - lo)) * self.fs;
         }
         if bits & dmg::FC != 0 {
             self.bend_controls();
@@ -67,7 +67,7 @@ impl Sim {
         let kind = self.rng.random(4);
         let size = 60 + self.rng.random(140);
         let period = 6 + self.rng.random(14);
-        let f = &mut self.control_fault;
+        let f = &mut self.pl.control_fault;
         match kind {
             0 | 1 => f.roll += sign * size,
             2 => f.pitch += sign * size * 2 / 3,
@@ -91,13 +91,13 @@ impl Sim {
     /// breaks up within seconds.
     fn airframe_destroyed(&mut self) {
         let bits = dmg::ENG | dmg::FC | dmg::FIRE | dmg::AV;
-        self.damage |= bits;
-        self.hits += 8;
-        self.fire_frames = 0;
+        self.pl.damage |= bits;
+        self.pl.hits += 8;
+        self.pl.fire_frames = 0;
         let (lo, hi) = BREAKUP_SECS;
-        self.breakup_frames = (lo + self.rng.random(hi - lo)) * self.fs;
+        self.pl.breakup_frames = (lo + self.rng.random(hi - lo)) * self.fs;
         let sign = if self.rng.random(2) == 0 { -1 } else { 1 };
-        self.control_fault = ControlFault {
+        self.pl.control_fault = ControlFault {
             roll: sign * (300 + self.rng.random(300)),
             pitch: -150 - self.rng.random(250),
             roll_swing: 200,
@@ -113,23 +113,23 @@ impl Sim {
 
     /// Fires and a breaking airframe run their course (until the pilot has ejected).
     pub(crate) fn update_damage(&mut self) {
-        if !self.opts.realistic_damage || self.eject != 0 || self.ended.is_some() {
+        if !self.opts.realistic_damage || self.pl.eject != 0 || self.ended.is_some() {
             return;
         }
-        if self.breakup_frames > 0 {
-            self.breakup_frames -= 1;
-            if self.breakup_frames == 0 {
+        if self.pl.breakup_frames > 0 {
+            self.pl.breakup_frames -= 1;
+            if self.pl.breakup_frames == 0 {
                 self.explode();
             }
             return;
         }
-        if self.fire_frames > 0 {
-            self.fire_frames -= 1;
-            if self.fire_frames == 0 {
+        if self.pl.fire_frames > 0 {
+            self.pl.fire_frames -= 1;
+            if self.pl.fire_frames == 0 {
                 if self.rng.random(100) < EXPLODE_CHANCE {
                     self.explode();
                 } else {
-                    self.damage &= !dmg::FIRE;
+                    self.pl.damage &= !dmg::FIRE;
                     self.msg("Fire out");
                 }
             }
@@ -138,13 +138,13 @@ impl Sim {
 
     /// The aircraft blows up in the air.
     fn explode(&mut self) {
-        let (x, y, alt) = (self.p.mx, self.p.my, self.p.view_z);
+        let (x, y, alt) = (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z);
         self.flash = Flash { x, y, alt, timer: 0x10 };
         self.emit(SimEvent::Explosion { x, y, alt, kind: 0x10 });
         self.msg("Aircraft exploded");
         self.sound(5, 2);
-        self.fire_frames = 0;
-        self.breakup_frames = 0;
+        self.pl.fire_frames = 0;
+        self.pl.breakup_frames = 0;
         self.finalize(1);
     }
 }

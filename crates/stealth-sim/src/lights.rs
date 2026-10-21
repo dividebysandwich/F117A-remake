@@ -33,7 +33,7 @@ impl Sim {
 
     /// Whether the player's aircraft shows its lights (the rule of the friendly aircraft).
     pub fn player_lights(&self) -> bool {
-        near_home_airfield(&self.objects, self.p.mx, self.p.my, true)
+        near_home_airfield(&self.objects, self.pl.p.mx, self.pl.p.my, true)
     }
 }
 

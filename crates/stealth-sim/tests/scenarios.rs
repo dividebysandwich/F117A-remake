@@ -627,7 +627,7 @@ fn ten_minute_missions_all_theaters() {
                 "theater {th}: {} s, end {:?}, launches {}, log {}",
                 sim.mission_tick(),
                 sim.mission_end(),
-                sim.launches,
+                sim.launches(),
                 sim.event_log().len()
             );
             assert!(sim.mission_tick() > 0);
@@ -648,24 +648,24 @@ fn state_hash(sim: &Sim) -> u64 {
 #[test]
 fn classic_state_golden() {
     const GOLDEN: [u64; 18] = [
-        0x4d83036d640805a9,
-        0xe9904b375be4fa29,
-        0x9aa541c96b3b108b,
-        0xdd596212bc308d02,
-        0x83d4f4783879bb28,
-        0x7ead38f91a35ae2a,
-        0xc03004f62a65c96b,
-        0x85c70a5342ce14f6,
-        0xc3c4dc270c33bbb0,
-        0x005b7e23c293cf4c,
-        0x5ec3a0fb4b8e35dd,
-        0xba5aef918843fca1,
-        0xebab9efb01b0ee2d,
-        0xc5574f37ac73f98f,
-        0x4c1ce6156422c146,
-        0x9b9de6090d9ef47d,
-        0xbf858b38f0bb38d5,
-        0x9e87bcb88b650564,
+        0x12f391580b924ab5,
+        0xa117624503f48352,
+        0x8098bfb120f4d808,
+        0x221cb61fceee3e79,
+        0xb3a79181d395ad98,
+        0xc75bcae1994a3be2,
+        0x950d4fdf17f76aa0,
+        0x7e95371e554accef,
+        0x24e24c1a064d06ce,
+        0xb9a1f9a3fbf78a1b,
+        0x019ecaa3492d8983,
+        0x96e056edecefc1dd,
+        0x678b0e18162f5de7,
+        0x1dc7a370425f1188,
+        0x4d100f278b63e890,
+        0xa1380da95a89beb9,
+        0xfdec0e5431164b74,
+        0x48e285e979acfbb4,
     ];
     let d = data();
     let mut got = Vec::new();

@@ -84,8 +84,8 @@ impl Sim {
     fn drone_impact(&mut self, i: usize) {
         let u = self.flights[i];
         self.flights[i].flags = 0;
-        if i as i32 == self.air_lock {
-            self.air_lock = -1;
+        if i as i32 == self.pl.air_lock {
+            self.pl.air_lock = -1;
         }
         let t = self.obj(u.wp);
         self.flash = Flash { x: t.x, y: t.y, alt: 0, timer: -6 };

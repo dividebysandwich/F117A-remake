@@ -181,8 +181,12 @@ impl Sim {
     /// The player's position (wu: east, south, true altitude) and velocity.
     pub(crate) fn player_target(&self) -> Target {
         Target {
-            p: [self.p.wx as f64, (0x100000 - self.p.wy) as f64, self.p.alt as f64],
-            v: crate::ballistics::release_velocity(self.p.heading, self.p.velocity, self.p.climb),
+            p: [self.pl.p.wx as f64, (0x100000 - self.pl.p.wy) as f64, self.pl.p.alt as f64],
+            v: crate::ballistics::release_velocity(
+                self.pl.p.heading,
+                self.pl.p.velocity,
+                self.pl.p.climb,
+            ),
         }
     }
 

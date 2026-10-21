@@ -1,0 +1,199 @@
+//! Several pilots in one campaign simulation (coop).
+
+use std::sync::OnceLock;
+
+use stealth_mission::{GameData, MissionKind, MissionSettings, Seed};
+use stealth_sim::*;
+
+struct Data {
+    sim: SimData,
+    gdata: GameData,
+}
+
+fn data() -> &'static Data {
+    static D: OnceLock<Data> = OnceLock::new();
+    D.get_or_init(|| {
+        let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let sim = SimData::load_json(&assets.join("sim")).expect("assets/sim");
+        let gdata = GameData::load_json(&assets.join("mission")).expect("assets/mission");
+        Data { sim, gdata }
+    })
+}
+
+/// A quiet Central Europe campaign (no radars, no guns) with two pilots on a friendly base.
+fn two_pilots() -> (Sim, usize) {
+    let d = data();
+    let s = MissionSettings {
+        theater: 3,
+        roe: 2,
+        opponents: 1,
+        kind: MissionKind::Strike,
+        ..Default::default()
+    };
+    let mut m = stealth_mission::generate(&d.gdata, &s, Seed::Srand(77)).unwrap();
+    m.world = d.gdata.theaters[3].world.clone();
+    m.weather = Default::default();
+    let mut sim =
+        Sim::with_options(&d.sim, &m, SimOptions { campaign: true, ..Default::default() });
+    for o in sim.objects_mut().iter_mut() {
+        o.unit_type = 0;
+    }
+    sim.aaa_units_mut().clear();
+    let base = (3..sim.objects().len())
+        .find(|&i| sim.objects()[i].flags & 0xF0F == 0x401)
+        .expect("friendly base");
+    sim.add_pilot(1);
+    sim.respawn_pilot(0, base, None, false, false);
+    sim.respawn_pilot(1, base, None, false, false);
+    (sim, base)
+}
+
+fn flying(mx: i32, my: i32, alt: u16, heading: u16, knots: u16) -> PlayerState {
+    let (x, y) = Sim::map_to_world(mx, my);
+    PlayerState {
+        x,
+        y,
+        altitude: alt,
+        heading,
+        velocity: knots * 27,
+        gear_up: true,
+        fuel: 10000,
+        hud_visible: true,
+        ..Default::default()
+    }
+}
+
+/// Pilot 0 waits on the runway, pilot 1 flies high and slow with the bay open past an SA-2
+/// far away: the site goes for pilot 1.
+fn site_engages_pilot_one() -> (Sim, Vec<(u8, PlayerState)>, usize) {
+    let (mut sim, base) = two_pilots();
+    let b = sim.objects()[base];
+    let (sx, sy) = (b.x + 0x1800, b.y);
+    {
+        let o = &mut sim.objects_mut()[3];
+        o.unit_type = 1;
+        o.x = sx;
+        o.y = sy;
+        o.flags = 0;
+        o.alert = 0;
+        o.timer = 0;
+    }
+    let st = sim.start_state_at(base);
+    let ground = PlayerState { on_ground: true, ..st };
+    let mut air = flying(sx, sy + 640, 6000, 0x4000, 200);
+    air.cmd.toggle_bay = true;
+    let mut inputs = vec![(0, ground), (1, air)];
+    for _ in 0..15 * 300 {
+        let ev = sim.step_pilots(&inputs, 15);
+        inputs[1].1.cmd = Commands::default();
+        if let Some((slot, pilot)) = ev.iter().find_map(|e| match e.event {
+            SimEvent::MissileLaunched { slot, launcher: Launcher::Site(3), .. } => {
+                Some((slot, e.pilot))
+            }
+            _ => None,
+        }) {
+            assert_eq!(pilot, 1, "the launch is pilot 1's news");
+            return (sim, inputs, slot);
+        }
+    }
+    panic!("the SA-2 never fired");
+}
+
+#[test]
+fn a_site_goes_for_the_pilot_it_sees() {
+    let (sim, _, slot) = site_engages_pilot_one();
+    assert_eq!(sim.enemy_slot_target(slot), 1);
+    // Pilot 0's warning receiver shows nothing of it.
+    assert!(sim.emitters().iter().all(|e| !e.launch && !e.tracking), "{:?}", sim.emitters());
+}
+
+#[test]
+fn private_events_reach_their_pilot_only() {
+    let (mut sim, mut inputs, _) = site_engages_pilot_one();
+    let mut warned = [false; 2];
+    for _ in 0..15 * 10 {
+        for e in sim.step_pilots(&inputs, 15) {
+            if matches!(e.event, SimEvent::Rwr(_)) {
+                warned[e.pilot as usize] = true;
+            }
+        }
+        inputs[1].1.cmd = Commands::default();
+    }
+    assert_eq!(warned, [false, true]);
+}
+
+#[test]
+fn one_pilot_leaving_keeps_the_others_threats() {
+    let (mut sim, _, slot) = site_engages_pilot_one();
+    assert!(sim.projectiles()[slot].ttl != 0);
+    sim.end_sortie_pilot(0, 7);
+    assert!(sim.pilot_absent(0) && !sim.pilot_absent(1));
+    assert!(sim.projectiles()[slot].ttl != 0, "pilot 1's missile is still coming");
+    sim.end_sortie_pilot(1, 7);
+    assert!(sim.projectiles()[slot].ttl == 0);
+}
+
+#[test]
+fn a_kill_is_the_shooters() {
+    let (mut sim, base) = two_pilots();
+    let b = sim.objects()[base];
+    let (mx, my) = (b.x + 0x1000, b.y - 0x800);
+    // A slow An-72 3 km ahead of pilot 1, flying north like him.
+    {
+        let u = &mut sim.flights_mut()[1];
+        *u = FlightUnit {
+            x: mx,
+            y: my - 64 * 3,
+            alt: 5000,
+            spec: 9,
+            flags: 0x43,
+            speed: 200,
+            timer: 30000,
+            wp: 3,
+            ..Default::default()
+        };
+        u.wx = u.x << 5;
+        u.wy = u.y << 5;
+    }
+    sim.set_pilot_loadout(1, &[(0, 4), (-1, 0), (-1, 0), (-1, 0)], 0);
+    let st = sim.start_state_at(base);
+    let mut inputs =
+        vec![(0, PlayerState { on_ground: true, ..st }), (1, flying(mx, my, 5000, 0, 300))];
+    inputs[1].1.cmd.toggle_bay = true;
+    sim.step_pilots(&inputs, 15);
+    inputs[1].1.cmd = Commands::default();
+    for _ in 0..5 {
+        sim.step_pilots(&inputs, 15);
+    }
+    inputs[1].1.cmd.fire = true;
+    sim.step_pilots(&inputs, 15);
+    inputs[1].1.cmd = Commands::default();
+    let mut by = None;
+    for _ in 0..15 * 20 {
+        for e in sim.step_pilots(&inputs, 15) {
+            if let SimEvent::AircraftDestroyed { unit: 1, by: b, .. } = e.event {
+                by = Some(b);
+            }
+        }
+    }
+    assert_eq!(by, Some(Some(1)));
+}
+
+#[test]
+fn pilots_keep_their_own_state() {
+    let (mut sim, base) = two_pilots();
+    let st = sim.start_state_at(base);
+    let b = sim.objects()[base];
+    let inputs = vec![
+        (0, PlayerState { on_ground: true, ..st }),
+        (1, flying(b.x, b.y - 0x400, 3000, 0, 300)),
+    ];
+    sim.set_pilot_loadout(1, &[(0, 2), (-1, 0), (-1, 0), (-1, 0)], 0);
+    for _ in 0..30 {
+        sim.step_pilots(&inputs, 15);
+    }
+    assert_eq!(sim.active_pilot(), 0);
+    assert!(sim.player().alt < 100, "the accessors show pilot 0");
+    assert_eq!(sim.pilot_view(1).map(|p| p.alt), Some(3000));
+    assert_ne!(sim.bays().0.first(), Some(&(0, 2)), "pilot 1's stores are his");
+}

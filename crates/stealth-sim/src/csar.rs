@@ -119,7 +119,7 @@ impl Sim {
     /// The chute is down: over enemy territory the rescue starts (true), else the mission ends
     /// as before.
     pub(crate) fn start_csar(&mut self) -> bool {
-        let (x, y, _) = self.chute;
+        let (x, y, _) = self.pl.chute;
         let cell = ((y >> 11).clamp(0, 15) * 16 + (x >> 11).clamp(0, 15)) as usize;
         let enemy = self.grid.get(cell).is_some_and(|g| g & 3 == 0);
         let Some(base) = self.nearest_airfield(x, y, true) else { return false };
@@ -245,7 +245,7 @@ impl Sim {
         match state {
             CsarState::Rescued => {
                 self.msg("Rescued!");
-                self.landing_type = 4;
+                self.pl.landing_type = 4;
                 self.finalize(0);
             }
             CsarState::Captured => {
@@ -293,7 +293,7 @@ impl Sim {
             let b = self.obj(u.wp);
             return (b.x, b.y, CRUISE_ALT, true);
         }
-        if self.alarm_timer != 0 && self.p.view_z < 3000 {
+        if self.alarm_timer != 0 && self.pl.p.view_z < 3000 {
             return (self.ref_x, self.ref_y, CRUISE_ALT, false);
         }
         let o = self.obj(u.wp);
@@ -361,12 +361,12 @@ impl Sim {
             }
         }
         // Hinds use their gun on a low, close player.
-        let (px, py, pz) = (self.p.mx, self.p.my, self.p.view_z);
+        let (px, py, pz) = (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z);
         let prange = approx(px - u.x, py - u.y);
         if u.spec == HIND
             && prange < 0x40
             && (pz - u.alt).abs() < 600
-            && self.eject == 0
+            && self.pl.eject == 0
             && self.frame & 3 == 0
         {
             let to_player = bearing(px - u.x, s16(u.y - py));

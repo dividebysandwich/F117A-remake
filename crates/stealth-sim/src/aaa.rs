@@ -13,6 +13,7 @@ use stealth_mission::Mission;
 
 use crate::Sim;
 use crate::math::{approx, bearing, s16};
+use crate::radar::DetectCtx;
 use crate::radar::detect;
 use crate::rng::Rng;
 use crate::types::*;
@@ -92,6 +93,20 @@ pub struct Shell {
     /// Frames left in flight; an S-60 shell bursts when they run out.
     pub ttl: i32,
     pub flak: bool,
+    /// The pilot it was fired at.
+    #[serde(default)]
+    pub pilot: u8,
+}
+
+/// A pilot as the air defences see him this frame.
+struct Track {
+    k: usize,
+    me: [f64; 3],
+    vel: [f64; 3],
+    p: crate::PlayerView,
+    emv: i32,
+    on_ground: bool,
+    lockheed: bool,
 }
 
 /// What the AAA does to the player in one frame.
@@ -162,17 +177,17 @@ impl Sim {
     /// from how he moved over the last frames (the flight model covers more ground than its
     /// airspeed says, and the flight path is not the nose's direction).
     fn player_metres(&mut self) -> ([f64; 3], [f64; 3]) {
-        let p = &self.p;
+        let p = &self.pl.p;
         let pos = [p.wx as f64 * M_PER_WU, p.wy as f64 * M_PER_WU, p.alt as f64 * FT];
         let fs = self.fs.max(1) as f64;
-        let vel = match self.aaa_track {
+        let vel = match self.pl.aaa_track {
             // A jump (a new start position) is not a velocity.
             Some((last, v)) if len(sub(pos, last)) * fs < 1500.0 => {
                 add(mul(v, 0.7), mul(sub(pos, last), fs * 0.3))
             }
             _ => [0.0; 3],
         };
-        self.aaa_track = Some((pos, vel));
+        self.pl.aaa_track = Some((pos, vel));
         (pos, vel)
     }
 
@@ -221,7 +236,7 @@ impl Sim {
             }
         }
         // The targets.
-        for t in self.targets {
+        for t in self.pl.targets {
             let Some(o) = usize::try_from(t.object).ok().and_then(|i| self.objects.get(i)) else {
                 continue;
             };
@@ -258,43 +273,78 @@ impl Sim {
     }
 
     /// One frame of the air defences: aiming, firing, the shells and the MANPADS launches.
-    pub(crate) fn update_aaa(&mut self) {
+    /// Each unit goes for the nearest pilot in the world.
+    pub(crate) fn update_aaa(&mut self, present: &[usize]) {
         let Some(mut rng) = self.aaa_rng else { return };
         let fs = self.fs.max(1);
         let dt = 1.0 / fs as f64;
-        let (me, vel) = self.player_metres();
+        let tracks: Vec<Track> = present
+            .iter()
+            .map(|&k| {
+                self.activate(k);
+                let (me, vel) = self.player_metres();
+                Track {
+                    k,
+                    me,
+                    vel,
+                    p: self.pl.p,
+                    emv: self.pl.emv,
+                    on_ground: self.pl.on_ground,
+                    lockheed: self.pl.lockheed,
+                }
+            })
+            .collect();
+        if tracks.is_empty() {
+            return;
+        }
         let mut units = std::mem::take(&mut self.aaa);
-        let ctx = self.detect_ctx();
-        let emv = self.emv;
+        self.aaa_pilot.resize(units.len(), tracks[0].k as u8);
         let vis_km = self.visual_range();
-        let on_ground = self.on_ground;
         // Accuracy: one standard deviation (radians) with a radar track / laid by eye.
         let skill = 1.5 - 0.2 * self.diff as f64;
         let mut fired: Vec<Shell> = Vec::new();
         let mut manpads: Vec<usize> = Vec::new();
-        let mut rwr: Option<RwrTone> = None;
+        let mut rwr: Vec<(usize, RwrTone)> = Vec::new();
         for (i, u) in units.iter_mut().enumerate() {
             if u.destroyed || self.aaa_blue(i) {
                 continue;
             }
             u.cooldown = (u.cooldown - 1).max(0);
+            let t = if tracks.len() == 1 {
+                &tracks[0]
+            } else {
+                tracks
+                    .iter()
+                    .min_by_key(|t| approx(s16(t.p.mx - u.x), s16(t.p.my - u.y)))
+                    .expect("a pilot")
+            };
+            self.aaa_pilot[i] = t.k as u8;
+            let (me, vel, on_ground) = (t.me, t.vel, t.on_ground);
+            let ctx = DetectCtx {
+                px: t.p.mx,
+                py: t.p.my,
+                view_z: t.p.view_z,
+                heading: t.p.heading,
+                velocity: t.p.velocity,
+                diff: self.diff,
+                lockheed: t.lockheed,
+                grid: &self.grid,
+            };
             let from = u.metres();
             let d = sub(me, from);
             let dist = len(d);
             let (v0, reach, ceiling) = u.kind.gun();
-            let range_km = approx(s16(self.p.mx - u.x), s16(self.p.my - u.y)) >> 6;
+            let range_km = approx(s16(t.p.mx - u.x), s16(t.p.my - u.y)) >> 6;
             let seen = range_km < vis_km
                 && !on_ground
                 && (!self.weather.any()
-                    || self
-                        .weather
-                        .los_clear((u.x, u.y, 0), (self.p.mx, self.p.my, self.p.alt.max(0))));
+                    || self.weather.los_clear((u.x, u.y, 0), (t.p.mx, t.p.my, t.p.alt.max(0))));
             let radar = u.kind == AaaKind::Zsu && {
                 let (score, _, _) = detect(u.x, u.y, 0, 1, Some(GUN_DISH), &ctx);
-                score + emv > 100
+                score + t.emv > 100
             };
-            if radar && !u.tracking {
-                rwr = Some(RwrTone::Scan);
+            if radar && !u.tracking && !rwr.iter().any(|r| r.0 == t.k) {
+                rwr.push((t.k, RwrTone::Scan));
             }
             u.tracking = radar || seen;
             let engage =
@@ -303,6 +353,7 @@ impl Sim {
                 u.burst = 0;
                 continue;
             }
+            let pilot = t.k as u8;
             let (az, el, t) = if u.kind == AaaKind::Manpads {
                 (d[0].atan2(d[1]), d[2].atan2(d[0].hypot(d[1])), 0.0)
             } else {
@@ -337,6 +388,7 @@ impl Sim {
                                 vel: mul(direction(a, e), v0),
                                 ttl: (reach * 1.3 / v0 * fs as f64) as i32,
                                 flak: false,
+                                pilot,
                             });
                         }
                     }
@@ -354,26 +406,31 @@ impl Sim {
                             vel: mul(direction(a, e), v0),
                             ttl: ((fuse * fs as f64) as i32).max(1),
                             flak: true,
+                            pilot,
                         });
                     }
                 }
             }
         }
         self.aaa = units;
-        if let Some(tone) = rwr {
+        for (k, tone) in rwr {
+            self.activate(k);
             self.emit(SimEvent::Rwr(tone));
         }
         let room = MAX_SHELLS.saturating_sub(self.aaa_shells.len());
         self.aaa_shells.extend(fired.into_iter().take(room));
         for i in manpads {
+            self.activate(self.aaa_pilot[i] as usize);
             self.launch_manpads(i);
         }
 
-        // Shells: gravity, the player passing through a burst of tracers, timed bursts.
-        let mut hits = 0;
-        let mut flak_hits = 0;
+        // Shells: gravity, the pilot passing through a burst of tracers, timed bursts.
+        let mut hits = vec![(0, 0); tracks.len()];
+        let mut bursts = Vec::new();
         let mut shells = std::mem::take(&mut self.aaa_shells);
         shells.retain_mut(|s| {
+            let n = tracks.iter().position(|t| t.k == s.pilot as usize);
+            let (me, vel) = n.map_or(([f64::MAX; 3], [0.0; 3]), |n| (tracks[n].me, tracks[n].vel));
             let step = mul(s.vel, dt);
             let rel = sub(s.pos, me);
             let rel_step = sub(step, mul(vel, dt));
@@ -383,22 +440,22 @@ impl Sim {
             if s.pos[2] < 0.0 {
                 return false;
             }
-            let near = closest(rel, rel_step);
+            let near = if n.is_some() { closest(rel, rel_step) } else { f64::MAX };
             if !s.flak && near < ZSU_HIT_RADIUS && rng.random(1000) < ZSU_HIT_CHANCE {
-                hits += 1;
+                hits[n.unwrap_or(0)].0 += 1;
                 return false;
             }
             if s.flak && (s.ttl <= 0 || near < FLAK_LETHAL * 0.5) {
                 let d = len(sub(s.pos, me));
                 let x = (s.pos[0] / M_PER_MAP) as i32;
                 let y = 0x8000 - (s.pos[1] / M_PER_MAP) as i32;
-                self.events.push(SimEvent::Flak { x, y, alt: (s.pos[2] / FT) as i32 });
+                bursts.push((n.map_or(0, |n| tracks[n].k), x, y, (s.pos[2] / FT) as i32));
                 if d < FLAK_LETHAL
                     || (d < FLAK_REACH
                         && rng.random(1000)
                             < ((FLAK_REACH - d) / (FLAK_REACH - FLAK_LETHAL) * 600.0) as i32)
                 {
-                    flak_hits += 1;
+                    hits[n.unwrap_or(0)].1 += 1;
                 }
                 return false;
             }
@@ -406,16 +463,23 @@ impl Sim {
         });
         self.aaa_shells = shells;
         self.aaa_rng = Some(rng);
-        for (n, text) in [(hits, "Hit by AAA"), (flak_hits, "Hit by flak")] {
-            if n > 0 && !self.training() {
-                self.msg(text);
-                self.player_hit(false);
-                self.emit(SimEvent::Explosion {
-                    x: self.p.mx,
-                    y: self.p.my,
-                    alt: self.p.view_z,
-                    kind: -1,
-                });
+        for (k, x, y, alt) in bursts {
+            self.activate(k);
+            self.emit(SimEvent::Flak { x, y, alt });
+        }
+        for (n, &(hits, flak_hits)) in hits.iter().enumerate() {
+            self.activate(tracks[n].k);
+            for (n, text) in [(hits, "Hit by AAA"), (flak_hits, "Hit by flak")] {
+                if n > 0 && !self.training() {
+                    self.msg(text);
+                    self.player_hit(false);
+                    self.emit(SimEvent::Explosion {
+                        x: self.pl.p.mx,
+                        y: self.pl.p.my,
+                        alt: self.pl.p.view_z,
+                        kind: -1,
+                    });
+                }
             }
         }
     }
@@ -427,7 +491,7 @@ impl Sim {
             return;
         }
         let Some(k) = (0..8).find(|&k| self.proj[k].ttl == 0) else { return };
-        let brg = bearing(s16(self.p.mx - u.x), s16(u.y - self.p.my));
+        let brg = bearing(s16(self.pl.p.mx - u.x), s16(u.y - self.pl.p.my));
         let lock = self.missile(SA14).lock_range as i32;
         self.proj[k] = Projectile {
             x: u.x,
@@ -447,7 +511,8 @@ impl Sim {
             self.launch_flight_at(k, (u.x, u.y), tgt);
         }
         self.msg("Missile launch");
-        self.launches += 1;
+        self.proj_pilot[k] = self.pl.id;
+        self.pl.launches += 1;
         self.emit(SimEvent::MissileLaunched {
             slot: k,
             spec: SA14,
@@ -459,16 +524,17 @@ impl Sim {
     /// units nearby.
     pub(crate) fn aaa_damage(&mut self) {
         let fine = (32 * ROUND_FINE) as f64;
-        let blasts: Vec<(f64, f64, f64)> = self
+        let blasts: Vec<(f64, f64, f64, Option<u8>)> = self
             .events
             .iter()
-            .filter_map(|e| match *e {
+            .zip(&self.event_credit)
+            .filter_map(|(e, &by)| match *e {
                 SimEvent::Explosion { x, y, alt, kind }
                     if alt < 60 && kind != -1 && kind != -16 =>
                 {
-                    Some((x as f64, y as f64, 4.0))
+                    Some((x as f64, y as f64, 4.0, by))
                 }
-                SimEvent::RoundImpact { x, y } => Some((x as f64 / fine, y as f64 / fine, 1.0)),
+                SimEvent::RoundImpact { x, y } => Some((x as f64 / fine, y as f64 / fine, 1.0, by)),
                 _ => None,
             })
             .collect();
@@ -481,14 +547,18 @@ impl Sim {
             if u.destroyed {
                 continue;
             }
-            for &(x, y, r) in &blasts {
+            for &(x, y, r, by) in &blasts {
                 let d = (x - u.x as f64).hypot(y - u.y as f64);
                 // A gun round kills only now and then.
                 if d < r && (r > 1.0 || rng.random(6) == 0) {
                     self.aaa[k].destroyed = true;
                     self.aaa[k].burst = 0;
+                    if let Some(p) = by {
+                        self.activate(p as usize);
+                    }
                     self.msg(format!("{} destroyed", u.kind.name()));
                     self.emit(SimEvent::Explosion { x: u.x, y: u.y, alt: 0, kind: 0x10 });
+                    self.emit(SimEvent::AaaDestroyed { unit: k, by });
                     break;
                 }
             }
@@ -498,7 +568,7 @@ impl Sim {
 
     /// ZSU-23-4 radars for the radar warning receiver (range km, bearing from the player).
     pub(crate) fn aaa_emitters(&self, out: &mut Vec<Emitter>) {
-        let (px, py) = (self.p.mx, self.p.my);
+        let (px, py) = (self.pl.p.mx, self.pl.p.my);
         for (i, u) in self.aaa.iter().enumerate() {
             if u.kind != AaaKind::Zsu || u.destroyed || self.aaa_blue(i) {
                 continue;

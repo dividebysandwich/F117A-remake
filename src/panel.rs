@@ -387,7 +387,7 @@ pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
 /// Pitch ladder degrees per ball radius of `adi_ball`.
 const BALL_DEG: f32 = 40.0;
 
-/// Attitude ball after the F-16's ADI on a square canvas, index 0 outside: sky blue (9) over
+/// Attitude ball after the F-16's ADI (the modern cockpits) on a square canvas, index 0 outside: sky blue (9) over
 /// brown ground (6) split by a white horizon, a pitch ladder every 5 degrees (black on the sky,
 /// white on the ground, numbered every 10), a black case ring with the bank scale and the bank
 /// pointer turning with the ball, and a small fixed yellow aircraft symbol.
@@ -690,7 +690,8 @@ impl PanelParams<'_, '_> {
         (v(self.emv.emv), v(self.emv.egr), v(self.emv.ear))
     }
 
-    /// The attitude ball into its own canvas: the F-16's ADI (`ball`) or the original's.
+    /// The attitude ball into its own canvas: the F-16's ADI (`ball`, the modern cockpits) or the
+    /// original's (the classic cockpit).
     pub fn draw_adi(&self, c: &mut Canvas, ball: bool) {
         let (p, r) = self.aircraft.single().map_or((0.0, 0.0), |a| {
             let (_, p, r) = a.euler();

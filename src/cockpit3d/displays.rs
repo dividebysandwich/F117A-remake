@@ -439,7 +439,7 @@ pub(super) fn update_displays(
                 d.mfd.draw_right(&mut tex.canvas, &art, &fonts);
             }
             CanvasRole::Adi => {
-                d.panel.draw_adi(&mut tex.canvas, settings.cockpit().0 == PanelStyle::F16)
+                d.panel.draw_adi(&mut tex.canvas, settings.cockpit().0 != PanelStyle::Classic)
             }
             CanvasRole::Rwr => d.panel.draw_rwr(&mut tex.canvas),
             CanvasRole::Hsi => d.panel.draw_hsi(&mut tex.canvas),

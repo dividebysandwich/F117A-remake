@@ -24,8 +24,6 @@ pub const FLAG_CLOUD: u32 = 8;
 pub const FLAG_CLOUD_SOFT: u32 = 16;
 /// Stratus sheet in modern mode: alpha to coverage (soft edges with MSAA, depth written).
 pub const FLAG_CLOUD_COVERAGE: u32 = 32;
-/// Faceted cumulus and cumulonimbus meshes: solid (no stratus coverage cutout).
-pub const FLAG_CLOUD_SOLID: u32 = 64;
 /// Dot lights: drawn in the transparent pass (after all opaque geometry, depth tested but not
 /// written; see dots.rs).
 pub const FLAG_DOT: u32 = 128;

@@ -1,0 +1,16 @@
+[package]
+name = "bevy_fast_clouds"
+version = "0.19.0"
+edition = "2024"
+description = "Hierarchical trigonometric wavelet volumes for real-time Bevy clouds"
+license = "MIT OR Apache-2.0"
+# Vendored from https://github.com/steven-moss-notebook/bevy_fast_clouds (da82081) and adapted
+# for Stealth Mission 89: per-view drawing (VR eyes), MSAA, LDR targets, palette shading.
+publish = false
+
+[lib]
+name = "bevy_fast_clouds"
+path = "src/lib.rs"
+
+[dependencies]
+bevy = "0.19.1"

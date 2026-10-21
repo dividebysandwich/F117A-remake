@@ -71,6 +71,7 @@ fn spawn(
     let cam = commands
         .spawn((
             Camera3d::default(),
+            bevy_fast_clouds::CloudCamera,
             bevy::core_pipeline::tonemapping::Tonemapping::None,
             Projection::Perspective(PerspectiveProjection {
                 near: 0.5,

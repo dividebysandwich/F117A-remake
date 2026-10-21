@@ -13,8 +13,6 @@ const MAX_LOCAL_LIGHTS: u32 = 32u;
 const LIGHT_SHADOWS: u32 = 1u;
 const LIGHT_LOCAL: u32 = 2u;
 const FLAG_CLOUD: u32 = 8u;
-// Faceted cumulus / cumulonimbus mesh: no stratus coverage cutout.
-const FLAG_CLOUD_SOLID: u32 = 64u;
 // Smoke plume volume (fires.rs), optionally lit by a fire at its base.
 const TAG_SMOKE: u32 = 8192u;
 const TAG_SMOKE_FIRE: u32 = 16384u;
@@ -683,17 +681,13 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
         if (in.puff_eye.w > 0.0) {
             return smoke_volume(in, dir, modern);
         }
-        // Stratus sheet: only where the layer's coverage field says so (cumulus and towers
-        // are solid).
-        var cover = 1.0;
-        if ((material.flags & FLAG_CLOUD_SOLID) == 0u) {
-            cover = stratus_cover(in.world_position);
-            if (modern) {
-                if (cover <= 0.0) { discard; }
-            } else {
-                if (cover < bayer4(vec2<u32>(in.clip_position.xy))) { discard; }
-                cover = 1.0;
-            }
+        // Stratus sheet: only where the layer's coverage field says so.
+        var cover = stratus_cover(in.world_position);
+        if (modern) {
+            if (cover <= 0.0) { discard; }
+        } else {
+            if (cover < bayer4(vec2<u32>(in.clip_position.xy))) { discard; }
+            cover = 1.0;
         }
         var n = normalize(cross(dpdx(in.world_position), dpdy(in.world_position)));
         if (dot(n, dir) > 0.0) { n = -n; }

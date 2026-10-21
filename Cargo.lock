@@ -841,6 +841,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_fast_clouds"
+version = "0.19.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "bevy_feathers"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5379,6 +5386,7 @@ dependencies = [
  "anyhow",
  "bevy",
  "bevy_egui",
+ "bevy_fast_clouds",
  "bevy_mod_openxr",
  "bevy_mod_xr",
  "dirs",

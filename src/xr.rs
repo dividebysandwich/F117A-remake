@@ -430,6 +430,7 @@ fn setup_cameras(
             RenderLayers::from_layers(&[0, MAIN_BACKGROUND_LAYER, crate::camera::MAIN_LOD_LAYER]),
             Tonemapping::None,
             bevy::render::camera::MipBias(crate::camera::VR_MIP_BIAS),
+            bevy_fast_clouds::CloudCamera,
         ));
         if crate::camera::no_indirect(true) {
             commands.entity(e).insert(bevy::render::view::NoIndirectDrawing);

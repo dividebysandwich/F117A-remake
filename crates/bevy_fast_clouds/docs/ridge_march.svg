@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="580" viewBox="0 0 980 580" role="img">
+<title>How one cloud pixel stays cheap</title>
+<desc>A sample slides along a camera ray through a cloud box. A second ray spins over density stripes: across them the signal is steady and kept; along them it cancels and is skipped. As the puff shrinks with distance, small details fade and the high-level shape remains.</desc>
+<defs>
+<marker id="ridge-arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#7ec8ff"/></marker>
+<clipPath id="ridge-box"><rect x="108" y="92" width="250" height="150" rx="3"/></clipPath>
+<clipPath id="ridge-stripes"><rect x="560" y="118" width="200" height="100" rx="3"/></clipPath>
+</defs>
+<rect width="980" height="580" fill="#0b0e12"/>
+<text x="490" y="32" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#e8eef4">How one cloud pixel stays cheap</text>
+<text x="490" y="52" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#9aabbb">One looping motion. Cyan is the camera ray. Dim means that work is skipped.</text>
+<rect x="16" y="68" width="468" height="248" rx="10" fill="#0f1419" stroke="#3d4a57"/>
+<text x="250" y="92" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="700" fill="#e8eef4">1. Only walk the box</text>
+<polygon points="52,210 74,226 74,268 52,252" fill="#1a222b" stroke="#7ec8ff"/>
+<text x="40" y="286" font-family="sans-serif" font-size="11" fill="#7ec8ff">eye</text>
+<rect x="108" y="92" width="250" height="150" rx="3" fill="#12181f" stroke="#7ec8ff" stroke-width="2"/>
+<text x="233" y="108" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#7ec8ff">cloud box</text>
+<g clip-path="url(#ridge-box)">
+<ellipse cx="190" cy="168" rx="72" ry="48" fill="#4a5d6e"/>
+<ellipse cx="268" cy="158" rx="56" ry="40" fill="#54687a"/>
+<ellipse cx="228" cy="192" rx="64" ry="36" fill="#3d5162"/>
+</g>
+<line x1="74" y1="238" x2="400" y2="128" stroke="#7ec8ff" stroke-width="2.2" marker-end="url(#ridge-arr)"/>
+<circle cx="128" cy="220" r="4" fill="none" stroke="#7ec8ff" stroke-width="1.4"/>
+<circle cx="156" cy="210" r="4" fill="none" stroke="#7ec8ff" stroke-width="1.4"/>
+<circle cx="184" cy="201" r="4" fill="#7ec8ff"/>
+<circle cx="212" cy="191" r="4" fill="#7ec8ff"/>
+<circle cx="240" cy="182" r="4" fill="#7ec8ff"/>
+<circle cx="268" cy="172" r="4" fill="#7ec8ff"/>
+<circle cx="296" cy="163" r="4" fill="none" stroke="#7ec8ff" stroke-width="1.4"/>
+<circle cx="324" cy="153" r="4" fill="none" stroke="#7ec8ff" stroke-width="1.4"/>
+<circle r="6" fill="#e8eef4" stroke="#7ec8ff" stroke-width="2">
+<animate attributeName="cx" dur="12s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.5;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" values="128;324;128"/>
+<animate attributeName="cy" dur="12s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.5;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" values="220;153;220"/>
+</circle>
+<text x="128" y="246" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#9aabbb">miss: skip</text>
+<text x="226" y="246" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#7ec8ff">hit cloud: count</text>
+<text x="320" y="246" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#9aabbb">miss: skip</text>
+<text x="250" y="298" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#c5d2de">Pixels that miss the box never start a walk.</text>
+<rect x="496" y="68" width="468" height="248" rx="10" fill="#0f1419" stroke="#3d4a57"/>
+<text x="730" y="92" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="700" fill="#e8eef4">2. Waves along the ray cancel</text>
+<rect x="560" y="118" width="200" height="100" rx="3" fill="#1a2430" stroke="#3d4a57"/>
+<g clip-path="url(#ridge-stripes)">
+<rect x="560" y="118" width="200" height="8" fill="#8ee0a8" opacity="0.35"/>
+<rect x="560" y="134" width="200" height="8" fill="#8ee0a8" opacity="0.35"/>
+<rect x="560" y="150" width="200" height="8" fill="#8ee0a8" opacity="0.35"/>
+<rect x="560" y="166" width="200" height="8" fill="#8ee0a8" opacity="0.35"/>
+<rect x="560" y="182" width="200" height="8" fill="#8ee0a8" opacity="0.35"/>
+<rect x="560" y="198" width="200" height="8" fill="#8ee0a8" opacity="0.35"/>
+</g>
+<text x="660" y="112" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#8ee0a8">density waves (sideways stripes)</text>
+<g>
+<animateTransform attributeName="transform" type="rotate" from="0 660 168" to="360 660 168" dur="12s" repeatCount="indefinite"/>
+<line x1="530" y1="168" x2="790" y2="168" stroke="#7ec8ff" stroke-width="2.4" marker-end="url(#ridge-arr)"/>
+</g>
+<text x="820" y="132" font-family="sans-serif" font-size="13" font-weight="700" fill="#8ee0a8">KEEP
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.125;0.25;0.375;0.5;0.625;0.75;0.875;1" values="0.12;0.5;1;0.5;0.12;0.5;1;0.5;0.12"/>
+</text>
+<text x="820" y="150" font-family="sans-serif" font-size="11" fill="#9aabbb">ray cuts across
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.125;0.25;0.375;0.5;0.625;0.75;0.875;1" values="0.12;0.5;1;0.5;0.12;0.5;1;0.5;0.12"/>
+</text>
+<text x="820" y="188" font-family="sans-serif" font-size="13" font-weight="700" fill="#ff6b6b">SKIP
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.125;0.25;0.375;0.5;0.625;0.75;0.875;1" values="1;0.5;0.12;0.5;1;0.5;0.12;0.5;1"/>
+</text>
+<text x="820" y="206" font-family="sans-serif" font-size="11" fill="#9aabbb">ray runs along
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.125;0.25;0.375;0.5;0.625;0.75;0.875;1" values="1;0.5;0.12;0.5;1;0.5;0.12;0.5;1"/>
+</text>
+<path d="M520,268 C552,252 584,268 616,268 C648,268 680,252 712,268" fill="none" stroke="#7ec8ff" stroke-width="1.8">
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.125;0.25;0.375;0.5;0.625;0.75;0.875;1" values="0.12;0.5;1;0.5;0.12;0.5;1;0.5;0.12"/>
+</path>
+<path d="M728,268 C740,248 752,288 764,268 C776,248 788,288 800,268 C812,248 824,288 836,268 C848,248 860,288 872,268 C884,256 896,268 920,268" fill="none" stroke="#ff6b6b" stroke-width="1.8">
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.125;0.25;0.375;0.5;0.625;0.75;0.875;1" values="1;0.5;0.12;0.5;1;0.5;0.12;0.5;1"/>
+</path>
+<line x1="520" y1="268" x2="920" y2="268" stroke="#f0d78c" stroke-width="1" stroke-dasharray="3 3" opacity="0.45"/>
+<text x="616" y="298" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#c5d2de">steady: add it</text>
+<text x="820" y="298" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#c5d2de">+ and - cancel: ignore it</text>
+<rect x="16" y="328" width="948" height="236" rx="10" fill="#0f1419" stroke="#3d4a57"/>
+<text x="490" y="352" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="700" fill="#e8eef4">3. Far away, keep the high-level shape; drop small details</text>
+<text x="220" y="378" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#8ee0a8">small details
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.5;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" values="1;0.2;1"/>
+</text>
+<text x="760" y="378" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#f0d78c">high-level shape
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.5;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" values="0.2;1;0.2"/>
+</text>
+<g transform="translate(490 448)">
+<g>
+<animateTransform attributeName="transform" type="scale" dur="12s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.5;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" values="1;0.28;1"/>
+<ellipse cx="0" cy="0" rx="150" ry="48" fill="#3d5162" stroke="#8ee0a8" stroke-width="1.5"/>
+<g stroke="#8ee0a8" stroke-width="1.2" fill="none">
+<animate attributeName="opacity" dur="12s" repeatCount="indefinite" calcMode="spline" keyTimes="0;0.5;1" keySplines="0.4 0 0.6 1;0.4 0 0.6 1" values="1;0;1"/>
+<path d="M-130,0 C-90,-18 -50,18 0,0 C50,-18 90,18 130,0"/>
+<path d="M-120,-12 C-80,-28 -40,4 0,-12 C40,-28 80,4 120,-12"/>
+<path d="M-120,12 C-80,-4 -40,28 0,12 C40,-4 80,28 120,12"/>
+<path d="M-100,-24 C-60,-36 -30,-8 0,-24 C30,-36 60,-8 100,-24"/>
+<path d="M-100,24 C-60,12 -30,40 0,24 C30,12 60,40 100,24"/>
+</g>
+</g>
+</g>
+<text x="490" y="528" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#8ee0a8">same puff: small details fade, the high-level shape stays</text>
+<text x="490" y="548" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#c5d2de">Empty air is never split into finer pieces. You only pay for waves that can still change the pixel.</text>
+</svg>

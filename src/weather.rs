@@ -3,17 +3,22 @@
 //!
 //! - Deck (overcast, storm): two huge planes at the deck's base and top following the
 //!   viewpoint; past their edges the background sphere draws the same deck (palette.wgsl).
-//! - Cumulus and cumulonimbus: faceted meshes (a few lumpy templates per kind) streamed
-//!   around the viewpoint from the shared cloud field, so what is drawn is what blocks the
-//!   simulation's lines of sight.
-//! - Shading is done by the palette shader (`FLAG_CLOUD`): the grey ramp by face orientation,
-//!   hazed per pixel with the weather's visibility.
+//! - Cumulus and cumulonimbus: volumetric clouds (bevy_fast_clouds, a union of spheres
+//!   carved by wavelet noise) streamed around the viewpoint from the shared cloud field, so
+//!   what is drawn is what blocks the simulation's lines of sight. They are shaded down the
+//!   palette's grey cloud ramp, so they follow the time of day; classic mode dithers them.
+//! - The deck is shaded by the palette shader (`FLAG_CLOUD`): the grey ramp by face
+//!   orientation, hazed per pixel with the weather's visibility.
 
 use std::collections::HashMap;
 
 use bevy::math::DVec3;
-use bevy::mesh::{MeshTag, VertexAttributeValues};
+use bevy::mesh::MeshTag;
 use bevy::prelude::*;
+use bevy_fast_clouds::{
+    CloudRenderSettings, CloudShading, CloudSphere, CloudSystems, CloudVolume, FastCloudsPlugin,
+    LodPolicy, WaveletVolume,
+};
 use stealth_mission::weather::{CELL, Cloud, CloudKind, STORM_CELL};
 use stealth_mission::{Sky, Weather};
 
@@ -21,7 +26,7 @@ use crate::camera::EyeCamera;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
 use crate::palette_material::{
-    FLAG_CLOUD, FLAG_CLOUD_COVERAGE, FLAG_CLOUD_SOLID, PaletteMaterial, PaletteParams, mesh_tag,
+    FLAG_CLOUD, FLAG_CLOUD_COVERAGE, PaletteMaterial, PaletteParams, mesh_tag,
 };
 use crate::settings::{AppState, SetupSet};
 use crate::trackcam::TrackCamera;
@@ -31,25 +36,36 @@ pub struct WeatherPlugin;
 
 impl Plugin for WeatherPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialPlugin::<crate::lightning::BoltMaterial>::default())
-            .init_resource::<WeatherState>()
-            .add_systems(OnEnter(AppState::Flight), setup_weather.in_set(SetupSet::Spawn))
-            .add_systems(OnExit(AppState::Flight), teardown_weather)
-            .add_systems(
-                Update,
-                turbulence
-                    .after(crate::flight::FlightSystems)
-                    .before(crate::camera::RigSystems)
-                    .run_if(in_state(AppState::Flight)),
-            )
-            .add_systems(
-                PostUpdate,
-                (track_eye, follow_deck, stream_clouds, lightning, rain)
-                    .chain()
-                    .after(bevy::transform::TransformSystems::Propagate)
-                    .before(crate::lighting::LightingSystems)
-                    .run_if(in_state(AppState::Flight)),
-            );
+        app.add_plugins((
+            MaterialPlugin::<crate::lightning::BoltMaterial>::default(),
+            FastCloudsPlugin,
+        ))
+        .init_resource::<WeatherState>()
+        .insert_resource(lod_policy())
+        .add_systems(OnEnter(AppState::Flight), setup_weather.in_set(SetupSet::Spawn))
+        .add_systems(OnExit(AppState::Flight), teardown_weather)
+        .add_systems(
+            Update,
+            turbulence
+                .after(crate::flight::FlightSystems)
+                .before(crate::camera::RigSystems)
+                .run_if(in_state(AppState::Flight)),
+        )
+        .add_systems(
+            PostUpdate,
+            (track_eye, follow_deck, stream_clouds, lightning, rain)
+                .chain()
+                .after(bevy::transform::TransformSystems::Propagate)
+                .before(crate::lighting::LightingSystems)
+                .run_if(in_state(AppState::Flight)),
+        )
+        .add_systems(
+            PostUpdate,
+            shade_clouds
+                .after(crate::lighting::LightingSystems)
+                .before(CloudSystems)
+                .run_if(in_state(AppState::Flight)),
+        );
     }
 }
 
@@ -57,9 +73,6 @@ impl Plugin for WeatherPlugin {
 const DRAW_RADIUS: i32 = 40 * 64;
 /// Size of the deck planes (metres from the viewpoint to their edge).
 const DECK_HALF: f32 = 280_000.0;
-/// Distinct cumulus and cumulonimbus shapes.
-const TEMPLATES: u32 = 8;
-const TOWER_TEMPLATES: u32 = 4;
 /// Horizontal period of the cloud texture (metres, `NOISE_PERIOD` in palette.wgsl).
 const NOISE_PERIOD: f64 = 81920.0;
 
@@ -90,10 +103,7 @@ pub struct WeatherState {
     rain: Option<Entity>,
     drops: Vec<Vec3>,
     rng: u32,
-    /// Cumulus and cumulonimbus (solid).
-    puff_material: Handle<PaletteMaterial>,
-    cumulus_templates: Vec<Handle<Mesh>>,
-    tower_templates: Vec<Handle<Mesh>>,
+    /// Cumulus and cumulonimbus volumes.
     puffs: HashMap<CloudKey, Streamed>,
     streamed_at: Option<(i32, i32)>,
 }
@@ -188,94 +198,70 @@ fn unit(h: u64) -> f32 {
     (h & 0xFFFF) as f32 / 65535.0
 }
 
-/// A cumulus shape: a lumpy faceted dome with a flat base, x/z in about -1..1, y in 0..1.
-fn cumulus_mesh(seed: u32) -> Mesh {
-    let mut mesh = positions_only(Sphere::new(1.0).mesh().ico(1).expect("icosphere"));
-    if let Some(VertexAttributeValues::Float32x3(pos)) =
-        mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
-    {
-        for (i, p) in pos.iter_mut().enumerate() {
-            let bump = 0.8 + 0.35 * unit(hash(((seed as u64) << 32) | i as u64));
-            let v = Vec3::from(*p) * bump;
-            // Flat, slightly bulging base; puffy top.
-            let y = if v.y < 0.0 { v.y * 0.12 } else { v.y };
-            *p = [v.x, (y + 0.12) / 1.27, v.z];
-        }
-    }
-    mesh
-}
-
-/// Radius of a cumulonimbus at height y (0..1): a column of about 0.9 with an anvil of 1.35
-/// near the top.
-fn tower_radius(y: f32) -> f32 {
-    let s = |a: f32, b: f32, x: f32| {
-        let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
-        t * t * (3.0 - 2.0 * t)
+/// The spheres of a cumulus filling the simulation's cylinder (radius `r`, height `h`,
+/// metres, base centre at the origin): a ring of puffs around a few inner ones and a crown.
+/// The volume is cut flat at the base.
+fn cumulus_spheres(r: f32, h: f32, seed: u64) -> Vec<CloudSphere> {
+    let s = (0.6 * h).clamp(0.3 * r, 0.55 * r);
+    let mut out = Vec::new();
+    let mut k = 0u64;
+    let mut jitter = || {
+        k += 1;
+        unit(hash(seed ^ k.wrapping_mul(0x9E37_79B9)))
     };
-    (0.9 + s(0.7, 0.86, y) * 0.45) * (1.0 - s(0.93, 1.0, y) * 0.45)
+    // (count, distance from the axis, height of the centre, radius), all over s or r.
+    for (n, dist, y, rad) in [(6, 0.68, 0.5, 0.85), (4, 0.3, 0.75, 1.0), (2, 0.12, 1.0, 1.05)] {
+        let turn = jitter() * std::f32::consts::TAU;
+        for i in 0..n {
+            let a = turn + (i as f32 + 0.35 * (jitter() - 0.5)) / n as f32 * std::f32::consts::TAU;
+            let d = dist * r * (0.85 + 0.3 * jitter());
+            let top = (h - s * rad).max(0.0);
+            let cy = if y >= 1.0 { top.max(0.6 * s) } else { y * s + 0.25 * s * jitter() };
+            out.push(CloudSphere {
+                center: Vec3::new(a.cos() * d, cy, a.sin() * d),
+                radius: s * rad * (0.85 + 0.3 * jitter()),
+            });
+        }
+    }
+    out
 }
 
-/// A cumulonimbus shape: a lumpy faceted column with an anvil, closed at both ends, x/z in
-/// about -1.4..1.4, y in 0..1.
-fn tower_mesh(seed: u32) -> Mesh {
-    const SIDES: usize = 12;
-    const RINGS: [f32; 11] = [0.0, 0.14, 0.28, 0.42, 0.56, 0.68, 0.78, 0.86, 0.92, 0.97, 1.0];
-    let mut ring = Vec::new();
-    for (r, &y) in RINGS.iter().enumerate() {
-        let row: Vec<Vec3> = (0..SIDES)
-            .map(|j| {
-                let h = hash(((seed as u64) << 32) | (r * SIDES + j) as u64);
-                let a =
-                    (j as f32 + 0.3 * (unit(h >> 32) - 0.5)) / SIDES as f32 * std::f32::consts::TAU;
-                let rad = tower_radius(y) * (0.82 + 0.3 * unit(h));
-                // Base and top stay level.
-                let dy = if r == 0 || r == RINGS.len() - 1 {
-                    0.0
-                } else {
-                    0.025 * (unit(h >> 16) - 0.5)
-                };
-                Vec3::new(a.cos() * rad, y + dy, a.sin() * rad)
-            })
-            .collect();
-        ring.push(row);
+/// The spheres of a cumulonimbus (radius `r`, height `h`): a column of stacked puffs under a
+/// wide anvil at the top.
+fn tower_spheres(r: f32, h: f32, seed: u64) -> Vec<CloudSphere> {
+    let col = 0.45 * r;
+    let anvil = 0.35 * r;
+    let anvil_y = (h - anvil).max(col);
+    let stack = (((anvil_y - 0.5 * col) / (0.8 * col)).round() as usize).clamp(1, 5);
+    let mut out = Vec::new();
+    for i in 0..stack {
+        let f = i as f32 / stack.max(2) as f32;
+        let wobble = unit(hash(seed ^ ((i as u64 + 1) * 0x51ED))) - 0.5;
+        out.push(CloudSphere {
+            center: Vec3::new(wobble * 0.15 * r, 0.5 * col + f * (anvil_y - 0.5 * col), 0.0),
+            radius: col * (1.0 - 0.15 * f),
+        });
     }
-    let top = Vec3::new(0.0, 1.0 + 0.02 * unit(hash(seed as u64)), 0.0);
-    let mut tris: Vec<[Vec3; 3]> = Vec::new();
-    // Sides, wound outwards from the axis.
-    for r in 0..RINGS.len() - 1 {
-        for j in 0..SIDES {
-            let k = (j + 1) % SIDES;
-            let (a, b, c, d) = (ring[r][j], ring[r][k], ring[r + 1][k], ring[r + 1][j]);
-            for mut t in [[a, b, c], [a, c, d]] {
-                let centre = (t[0] + t[1] + t[2]) / 3.0;
-                let n = (t[1] - t[0]).cross(t[2] - t[0]);
-                if n.dot(Vec3::new(centre.x, 0.0, centre.z)) < 0.0 {
-                    t.swap(1, 2);
-                }
-                tris.push(t);
-            }
-        }
+    // Anvil: one over the column and a ring spreading out.
+    out.push(CloudSphere { center: Vec3::new(0.0, anvil_y, 0.0), radius: anvil * 1.2 });
+    let ring = 12 - out.len();
+    let turn = unit(hash(seed ^ 0xA5)) * std::f32::consts::TAU;
+    for i in 0..ring {
+        let a = turn + i as f32 / ring as f32 * std::f32::consts::TAU;
+        let d = 0.7 * r * (0.85 + 0.3 * unit(hash(seed ^ ((i as u64 + 7) * 0x2F1))));
+        out.push(CloudSphere {
+            center: Vec3::new(a.cos() * d, anvil_y + 0.1 * anvil, a.sin() * d),
+            radius: anvil,
+        });
     }
-    // Base and top caps.
-    let last = RINGS.len() - 1;
-    for j in 0..SIDES {
-        let k = (j + 1) % SIDES;
-        for (centre, a, b, up) in
-            [(Vec3::ZERO, ring[0][j], ring[0][k], -1.0), (top, ring[last][j], ring[last][k], 1.0)]
-        {
-            let mut t = [centre, a, b];
-            if (t[1] - t[0]).cross(t[2] - t[0]).y * up < 0.0 {
-                t.swap(1, 2);
-            }
-            tris.push(t);
-        }
-    }
-    let pos: Vec<Vec3> = tris.into_iter().flatten().collect();
-    Mesh::new(
-        bevy::mesh::PrimitiveTopology::TriangleList,
-        bevy::asset::RenderAssetUsages::default(),
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    out
+}
+
+/// LOD by the size clouds appear on screen (`SM89_CLOUD_LOD_PX`: pixels a cloud must cover
+/// for full detail).
+fn lod_policy() -> LodPolicy {
+    let px = std::env::var("SM89_CLOUD_LOD_PX").ok().and_then(|v| v.parse().ok());
+    LodPolicy { use_projected_size: true, pixel_ref: px.unwrap_or(500.0), ..default() }
 }
 
 fn setup_weather(
@@ -306,20 +292,6 @@ fn setup_weather(
         test_strike,
         rng: weather.seed | 1,
         next_flash: if test_strike.is_some() { 2.0 } else { 3.0 },
-        puff_material: materials.add(PaletteMaterial {
-            params: PaletteParams {
-                word: 0xFFE0,
-                flags: FLAG_CLOUD | FLAG_CLOUD_SOLID,
-                ..default()
-            },
-            globals: palette.globals.clone(),
-        }),
-        cumulus_templates: (0..TEMPLATES)
-            .map(|i| meshes.add(cumulus_mesh(weather.seed ^ i)))
-            .collect(),
-        tower_templates: (0..TOWER_TEMPLATES)
-            .map(|i| meshes.add(tower_mesh(weather.seed ^ (i + 0x100))))
-            .collect(),
         ..default()
     };
     info!("weather: {}", weather.describe());
@@ -410,8 +382,12 @@ fn follow_deck(
 fn stream_clouds(
     mut commands: Commands,
     origin: Res<FloatingOrigin>,
+    mut volumes: ResMut<Assets<WaveletVolume>>,
     mut state: ResMut<WeatherState>,
 ) {
+    if !clouds_enabled() {
+        return;
+    }
     let (x, y) = state.eye_map;
     let w = state.weather;
     if let Some((sx, sy)) = state.streamed_at
@@ -438,31 +414,95 @@ fn stream_clouds(
         let h = hash(
             ((w.seed as u64) << 32) ^ ((c.gx as u16 as u64) << 16) ^ c.gy as u16 as u64 ^ 0xC10D,
         );
-        let templates = match c.kind {
-            CloudKind::Cumulonimbus => &state.tower_templates,
-            _ => &state.cumulus_templates,
-        };
-        let template = templates[(h % templates.len() as u64) as usize].clone();
         let r_m = c.r as f32 * 32.0 * WU as f32;
         let pos = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, c.base_ft as f64);
         let h_m = (c.top_ft - c.base_ft) as f32 * WU as f32;
+        let spheres = match c.kind {
+            CloudKind::Cumulonimbus => tower_spheres(r_m, h_m, h),
+            _ => cumulus_spheres(r_m, h_m, h),
+        };
+        let volume = WaveletVolume::from_spheres(spheres, h as u32, 3, 4, 0.72).with_floor(0.0);
+        let tf = Transform::from_translation((pos - origin.origin).as_vec3());
         let e = commands
             .spawn((
                 CloudEntity,
-                Mesh3d(template),
-                MeshMaterial3d(state.puff_material.clone()),
-                MeshTag(mesh_tag(1, 0, true)),
+                CloudVolume::new(volumes.add(volume)).with_core(1.0),
                 WorldPos(pos),
-                Transform::from_translation((pos - origin.origin).as_vec3())
-                    .with_rotation(Quat::from_rotation_y(
-                        (h >> 16 & 0xFFFF) as f32 / 65535.0 * std::f32::consts::TAU,
-                    ))
-                    .with_scale(Vec3::new(r_m, h_m, r_m)),
-                bevy::light::NotShadowCaster,
+                tf,
+                // Drawn this frame: transforms were already propagated.
+                GlobalTransform::from(tf),
+                Visibility::default(),
             ))
             .id();
         state.puffs.insert((c.kind, c.gx, c.gy), (e, (c.x, c.y)));
     }
+}
+
+/// `SM89_CLOUDS=0`: no cumulus or cumulonimbus drawn (measuring their cost).
+fn clouds_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SM89_CLOUDS").map_or(true, |v| v != "0"))
+}
+
+/// Lightning colour on the clouds (`BOLT_COLOR` in palette.wgsl).
+const BOLT_COLOR: Vec3 = Vec3::new(0.55, 0.58, 0.75);
+/// The palette's grey cloud ramp (`CLOUD_RAMP` in palette.wgsl).
+const CLOUD_RAMP: u8 = 0xE0;
+
+/// The volumetric clouds' light and colours, from the same globals as the palette shader:
+/// the live palette's cloud ramp (it changes with the time of day), the sun, the haze, the
+/// lightning; in classic mode whole ramp colours, dithered. `SM89_CLOUD_STEPS` sets the
+/// march steps.
+fn shade_clouds(
+    palette: Res<Palette>,
+    lighting: Res<crate::lighting::LightingState>,
+    settings: Res<crate::settings::Settings>,
+    hud: Option<Res<crate::hud::HudState>>,
+    origin: Res<FloatingOrigin>,
+    state: Res<WeatherState>,
+    mut shading: ResMut<CloudShading>,
+    mut render: ResMut<CloudRenderSettings>,
+) {
+    let nvg = hud.is_some_and(|h| h.nvg);
+    let tint = |c: Vec3| if nvg { nvg_color(c, lighting.daylight) } else { c };
+    let flash_scale = 1.0 + (0.3 - 1.0) * lighting.daylight.clamp(0.0, 1.0);
+    let (line_a, line_b) = state.bolt_light(origin.origin);
+    *shading = CloudShading {
+        sun_dir: lighting.sun.truncate(),
+        ramp: std::array::from_fn(|i| {
+            let c = palette.color(CLOUD_RAMP + i as u8).to_linear();
+            tint(Vec3::new(c.red, c.green, c.blue)).extend(1.0)
+        }),
+        haze_distance: (state.weather.vis_km as f32 * 1000.0).max(4000.0),
+        flash: BOLT_COLOR * state.flash * flash_scale,
+        line_a,
+        line_b,
+        line_color: BOLT_COLOR * flash_scale,
+    };
+    let steps = std::env::var("SM89_CLOUD_STEPS").ok().and_then(|v| v.parse().ok());
+    let want = CloudRenderSettings {
+        step_count: steps.unwrap_or(if settings.vr { 12 } else { 16 }),
+        max_march_span: 30_000.0,
+        interior_span: 3_000.0,
+        sigma_t: 0.02,
+        dither: !settings.modern_shading,
+        ..default()
+    };
+    if *render != want {
+        *render = want;
+    }
+}
+
+/// `nvg` in palette.wgsl without the grain: a colour as the night vision goggles show it.
+fn nvg_color(rgb: Vec3, daylight: f32) -> Vec3 {
+    let lum = rgb.dot(Vec3::new(0.2126, 0.7152, 0.0722));
+    let gain = 14.0 + (2.5 - 14.0) * daylight.clamp(0.0, 1.0);
+    let v = (1.0 - (-lum * gain).exp()).sqrt();
+    let t = ((v - 0.12) / (0.95 - 0.12)).clamp(0.0, 1.0);
+    let v = t * t * (3.0 - 2.0 * t);
+    let c = Vec3::new(0.0, 0.04, 0.01).lerp(Vec3::new(0.3, 0.85, 0.2), v)
+        + Vec3::new(0.5, 0.15, 0.4) * v * v * v;
+    c.min(Vec3::ONE).powf(2.2)
 }
 
 /// Reach of a strike's light (metres from the channel).

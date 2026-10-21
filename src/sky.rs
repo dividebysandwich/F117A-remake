@@ -47,8 +47,8 @@ pub struct Sky {
     /// Mission date: days since 1970-01-01 (the moon's phase), and the theater's latitude.
     days: f64,
     lat: f64,
-    /// The golden hour palette in use and its variant.
-    golden: Option<(usize, VgaPalette)>,
+    /// The golden hour palette in use and its look.
+    golden: Option<(Look, VgaPalette)>,
 }
 
 impl Default for Sky {
@@ -131,24 +131,76 @@ struct Golden {
     tint: [f64; 3],
 }
 
-/// The golden hours' looks; a mission's dawn and dusk each pick one by the date.
+/// The golden hours' base looks.
 const GOLDEN: [Golden; 4] = [
     // Gold.
-    Golden { sky: [[255.0, 172.0, 64.0], [236.0, 188.0, 124.0], [72.0, 112.0, 172.0]], tint: [1.0, 0.84, 0.62] },
+    Golden { sky: [[255.0, 150.0, 30.0], [246.0, 176.0, 92.0], [66.0, 100.0, 168.0]], tint: [1.0, 0.78, 0.5] },
     // Deep orange.
-    Golden { sky: [[255.0, 118.0, 36.0], [222.0, 142.0, 104.0], [52.0, 82.0, 150.0]], tint: [1.0, 0.76, 0.55] },
-    // Pink and gold.
-    Golden { sky: [[255.0, 150.0, 92.0], [228.0, 158.0, 168.0], [82.0, 100.0, 170.0]], tint: [1.0, 0.8, 0.7] },
-    // Pale yellow haze.
-    Golden { sky: [[255.0, 212.0, 124.0], [222.0, 212.0, 172.0], [92.0, 140.0, 200.0]], tint: [1.0, 0.9, 0.72] },
+    Golden { sky: [[255.0, 96.0, 18.0], [236.0, 126.0, 72.0], [46.0, 72.0, 146.0]], tint: [1.0, 0.7, 0.45] },
+    // Pink and orange.
+    Golden { sky: [[255.0, 118.0, 56.0], [236.0, 140.0, 140.0], [76.0, 88.0, 164.0]], tint: [1.0, 0.74, 0.6] },
+    // Yellow gold.
+    Golden { sky: [[255.0, 190.0, 70.0], [240.0, 200.0, 130.0], [86.0, 130.0, 196.0]], tint: [1.0, 0.86, 0.6] },
 ];
 
-/// The golden hour palette `variant` of a theater: the day palette with a warm, low-sun sky
-/// (colours 0x80.. 0x8F, the bands from the horizon up, each coloured for its elevation) and
-/// everything else warmer and a little darker.
-/// The fixed low 16 colours (the displays) stay.
-pub fn golden(p: &TheaterPalettes, variant: usize) -> VgaPalette {
-    let g = &GOLDEN[variant % GOLDEN.len()];
+/// One dawn's or dusk's golden hour: a base look, how strong its colours are (0.75 .. 1.3)
+/// and how far they lean to red (-1) or yellow (+1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Look {
+    pub base: usize,
+    pub intensity: f64,
+    pub warmth: f64,
+}
+
+impl Look {
+    /// The look of a mission's dawn or dusk, rolled from the date (each day has its own), or
+    /// the test aid `--sky-golden <base>,<intensity>[,<warmth>]`.
+    pub fn of(days: f64, evening: bool) -> Look {
+        if let Some(l) = test_look() {
+            return l;
+        }
+        let mut h = (days.floor() as i64 * 2 + evening as i64) as u64;
+        let mut next = || {
+            h = h.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = h;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            ((z ^ (z >> 31)) >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let base = (next() * GOLDEN.len() as f64) as usize % GOLDEN.len();
+        Look { base, intensity: 0.75 + 0.55 * next(), warmth: next() * 2.0 - 1.0 }
+    }
+}
+
+fn test_look() -> Option<Look> {
+    static L: std::sync::OnceLock<Option<Look>> = std::sync::OnceLock::new();
+    *L.get_or_init(|| {
+        let a: Vec<String> = std::env::args().collect();
+        let v = a.windows(2).find(|w| w[0] == "--sky-golden")?[1].clone();
+        let n: Vec<f64> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+        Some(Look {
+            base: *n.first()? as usize,
+            intensity: n.get(1).copied().unwrap_or(1.0),
+            warmth: n.get(2).copied().unwrap_or(0.0),
+        })
+    })
+}
+
+/// A colour of a look (8-bit sRGB): its saturation scaled by the intensity, green and blue
+/// shifted by the warmth.
+fn vary(c: [f64; 3], l: &Look) -> [f64; 3] {
+    let grey = (c[0] + c[1] + c[2]) / 3.0;
+    let shift = [1.0, 1.0 + 0.14 * l.warmth, 1.0 + 0.1 * l.warmth];
+    std::array::from_fn(|ch| ((grey + (c[ch] - grey) * l.intensity) * shift[ch]).clamp(0.0, 255.0))
+}
+
+/// The golden hour palette of a look: the day palette with a warm, low-sun sky (colours
+/// 0x80.. 0x8F, the bands from the horizon up, each coloured for its elevation) and everything
+/// else warmer and a little darker. The fixed low 16 colours (the displays) stay.
+pub fn golden(p: &TheaterPalettes, l: &Look) -> VgaPalette {
+    let g = &GOLDEN[l.base % GOLDEN.len()];
+    let sky = g.sky.map(|c| vary(c, l));
+    let tint = vary(g.tint.map(|t| t * 255.0), l).map(|t| t / 255.0);
     let six = |v: f64| (v / 4.0).round().clamp(0.0, 63.0) as u8;
     let colors = p
         .day
@@ -162,23 +214,17 @@ pub fn golden(p: &TheaterPalettes, variant: usize) -> VgaPalette {
                 // The band's lower edge (`SKY_RING`: 256 x the tangent of the elevation).
                 let el = (crate::palette::SKY_RING[i - 0x80] as f64 / 256.0).atan().to_degrees();
                 let (a, b, k) = if el < 8.0 {
-                    (g.sky[0], g.sky[1], el / 8.0)
+                    (sky[0], sky[1], el / 8.0)
                 } else {
-                    (g.sky[1], g.sky[2], ((el - 8.0) / 22.0).min(1.0))
+                    (sky[1], sky[2], ((el - 8.0) / 22.0).min(1.0))
                 };
                 std::array::from_fn(|ch| six(a[ch] + (b[ch] - a[ch]) * k))
             } else {
-                std::array::from_fn(|ch| six(c[ch] as f64 * 4.0 * g.tint[ch] * 0.88))
+                std::array::from_fn(|ch| six(c[ch] as f64 * 4.0 * tint[ch] * 0.86))
             }
         })
         .collect();
     VgaPalette { colors }
-}
-
-/// Golden hour look of a mission's dawn or dusk (by the date, so each day has its own).
-pub fn golden_variant(days: f64, evening: bool) -> usize {
-    let d = days.floor() as i64 * 2 + evening as i64;
-    (d.wrapping_mul(0x9E37_79B9).rem_euclid(1 << 30) >> 7) as usize % GOLDEN.len()
 }
 
 fn mix(a: &VgaPalette, b: &VgaPalette, t: f64) -> VgaPalette {
@@ -272,9 +318,9 @@ fn update_sky(
     if let Some(mut palette) = palette
         && !tod.frozen
     {
-        let variant = golden_variant(sky.days, hours.rem_euclid(24.0) >= 12.0);
-        if sky.golden.as_ref().is_none_or(|(v, _)| *v != variant) {
-            sky.golden = Some((variant, golden(&palette.theater, variant)));
+        let look = Look::of(sky.days, hours.rem_euclid(24.0) >= 12.0);
+        if sky.golden.as_ref().is_none_or(|(l, _)| *l != look) {
+            sky.golden = Some((look, golden(&palette.theater, &look)));
         }
         let Some((_, gold)) = &sky.golden else { return };
         let p = blend(&palette.theater, gold, elev, moonlight);
@@ -321,7 +367,7 @@ mod tests {
     fn golden_hours() {
         let pal = |v: u8| VgaPalette { colors: vec![[v; 3]; 256] };
         let p = TheaterPalettes { day: pal(60), dusk: pal(20), night: pal(2) };
-        let g = golden(&p, 0);
+        let g = golden(&p, &Look { base: 0, intensity: 1.0, warmth: 0.0 });
         // A warm horizon, a blue zenith, the displays' colours untouched.
         assert!(g.colors[0x80][0] > g.colors[0x80][2]);
         assert!(g.colors[0x8F][2] > g.colors[0x8F][0]);
@@ -333,9 +379,15 @@ mod tests {
         // 19:00 at the equinox in Central Europe is near full dusk.
         let e19 = (sun_dir(19.0, 52.6).y as f64).asin().to_degrees();
         assert!((-10.0..-8.0).contains(&e19), "{e19}");
-        let used: std::collections::HashSet<_> =
-            (0..40).map(|d| golden_variant(d as f64 + 9000.0, d % 2 == 0)).collect();
-        assert!(used.len() > 2);
+        let looks: Vec<Look> = (0..40).map(|d| Look::of(d as f64 + 9000.0, d % 2 == 0)).collect();
+        let bases: std::collections::HashSet<_> = looks.iter().map(|l| l.base).collect();
+        assert!(bases.len() > 2);
+        assert!(looks.iter().all(|l| (0.75..=1.3).contains(&l.intensity)));
+        assert!(looks.iter().any(|l| l.warmth < -0.5) && looks.iter().any(|l| l.warmth > 0.5));
+        // A stronger look is more saturated at the horizon.
+        let strong = golden(&p, &Look { base: 0, intensity: 1.3, warmth: 0.0 });
+        let h = |p: &VgaPalette| p.colors[0x80][0] as i32 - p.colors[0x80][2] as i32;
+        assert!(h(&strong) >= h(&g));
     }
 
     #[test]

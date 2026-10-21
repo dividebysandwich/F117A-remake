@@ -18,6 +18,7 @@ const TAG_SMOKE: u32 = 8192u;
 const TAG_SMOKE_FIRE: u32 = 16384u;
 // Warm object (palette_material.rs `TAG_WARM`).
 const TAG_WARM: u32 = 2048u;
+const TAG_DOT_NEAR: u32 = 4096u;
 // Cloud colours: the grey ramp (its base entry is the horizon haze colour).
 const CLOUD_RAMP: u32 = 0xE0u;
 
@@ -111,6 +112,12 @@ const DOT_MIN_PIXELS: f32 = 2.0;
 // AIRCRAFT_DOT_MAX times their size far away.
 const AIRCRAFT_DOT_METRES: f32 = 0.3;
 const AIRCRAFT_DOT_MAX: f32 = 5.0;
+// Dot lights are seen up to DOT_RANGE metres, or DOT_VIS_FACTOR times the weather's visibility
+// if less (lights carry further than the visibility); dim ones (TAG_DOT_NEAR: runway edges,
+// taxiways) DOT_NEAR times that.
+const DOT_RANGE: f32 = 30000.0;
+const DOT_VIS_FACTOR: f32 = 1.5;
+const DOT_NEAR: f32 = 0.4;
 
 // World units per model unit, by level code in the mesh tag (bits 0..2):
 // 0: LOD0 (0.5), 1: LOD1 (1), 2: LOD2 (4), 3: LOD3 (16), 4: LOD4 (64), 5: aircraft (1/8)
@@ -177,6 +184,17 @@ fn vertex(v: Vertex) -> VertexOutput {
         px = px * f32(((tag >> 8u) & 7u) + 1u);
         out.world_position = center;
         out.clip_position = clip + vec4<f32>(corner * px * 2.0 / vp * clip.w, 0.0, 0.0);
+        var range = DOT_RANGE;
+        if (globals.weather.z > 0.0) {
+            range = min(range, globals.weather.z * DOT_VIS_FACTOR);
+        }
+        if ((tag & TAG_DOT_NEAR) != 0u) {
+            range = range * DOT_NEAR;
+        }
+        if (distance(center, view.world_position) > range) {
+            // Out of range: a degenerate quad outside the clip volume.
+            out.clip_position = vec4<f32>(0.0, 0.0, -1.0, 1.0);
+        }
     }
 #endif
 

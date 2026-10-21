@@ -34,7 +34,7 @@ use bevy::prelude::*;
 use crate::dots::{dot_batch, dot_batch_coloured};
 use crate::models::{ModelAssets, ModelLibrary};
 use crate::palette::{DetailLevel, Palette, REMAP_DETAIL_HIGH};
-use crate::palette_material::{TAG_DOT, TAG_WARM, dot_scale, mesh_tag};
+use crate::palette_material::{TAG_DOT, TAG_DOT_NEAR, TAG_WARM, dot_scale, mesh_tag};
 use crate::settings::AppState;
 use crate::world::{ShapeHandles, Theater, WU, WorldAnchor, WorldPos, bevy_to_wu};
 use content::Tier;
@@ -375,7 +375,7 @@ fn spawn_block(
 }
 
 /// The meshes of a block's geometry (block-local positions); `lamp_tag` adds mesh tag bits to
-/// its lamps.
+/// its lamps (`TAG_DOT_NEAR`).
 fn spawn_geom(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -530,6 +530,7 @@ fn airfields(
             let c = a.runway.c;
             let mut geom = airfield::build(a);
             let papi = std::mem::take(&mut geom.papi);
+            // The airfield's own lamps reach less far than the approach lighting.
             let e = spawn_block(
                 &mut commands,
                 &mut meshes,
@@ -537,7 +538,7 @@ fn airfields(
                 geom,
                 DVec3::new(c.x, 0.0, -c.y),
                 Tier::Main,
-                0,
+                TAG_DOT_NEAR,
             );
             for end in [-1.0, 1.0] {
                 let (geom, toward) = airfield::approach_lights(a, end);

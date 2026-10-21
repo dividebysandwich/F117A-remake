@@ -30,6 +30,9 @@ pub const FLAG_DOT: u32 = 128;
 /// Mesh tag bit of warm objects (aircraft, vehicles, buildings, fires): bright in the FLIR
 /// picture, everything else cold.
 pub const TAG_WARM: u32 = 1 << 11;
+/// Mesh tag bit of dim dot lights (runway edge, threshold and taxiway lamps): they fade out at
+/// a shorter range than the others (the shader's `DOT_NEAR`).
+pub const TAG_DOT_NEAR: u32 = 1 << 12;
 /// Mesh tag bit of smoke plume volumes: the shader ray-marches the plume inside its proxy
 /// mesh; bits 16.. carry the plume's noise offset.
 pub const TAG_SMOKE: u32 = 1 << 13;
@@ -233,7 +236,7 @@ pub fn pack16(v: [f32; 16]) -> [Vec4; 4] {
 
 /// Mesh tag layout for per-object haze: bits 0..2 level code (0..4 = LOD0..4, 5 = aircraft),
 /// bits 3..5 size class (.3DX attr & 7), bit 6 = no haze, bit 7 = dot billboard (`TAG_DOT`),
-/// bits 8..10 dot size multiplier (`dot_scale`).
+/// bits 8..10 dot size multiplier (`dot_scale`), bit 12 short-range dot (`TAG_DOT_NEAR`).
 pub fn mesh_tag(level: u32, size_class: u32, no_fog: bool) -> u32 {
     (level & 7) | ((size_class & 7) << 3) | ((no_fog as u32) << 6)
 }

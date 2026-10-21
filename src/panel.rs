@@ -384,6 +384,114 @@ pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
     }
 }
 
+/// Pitch ladder degrees per ball radius of `adi_ball`.
+const BALL_DEG: f32 = 40.0;
+
+/// Attitude ball after the F-16's ADI on a square canvas, index 0 outside: sky blue (9) over
+/// brown ground (6) split by a white horizon, a pitch ladder every 5 degrees (black on the sky,
+/// white on the ground, numbered every 10), a black case ring with the bank scale and the bank
+/// pointer turning with the ball, and a small fixed yellow aircraft symbol.
+pub fn adi_ball(c: &mut Canvas, pitch: f32, roll: f32) {
+    use crate::font::{Align, stroke_text_at};
+    let (s, co) = roll.sin_cos();
+    let n = c.w.min(c.h) as f32;
+    let centre = Vec2::new(c.w as f32 / 2.0, c.h as f32 / 2.0);
+    let r = n / 2.0;
+    let ring = r * 0.84;
+    let k = ring / BALL_DEG;
+    // The ball's axes on the canvas: along the horizon and towards the ground.
+    let along = Vec2::new(co, -s);
+    let down = Vec2::new(s, co);
+    // Same sense as the original ball (`adi`): the horizon sits at -h along `down`.
+    let h = pitch.clamp(-1.5, 1.5).to_degrees() * k;
+    for py in 0..c.h {
+        for px in 0..c.w {
+            let d = Vec2::new(px as f32 + 0.5, py as f32 + 0.5) - centre;
+            let len = d.length();
+            let colour = if len > r {
+                0
+            } else if len > ring {
+                5
+            } else if d.dot(down) > -h {
+                6
+            } else {
+                9
+            };
+            c.set(px as i32, py as i32, colour);
+        }
+    }
+    let w = (n / 110.0).max(1.0);
+    // Horizon and ladder, clipped to the ball's square inside the ring (the ring covers the rest).
+    let inner = ring * 0.98;
+    let mid = |deg: f32| centre + down * (-h - deg * k);
+    let clip = |p: Vec2, q: Vec2| {
+        // The chord of the ball's circle through p..q, or nothing outside it.
+        let dir = (q - p).normalize();
+        let f = p - centre;
+        let b = f.dot(dir);
+        let disc = b * b - (f.length_squared() - inner * inner);
+        if disc <= 0.0 {
+            return None;
+        }
+        let (t0, t1) = (-b - disc.sqrt(), -b + disc.sqrt());
+        let len = (q - p).length();
+        let (a, z) = (t0.max(0.0), t1.min(len));
+        (a < z).then(|| (p + dir * a, p + dir * z))
+    };
+    if let Some((a, b)) = clip(mid(0.0) - along * ring, mid(0.0) + along * ring) {
+        c.stroke(a, b, w * 1.6, 15);
+    }
+    let mut deg = -85.0;
+    while deg <= 85.0 {
+        let p = mid(deg);
+        if deg != 0.0 && (p - centre).length() < inner {
+            let half = if (deg as i32) % 10 == 0 { ring * 0.28 } else { ring * 0.12 };
+            let colour = if deg > 0.0 { 5 } else { 15 };
+            if let Some((a, b)) = clip(p - along * half, p + along * half) {
+                c.stroke(a, b, w, colour);
+            }
+            if (deg as i32) % 10 == 0 && (p - centre).length() < inner * 0.8 {
+                let label = format!("{}", (deg as i32).abs());
+                for side in [-1.0, 1.0] {
+                    let q = p + along * side * (half + ring * 0.16);
+                    if (q - centre).length() < inner * 0.9 {
+                        stroke_text_at(c, q.x, q.y, &label, ring * 0.1, w, colour, Align::Centre);
+                    }
+                }
+            }
+        }
+        deg += 5.0;
+    }
+    // Bank scale on the case: 10, 20, 30, 60 and 90 degrees either side, a triangle at 0 and 45.
+    let at = |a: f32, rad: f32| centre + Vec2::new(a.sin(), -a.cos()) * rad;
+    for a in [10.0f32, 20.0, 30.0, 60.0, 90.0] {
+        for sign in [-1.0, 1.0] {
+            let a = (sign * a).to_radians();
+            let long = if a.abs() > 0.5 { 0.14 } else { 0.09 };
+            c.stroke(at(a, ring * 1.02), at(a, ring * (1.0 + long)), w * 1.2, 15);
+        }
+    }
+    for a in [-45.0f32, 0.0, 45.0] {
+        let a = a.to_radians();
+        let tip = at(a, ring * 1.02);
+        let side = Vec2::new(a.cos(), a.sin()) * r * 0.05;
+        c.triangle([tip, at(a, ring * 1.13) - side, at(a, ring * 1.13) + side], 15);
+    }
+    // Bank pointer on the ball's rim, towards its sky.
+    let (tip, base) = (centre - down * ring * 0.99, centre - down * ring * 0.87);
+    c.triangle([tip, base - along * r * 0.055, base + along * r * 0.055], 15);
+    // Aircraft symbol: two short wings with drooping tips and a centre dot (yellow).
+    let wing = ring * 0.34;
+    let gap = ring * 0.12;
+    for sx in [-1.0, 1.0] {
+        let a = centre + Vec2::new(sx * gap, 0.0);
+        let b = centre + Vec2::new(sx * (gap + wing), 0.0);
+        c.stroke(a, b, w * 2.2, 17);
+        c.stroke(a, a + Vec2::new(0.0, ring * 0.08), w * 2.2, 17);
+    }
+    c.stroke(centre - Vec2::X * w * 0.5, centre + Vec2::X * w * 0.5, w * 3.0, 17);
+}
+
 /// HSI on a square canvas: the compass card turning with the heading (radians), a lubber line
 /// and aircraft symbol, the bearing pointer to the waypoint (radians, true) and its distance
 /// (km) and number.
@@ -582,13 +690,17 @@ impl PanelParams<'_, '_> {
         (v(self.emv.emv), v(self.emv.egr), v(self.emv.ear))
     }
 
-    /// The attitude ball into its own canvas.
-    pub fn draw_adi(&self, c: &mut Canvas) {
+    /// The attitude ball into its own canvas: the F-16's ADI (`ball`) or the original's.
+    pub fn draw_adi(&self, c: &mut Canvas, ball: bool) {
         let (p, r) = self.aircraft.single().map_or((0.0, 0.0), |a| {
             let (_, p, r) = a.euler();
             (p, r)
         });
-        adi(c, p, r);
+        if ball {
+            adi_ball(c, p, r);
+        } else {
+            adi(c, p, r);
+        }
     }
 
     /// The horizontal situation indicator: heading and the bearing and distance to the

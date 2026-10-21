@@ -397,6 +397,7 @@ pub(super) fn restyle_hud(
 }
 
 /// Draws the instrument atlas, the MFD, attitude ball, HUD and approach indexer canvases.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn update_displays(
     art: Res<CockpitArt>,
     fonts: Res<Fonts>,
@@ -405,6 +406,7 @@ pub(super) fn update_displays(
     mut texes: Query<&mut CanvasTexture>,
     atlas: Query<&InstrumentAtlas>,
     mut tc: Query<(&TrackCamScreen, &mut Visibility)>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let find = |r: CanvasRole| roles.iter().find(|(_, x)| **x == r).map(|(e, _)| e);
     for (screen, mut v) in &mut tc {
@@ -436,7 +438,9 @@ pub(super) fn update_displays(
                 tex.transparent = d.mfd.camera_see_through(MfdSide::Right);
                 d.mfd.draw_right(&mut tex.canvas, &art, &fonts);
             }
-            CanvasRole::Adi => d.panel.draw_adi(&mut tex.canvas),
+            CanvasRole::Adi => {
+                d.panel.draw_adi(&mut tex.canvas, settings.cockpit().0 == PanelStyle::F16)
+            }
             CanvasRole::Rwr => d.panel.draw_rwr(&mut tex.canvas),
             CanvasRole::Hsi => d.panel.draw_hsi(&mut tex.canvas),
             CanvasRole::Ded => d.panel.draw_ded(&mut tex.canvas, &fonts),

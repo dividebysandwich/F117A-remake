@@ -85,6 +85,12 @@ pub struct MenuState {
     pub start_hour: Option<u8>,
     /// The mission screen (single mission or career sortie) instead of the main menu.
     pub mission_screen: bool,
+    /// Multiplayer: the player's name, the last server joined ("host[:port]"), and how this
+    /// game serves (port, players).
+    pub player_name: String,
+    pub server_addr: String,
+    pub host_port: u16,
+    pub max_players: u8,
     dirty: bool,
 }
 
@@ -129,6 +135,10 @@ impl Default for MenuState {
             // `--open-planner` and `--open-loadout` return to.
             mission_screen: std::env::args()
                 .any(|a| a == "--open-mission" || a == "--open-planner" || a == "--open-loadout"),
+            player_name: String::new(),
+            server_addr: String::new(),
+            host_port: stealth_net::DEFAULT_PORT,
+            max_players: stealth_net::protocol::MAX_PLAYERS as u8,
             dirty: true,
         }
     }
@@ -909,6 +919,7 @@ fn main_screen(
     dialog: &mut crate::input_dialog::InputDialog,
     career: &mut crate::career::CareerWindow,
     campaign: &mut crate::campaign::CampaignWindow,
+    multiplayer: &mut crate::multiplayer_menu::MultiplayerWindow,
     exit: &mut MessageWriter<AppExit>,
 ) {
     let wide = |text: &str| big_button(text).min_size(egui::vec2(360.0, 50.0));
@@ -955,7 +966,17 @@ fn main_screen(
             {
                 campaign.show();
             }
-            ui.add_enabled(false, wide("MULTIPLAYER")).on_disabled_hover_text("Not available yet");
+            if facts(
+                ui.add(wide("MULTIPLAYER")),
+                &[
+                    "Coop in the dynamic campaign",
+                    "Join a server, or host a campaign and fly in it",
+                ],
+            )
+            .clicked()
+            {
+                multiplayer.show();
+            }
             if facts(
                 ui.add(wide("CONTROLS")),
                 &["Map keys, joystick and HOTAS axes and buttons", "Saved for the next flights"],
@@ -994,9 +1015,10 @@ fn menu_ui(
         ResMut<crate::career::CareerWindow>,
         ResMut<crate::loadout::LoadoutWindow>,
         ResMut<crate::campaign::CampaignWindow>,
+        ResMut<crate::multiplayer_menu::MultiplayerWindow>,
     ),
 ) -> Result {
-    let (mut planner, mut career, mut loadout, mut campaign) = windows;
+    let (mut planner, mut career, mut loadout, mut campaign, mut multiplayer) = windows;
     // Generator data is loaded on first use.
     let Some(data) = data else {
         match MissionData::load() {
@@ -1066,9 +1088,17 @@ fn menu_ui(
     );
     let realistic_before = state.realistic(settings.aircraft);
     // One window at a time: the open dialog replaces the screen it was opened from.
-    let dialogs = dialog.open || career.open || campaign.open;
+    let dialogs = dialog.open || career.open || campaign.open || multiplayer.open;
     if !state.mission_screen && !dialogs {
-        main_screen(ctx, &mut state, &mut dialog, &mut career, &mut campaign, &mut exit);
+        main_screen(
+            ctx,
+            &mut state,
+            &mut dialog,
+            &mut career,
+            &mut campaign,
+            &mut multiplayer,
+            &mut exit,
+        );
     }
     if state.mission_screen && !dialogs && !planner.open && !loadout.open {
         let width = wide_width(ctx);

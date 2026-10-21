@@ -28,12 +28,14 @@ impl Plugin for SimRenderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SimVisuals>()
             .init_resource::<AaaVisuals>()
+            .init_resource::<RemoteVisuals>()
             .add_systems(OnExit(AppState::Flight), cleanup)
             .add_systems(
                 Update,
                 (
                     sync_objects.run_if(resource_exists::<Combat>),
                     sync_aaa.run_if(resource_exists::<Combat>),
+                    sync_remote_pilots.run_if(resource_exists::<Combat>),
                     world_model_state,
                     own_shadow,
                 )
@@ -163,8 +165,10 @@ fn cleanup(
     q: Query<Entity, With<SimObject>>,
     mut vis: ResMut<SimVisuals>,
     mut aaa: ResMut<AaaVisuals>,
+    mut remote: ResMut<RemoteVisuals>,
 ) {
     *aaa = AaaVisuals::default();
+    *remote = RemoteVisuals::default();
     for e in &q {
         commands.entity(e).try_despawn();
     }
@@ -479,7 +483,8 @@ fn sync_aaa(
 
     // Tracers: the Shilkas' shells (an S-60 shell is only seen when it bursts), also those
     // the guns fire at AI aircraft in a campaign.
-    let shells: Vec<_> = sim.aaa_shells().iter().chain(sim.ai_shells()).filter(|s| !s.flak).collect();
+    let shells: Vec<_> =
+        sim.aaa_shells().iter().chain(sim.ai_shells()).filter(|s| !s.flak).collect();
     let material = av
         .material
         .get_or_insert_with(|| {
@@ -1094,7 +1099,7 @@ fn world_model_state(
 /// The own aircraft's shadow (STFLT 17): flat on the ground under the aircraft,
 /// by day below 1000 ft.
 #[derive(Component)]
-struct OwnShadow;
+pub struct OwnShadow;
 
 /// Colour of the original's shadow model (STFLT 17).
 const SHADOW_COLOUR: u8 = 239;
@@ -1165,5 +1170,127 @@ fn own_shadow(
         spos.0 = wu_to_bevy(e, n, a.ground_altitude as f64 + 0.6);
         let (h, _, _) = a.euler();
         tf.rotation = Aircraft::from_euler(h, 0.0, 0.0);
+    }
+}
+
+/// The other pilots' aircraft (coop) as drawn: per pilot the entity, its model, and the
+/// view before the latest one (for the interpolation); their weapons in flight.
+#[derive(Resource, Default)]
+pub struct RemoteVisuals {
+    planes: HashMap<u8, (Entity, &'static str, stealth_sim::PlayerView, stealth_sim::PlayerView)>,
+    missiles: Vec<(Entity, i32)>,
+}
+
+/// The other pilots' aircraft, interpolated between the simulation's frames like the AI's,
+/// and their missiles and bombs.
+#[allow(clippy::too_many_arguments)]
+fn sync_remote_pilots(
+    mut commands: Commands,
+    combat: Res<Combat>,
+    mut vis: ResMut<RemoteVisuals>,
+    mut library: ResMut<ModelLibrary>,
+    server: Res<AssetServer>,
+    assets: ModelAssets,
+    mut q: Query<(&mut WorldPos, &mut Transform, Option<&mut ModelState>), With<SimObject>>,
+) {
+    let sim = &combat.sim;
+    let lights = assets.palette.lights_on();
+    let me = sim.active_pilot();
+    let others: Vec<_> = sim.remote_pilots().into_iter().filter(|p| p.id != me).collect();
+    let file = library.load(&server, "stflt");
+    vis.planes.retain(|id, (e, ..)| {
+        let keep = others.iter().any(|p| p.id == *id && p.chute.is_none());
+        if !keep {
+            commands.entity(*e).try_despawn();
+        }
+        keep
+    });
+    for p in &others {
+        if p.chute.is_some() {
+            continue;
+        }
+        let kind = if p.external_stores {
+            crate::aircraft::AircraftKind::F16
+        } else {
+            crate::aircraft::AircraftKind::F117
+        };
+        let spec = kind.spec();
+        if vis.planes.get(&p.id).is_some_and(|v| v.1 != spec.model) {
+            if let Some((e, ..)) = vis.planes.remove(&p.id) {
+                commands.entity(e).try_despawn();
+            }
+        }
+        if !vis.planes.contains_key(&p.id) {
+            let Some(e) = assets.spawn(&mut commands, &file, spec.model, LEVEL_AIRCRAFT, true)
+            else {
+                continue;
+            };
+            commands.entity(e).insert((
+                SimObject,
+                WorldPos::default(),
+                Transform::from_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32)),
+                Visibility::Inherited,
+                crate::models::LodRange(FRIENDLY_LOD_RANGE),
+            ));
+            vis.planes.insert(p.id, (e, spec.model, p.view, p.view));
+        }
+        let Some(v) = vis.planes.get_mut(&p.id) else { continue };
+        if v.3 != p.view {
+            v.2 = v.3;
+            v.3 = p.view;
+        }
+        let (old, cur) = (v.2, v.3);
+        let jump = (old.wx - cur.wx).abs() > 0x4000 || (old.wy - cur.wy).abs() > 0x4000;
+        let t = if jump { 1.0 } else { combat.alpha as f64 };
+        let lerp = |a: i32, b: i32| a as f64 + (b - a) as f64 * t;
+        let pos = wu_to_bevy(lerp(old.wx, cur.wx), lerp(old.wy, cur.wy), lerp(old.alt, cur.alt));
+        let rot = attitude(old.heading, old.pitch, old.roll)
+            .slerp(attitude(cur.heading, cur.pitch, cur.roll), t as f32);
+        if let Ok((mut wp, mut tf, state)) = q.get_mut(v.0) {
+            wp.0 = pos + (rot * Vec3::Y * spec.model_lift).as_dvec3();
+            tf.rotation = rot;
+            if let Some(mut s) = state {
+                // As the own model: the gear (slots 5, 6: down 3 .. up 0), the bay doors, the
+                // lights.
+                let gear = if p.gear_up && !p.on_ground { 0 } else { 3 };
+                let v = [
+                    (5, (gear != 0) as i16),
+                    (6, gear - 1),
+                    (8, p.door_anim.min(2) as i16),
+                    (10, lights as i16),
+                    (11, lights as i16),
+                ];
+                if v.iter().any(|&(k, x)| s.0[k] != x) {
+                    for (k, x) in v {
+                        s.0[k] = x;
+                    }
+                }
+            }
+        }
+    }
+    // Their weapons in flight.
+    let missiles: Vec<stealth_sim::Projectile> =
+        others.iter().flat_map(|p| p.missiles.iter().copied()).collect();
+    while vis.missiles.len() > missiles.len() {
+        if let Some((e, _)) = vis.missiles.pop() {
+            commands.entity(e).try_despawn();
+        }
+    }
+    for (k, m) in missiles.iter().enumerate() {
+        let model = sim_missile_model(&combat, m.spec);
+        if vis.missiles.get(k).is_some_and(|&(_, md)| md != model) {
+            let (e, _) = vis.missiles.remove(k);
+            commands.entity(e).try_despawn();
+        }
+        if vis.missiles.len() <= k {
+            let file = library.load(&server, model_file(model));
+            let Some(e) = spawn_model(&mut commands, &assets, &file, model, true) else { break };
+            vis.missiles.push((e, model));
+        }
+        let (x, y, alt) = m.map_pos();
+        if let Ok((mut wp, mut tf, _)) = q.get_mut(vis.missiles[k].0) {
+            wp.0 = map_point(x, y, alt);
+            tf.rotation = attitude(m.heading, m.pitch, m.roll);
+        }
     }
 }

@@ -13,13 +13,19 @@ use stealth_campaign::{
     Report, Side, Sortie, SortieRecord,
 };
 use stealth_mission::{GameData, Mission};
-use stealth_sim::{PilotEvent, PlayerState, Sim, SimEvent};
+use stealth_sim::{PilotEvent, PlayerState, Sim, SimEvent, oflags};
 
 use crate::glue::{self, side_of};
 use crate::rules::Rules;
 
 /// Seconds between the friendly aircraft's looks for enemy radars.
 const SPOT_EVERY: f64 = 1.0;
+/// The take-off formation of coop players on a runway (world units, ~0.49 m): the step back
+/// between the rows and the columns' offset left and right of the centre line.
+const STEP_BACK: i32 = 0x80;
+const STEP_SIDE: i32 = 20;
+/// Another aircraft this close to a place takes it.
+const PLACE_TAKEN: i32 = 30;
 
 /// A finished sortie for its pilot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -348,13 +354,21 @@ impl Host {
                 CampaignEvent::SortieStarted { player, sortie } => {
                     let base = sortie.base as usize;
                     let (lockheed, external) = self.rules.airframe(sortie.aircraft);
-                    let start = sim.respawn_pilot(
+                    let mut start = sim.respawn_pilot(
                         player.0,
                         base,
                         glue::sim_objective(sortie),
                         lockheed,
                         external,
                     );
+                    // Coop players taking off from the same base: a staggered formation on
+                    // the runway, the first free place.
+                    let carrier =
+                        sim.objects().get(base).is_some_and(|o| o.flags & oflags::CARRIER != 0);
+                    if !carrier {
+                        start = formation_place(sim, player.0, &start);
+                        sim.set_pilot_input(player.0, &start);
+                    }
                     out.push(HostEvent::SortieStarted {
                         player: *player,
                         sortie: sortie.clone(),
@@ -369,5 +383,62 @@ impl Host {
         let ev = sim.take_pilot_events();
         self.leftover.extend(ev);
         out
+    }
+}
+
+/// The places of the take-off formation, relative to the runway start (along the runway,
+/// to its right): the lead in the middle, far enough down the runway for the others; behind
+/// him rows of two, left and right of the centre line, the right one a little behind the
+/// left one, each row a step further back.
+pub fn formation(k: usize) -> (i32, i32) {
+    let lead = 3 * STEP_BACK;
+    if k == 0 {
+        return (lead, 0);
+    }
+    let row = (k as i32 + 1) / 2;
+    let right = k % 2 == 0;
+    let along = lead - row * STEP_BACK - if right { STEP_BACK / 3 } else { 0 };
+    (along, if right { STEP_SIDE } else { -STEP_SIDE })
+}
+
+/// Where pilot `id` starts: the first place of the formation nobody stands on.
+fn formation_place(sim: &Sim, id: u8, start: &PlayerState) -> PlayerState {
+    // Heading north (0) or south (0x8000): along the runway and to its right.
+    let dir = if start.heading == 0 { 1 } else { -1 };
+    let at = |(along, right): (i32, i32)| (start.x + dir * right, start.y + dir * along);
+    let others: Vec<(i32, i32)> = (0..sim.pilot_count() as u8)
+        .filter(|&k| k != id)
+        .filter_map(|k| sim.pilot_view(k))
+        .map(|v| (v.wx, v.wy))
+        .collect();
+    let free = (0..8).map(formation).map(at).find(|&(x, y)| {
+        others.iter().all(|&(ox, oy)| (ox - x).abs().max((oy - y).abs()) > PLACE_TAKEN)
+    });
+    let (x, y) = free.unwrap_or_else(|| at(formation(id as usize % 8)));
+    PlayerState { x, y, ..start.clone() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::formation;
+
+    #[test]
+    fn the_formation_is_staggered() {
+        assert_eq!(formation(0).1, 0, "the lead in the middle");
+        // Rows of two, left then right a little behind it, each row further back.
+        for row in 0..3 {
+            let (l, r) = (formation(1 + 2 * row), formation(2 + 2 * row));
+            assert!(l.1 < 0 && r.1 > 0 && r.0 < l.0, "{l:?} {r:?}");
+            assert!(formation(2 * row + 3).0 < r.0);
+        }
+        assert!(formation(0).0 > formation(1).0);
+        // Never wider than the two columns.
+        assert!((0..8).all(|k| formation(k).1.abs() <= formation(1).1.abs()));
+        let all: Vec<_> = (0..8).map(formation).collect();
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                assert!((a.0 - b.0).abs().max((a.1 - b.1).abs()) > 20, "{a:?} {b:?}");
+            }
+        }
     }
 }

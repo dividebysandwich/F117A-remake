@@ -38,7 +38,7 @@ impl CampaignWindow {
 
     pub fn show(&mut self) {
         self.open = true;
-        self.saves = super::save::list_saves();
+        self.saves = stealth_host::save::list_saves();
         self.error = None;
     }
 }
@@ -144,7 +144,8 @@ pub fn campaign_window(
                     sky_ratio: w.sky_ratio,
                     start_hour: w.start_hour,
                 };
-                match ActiveCampaign::new(format!("{code}-{secs}"), setup, &data) {
+                let rules = super::rules_of(&settings, state.realistic(crate::aircraft::AircraftKind::F117));
+                match ActiveCampaign::new(format!("{code}-{secs}"), setup, &data, rules) {
                     Ok(c) => start = Some(c),
                     Err(e) => w.error = Some(format!("{e:#}")),
                 }
@@ -159,12 +160,14 @@ pub fn campaign_window(
                 ui.horizontal(|ui| {
                     ui.label(format!("{theater:<24} {hours:>5.1} h played"));
                     if ui.add(big_button("CONTINUE")).clicked() {
-                        match super::save::load(&name)
-                            .map(|st| ActiveCampaign::resume(name.clone(), st, &data))
-                        {
-                            Some(Ok(c)) => start = Some(c),
-                            Some(Err(e)) => w.error = Some(format!("{e:#}")),
-                            None => w.error = Some("The save could not be read".into()),
+                        let rules = super::rules_of(&settings, state.realistic(crate::aircraft::AircraftKind::F117));
+                        match stealth_host::save::load(&name) {
+                            Ok(Some(st)) => match ActiveCampaign::resume(name.clone(), st, &data, rules) {
+                                Ok(c) => start = Some(c),
+                                Err(e) => w.error = Some(format!("{e:#}")),
+                            },
+                            Ok(None) => w.error = Some("The save is gone".into()),
+                            Err(e) => w.error = Some(format!("The save could not be read: {e:#}")),
                         }
                     }
                     if !settings.vr && vr.0 && ui.add(big_button("IN VR")).clicked() {
@@ -183,7 +186,7 @@ pub fn campaign_window(
         }
     });
     if let Some(c) = start {
-        super::save::save(&c.name, &c.state);
+        c.save();
         super::start(&mut commands, c, &mut setup, &tables.start_dir);
         w.open = false;
         next.set(AppState::Flight);

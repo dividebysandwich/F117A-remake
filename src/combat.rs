@@ -36,6 +36,7 @@ use crate::mfd::{
     Contact, ContactKind, ContactRef, Contacts, MfdState, MissionClock, MissionOrders, TrackCam,
 };
 use crate::mission::{ActiveMission, PlannedRoute, clean_text};
+use crate::net::{NetInbox, NetLink, SimMsg};
 use crate::panel::{Countermeasures, Emv, Warnings};
 use crate::settings::{AppState, MissionSetup, SetupSet, StartPose};
 use crate::world::{TileOverrides, WU, WorldPos, bevy_to_wu, wu_to_bevy};
@@ -113,10 +114,9 @@ pub struct Combat {
     pub signal_flares: Vec<(i32, i32)>,
     /// Tile objects destroyed in earlier missions of a tour, still to be shown destroyed.
     pub prior_tiles: Vec<stealth_sim::TileDamage>,
-    /// Campaign: the simulation's events the campaign follows, and the AAA units destroyed,
-    /// since the campaign last took them (`campaign.rs`).
-    pub campaign_events: Vec<SimEvent>,
-    pub aaa_killed: Vec<usize>,
+    /// Campaign: the simulation's events (all pilots') since the campaign last took them
+    /// (`campaign/mod.rs`).
+    pub campaign_events: Vec<stealth_sim::PilotEvent>,
     /// Campaign: the sky's clock (seconds of the day), replacing the mission clock.
     pub sky_seconds: Option<f32>,
     /// Things destroyed on the ground in the steps of this frame (they burn, fires.rs).
@@ -255,21 +255,20 @@ fn start_combat(
         .map(|t| t.damage);
     let prior_tiles = prior_damage.as_ref().map(|d| d.tiles.clone()).unwrap_or_default();
     let external_stores = !settings.aircraft.spec().bomb_bay;
-    let mut sim = Sim::with_options(
-        &data,
-        m,
-        SimOptions {
+    let opts = match &campaign {
+        // A campaign's rules are its host's (a coop server's for everybody).
+        Some(c) => SimOptions { external_stores, ..c.rules.sim_options() },
+        None => SimOptions {
             landing,
             prior_damage,
             external_stores,
             realistic_damage: settings.realistic_damage,
             realistic_guidance: settings.realistic_guidance,
-            // A campaign always has the low-level air defences (the friendly bases' too).
-            air_defence: settings.air_defence || campaign.is_some(),
-            campaign: campaign.is_some(),
+            air_defence: settings.air_defence,
             ..default()
         },
-    );
+    };
+    let mut sim = Sim::with_options(&data, m, opts);
     // The stores chosen in the menu, else the briefed ones on this aircraft.
     let loadout = loadout
         .filter(|l| l.fits(m, settings.aircraft))
@@ -324,7 +323,6 @@ fn start_combat(
     commands.insert_resource(Combat {
         prior_tiles,
         campaign_events: Vec::new(),
-        aaa_killed: Vec::new(),
         sky_seconds: None,
         prev_flights: sim.flights().to_vec(),
         prev_proj: *sim.projectiles(),
@@ -485,6 +483,8 @@ struct StepParams<'w, 's> {
     collision: Res<'w, PlayerCollision>,
     flash: ResMut<'w, crate::hud::DamageFlash>,
     sounds: MessageWriter<'w, crate::sound::PlaySound>,
+    link: Option<ResMut<'w, NetLink>>,
+    inbox: ResMut<'w, NetInbox>,
 }
 
 /// The player is inside a world object (the "camera inside an object" test, feeding the
@@ -540,6 +540,8 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         collision,
         mut flash,
         mut sounds,
+        mut link,
+        mut inbox,
     } = p;
     let combat = &mut *combat;
     combat.explosions.clear();
@@ -551,6 +553,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     combat.kills.clear();
     combat.steps = 0;
     let Ok((mut a, pos)) = player.single_mut() else { return };
+    let mut a = &mut *a;
     let campaign = combat.sim.campaign().is_some();
     if combat.quit && combat.sim.mission_end().is_none() && !campaign {
         combat.sim.quit();
@@ -558,7 +561,67 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
     }
     let dt = 1.0 / FS as f32;
     combat.accum += time.delta_secs();
-    while combat.accum >= dt && combat.sim.mission_end().is_none() {
+    let mut fx = Fx {
+        msgs: &mut msgs,
+        accel: &mut accel,
+        tiles: &mut tiles,
+        flash: &mut flash,
+        sounds: &mut sounds,
+    };
+    // A coop client flies on the server's simulation: its frames instead of steps.
+    if let Some(NetLink::Client(client)) = link.as_deref_mut() {
+        while combat.accum >= dt {
+            combat.accum -= dt;
+            let cmd = std::mem::take(&mut combat.pending);
+            let ps = player_state(
+                &a,
+                pos,
+                controls.gun,
+                controls.fire,
+                collision.0,
+                &hud,
+                &mfd,
+                &view,
+                cmd,
+            );
+            client.send_input(&ps);
+        }
+        let ps = player_state(&a, pos, false, false, collision.0, &hud, &mfd, &view, default());
+        combat.sim.set_local_player(&ps);
+        for m in std::mem::take(&mut inbox.sim) {
+            match m {
+                SimMsg::Slow(w) => {
+                    let before: Vec<bool> =
+                        combat.sim.aaa_units().iter().map(|u| u.destroyed).collect();
+                    combat.sim.apply_world_slow(&w);
+                    burn_aaa(combat, &before);
+                }
+                SimMsg::Events(events) => {
+                    for e in events {
+                        take_event(combat, e, &mut a, &mut fx);
+                    }
+                }
+                SimMsg::Fast(w, mine) => {
+                    combat.prev_flights.clear();
+                    combat.prev_flights.extend_from_slice(combat.sim.flights());
+                    combat.prev_proj = *combat.sim.projectiles();
+                    combat.sim.apply_world_fast(&w);
+                    combat.sim.apply_pilot_snap(&mine);
+                    combat.sim.mirror_frame();
+                    combat.sim.set_local_player(&ps);
+                    combat.steps += 1;
+                    // The server's frame is the step: interpolation from here.
+                    combat.accum %= dt;
+                    combat.record.sample(&combat.sim);
+                    wreck_fire(combat);
+                }
+            }
+        }
+    }
+    while link.as_deref().is_none_or(|l| !l.is_client())
+        && combat.accum >= dt
+        && combat.sim.mission_end().is_none()
+    {
         if combat.steps >= MAX_STEPS {
             combat.accum = 0.0;
             break;
@@ -572,113 +635,29 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         combat.prev_flights.extend_from_slice(combat.sim.flights());
         combat.prev_proj = *combat.sim.projectiles();
         let aaa_before: Vec<bool> = combat.sim.aaa_units().iter().map(|u| u.destroyed).collect();
-        let events = combat.sim.step(&ps, FS);
-        // A destroyed gun or launcher burns like a vehicle.
-        for (k, (u, was)) in combat.sim.aaa_units().iter().zip(aaa_before).enumerate() {
-            if u.destroyed && !was {
-                combat.kills.push(Kill { x: u.x, y: u.y, vehicle: true });
-                if campaign {
-                    combat.aaa_killed.push(k);
-                }
-            }
+        // A listen server steps the joined players' aircraft too.
+        let mut inputs = Vec::new();
+        if let Some(NetLink::Host(server)) = link.as_deref_mut() {
+            inputs = server.inputs();
         }
+        inputs.push((0, ps));
+        let events = combat.sim.step_pilots(&inputs, FS);
+        if let Some(NetLink::Host(server)) = link.as_deref_mut() {
+            server.after_step(&events);
+        }
+        burn_aaa(combat, &aaa_before);
         for e in events {
-            if campaign && crate::campaign::follows(&e) {
+            if campaign {
                 combat.campaign_events.push(e.clone());
             }
-            if combat.log {
-                log_event(&combat.data, &e, a.time);
+            // The other pilots' own messages, sounds and warnings are theirs.
+            if e.event.is_private() && e.pilot != 0 {
+                continue;
             }
-            combat.record.event(&combat.sim, &e);
-            match e {
-                SimEvent::Message(s) => msgs.show(s),
-                SimEvent::CancelTimeAccel => accel.on = false,
-                SimEvent::DamageFlash => flash.0 = 1,
-                SimEvent::Sound { id, priority } => {
-                    sounds.write(crate::sound::PlaySound { id, priority });
-                }
-                SimEvent::Rwr(tone) => {
-                    sounds.write(crate::sound::PlaySound {
-                        id: crate::sound::rwr_id(tone),
-                        priority: 1,
-                    });
-                }
-                SimEvent::FuelTransfer { lbs } => a.fuel += lbs as f32,
-                SimEvent::Resupplied => a.fuel = 5000.0,
-                SimEvent::CollisionBounce => {
-                    a.altitude += 500.0;
-                    a.autopilot_alt = 0.0;
-                }
-                SimEvent::Explosion { x, y, alt, kind } => {
-                    combat.explosions.push((x, y, alt, kind));
-                    // Crashed aircraft leave a burning wreck.
-                    if kind == -16 {
-                        combat.kills.push(Kill { x, y, vehicle: true });
-                    }
-                }
-                // An S-60 shell burst: a black puff where it went off (true altitude, ft).
-                SimEvent::Flak { x, y, alt } => {
-                    combat.explosions.push((x, y, alt, crate::explosions::FLAK));
-                    let p = combat.sim.player();
-                    if (x - p.mx).abs() + (y - p.my).abs() < 100 {
-                        sounds.write(crate::sound::PlaySound {
-                            id: crate::sound::AIRBURST,
-                            priority: 1,
-                        });
-                    }
-                }
-                SimEvent::RoundImpact { x, y } => {
-                    let fine = (32 * stealth_sim::ROUND_FINE) as f64;
-                    combat.round_impacts.push((x as f64 / fine, y as f64 / fine));
-                }
-                SimEvent::SignalFlare { x, y } => combat.signal_flares.push((x, y)),
-                // A drone that got through sets its target area on fire.
-                SimEvent::DroneImpact { x, y, .. } => {
-                    combat.kills.push(Kill { x, y, vehicle: false })
-                }
-                SimEvent::TileDestroyed(t) => {
-                    tiles.set(t.level as usize, t.col, t.row, t.index, t.shape)
-                }
-                SimEvent::TileRestored(t) => tiles.clear(t.level as usize, t.col, t.row, t.index),
-                SimEvent::GroundDestroyed { object, .. } => {
-                    if let Some(o) = combat.sim.objects().get(object) {
-                        let name =
-                            combat.names.get((o.shape & 0x7F) as usize).map_or("", |n| n.as_str());
-                        combat.kills.push(Kill {
-                            x: o.x,
-                            y: o.y,
-                            vehicle: object != 0 && is_vehicle(name),
-                        });
-                    }
-                }
-                // Aircraft on the ground burn at once, airborne ones where the wreck lands.
-                SimEvent::AircraftDestroyed { unit, .. } => {
-                    if let Some(u) =
-                        combat.sim.flights().get(unit).filter(|u| u.alt <= 8 && u.x != 0)
-                    {
-                        combat.kills.push(Kill { x: u.x, y: u.y, vehicle: true });
-                    }
-                }
-                SimEvent::MissionEnd(e) => {
-                    combat.end = Some(end_info(&combat.sim, Some(e)));
-                    if a.ended.is_none() {
-                        a.ended = Some(match e.outcome {
-                            0 => FlightEnd::Landed,
-                            5 => FlightEnd::BadLanding,
-                            _ => FlightEnd::Crash,
-                        });
-                    }
-                }
-                _ => {}
-            }
+            take_event(combat, e.event, &mut a, &mut fx);
         }
         combat.record.sample(&combat.sim);
-        let w = combat.sim.wreck();
-        if w.alt > 0 && w.x != 0 {
-            combat.wreck = Some((w.x, w.y));
-        } else if let Some((x, y)) = combat.wreck.take() {
-            combat.kills.push(Kill { x, y, vehicle: true });
-        }
+        wreck_fire(combat);
     }
     combat.alpha = (combat.accum / dt).clamp(0.0, 1.0);
     crate::sim_render::smooth_projectiles(combat, time.delta_secs());
@@ -1568,5 +1547,117 @@ mod tests {
         assert!(gun_cue(&a, &pos, Vec3::ZERO, target, false, 0.0).in_range);
         // The ground 600 m higher: the impact is that much nearer.
         assert!(gun_cue(&a, &pos, Vec3::ZERO, None, false, 600.0).range_m.unwrap() < 900.0);
+    }
+}
+
+/// Where the step's events go besides the simulation's own bookkeeping.
+struct Fx<'a, 'w> {
+    msgs: &'a mut HudMessages,
+    accel: &'a mut TimeAccel,
+    tiles: &'a mut TileOverrides,
+    flash: &'a mut crate::hud::DamageFlash,
+    sounds: &'a mut MessageWriter<'w, crate::sound::PlaySound>,
+}
+
+/// A destroyed gun or launcher burns like a vehicle.
+fn burn_aaa(combat: &mut Combat, before: &[bool]) {
+    let fires: Vec<Kill> = combat
+        .sim
+        .aaa_units()
+        .iter()
+        .zip(before)
+        .filter(|(u, was)| u.destroyed && !**was)
+        .map(|(u, _)| Kill { x: u.x, y: u.y, vehicle: true })
+        .collect();
+    combat.kills.extend(fires);
+}
+
+/// The falling wreck burns where it lands.
+fn wreck_fire(combat: &mut Combat) {
+    let w = combat.sim.wreck();
+    if w.alt > 0 && w.x != 0 {
+        combat.wreck = Some((w.x, w.y));
+    } else if let Some((x, y)) = combat.wreck.take() {
+        combat.kills.push(Kill { x, y, vehicle: true });
+    }
+}
+
+/// One of this player's simulation events: messages, sounds, effects, fires, the end.
+fn take_event(combat: &mut Combat, e: SimEvent, a: &mut Aircraft, fx: &mut Fx) {
+    if combat.log {
+        log_event(&combat.data, &e, a.time);
+    }
+    combat.record.event(&combat.sim, &e);
+    match e {
+        SimEvent::Message(s) => fx.msgs.show(s),
+        SimEvent::CancelTimeAccel => fx.accel.on = false,
+        SimEvent::DamageFlash => fx.flash.0 = 1,
+        SimEvent::Sound { id, priority } => {
+            fx.sounds.write(crate::sound::PlaySound { id, priority });
+        }
+        SimEvent::Rwr(tone) => {
+            fx.sounds
+                .write(crate::sound::PlaySound { id: crate::sound::rwr_id(tone), priority: 1 });
+        }
+        SimEvent::FuelTransfer { lbs } => a.fuel += lbs as f32,
+        SimEvent::Resupplied => a.fuel = 5000.0,
+        SimEvent::CollisionBounce => {
+            a.altitude += 500.0;
+            a.autopilot_alt = 0.0;
+        }
+        SimEvent::Explosion { x, y, alt, kind } => {
+            combat.explosions.push((x, y, alt, kind));
+            // Crashed aircraft leave a burning wreck.
+            if kind == -16 {
+                combat.kills.push(Kill { x, y, vehicle: true });
+            }
+        }
+        // An S-60 shell burst: a black puff where it went off (true altitude, ft).
+        SimEvent::Flak { x, y, alt } => {
+            combat.explosions.push((x, y, alt, crate::explosions::FLAK));
+            let p = combat.sim.player();
+            if (x - p.mx).abs() + (y - p.my).abs() < 100 {
+                fx.sounds
+                    .write(crate::sound::PlaySound { id: crate::sound::AIRBURST, priority: 1 });
+            }
+        }
+        SimEvent::RoundImpact { x, y } => {
+            let fine = (32 * stealth_sim::ROUND_FINE) as f64;
+            combat.round_impacts.push((x as f64 / fine, y as f64 / fine));
+        }
+        SimEvent::SignalFlare { x, y } => combat.signal_flares.push((x, y)),
+        // A drone that got through sets its target area on fire.
+        SimEvent::DroneImpact { x, y, .. } => combat.kills.push(Kill { x, y, vehicle: false }),
+        SimEvent::TileDestroyed(t) => {
+            fx.tiles.set(t.level as usize, t.col, t.row, t.index, t.shape)
+        }
+        SimEvent::TileRestored(t) => fx.tiles.clear(t.level as usize, t.col, t.row, t.index),
+        SimEvent::GroundDestroyed { object, .. } => {
+            if let Some(o) = combat.sim.objects().get(object) {
+                let name = combat.names.get((o.shape & 0x7F) as usize).map_or("", |n| n.as_str());
+                combat.kills.push(Kill {
+                    x: o.x,
+                    y: o.y,
+                    vehicle: object != 0 && is_vehicle(name),
+                });
+            }
+        }
+        // Aircraft on the ground burn at once, airborne ones where the wreck lands.
+        SimEvent::AircraftDestroyed { unit, .. } => {
+            if let Some(u) = combat.sim.flights().get(unit).filter(|u| u.alt <= 8 && u.x != 0) {
+                combat.kills.push(Kill { x: u.x, y: u.y, vehicle: true });
+            }
+        }
+        SimEvent::MissionEnd(e) => {
+            combat.end = Some(end_info(&combat.sim, Some(e)));
+            if a.ended.is_none() {
+                a.ended = Some(match e.outcome {
+                    0 => FlightEnd::Landed,
+                    5 => FlightEnd::BadLanding,
+                    _ => FlightEnd::Crash,
+                });
+            }
+        }
+        _ => {}
     }
 }

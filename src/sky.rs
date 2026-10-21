@@ -134,13 +134,25 @@ struct Golden {
 /// The golden hours' base looks.
 const GOLDEN: [Golden; 4] = [
     // Gold.
-    Golden { sky: [[255.0, 150.0, 30.0], [246.0, 176.0, 92.0], [66.0, 100.0, 168.0]], tint: [1.0, 0.78, 0.5] },
+    Golden {
+        sky: [[255.0, 150.0, 30.0], [246.0, 176.0, 92.0], [66.0, 100.0, 168.0]],
+        tint: [1.0, 0.78, 0.5],
+    },
     // Deep orange.
-    Golden { sky: [[255.0, 96.0, 18.0], [236.0, 126.0, 72.0], [46.0, 72.0, 146.0]], tint: [1.0, 0.7, 0.45] },
+    Golden {
+        sky: [[255.0, 96.0, 18.0], [236.0, 126.0, 72.0], [46.0, 72.0, 146.0]],
+        tint: [1.0, 0.7, 0.45],
+    },
     // Pink and orange.
-    Golden { sky: [[255.0, 118.0, 56.0], [236.0, 140.0, 140.0], [76.0, 88.0, 164.0]], tint: [1.0, 0.74, 0.6] },
+    Golden {
+        sky: [[255.0, 118.0, 56.0], [236.0, 140.0, 140.0], [76.0, 88.0, 164.0]],
+        tint: [1.0, 0.74, 0.6],
+    },
     // Yellow gold.
-    Golden { sky: [[255.0, 190.0, 70.0], [240.0, 200.0, 130.0], [86.0, 130.0, 196.0]], tint: [1.0, 0.86, 0.6] },
+    Golden {
+        sky: [[255.0, 190.0, 70.0], [240.0, 200.0, 130.0], [86.0, 130.0, 196.0]],
+        tint: [1.0, 0.86, 0.6],
+    },
 ];
 
 /// One dawn's or dusk's golden hour: a base look, how strong its colours are (0.75 .. 1.3)
@@ -290,7 +302,8 @@ fn update_sky(
             sky.sun = crate::lighting::sun_direction();
             sky.stars = 0.0;
         }
-        if let Some(mut c) = combat {
+        // A campaign's light is its host's (`stealth_host`), by its rules.
+        if let Some(mut c) = combat.filter(|c| c.sim.campaign().is_none()) {
             c.sim.set_visual_light(None);
         }
         return;
@@ -328,7 +341,7 @@ fn update_sky(
             palette.active = p;
         }
     }
-    if let Some(mut c) = combat {
+    if let Some(mut c) = combat.filter(|c| c.sim.campaign().is_none()) {
         let light = sky.visual_light();
         c.sim.set_visual_light(Some(light));
     }

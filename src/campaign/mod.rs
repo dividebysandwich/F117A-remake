@@ -1,27 +1,30 @@
 //! Realtime dynamic campaign: the campaign model (crate stealth-campaign) driving one long
-//! flight session with the simulation in campaign mode (`stealth_sim::campaign`).
+//! flight session with the simulation in campaign mode (`stealth_sim::campaign`), through the
+//! campaign host (crate stealth-host).
 //!
 //! * The 3D world stays loaded for the whole campaign. Between sorties the player is absent
-//!   from the simulation and the Ops screen (mission board, war map, debrief, log; `ops.rs`) is
-//!   up over the cockpit, parked at a friendly base; the war goes on meanwhile.
+//!   from the simulation and the Ops screen (mission board, war map, players, debrief, log;
+//!   `ops.rs`) is up over the cockpit, parked at a friendly base; the war goes on meanwhile.
 //! * A sortie respawns the aircraft on the chosen base's runway with the mission's stores and
-//!   route. Crashing, ejecting (once the chute is down) or ending the sortie from the in-flight
-//!   menu brings up the debrief and the board again; landing at a friendly base offers to rearm.
-//! * Every frame the simulation's events become campaign reports, and the campaign's events
-//!   (helicopters to launch, places that change hands, repairs, intelligence, enemy patrols)
-//!   are applied to the simulation. The campaign clock is real time; the pause menu does not
-//!   stop it. The sky runs `sky_ratio` times faster.
-//! * The campaign is saved (`campaigns/<name>.json` in the data directory) every minute and on
-//!   leaving. Only the campaign is saved, not the simulation: on loading, what was in the air
-//!   starts again.
+//!   route, in the aircraft chosen in the briefing. Crashing, ejecting (once the chute is down)
+//!   or ending the sortie from the in-flight menu brings up the debrief and the board again;
+//!   landing at a friendly base offers to rearm.
+//! * The campaign clock is real time; the pause menu does not stop it. The sky runs
+//!   `sky_ratio` times faster.
 //!
-//! The campaign is driven only through commands and reports with the player's id, the shape a
-//! networked coop host would need.
+//! Who runs the war ([`Role`]):
+//! * Alone (`Local`) and as a listen server (`Host`): the game holds the [`Host`]; it is saved
+//!   (`campaigns/<name>.json` in the data directory) every minute and on leaving. Only the
+//!   campaign is saved, not the simulation: on loading, what was in the air starts again. A
+//!   listen server also serves the players who joined (`crate::net`).
+//! * A coop client (`Client`): the server runs the war; the game shows its copy of the
+//!   campaign, sends the player's commands and flies his aircraft.
+//!
+//! The Ops screen asks for things through [`Action`]s, carried out here for every role.
 
 mod menu;
 mod ops;
 mod picture;
-mod save;
 pub mod unit_view;
 
 pub use menu::CampaignWindow;
@@ -31,21 +34,27 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_egui::EguiPrimaryContextPass;
 use stealth_campaign::{
-    AaaView, CampaignEvent, CampaignSetup, CampaignState, Command, FlightView, MissionKind,
-    Objective, PlayerId, PlayerPos, Report, Side, Sortie, SortieEnd, SortieRecord, WorldView,
+    Aircraft as Airframe, CampaignEvent, CampaignSetup, CampaignState, PlaceId, PlayerId, Side,
+    Sortie,
 };
-use stealth_mission::{Mission, MissionKind as GenKind, MissionSettings};
-use stealth_sim::{Sim, SimEvent, fflags, oflags};
+use stealth_host::{Debrief, Host, HostEvent, Rules, Stores, save};
+use stealth_mission::Mission;
+use stealth_net::protocol::{PlayerInfo, PlayerStatus, ToServer};
+use stealth_sim::{PlayerState, SimEvent, oflags};
+
+pub use stealth_host::glue::describe;
+use stealth_host::glue::sortie_mission;
 
 use crate::combat::{Combat, CombatSystems};
 use crate::flight::{Aircraft, FlightConstants, FlightEnd, Player, bam};
 use crate::hud::{HudMessages, Waypoint, Waypoints};
 use crate::mission::{ActiveMission, MissionData, PlannedRoute};
+use crate::net::{NetInbox, NetLink};
 use crate::settings::AppState;
 use crate::world::{TileOverrides, WorldPos, wu_to_bevy};
 
-/// The local player (coop players would get the next ids).
-pub const ME: PlayerId = PlayerId(0);
+/// The local player alone or on a listen server (a client gets his id from the server).
+pub const HOST_PLAYER: PlayerId = PlayerId(0);
 /// Seconds the end of a sortie stays in view before the debrief.
 const END_SECONDS: f32 = 4.0;
 /// Seconds between autosaves.
@@ -112,21 +121,58 @@ pub enum Phase {
     Sortie,
 }
 
-/// The last sortie's debrief.
-#[derive(Debug, Clone)]
-pub struct SortieDebrief {
-    pub record: SortieRecord,
-    /// How the flight ended.
-    pub title: String,
-    /// What happened in the campaign meanwhile.
-    pub news: Vec<String>,
+/// Who runs the war.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    /// Alone.
+    Local,
+    /// A listen server: the war is run here, for the players who joined too.
+    Host,
+    /// A coop client: the server runs the war.
+    Client,
 }
+
+/// What the Ops screen asks for.
+#[derive(Debug, Clone)]
+pub enum Action {
+    TakeMission {
+        offer: u32,
+        base: Option<u16>,
+        aircraft: Airframe,
+        loadout: crate::loadout::PlannedLoadout,
+        route: Option<PlannedRoute>,
+    },
+    OrderInsertion {
+        place: PlaceId,
+    },
+    /// The sortie ends (the simulation's outcome codes: 0 landed and done, 7 aborted).
+    EndSortie {
+        outcome: u8,
+    },
+    Rearm {
+        loadout: crate::loadout::PlannedLoadout,
+    },
+}
+
+/// The last sortie's debrief.
+pub type SortieDebrief = Debrief;
 
 /// The campaign being played (the flight session is its world).
 #[derive(Resource)]
 pub struct ActiveCampaign {
     pub name: String,
-    pub state: CampaignState,
+    pub role: Role,
+    /// The war's authority (alone, listen server); None on a client.
+    pub(super) host: Option<Host>,
+    /// A client's copy of the server's campaign.
+    pub(super) copy: Option<CampaignState>,
+    /// The campaign's own mission (its world is the theater's), the base of the sorties'.
+    pub mission: Mission,
+    pub rules: Rules,
+    /// This player.
+    pub me: PlayerId,
+    /// The server's name (a client's).
+    pub server: Option<String>,
     pub phase: Phase,
     pub ui: ops::OpsUi,
     pub debrief: Option<SortieDebrief>,
@@ -134,48 +180,94 @@ pub struct ActiveCampaign {
     pub landed: Option<usize>,
     /// Base the player is parked at between sorties.
     pub parked: Option<usize>,
-    /// The campaign's own mission (its world is the theater's), the base of the sorties'.
-    pub mission: Mission,
+    /// The aircraft of the next sortie (the briefing's choice).
+    pub aircraft: Airframe,
+    /// The players (a coop game's).
+    pub roster: Vec<PlayerInfo>,
+    /// Asked for by the Ops screen, carried out next frame.
+    pub actions: Vec<Action>,
+    /// A returning client's sortie goes on (from the server's welcome).
+    pub resume: Option<stealth_net::protocol::Resume>,
     started: bool,
     save_timer: f32,
     /// Seconds since the sortie ended (the debrief comes up after `END_SECONDS`).
     end_timer: Option<f32>,
-    /// Seconds the flight model has ended the flight without the simulation following.
+    /// Seconds the flight model has ended the flight without the simulation following (an
+    /// end asked for: negative).
     crash_timer: f32,
     /// Leave the campaign (back to the menu) at the next frame.
     pub exit: bool,
     /// The stores and the route chosen in the briefing for the sortie being taken.
     pub take_loadout: Option<crate::loadout::PlannedLoadout>,
     pub take_route: Option<PlannedRoute>,
-    /// Seconds since the friendly aircraft last looked for enemy radars.
-    spot_timer: f32,
 }
 
 impl ActiveCampaign {
-    /// A new campaign on a theater; `mission` is any generated mission of it (the theater's
-    /// world replaces the generator's).
-    pub fn new(name: String, setup: CampaignSetup, data: &MissionData) -> anyhow::Result<Self> {
-        let mission = base_mission(&setup, data)?;
-        let state = CampaignState::new(setup, &mission.world);
-        Ok(Self::with_state(name, state, mission))
+    /// A new campaign alone on a theater.
+    pub fn new(
+        name: String,
+        setup: CampaignSetup,
+        data: &MissionData,
+        rules: Rules,
+    ) -> anyhow::Result<Self> {
+        let host = Host::new(setup, &data.0, rules)?;
+        Ok(Self::with_host(name, host, Role::Local))
     }
 
-    /// A saved campaign.
-    pub fn resume(name: String, state: CampaignState, data: &MissionData) -> anyhow::Result<Self> {
-        let mission = base_mission(&state.setup, data)?;
-        Ok(Self::with_state(name, state, mission))
+    /// A saved campaign, alone.
+    pub fn resume(
+        name: String,
+        state: CampaignState,
+        data: &MissionData,
+        rules: Rules,
+    ) -> anyhow::Result<Self> {
+        let host = Host::resume(state, &data.0, rules)?;
+        Ok(Self::with_host(name, host, Role::Local))
     }
 
-    fn with_state(name: String, state: CampaignState, mission: Mission) -> Self {
+    /// A campaign alone or as a listen server.
+    pub fn with_host(name: String, host: Host, role: Role) -> Self {
+        let mission = host.mission.clone();
+        let rules = host.rules;
+        let mut c = Self::blank(name, mission, rules, role, HOST_PLAYER);
+        c.host = Some(host);
+        c
+    }
+
+    /// A coop client's campaign: the server's copy.
+    pub fn client(
+        server: String,
+        state: CampaignState,
+        data: &MissionData,
+        rules: Rules,
+        me: PlayerId,
+    ) -> anyhow::Result<Self> {
+        let mission = stealth_host::glue::base_mission(&state.setup, &data.0)?;
+        let mut c = Self::blank(server.clone(), mission, rules, Role::Client, me);
+        c.copy = Some(state);
+        c.server = Some(server);
+        Ok(c)
+    }
+
+    fn blank(name: String, mission: Mission, rules: Rules, role: Role, me: PlayerId) -> Self {
         Self {
             name,
-            state,
+            role,
+            host: None,
+            copy: None,
+            mission,
+            rules,
+            me,
+            server: None,
             phase: Phase::Ops,
             ui: ops::OpsUi::default(),
             debrief: None,
             landed: None,
             parked: None,
-            mission,
+            aircraft: Airframe::F117,
+            roster: Vec::new(),
+            actions: Vec::new(),
+            resume: None,
             started: false,
             save_timer: 0.0,
             end_timer: None,
@@ -183,7 +275,15 @@ impl ActiveCampaign {
             exit: false,
             take_loadout: None,
             take_route: None,
-            spot_timer: 0.0,
+        }
+    }
+
+    /// The campaign as this player knows it.
+    pub fn state(&self) -> &CampaignState {
+        match (&self.host, &self.copy) {
+            (Some(h), _) => &h.state,
+            (None, Some(s)) => s,
+            (None, None) => unreachable!("a campaign has a host or a copy"),
         }
     }
 
@@ -191,25 +291,36 @@ impl ActiveCampaign {
     pub fn screen_open(&self) -> bool {
         (self.phase == Phase::Ops && self.end_timer.is_none()) || self.landed.is_some()
     }
-}
 
-/// The campaign's mission: a strike mission of the theater (for its settings, briefing date,
-/// time and weather) with the theater's own world and no aircraft of its own.
-fn base_mission(setup: &CampaignSetup, data: &MissionData) -> anyhow::Result<Mission> {
-    let settings = MissionSettings {
-        theater: setup.theater,
-        roe: setup.roe,
-        opponents: setup.opponents,
-        kind: GenKind::Strike,
-        ..default()
-    };
-    let mut m = crate::mission::generate(data, &settings, (setup.seed & 0xFFFF) as u16)?;
-    let td = data.0.theaters.get(setup.theater).ok_or_else(|| anyhow::anyhow!("no theater"))?;
-    m.world = td.world.clone();
-    m.drones = None;
-    m.time.deadline_ticks = 0;
-    m.time.has_deadline = false;
-    Ok(m)
+    /// Saves the campaign (alone or as the listen server).
+    pub fn save(&self) {
+        if let Some(h) = &self.host
+            && let Err(e) = save::save(&self.name, &h.state)
+        {
+            warn!("saving campaign {}: {e:#}", self.name);
+        }
+    }
+
+    /// The players as the PLAYERS tab shows them (alone: just this one).
+    pub fn players(&self) -> Vec<PlayerInfo> {
+        if !self.roster.is_empty() {
+            return self.roster.clone();
+        }
+        let st = self.state();
+        let status = match st.sortie(self.me) {
+            Some(s) if self.phase == Phase::Sortie => {
+                PlayerStatus::Flying { title: s.offer.title.clone(), aircraft: s.aircraft }
+            }
+            _ => PlayerStatus::Ops,
+        };
+        vec![PlayerInfo {
+            id: self.me,
+            name: st.player_name(self.me).unwrap_or("Pilot").to_string(),
+            status,
+            ping: 0,
+            host: self.role != Role::Client,
+        }]
+    }
 }
 
 /// Starts a campaign flight session (from the menu or the command line).
@@ -228,6 +339,24 @@ pub fn start(
     commands.insert_resource(campaign);
 }
 
+/// The rules of a campaign alone or served from this game: the game's own settings.
+pub fn rules_of(s: &crate::settings::Settings, realistic_weapons: bool) -> Rules {
+    Rules {
+        realistic_damage: s.realistic_damage,
+        realistic_guidance: s.realistic_guidance,
+        no_crashes: s.no_crashes,
+        continuous_time: s.continuous_time,
+        realistic_weapons,
+    }
+}
+
+/// The local pilot's name for the campaign (the multiplayer screen's).
+fn pilot_name() -> String {
+    let p = crate::prefs::Prefs::load();
+    let n = p.player_name.trim();
+    if n.is_empty() { "Pilot".to_string() } else { n.to_string() }
+}
+
 /// `--campaign <name>`: straight into a saved campaign (or a new one under that name, in
 /// `--theater <code>` with `--roe`, `--opponents`, `--sky-ratio` and `--start-hour`).
 pub fn from_args(app: &mut App) {
@@ -236,8 +365,14 @@ pub fn from_args(app: &mut App) {
     let Some(name) = get("--campaign") else { return };
     let data = MissionData::load().expect("mission data");
     let tables = crate::flight::SimTables::load();
-    let c = match save::load(&name) {
-        Some(state) => ActiveCampaign::resume(name, state, &data),
+    let rules =
+        rules_of(&crate::settings::Settings::from_args(), args.iter().any(|a| a == "--lockheed"));
+    let saved = save::load(&name).unwrap_or_else(|e| {
+        warn!("campaign {name}: {e:#}");
+        None
+    });
+    let c = match saved {
+        Some(state) => ActiveCampaign::resume(name, state, &data, rules),
         None => {
             let code = get("--theater").unwrap_or_else(|| "ce".into()).to_ascii_lowercase();
             let setup = CampaignSetup {
@@ -249,7 +384,7 @@ pub fn from_args(app: &mut App) {
                 sky_ratio: get("--sky-ratio").and_then(|s| s.parse().ok()).unwrap_or(24.0),
                 start_hour: get("--start-hour").and_then(|s| s.parse().ok()).unwrap_or(8.0),
             };
-            ActiveCampaign::new(name, setup, &data)
+            ActiveCampaign::new(name, setup, &data, rules)
         }
     };
     let c = match c {
@@ -270,123 +405,14 @@ pub fn from_args(app: &mut App) {
         .insert_state(AppState::Flight);
 }
 
-/// The simulation events the campaign follows (collected by the combat step).
-pub fn follows(e: &SimEvent) -> bool {
-    matches!(
-        e,
-        SimEvent::GroundDestroyed { .. }
-            | SimEvent::CampaignFlightDestroyed { .. }
-            | SimEvent::CampaignFlightLanded { .. }
-            | SimEvent::ObjectiveDone { .. }
-            | SimEvent::SortieEnded(_)
-            | SimEvent::LandedAtBase { .. }
-    )
-}
-
-fn side_of(blue: bool) -> Side {
-    if blue { Side::Blue } else { Side::Red }
-}
-
-/// What the simulation shows the campaign.
-fn world_view(sim: &Sim) -> WorldView {
-    let aaa = sim
-        .aaa_units()
-        .iter()
-        .enumerate()
-        .map(|(k, u)| AaaView {
-            x: u.x,
-            y: u.y,
-            side: side_of(sim.aaa_blue(k)),
-            alive: !u.destroyed,
-        })
-        .collect();
-    let flights = sim
-        .flights()
-        .iter()
-        .enumerate()
-        .filter(|(_, u)| {
-            u.flags & (fflags::EXISTS | fflags::AIRBORNE) == fflags::EXISTS | fflags::AIRBORNE
-                && u.flags & fflags::DESTROYED == 0
-                && u.speed > 0
-        })
-        .filter_map(|(i, u)| {
-            let tag = sim.campaign_flight(i).map_or(0, |f| f.tag);
-            let blue =
-                sim.campaign_flight(i).map_or_else(|| sim.friendly_aircraft(u.spec), |f| f.blue);
-            // The base traffic is no part of the war.
-            (tag != 0 || !blue).then_some(FlightView { x: u.x, y: u.y, side: side_of(blue), tag })
-        })
-        .collect();
-    let players = if sim.player_absent() {
-        Vec::new()
-    } else {
-        let p = sim.player();
-        vec![PlayerPos { id: ME, x: p.mx, y: p.my, airborne: p.alt > 50 }]
-    };
-    WorldView { aaa, flights, players }
-}
-
-/// Enemy SAM sites a friendly aircraft detects now: their radar painted the player (his RWR)
-/// or they fire at friendly aircraft, or a friendly aircraft is within their radar's range and
-/// above its horizon (its RWR picks the radar up).
-fn spotted(state: &CampaignState, sim: &Sim) -> Vec<Report> {
-    let eyes: Vec<(i32, i32, f64)> = sim
-        .flights()
-        .iter()
-        .enumerate()
-        .filter(|(_, u)| {
-            u.flags & (fflags::EXISTS | fflags::AIRBORNE) == fflags::EXISTS | fflags::AIRBORNE
-                && u.flags & fflags::DESTROYED == 0
-                && u.speed > 0
-        })
-        .filter(|(i, u)| {
-            sim.campaign_flight(*i).map_or_else(|| sim.friendly_aircraft(u.spec), |f| f.blue)
-        })
-        .map(|(_, u)| (u.x, u.y, u.alt.max(0) as f64 * crate::world::WU))
-        .collect();
-    let objects = sim.objects();
-    state
-        .sites
-        .iter()
-        .filter(|s| s.kind == stealth_campaign::SiteKind::Sam && s.alive() && !s.spotted)
-        .filter_map(|s| {
-            let i = s.object as usize;
-            let o = objects.get(i)?;
-            if o.unit_type == 0 {
-                return None;
-            }
-            let rwr = o.flags & (oflags::PAINTED | oflags::TRACKING) != 0 || sim.site_engaging(i);
-            let range = (sim.radar_range(o.unit_type) * 64) as f64;
-            let seen = eyes.iter().any(|&(x, y, alt)| {
-                // Radar horizon (map units) of a target at `alt` metres.
-                let horizon = 4120.0 * (alt.sqrt() + 3.2) / 15.625;
-                ((x - o.x) as f64).hypot((y - o.y) as f64) < range.min(horizon)
-            });
-            (rwr || seen).then_some(Report::SiteSpotted { object: s.object })
-        })
-        .collect()
-}
-
-/// How a sortie ended, from the simulation's end record.
-fn sortie_end(e: &stealth_sim::MissionEnd) -> (SortieEnd, &'static str) {
-    match (e.outcome, e.landing_type) {
-        (0, 2) => (SortieEnd::Ejected, "Ejected - picked up by friendly forces"),
-        (0, _) => (SortieEnd::Landed, "Sortie ended on the ground"),
-        (6, _) => (SortieEnd::Crashed, "Ejection failed - the pilot is recovered"),
-        (7, _) => (SortieEnd::Aborted, "Sortie aborted"),
-        (5, _) => (SortieEnd::Crashed, "Bad landing"),
-        _ => (SortieEnd::Crashed, "Shot down / crashed - the pilot is recovered"),
-    }
-}
-
 /// The flight session's parts a sortie start or end touches.
 #[derive(SystemParam)]
 pub struct Session<'w, 's> {
     commands: Commands<'w, 's>,
     combat: ResMut<'w, Combat>,
     player: Query<'w, 's, (&'static mut Aircraft, &'static mut WorldPos), With<Player>>,
-    constants: Res<'w, FlightConstants>,
-    settings: Res<'w, crate::settings::Settings>,
+    constants: ResMut<'w, FlightConstants>,
+    settings: ResMut<'w, crate::settings::Settings>,
     wps: ResMut<'w, Waypoints>,
     orders: ResMut<'w, crate::mfd::MissionOrders>,
     kneeboard: ResMut<'w, crate::kneeboard::Kneeboard>,
@@ -398,6 +424,10 @@ pub struct Session<'w, 's> {
     /// whole war up for tests).
     time: Res<'w, Time>,
     menu: ResMut<'w, crate::flight_menu::FlightMenu>,
+    link: Option<ResMut<'w, NetLink>>,
+    inbox: ResMut<'w, NetInbox>,
+    next: ResMut<'w, NextState<AppState>>,
+    notice: ResMut<'w, crate::net::Notice>,
 }
 
 /// First frame of the session: the simulation is made to match the campaign.
@@ -407,77 +437,80 @@ fn begin(mut c: ResMut<ActiveCampaign>, mut s: Session) {
     }
     c.started = true;
     let c = &mut *c;
-    let sim = &mut s.combat.sim;
-    let world = c.state.world_state();
-    for &(o, side) in &world.owners {
-        sim.set_side(o as usize, side == Side::Blue, side == Side::Neutral);
-    }
-    for &o in &world.destroyed {
-        sim.remove_object(o as usize);
-    }
-    for &o in &world.intel {
-        sim.set_intel(o as usize, true);
-    }
-    for p in &c.state.places {
-        if p.owner != Side::Neutral {
-            sim.place_defences(p.x, p.y, p.airfield.is_some(), p.owner == Side::Blue);
+    c.aircraft = airframe_of(s.settings.aircraft);
+    match c.role {
+        Role::Client => s.combat.sim.make_mirror(c.me.0),
+        Role::Local | Role::Host => {
+            let host = c.host.as_mut().expect("host");
+            host.state.rename(HOST_PLAYER, &pilot_name());
+            let events = host.begin(&mut s.combat.sim);
+            if let Some(NetLink::Host(server)) = s.link.as_deref_mut() {
+                server.route(&events);
+            }
+            handle(c, &mut s, events);
+            drain_sim(c, &mut s);
         }
     }
     if let Some(t) = s.theater.as_deref_mut() {
-        mark_friendly(t, &c.state);
+        mark_friendly(t, &s.combat.sim);
     }
-    let events = c.state.after_load();
-    apply(c, &mut s, events);
-    drain_sim(&mut s);
-    let base = default_base(&c.state);
+    let base = stealth_host::glue::default_base(c.state());
     park(c, &mut s, base);
     c.ui.tab = ops::test_tab().unwrap_or(ops::Tab::Board);
+    // A returning client's sortie goes on where his aircraft is.
+    if let Some(r) = c.resume.take() {
+        begin_sortie(c, &mut s, &r.sortie, &r.state);
+    }
     // Test aid: `--campaign-insert` orders an insertion against the nearest enemy place.
     if std::env::args().any(|a| a == "--campaign-insert")
-        && let Some(&place) = c.state.front(Side::Blue).first()
+        && let Some(&place) = c.state().front(Side::Blue).first()
     {
-        match c.state.apply(ME, Command::OrderInsertion { place }) {
-            Ok(ev) => apply(c, &mut s, ev),
-            Err(e) => warn!("--campaign-insert: {e}"),
-        }
+        c.actions.push(Action::OrderInsertion { place });
     }
 }
 
-/// The friendly side's base nearest the front (where the player waits between sorties).
-fn default_base(state: &CampaignState) -> Option<usize> {
-    let front = state.front(Side::Blue);
-    let (x, y) =
-        front.first().and_then(|&p| state.place(p)).map_or((0x4000, 0x4000), |p| (p.x, p.y));
-    state.nearest_base(Side::Blue, x, y).map(|b| b as usize)
-}
-
-/// The flight model's landing corridors follow the campaign's owners (friendly bases are the
-/// ones it lands on).
-fn mark_friendly(t: &mut crate::world::Theater, state: &CampaignState) {
-    for s in &state.sites {
-        let Some(o) = t.world.objects.get_mut(s.object as usize) else { continue };
-        if (o.x as i32, o.y as i32) != (s.x, s.y) {
+/// The flight model's landing corridors follow the places' owners (friendly bases are the
+/// ones it lands on), as the simulation has them.
+fn mark_friendly(t: &mut crate::world::Theater, sim: &stealth_sim::Sim) {
+    for (i, so) in sim.objects().iter().enumerate().skip(3) {
+        if so.flags & (oflags::AIRFIELD | oflags::CARRIER) == 0 {
+            continue;
+        }
+        let Some(o) = t.world.objects.get_mut(i) else { continue };
+        if (o.x as i32, o.y as i32) != (so.x, so.y) {
             continue;
         }
         let mut f = o.target_flags as u16 & !0x500;
-        match state.owner(s.object) {
-            Some(Side::Blue) => f |= 0x400,
-            Some(Side::Neutral) => f |= 0x100,
-            _ => {}
-        }
+        f |= (so.flags & (oflags::FRIENDLY | oflags::NEUTRAL)) as u16;
         o.target_flags = f as i16;
     }
 }
 
-/// Events the campaign's calls raised in the simulation (outside its steps): tiles destroyed
-/// and repaired.
-fn drain_sim(s: &mut Session) {
-    for e in s.combat.sim.take_events() {
-        match e {
+/// Events the host's calls raised in the simulation (outside its steps): tiles destroyed and
+/// repaired, rearming; on a listen server the players get them too.
+fn drain_sim(c: &mut ActiveCampaign, s: &mut Session) {
+    let Some(host) = c.host.as_mut() else { return };
+    let events = host.take_sim_events(&mut s.combat.sim);
+    if let Some(NetLink::Host(server)) = s.link.as_deref_mut() {
+        server.after_step(&events);
+    }
+    for e in events {
+        if e.event.is_private() && PlayerId(e.pilot) != c.me {
+            continue;
+        }
+        match e.event {
             SimEvent::TileDestroyed(t) => {
                 s.tiles.set(t.level as usize, t.col, t.row, t.index, t.shape)
             }
             SimEvent::TileRestored(t) => s.tiles.clear(t.level as usize, t.col, t.row, t.index),
+            SimEvent::Resupplied => {
+                let fuel = s.constants.fuel;
+                if let Ok((mut a, _)) = s.player.single_mut() {
+                    a.fuel = fuel;
+                    a.ended = None;
+                    a.has_flown = false;
+                }
+            }
             _ => {}
         }
     }
@@ -491,7 +524,6 @@ fn park(c: &mut ActiveCampaign, s: &mut Session, base: Option<usize>) {
     c.crash_timer = 0.0;
     let base = base.or(c.parked);
     c.parked = base;
-    s.combat.sim.end_sortie(7);
     s.combat.campaign_events.clear();
     if let Some(b) = base {
         let st = s.combat.sim.start_state_at(b);
@@ -500,8 +532,9 @@ fn park(c: &mut ActiveCampaign, s: &mut Session, base: Option<usize>) {
     s.view.view = crate::camera::View::Cockpit;
 }
 
-/// Puts the aircraft at a start state (fresh, on the ground, engines idle).
-fn place_player(s: &mut Session, st: &stealth_sim::PlayerState, base: usize) {
+/// Puts the aircraft at a state: fresh on the runway, or in the air where a returning
+/// player's aircraft is.
+fn place_player(s: &mut Session, st: &PlayerState, base: usize) {
     let carrier = s.combat.sim.objects().get(base).is_some_and(|o| o.flags & oflags::CARRIER != 0);
     let fuel = s.constants.fuel;
     let Ok((mut a, mut pos)) = s.player.single_mut() else { return };
@@ -509,6 +542,15 @@ fn place_player(s: &mut Session, st: &stealth_sim::PlayerState, base: usize) {
     *a = Aircraft::new_on_runway(fuel);
     a.altitude = (p.y / crate::world::WU) as f32;
     a.orientation = Aircraft::from_euler(bam(st.heading as f32), 0.0, 0.0);
+    if !st.on_ground {
+        a.altitude = st.altitude as f32;
+        a.orientation =
+            Aircraft::from_euler(bam(st.heading as f32), bam(st.pitch as f32), bam(st.roll as f32));
+        a.on_ground = false;
+        a.gear_down = !st.gear_up;
+        a.velocity = st.velocity as f32;
+        a.has_flown = true;
+    }
     pos.0 = p;
 }
 
@@ -521,10 +563,7 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
     }
     // END SORTIE from the in-flight menu.
     if std::mem::take(&mut s.combat.quit) && c.phase == Phase::Sortie {
-        s.combat.sim.end_sortie(7);
-        for e in s.combat.sim.take_events() {
-            s.combat.campaign_events.push(e);
-        }
+        c.actions.push(Action::EndSortie { outcome: 7 });
     }
     // The flight model ended the flight (its ground model differs in detail) and the
     // simulation did not follow: the sortie ends anyway.
@@ -532,12 +571,13 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
         let ended = s.player.single().ok().and_then(|(a, _)| a.ended);
         match ended {
             Some(FlightEnd::Crash | FlightEnd::BadLanding) if s.combat.sim.chute().is_none() => {
-                c.crash_timer += dt;
+                if c.crash_timer >= 0.0 {
+                    c.crash_timer += dt;
+                }
                 if c.crash_timer > 3.0 {
+                    c.crash_timer = -1.0;
                     let outcome = if ended == Some(FlightEnd::BadLanding) { 5 } else { 1 };
-                    s.combat.sim.end_sortie(outcome);
-                    let ev = s.combat.sim.take_events();
-                    s.combat.campaign_events.extend(ev);
+                    c.actions.push(Action::EndSortie { outcome });
                 }
             }
             // Stopped on a runway the simulation does not count as a landing: the prompt.
@@ -545,7 +585,7 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
                 c.crash_timer += dt;
                 if c.crash_timer > 3.0 {
                     let p = s.combat.sim.player();
-                    c.landed = c.state.nearest_base(Side::Blue, p.mx, p.my).map(|b| b as usize);
+                    c.landed = c.state().nearest_base(Side::Blue, p.mx, p.my).map(|b| b as usize);
                 }
             }
             _ => c.crash_timer = 0.0,
@@ -553,95 +593,32 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
     }
     // Test aid: take a mission of the board at once.
     if c.phase == Phase::Ops
-        && c.state.clock > 2.0
+        && c.state().clock > 2.0
         && let Some(n) = ops::test_take()
         && !std::mem::replace(&mut c.ui.test_taken, true)
     {
         let flown: Vec<u32> =
-            c.state.board.iter().filter(|o| !o.kind.ai_flown()).map(|o| o.id).collect();
+            c.state().board.iter().filter(|o| !o.kind.ai_flown()).map(|o| o.id).collect();
         if let Some(&offer) = flown.get(n.min(flown.len().saturating_sub(1))) {
-            match c.state.apply(ME, Command::TakeMission { offer, base: None, aircraft: Default::default() }) {
-                Ok(ev) => apply(c, &mut s, ev),
-                Err(e) => warn!("--campaign-take: {e}"),
-            }
-        }
-    }
-    // The simulation's events as reports.
-    let sortie = c.state.sortie(ME).cloned();
-    let mut reports = Vec::new();
-    let mut ended = None;
-    for e in std::mem::take(&mut s.combat.campaign_events) {
-        match e {
-            SimEvent::GroundDestroyed { object, .. } if object > 2 => {
-                let by = (c.phase == Phase::Sortie).then_some(ME);
-                reports.push(Report::ObjectDestroyed { object: object as u16, by });
-            }
-            SimEvent::CampaignFlightDestroyed { unit, tag, by_player, .. } => {
-                let u = s.combat.sim.flights().get(unit).copied().unwrap_or_default();
-                let blue = s.combat.sim.campaign_flight(unit).is_some_and(|f| f.blue);
-                reports.push(Report::FlightDestroyed {
-                    tag,
-                    side: side_of(blue),
-                    x: u.x,
-                    y: u.y,
-                    by: by_player.then_some(ME),
+            let loadout = briefed_loadout(c, offer, None, c.aircraft);
+            if let Some(loadout) = loadout {
+                let aircraft = c.aircraft;
+                c.actions.push(Action::TakeMission {
+                    offer,
+                    base: None,
+                    aircraft,
+                    loadout,
+                    route: None,
                 });
             }
-            SimEvent::CampaignFlightLanded { tag, x, y, .. } => {
-                reports.push(Report::FlightLanded { tag, x, y })
-            }
-            SimEvent::ObjectiveDone { primary: true } => {
-                if let Some(Objective::Recon { object, .. }) =
-                    sortie.as_ref().map(|s| &s.offer.objective)
-                {
-                    reports.push(Report::PhotoTaken { player: ME, object: *object });
-                }
-            }
-            SimEvent::SortieEnded(e) => ended = Some(e),
-            SimEvent::LandedAtBase { object } if c.phase == Phase::Sortie => {
-                c.landed = Some(object);
-                s.msgs.show("Landed - rearm or end the sortie");
-            }
-            _ => {}
         }
     }
-    // Enemy radars friendly aircraft pick up, once a second.
-    c.spot_timer += dt;
-    if c.spot_timer > 1.0 {
-        c.spot_timer = 0.0;
-        reports.extend(spotted(&c.state, &s.combat.sim));
-    }
-    for k in std::mem::take(&mut s.combat.aaa_killed) {
-        let by = (c.phase == Phase::Sortie).then_some(ME);
-        reports.push(Report::AaaDestroyed { index: k as u32, by });
-    }
-    let view = world_view(&s.combat.sim);
-    let events = c.state.tick(dt as f64, &view, &reports);
-    apply(c, &mut s, events);
-    if let Some(e) = ended
-        && c.phase == Phase::Sortie
-    {
-        let (end, title) = sortie_end(&e);
-        let started = c.state.sortie(ME).map_or(c.state.clock, |s| s.started);
-        if let Ok(events) = c.state.apply(ME, Command::EndSortie { end }) {
-            for ev in events {
-                if let CampaignEvent::SortieFinished { record, .. } = ev {
-                    let news = c
-                        .state
-                        .log
-                        .iter()
-                        .filter(|l| l.time >= started)
-                        .map(|l| l.text.clone())
-                        .collect();
-                    c.debrief = Some(SortieDebrief { record, title: title.into(), news });
-                }
-            }
-        }
-        c.landed = None;
-        c.end_timer = Some(0.0);
-        s.msgs.show(title);
-    }
-    drain_sim(&mut s);
+    let events = match c.role {
+        Role::Client => client_frame(c, &mut s, dt),
+        Role::Local | Role::Host => host_frame(c, &mut s, dt),
+    };
+    handle(c, &mut s, events);
+    drain_sim(c, &mut s);
     // The debrief comes up a few seconds after the end (the chute is down by then).
     if let Some(t) = c.end_timer.as_mut() {
         *t += dt;
@@ -653,90 +630,217 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
     }
     // The sky's clock.
     let day = 86_400.0 * 30.0;
-    s.combat.sky_seconds = Some(((c.state.sky_hours() * 3600.0) % day) as f32);
+    s.combat.sky_seconds = Some(((c.state().sky_hours() * 3600.0) % day) as f32);
     // Saved now and then.
     c.save_timer += dt;
     if c.save_timer > SAVE_EVERY {
         c.save_timer = 0.0;
-        save::save(&c.name, &c.state);
+        c.save();
     }
 }
 
-/// Applies the campaign's events to the simulation and the cockpit.
-fn apply(c: &mut ActiveCampaign, s: &mut Session, events: Vec<CampaignEvent>) {
-    for e in events {
-        let sim = &mut s.combat.sim;
+/// The stores the briefing would give a mission of the board.
+pub fn briefed_loadout(
+    c: &ActiveCampaign,
+    offer: u32,
+    base: Option<u16>,
+    aircraft: Airframe,
+) -> Option<crate::loadout::PlannedLoadout> {
+    let o = c.state().board.iter().find(|o| o.id == offer)?.clone();
+    let m = sortie_mission(&c.mission, c.state(), &preview(&o, base.unwrap_or(o.base), aircraft));
+    Some(crate::loadout::PlannedLoadout::of(&m, kind_of(aircraft)))
+}
+
+/// A sortie not taken yet (for its briefing).
+pub fn preview(o: &stealth_campaign::MissionOffer, base: u16, aircraft: Airframe) -> Sortie {
+    Sortie { id: 0, offer: o.clone(), base, aircraft, started: 0.0, progress: default() }
+}
+
+/// The campaign is run here: the Ops screen's actions, the players' commands (listen
+/// server), the campaign's frame.
+fn host_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEvent> {
+    let me = c.me;
+    let mut out = Vec::new();
+    let host = c.host.as_mut().expect("host");
+    let combat = &mut *s.combat;
+    let sim = &mut combat.sim;
+    let mut server = match s.link.as_deref_mut() {
+        Some(NetLink::Host(server)) => Some(server),
+        _ => None,
+    };
+    // The players who joined: their messages.
+    if let Some(server) = server.as_deref_mut() {
+        out.extend(server.pump(host, sim, std::time::Instant::now()));
+    }
+    for a in std::mem::take(&mut c.actions) {
+        let result = match a {
+            Action::TakeMission { offer, base, aircraft, loadout, route } => {
+                let stores = Stores { stations: loadout.stations(), select: 0 };
+                c.take_loadout = Some(loadout);
+                c.take_route = route;
+                host.take_mission(sim, me, offer, base, aircraft, Some(stores))
+            }
+            Action::OrderInsertion { place } => host.order_insertion(sim, me, place),
+            Action::EndSortie { outcome } => Ok(host.end_sortie(sim, me, outcome)),
+            Action::Rearm { loadout } => {
+                host.rearm(sim, me, &Stores { stations: loadout.stations(), select: 0 });
+                s.msgs.show("Rearmed and refuelled");
+                c.landed = None;
+                Ok(Vec::new())
+            }
+        };
+        match result {
+            Ok(ev) => {
+                c.ui.error = None;
+                if let Some(server) = server.as_deref_mut() {
+                    server.route(&ev);
+                }
+                out.extend(ev);
+            }
+            Err(e) => c.ui.error = Some(e),
+        }
+    }
+    // The simulation's events of this frame's steps.
+    let events = std::mem::take(&mut combat.campaign_events);
+    let ev = host.tick(sim, dt as f64, &events);
+    if let Some(server) = server {
+        server.route(&ev);
+        if combat.steps > 0 {
+            server.send_frame(host, sim, std::time::Instant::now());
+        }
+        c.roster = server.roster(host, sim);
+    }
+    out.extend(ev);
+    out
+}
+
+/// The server runs the campaign: the Ops screen's actions go to it, its news come back.
+fn client_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEvent> {
+    let Some(NetLink::Client(client)) = s.link.as_deref_mut() else {
+        return Vec::new();
+    };
+    for a in std::mem::take(&mut c.actions) {
+        let msg = match a {
+            Action::TakeMission { offer, base, aircraft, loadout, route } => {
+                let stores = Stores { stations: loadout.stations(), select: 0 };
+                c.take_loadout = Some(loadout);
+                c.take_route = route;
+                ToServer::TakeMission { offer, base, aircraft, stores: Some(stores) }
+            }
+            Action::OrderInsertion { place } => ToServer::OrderInsertion { place },
+            Action::EndSortie { outcome } => ToServer::EndSortie { outcome },
+            Action::Rearm { loadout } => {
+                s.msgs.show("Rearmed and refuelled");
+                c.landed = None;
+                let fuel = s.constants.fuel;
+                if let Ok((mut a, _)) = s.player.single_mut() {
+                    a.fuel = fuel;
+                    a.ended = None;
+                    a.has_flown = false;
+                }
+                ToServer::Rearm { stores: Stores { stations: loadout.stations(), select: 0 } }
+            }
+        };
+        client.send(&msg);
+    }
+    // The copy's clock runs on between the server's updates.
+    if let Some(st) = c.copy.as_mut() {
+        st.clock += dt as f64;
+    }
+    let mut out = Vec::new();
+    for e in std::mem::take(&mut s.inbox.campaign) {
+        use stealth_net::client::ClientEvent as E;
         match e {
-            CampaignEvent::InsertionLaunched { from, target, tags, .. } => {
-                for (n, tag) in tags.into_iter().enumerate() {
-                    sim.spawn_insertion(from as usize, target as usize, tag, n);
-                }
+            E::Host(ev) => out.push(ev),
+            E::Campaign(st) => {
+                let clock = c.copy.as_ref().map_or(0.0, |s| s.clock);
+                let mut st = *st;
+                // The Ops screen's clock does not jump back.
+                st.clock = st.clock.max(clock - 1.0);
+                c.copy = Some(st);
             }
-            CampaignEvent::PlaceCaptured { place, side, members, removed } => {
-                let blue = side == Side::Blue;
-                for &m in &members {
-                    sim.restore_object(m as usize);
-                    sim.set_side(m as usize, blue, false);
-                }
-                for &r in &removed {
-                    sim.remove_object(r as usize);
-                }
-                if let Some(p) = c.state.place(place) {
-                    sim.place_defences(p.x, p.y, p.airfield.is_some(), blue);
-                }
-                if let Some(t) = s.theater.as_deref_mut() {
-                    mark_friendly(t, &c.state);
-                }
+            E::Error(e) => c.ui.error = Some(e),
+            E::Roster(r) => c.roster = r,
+            E::Closed(why) => {
+                s.notice.0 = Some(format!("Disconnected: {why}"));
+                c.exit = true;
+                s.next.set(AppState::Menu);
             }
-            CampaignEvent::Repaired { object } => sim.restore_object(object as usize),
-            CampaignEvent::IntelGained { objects, .. } => {
-                for o in objects {
-                    sim.set_intel(o as usize, true);
-                }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The campaign's airframe of a game aircraft, and back.
+pub fn airframe_of(k: crate::aircraft::AircraftKind) -> Airframe {
+    match k {
+        crate::aircraft::AircraftKind::F117 => Airframe::F117,
+        crate::aircraft::AircraftKind::F16 => Airframe::F16,
+    }
+}
+
+pub fn kind_of(a: Airframe) -> crate::aircraft::AircraftKind {
+    match a {
+        Airframe::F117 => crate::aircraft::AircraftKind::F117,
+        Airframe::F16 => crate::aircraft::AircraftKind::F16,
+    }
+}
+
+/// The host's events for this player and everybody.
+fn handle(c: &mut ActiveCampaign, s: &mut Session, events: Vec<HostEvent>) {
+    let me = c.me;
+    for e in events {
+        match e {
+            HostEvent::SortieStarted { player, sortie, start } if player == me => {
+                begin_sortie(c, s, &sortie, &start);
             }
-            CampaignEvent::IntelExpired { objects, .. } => {
-                for o in objects {
-                    sim.set_intel(o as usize, false);
-                }
+            HostEvent::SortieFinished { player, debrief } if player == me => {
+                s.msgs.show(debrief.title.clone());
+                c.debrief = Some(debrief);
+                c.landed = None;
+                c.end_timer = Some(0.0);
             }
-            CampaignEvent::LaunchFighters { tag, side, from, x, y } => {
-                sim.spawn_fighter(from as usize, x, y, tag, side == Side::Blue);
+            HostEvent::Landed { player, base } if player == me && c.phase == Phase::Sortie => {
+                c.landed = Some(base);
+                s.msgs.show("Landed - rearm or end the sortie");
             }
-            CampaignEvent::Message(text) => {
+            HostEvent::Campaign(CampaignEvent::Message(text)) => {
                 info!("campaign: {text}");
-                s.msgs.show(text)
+                s.msgs.show(text);
             }
-            CampaignEvent::ObjectiveAchieved { player, .. } if player == ME => {
+            HostEvent::Campaign(CampaignEvent::ObjectiveAchieved { player, .. })
+                if player == me =>
+            {
                 s.msgs.show("Objective achieved");
             }
-            CampaignEvent::SortieStarted { player, sortie } if player == ME => {
-                begin_sortie(c, s, &sortie);
+            HostEvent::Campaign(CampaignEvent::PlaceCaptured { .. }) => {
+                if let Some(t) = s.theater.as_deref_mut() {
+                    mark_friendly(t, &s.combat.sim);
+                }
             }
             _ => {}
         }
     }
 }
 
-/// A sortie starts: the aircraft on the base's runway with the mission's stores and route.
-fn begin_sortie(c: &mut ActiveCampaign, s: &mut Session, sortie: &Sortie) {
-    let objective = match sortie.offer.objective {
-        Objective::Recon { object, .. } => Some((1, object as usize)),
-        Objective::Strike { airfield, .. } => Some((2, airfield as usize)),
-        Objective::AntiShip { ship } => Some((2, ship as usize)),
-        Objective::Sead { ref sites, .. } => sites.first().map(|&o| (2, o as usize)),
-        _ => None,
-    };
+/// A sortie starts: the aircraft (the chosen type) on the base's runway with the mission's
+/// stores and route.
+fn begin_sortie(c: &mut ActiveCampaign, s: &mut Session, sortie: &Sortie, start: &PlayerState) {
     let base = sortie.base as usize;
-    let st = s.combat.sim.respawn_player(base, objective);
-    let m = sortie_mission(&c.mission, &c.state, sortie);
-    let aircraft = s.settings.aircraft;
+    let m = sortie_mission(&c.mission, c.state(), sortie);
+    let aircraft = kind_of(sortie.aircraft);
+    c.aircraft = sortie.aircraft;
+    // Another aircraft than the last sortie's: its cockpit, model and flight model.
+    if s.settings.aircraft != aircraft {
+        s.settings.aircraft = aircraft;
+    }
+    *s.constants = crate::flight::constants_for(aircraft, c.rules.no_crashes);
     let loadout = c
         .take_loadout
         .take()
         .filter(|l| l.fits(&m, aircraft))
         .unwrap_or_else(|| crate::loadout::PlannedLoadout::of(&m, aircraft));
-    s.combat.sim.set_loadout(&loadout.stations());
-    s.combat.sim.select_bay(loadout.first_choice(&m));
     let route = c.take_route.take().filter(|r| r.fits(&m)).unwrap_or_else(|| PlannedRoute::of(&m));
     *s.wps = Waypoints {
         points: route
@@ -756,7 +860,7 @@ fn begin_sortie(c: &mut ActiveCampaign, s: &mut Session, sortie: &Sortie) {
     s.kneeboard.new_mission();
     s.combat.record = default();
     s.combat.campaign_events.clear();
-    place_player(s, &st, base);
+    place_player(s, start, base);
     s.view.view = crate::camera::View::Cockpit;
     s.menu.open = false;
     c.phase = Phase::Sortie;
@@ -767,94 +871,17 @@ fn begin_sortie(c: &mut ActiveCampaign, s: &mut Session, sortie: &Sortie) {
     s.msgs.show(sortie.offer.title.clone());
 }
 
-/// Stores for a kind of mission (weapon table indices, the generator's bays).
-fn stores(kind: MissionKind) -> [i16; 4] {
-    match kind {
-        MissionKind::Recon => [16, 0, 2, 0],
-        MissionKind::Sead => [2, 2, 5, 0],
-        MissionKind::Cas => [5, 7, 5, 0],
-        MissionKind::Strike => [6, 8, 6, 0],
-        MissionKind::AntiShip => [4, 3, 5, 0],
-        MissionKind::Cap | MissionKind::Escort | MissionKind::Insertion => [1, 0, 1, 0],
-    }
-}
-
-/// The sortie as a mission (briefing, kneeboard, route, stores): from the base to the target
-/// and back.
-fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) -> Mission {
-    use stealth_mission::{Base, Bay, MapPoint, OrdersLine};
-    let mut m = base.clone();
-    let o = &sortie.offer;
-    let b = state.site(sortie.base);
-    let (bx, by) = b.map_or((0x4000, 0x4000), |s| (s.x, s.y));
-    let home = Base {
-        object_index: sortie.base as i16,
-        name: b.map(|s| s.name.clone()).unwrap_or_default(),
-        position: MapPoint { x: bx, y: by },
-        carrier: b.is_some_and(|s| s.kind == stealth_campaign::SiteKind::Carrier),
-        neutral: false,
-        distance: 0,
-    };
-    m.takeoff = home.clone();
-    m.landing = home;
-    let target = MapPoint { x: o.x, y: o.y };
-    let mid = MapPoint { x: (bx + o.x) / 2, y: (by + o.y) / 2 };
-    m.waypoints = [mid, target, target, MapPoint { x: bx, y: by }];
-    m.primary.place_name = o.title.clone();
-    m.primary.position = target;
-    m.primary.mission_type = if o.kind == MissionKind::Recon { 1 } else { 2 };
-    m.primary.type_name = o.kind.name().into();
-    m.secondary.position = target;
-    m.secondary.mission_type = 0;
-    let what = describe(o.kind);
-    m.briefing.title = o.title.clone();
-    m.briefing.primary_objective = what.to_string();
-    m.briefing.secondary_objective = String::new();
-    m.orders.primary = o.title.to_ascii_uppercase();
-    m.orders.secondary = String::new();
-    m.orders.return_to = format!("RETURN TO {}", m.landing.name.to_ascii_uppercase());
-    m.orders.lines = vec![
-        OrdersLine { text: o.title.clone(), color: 15 },
-        OrdersLine { text: what.into(), color: 11 },
-        OrdersLine { text: m.orders.return_to.clone(), color: 11 },
-    ];
-    m.loadout.bays =
-        stores(o.kind).iter().map(|&w| Bay { weapon: w, name: String::new(), count: 1 }).collect();
-    m.loadout.usable_bays =
-        if m.settings.plane == stealth_mission::Plane::Lockheed { 2 } else { 4 };
-    m
-}
-
-/// What a kind of mission asks the pilot for.
-pub fn describe(kind: MissionKind) -> &'static str {
-    match kind {
-        MissionKind::Recon => {
-            "Photograph the target: its defences are then known (spotted from twice the range, shorter radar range) for an hour"
-        }
-        MissionKind::Sead => "Destroy the SAM sites and radars defending the place",
-        MissionKind::Cap => {
-            "Hold the air over the point for 10 minutes or shoot down two enemy aircraft"
-        }
-        MissionKind::Cas => "Destroy the guns and MANPADS teams around the place",
-        MissionKind::AntiShip => "Sink the enemy ship",
-        MissionKind::Strike => {
-            "Destroy the airfield: no enemy aircraft take off from it until it is repaired"
-        }
-        MissionKind::Escort => "Cover the insertion helicopters until they land",
-        MissionKind::Insertion => {
-            "Helicopters fly troops in from the nearest friendly base; one landing takes the place"
-        }
-    }
-}
-
-/// Leaving the flight session: the campaign is saved and closed, and the Ops screen's egui
-/// context goes with it (the menu brings its own).
+/// Leaving the flight session: the campaign is saved and closed (a client leaves the server,
+/// a listen server stops), and the Ops screen's egui context goes with it (the menu brings
+/// its own).
+#[allow(clippy::too_many_arguments)]
 fn leave(
     mut commands: Commands,
     c: Option<Res<ActiveCampaign>>,
     cams: Query<Entity, With<ops::OpsCamera>>,
     mut view: ResMut<UnitView>,
     mut sites: ResMut<crate::world::StreamSites>,
+    link: Option<ResMut<NetLink>>,
 ) {
     for e in &cams {
         commands.entity(e).try_despawn();
@@ -865,8 +892,15 @@ fn leave(
     sites.follow = None;
     #[cfg(feature = "xr")]
     commands.remove_resource::<crate::vr_menu::WorldPanel>();
+    if let Some(mut link) = link {
+        match &mut *link {
+            NetLink::Client(client) => client.leave(),
+            NetLink::Host(server) => server.shutdown("The host left the game"),
+        }
+        commands.remove_resource::<NetLink>();
+    }
     if let Some(c) = c {
-        save::save(&c.name, &c.state);
+        c.save();
         commands.remove_resource::<ActiveCampaign>();
     }
 }

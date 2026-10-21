@@ -62,6 +62,11 @@ pub struct Prefs {
     /// 2: relative to the aircraft's own (`AircraftSpec::vr_scale`).
     #[serde(default)]
     pub vr_scale_version: u32,
+    /// Multiplayer (`MenuState`).
+    pub player_name: String,
+    pub server_addr: String,
+    pub host_port: u16,
+    pub max_players: u8,
 }
 
 const VR_SCALE_VERSION: u32 = 2;
@@ -96,6 +101,10 @@ impl Default for Prefs {
             vr_cockpit_scale: DEFAULT_VR_COCKPIT_SCALE,
             aircraft: Default::default(),
             vr_scale_version: VR_SCALE_VERSION,
+            player_name: menu.player_name,
+            server_addr: menu.server_addr,
+            host_port: menu.host_port,
+            max_players: menu.max_players,
         }
     }
 }
@@ -143,6 +152,10 @@ impl Prefs {
             vr_cockpit_scale: s.vr_cockpit_scale,
             aircraft: s.aircraft,
             vr_scale_version: VR_SCALE_VERSION,
+            player_name: menu.player_name.clone(),
+            server_addr: menu.server_addr.clone(),
+            host_port: menu.host_port,
+            max_players: menu.max_players,
         }
     }
 
@@ -156,6 +169,14 @@ impl Prefs {
         menu.weather = self.weather;
         menu.cloud_cover = self.cloud_cover.map(|c| c.min(100));
         menu.start_hour = self.start_hour.map(|h| h.min(23));
+        menu.player_name = self.player_name.clone();
+        menu.server_addr = self.server_addr.clone();
+        if self.host_port != 0 {
+            menu.host_port = self.host_port;
+        }
+        if self.max_players != 0 {
+            menu.max_players = self.max_players.min(stealth_net::protocol::MAX_PLAYERS as u8);
+        }
         s.no_crashes |= self.no_crashes;
         s.realistic_damage |= self.realistic_damage;
         s.realistic_guidance |= self.realistic_guidance;

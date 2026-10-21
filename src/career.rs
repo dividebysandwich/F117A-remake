@@ -372,7 +372,15 @@ pub fn career_ui(
                     }
                 }
                 section(ui, "New pilot");
-                ui.text_edit_singleline(&mut w.new_name);
+                crate::text_entry::text_entry(
+                    ui,
+                    "new_pilot",
+                    &mut w.new_name,
+                    24,
+                    crate::text_entry::Charset::Name,
+                    settings.vr,
+                    "Name",
+                );
                 let name = w.new_name.trim().to_string();
                 let taken = w.pilots.iter().any(|p| p.key() == file_key(&name));
                 if ui

@@ -43,9 +43,21 @@ impl Plugin for FlightPlugin {
 pub struct FlightSystems;
 
 /// The flown aircraft's constants; crash protection picks the "no crashes" landing skill (before the combat simulation starts).
-fn apply_settings(settings: Res<Settings>, mut k: ResMut<FlightConstants>) {
-    *k = settings.aircraft.spec().flight();
-    k.landing = if settings.no_crashes { 0 } else { 1 };
+fn apply_settings(
+    settings: Res<Settings>,
+    mut k: ResMut<FlightConstants>,
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
+) {
+    // A campaign's rules are its host's (a coop server's).
+    let no_crashes = campaign.map_or(settings.no_crashes, |c| c.rules.no_crashes);
+    *k = constants_for(settings.aircraft, no_crashes);
+}
+
+/// The constants of an aircraft, crash protection picking the "no crashes" landing skill.
+pub fn constants_for(aircraft: crate::aircraft::AircraftKind, no_crashes: bool) -> FlightConstants {
+    let mut k = aircraft.spec().flight();
+    k.landing = if no_crashes { 0 } else { 1 };
+    k
 }
 
 /// BAM -> radians.

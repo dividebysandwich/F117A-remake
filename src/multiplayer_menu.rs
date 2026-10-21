@@ -1,0 +1,381 @@
+//! The menu's MULTIPLAYER window: coop in the dynamic campaign. Join a server by its address,
+//! or host a campaign here and fly in it (a listen server). A dedicated server is started
+//! from the command line (`--dedicated`, `dedicated.rs`).
+//!
+//! The host's rules (realism, missile guidance, crashes, time of day, realistic weapons) are
+//! everybody's; each player keeps his own cockpit, flight model, avionics, HUD and graphics,
+//! and picks his aircraft for each sortie.
+
+use bevy::prelude::*;
+use bevy_egui::{EguiContexts, egui};
+use stealth_campaign::{CampaignSetup, PlayerId};
+use stealth_host::{Host, save};
+use stealth_net::client::{Client, ClientEvent};
+use stealth_net::server::Server;
+
+use crate::campaign::{ActiveCampaign, Role};
+use crate::menu::{AMBER, BRIGHT, DIM, GREEN, MenuState, THEATERS, big_button, section};
+use crate::mission::MissionData;
+use crate::net::{NetLink, Notice};
+use crate::settings::{AppState, MissionSetup};
+use crate::text_entry::{Charset, text_entry};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Page {
+    #[default]
+    Join,
+    Host,
+}
+
+#[derive(Resource, Default)]
+pub struct MultiplayerWindow {
+    pub open: bool,
+    page: Page,
+    /// Connecting to a server (until it takes the player in).
+    joining: Option<(Client, String)>,
+    status: Option<String>,
+    error: Option<String>,
+    saves: Vec<(String, String, f64)>,
+    sky_ratio: f32,
+    start_hour: f32,
+    /// `--host`: host a new campaign at once.
+    auto_host: bool,
+}
+
+impl MultiplayerWindow {
+    pub fn show(&mut self) {
+        self.open = true;
+        self.saves = save::list_saves();
+        self.error = None;
+        self.status = None;
+        if self.sky_ratio == 0.0 {
+            self.sky_ratio = 24.0;
+            self.start_hour = 8.0;
+        }
+    }
+}
+
+pub struct MultiplayerMenuPlugin;
+
+impl Plugin for MultiplayerMenuPlugin {
+    fn build(&self, app: &mut App) {
+        let open = std::env::args().any(|a| a == "--open-multiplayer");
+        let mut w = MultiplayerWindow::default();
+        if open {
+            w.show();
+        }
+        app.insert_resource(w)
+            .add_systems(
+                bevy_egui::EguiPrimaryContextPass,
+                multiplayer_window.run_if(in_state(AppState::Menu)),
+            )
+            .add_systems(Update, test_args.run_if(in_state(AppState::Menu)));
+    }
+}
+
+/// Test aids: `--connect <host[:port]>` joins a server, `--host` serves a new campaign (in
+/// `--theater`), both as `--name <pilot>` (else the saved name).
+fn test_args(
+    mut done: Local<bool>,
+    mut w: ResMut<MultiplayerWindow>,
+    mut state: ResMut<MenuState>,
+) {
+    if std::mem::replace(&mut *done, true) {
+        return;
+    }
+    let args: Vec<String> = std::env::args().collect();
+    let get = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
+    if let Some(name) = get("--name") {
+        state.player_name = name;
+    }
+    if let Some(addr) = get("--connect") {
+        w.show();
+        state.server_addr = addr.clone();
+        connect(&mut w, &addr, &state.player_name);
+    }
+    if let Some(code) = get("--theater")
+        && let Some(i) = THEATERS.iter().position(|t| t.0.eq_ignore_ascii_case(&code))
+    {
+        state.theater = i;
+    }
+    if args.iter().any(|a| a == "--host") {
+        w.show();
+        w.page = Page::Host;
+        w.auto_host = true;
+    }
+}
+
+fn connect(w: &mut MultiplayerWindow, addr: &str, name: &str) {
+    w.error = None;
+    match Client::connect(addr, name.trim()) {
+        Ok(c) => {
+            w.status = Some(format!("Connecting to {addr}..."));
+            w.joining = Some((c, addr.to_string()));
+        }
+        Err(e) => w.error = Some(format!("{addr}: {e}")),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn multiplayer_window(
+    mut commands: Commands,
+    mut contexts: EguiContexts,
+    mut w: ResMut<MultiplayerWindow>,
+    mut state: ResMut<MenuState>,
+    data: Option<Res<MissionData>>,
+    tables: Res<crate::flight::SimTables>,
+    mut setup: ResMut<MissionSetup>,
+    mut next: ResMut<NextState<AppState>>,
+    mut settings: ResMut<crate::settings::Settings>,
+    mut notice: ResMut<Notice>,
+) -> Result {
+    // A coop game that ended brings the menu back here, with why.
+    if let Some(n) = notice.0.take() {
+        w.show();
+        w.error = Some(n);
+    }
+    if !w.open {
+        return Ok(());
+    }
+    let Some(data) = data else { return Ok(()) };
+    let ctx = contexts.ctx_mut()?;
+    let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape)) && w.joining.is_none();
+    let mut join = false;
+    let auto_host = std::mem::take(&mut w.auto_host);
+    let mut host: Option<Result<(String, Host), String>> = None;
+    // Joining: what the server says.
+    if let Some((client, addr)) = w.joining.as_mut() {
+        let now = std::time::Instant::now();
+        let events = client.poll(now);
+        client.flush(now);
+        let addr = addr.clone();
+        for e in events {
+            match e {
+                ClientEvent::Connected => {
+                    w.status = Some(format!("Connected to {addr}, joining..."))
+                }
+                ClientEvent::Welcome { id, server, rules, state: st, resume } => {
+                    let Some((client, _)) = w.joining.take() else { break };
+                    match ActiveCampaign::client(server, *st, &data, rules, id) {
+                        Ok(mut c) => {
+                            c.resume = resume;
+                            commands.insert_resource(NetLink::Client(client));
+                            crate::campaign::start(&mut commands, c, &mut setup, &tables.start_dir);
+                            w.open = false;
+                            w.status = None;
+                            next.set(AppState::Flight);
+                        }
+                        Err(e) => w.error = Some(format!("{e:#}")),
+                    }
+                    break;
+                }
+                ClientEvent::Closed(why) => {
+                    w.joining = None;
+                    w.status = None;
+                    w.error = Some(format!("{addr}: {why}"));
+                }
+                _ => {}
+            }
+        }
+    }
+    let width = crate::menu::wide_width(ctx).min(1100.0);
+    crate::menu::menu_window(ctx, "Multiplayer", width).show(ctx, |ui| {
+        ui.label(egui::RichText::new("MULTIPLAYER").heading().color(BRIGHT));
+        ui.label(egui::RichText::new("Coop in the dynamic campaign: fly the war together").color(DIM));
+        ui.separator();
+        section(ui, "Your name");
+        text_entry(ui, "mp_name", &mut state.player_name, 24, Charset::Name, settings.vr, "Pilot name");
+        let named = !state.player_name.trim().is_empty();
+        if !named {
+            ui.label(egui::RichText::new("The other players know you by it").small().color(AMBER));
+        }
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            for (page, label) in [(Page::Join, "JOIN A GAME"), (Page::Host, "HOST A GAME")] {
+                if ui.selectable_label(w.page == page, egui::RichText::new(label).size(18.0)).clicked() {
+                    w.page = page;
+                    w.error = None;
+                }
+            }
+        });
+        ui.separator();
+        match w.page {
+            Page::Join => {
+                section(ui, "Server");
+                text_entry(
+                    ui,
+                    "mp_server",
+                    &mut state.server_addr,
+                    64,
+                    Charset::Address,
+                    settings.vr,
+                    "address or name[:port]",
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "An IP address or host name, port {} if none is given",
+                        stealth_net::DEFAULT_PORT
+                    ))
+                    .small()
+                    .color(DIM),
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if w.joining.is_some() {
+                        ui.add(egui::Spinner::new().color(GREEN));
+                        if ui.add(big_button("CANCEL")).clicked() {
+                            if let Some((mut c, _)) = w.joining.take() {
+                                c.leave();
+                            }
+                            w.status = None;
+                        }
+                    } else {
+                        let ready = named && !state.server_addr.trim().is_empty();
+                        join = ui.add_enabled(ready, big_button("CONNECT")).clicked();
+                    }
+                    if let Some(s) = &w.status {
+                        ui.label(egui::RichText::new(s).color(BRIGHT));
+                    }
+                });
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(
+                        "The server decides the rules (realism, guidance, crashes, time of day). \
+                         Your cockpit, flight model, avionics, HUD and graphics stay your own; \
+                         you pick your aircraft in each briefing.",
+                    )
+                    .color(DIM),
+                );
+            }
+            Page::Host => {
+                ui.horizontal(|ui| {
+                    ui.label("UDP port");
+                    ui.add(egui::DragValue::new(&mut state.host_port).range(1024..=65535));
+                    ui.add_space(20.0);
+                    ui.label("Players");
+                    ui.add(egui::Slider::new(
+                        &mut state.max_players,
+                        2..=stealth_net::protocol::MAX_PLAYERS as u8,
+                    ));
+                });
+                ui.label(
+                    egui::RichText::new("Other players join with this computer's address; open the UDP port in your router to play over the internet")
+                        .small()
+                        .color(DIM),
+                );
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.set_width(210.0);
+                        crate::menu::theater_options(ui, &mut state.theater);
+                    });
+                    ui.vertical(|ui| {
+                        ui.set_width(200.0);
+                        crate::menu::opponent_options(ui, &mut state.opponents);
+                        crate::menu::situation_options(ui, &mut state.roe);
+                    });
+                    ui.vertical(|ui| {
+                        ui.set_width(230.0);
+                        section(ui, "Rules for everybody");
+                        crate::menu::realism_options(ui, &mut settings);
+                        ui.checkbox(&mut settings.continuous_time, "Time of day (moonlit nights)");
+                        ui.checkbox(&mut state.lockheed, "Realistic F-117A weapons");
+                    });
+                    ui.vertical(|ui| {
+                        section(ui, "New campaign");
+                        let (_, theater) = THEATERS[state.theater.min(THEATERS.len() - 1)];
+                        ui.label(theater);
+                        ui.horizontal(|ui| {
+                            ui.label("Day and night:");
+                            for (ratio, label) in [(1.0, "real time"), (24.0, "1 h / day"), (48.0, "30 min / day")] {
+                                if ui.selectable_label(w.sky_ratio == ratio, label).clicked() {
+                                    w.sky_ratio = ratio;
+                                }
+                            }
+                        });
+                        if ui.add_enabled(named, big_button("HOST NEW")).clicked() || auto_host {
+                            let (code, _) = THEATERS[state.theater.min(THEATERS.len() - 1)];
+                            let secs = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map_or(0, |d| d.as_secs());
+                            let setup = CampaignSetup {
+                                theater: state.theater,
+                                theater_code: code.to_string(),
+                                roe: state.roe,
+                                opponents: state.opponents,
+                                seed: rand::random(),
+                                sky_ratio: w.sky_ratio,
+                                start_hour: w.start_hour,
+                            };
+                            let rules = crate::campaign::rules_of(&settings, state.lockheed);
+                            host = Some(
+                                Host::new(setup, &data.0, rules)
+                                    .map(|h| (format!("coop-{code}-{secs}"), h))
+                                    .map_err(|e| format!("{e:#}")),
+                            );
+                        }
+                        ui.add_space(6.0);
+                        section(ui, "Host a saved campaign");
+                        if w.saves.is_empty() {
+                            ui.label(egui::RichText::new("No saved campaigns").color(DIM));
+                        }
+                        for (name, code, hours) in w.saves.clone().into_iter().take(6) {
+                            let theater = THEATERS.iter().find(|t| t.0 == code).map_or(code.as_str(), |t| t.1);
+                            ui.horizontal(|ui| {
+                                ui.label(format!("{theater:<22} {hours:>5.1} h"));
+                                if ui.add_enabled(named, egui::Button::new("HOST")).clicked() {
+                                    let rules = crate::campaign::rules_of(&settings, state.lockheed);
+                                    host = Some(match save::load(&name) {
+                                        Ok(Some(st)) => Host::resume(st, &data.0, rules)
+                                            .map(|h| (name.clone(), h))
+                                            .map_err(|e| format!("{e:#}")),
+                                        Ok(None) => Err("The save is gone".into()),
+                                        Err(e) => Err(format!("{e:#}")),
+                                    });
+                                }
+                            });
+                        }
+                    });
+                });
+            }
+        }
+        if let Some(e) = &w.error {
+            ui.add_space(6.0);
+            ui.colored_label(AMBER, e);
+        }
+        ui.separator();
+        if ui.add_enabled(w.joining.is_none(), big_button("BACK")).clicked() {
+            close = true;
+        }
+    });
+    if join {
+        let (addr, name) = (state.server_addr.clone(), state.player_name.clone());
+        connect(&mut w, &addr, &name);
+    }
+    match host {
+        Some(Ok((name, h))) => {
+            let title = format!("{}'s campaign", state.player_name.trim());
+            match Server::new(
+                &title,
+                state.host_port,
+                state.max_players as usize,
+                Some(PlayerId(0)),
+            ) {
+                Ok(server) => {
+                    let c = ActiveCampaign::with_host(name, h, Role::Host);
+                    c.save();
+                    commands.insert_resource(NetLink::Host(server));
+                    crate::campaign::start(&mut commands, c, &mut setup, &tables.start_dir);
+                    w.open = false;
+                    next.set(AppState::Flight);
+                }
+                Err(e) => w.error = Some(format!("UDP port {}: {e}", state.host_port)),
+            }
+        }
+        Some(Err(e)) => w.error = Some(e),
+        None => {}
+    }
+    if close {
+        w.open = false;
+    }
+    Ok(())
+}

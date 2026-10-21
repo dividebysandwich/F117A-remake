@@ -20,7 +20,9 @@ impl Plugin for PlayerPlugin {
         )
         .add_systems(
             Update,
-            (readout, attach_own_model, own_model_visibility).run_if(in_state(AppState::Flight)),
+            (readout, respawn_own_model, attach_own_model, own_model_visibility)
+                .chain()
+                .run_if(in_state(AppState::Flight)),
         )
         .add_systems(OnExit(AppState::Flight), despawn_readout);
     }
@@ -267,6 +269,24 @@ fn attach_own_model(
                 e.insert(Mesh3d(h));
             }
         });
+    }
+}
+
+/// A campaign sortie in another aircraft than the last one: its model (and shadow) instead.
+fn respawn_own_model(
+    mut commands: Commands,
+    settings: Res<crate::settings::Settings>,
+    mut flown: Local<Option<crate::aircraft::AircraftKind>>,
+    models: Query<
+        Entity,
+        Or<(With<OwnModel>, With<OwnModelInterior>, With<crate::sim_render::OwnShadow>)>,
+    >,
+) {
+    let now = settings.aircraft;
+    if flown.replace(now).is_some_and(|was| was != now) {
+        for e in &models {
+            commands.entity(e).try_despawn();
+        }
     }
 }
 

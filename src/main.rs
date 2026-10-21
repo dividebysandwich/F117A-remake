@@ -34,6 +34,8 @@ mod menu;
 mod mfd;
 mod mission;
 mod models;
+mod multiplayer_menu;
+mod net;
 mod palette;
 mod palette_material;
 mod panel;
@@ -53,6 +55,7 @@ mod sound;
 mod stage;
 mod tacview;
 mod terrain;
+mod text_entry;
 mod trackcam;
 mod trails;
 mod viewer;
@@ -179,6 +182,8 @@ fn main() {
             csar_view::CsarViewPlugin,
             stage::StagePlugin,
             campaign::CampaignPlugin,
+            net::NetPlugin,
+            multiplayer_menu::MultiplayerMenuPlugin,
         ));
     mission::from_args(&mut app);
     campaign::from_args(&mut app);

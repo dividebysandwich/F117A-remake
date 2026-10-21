@@ -654,7 +654,7 @@ impl Sim {
     }
 
     /// Copy the flight model's state into the per-frame player view and flags.
-    fn ingest(&mut self, ps: &PlayerState) {
+    pub(crate) fn ingest(&mut self, ps: &PlayerState) {
         let alt = ps.altitude as i32;
         self.pl.p = PlayerView {
             wx: ps.x,

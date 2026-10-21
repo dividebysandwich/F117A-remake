@@ -287,6 +287,17 @@ impl Sim {
         if p.id == id { p.last_input.clone() } else { PlayerState::default() }
     }
 
+    /// Sets pilot `id`'s report (where his flight model starts him).
+    pub fn set_pilot_input(&mut self, id: u8, ps: &PlayerState) {
+        let back = self.pl.id as usize;
+        self.activate(id as usize);
+        if self.pl.id == id {
+            self.ingest(ps);
+            self.pl.last_input = ps.clone();
+        }
+        self.activate(back);
+    }
+
     /// Which pilot an enemy missile in slot `s` (0..7) goes for.
     pub fn enemy_slot_target(&self, s: usize) -> u8 {
         self.proj_pilot.get(s).copied().unwrap_or(0)

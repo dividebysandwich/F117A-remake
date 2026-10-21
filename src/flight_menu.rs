@@ -57,6 +57,10 @@ pub struct FlightMenu {
     /// END MISSION was chosen: the menu shows EXITING... and the flight ends without the end
     /// overlay.
     pub exiting: bool,
+    /// The left mouse button was up since the menu opened: only then does a click choose an
+    /// entry (the click on the cockpit's MENU button that opened it must not, and the desktop
+    /// overlay's cursor position is stale until it is drawn again).
+    mouse_armed: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -208,6 +212,7 @@ fn set_open(
     menu.open = open;
     block.0 = open;
     if open {
+        menu.mouse_armed = false;
         menu.opened_with = Some(settings.clone());
         if pause {
             time.pause();
@@ -349,6 +354,10 @@ fn navigate(
         return;
     }
     let pause = campaign.is_none();
+    if !mouse.pressed(MouseButton::Left) {
+        menu.mouse_armed = true;
+    }
+    let click = menu.mouse_armed && mouse.just_pressed(MouseButton::Left);
     let n = ITEMS.len();
     let mut step = 0i32;
     let mut adjust = 0i32;
@@ -402,7 +411,7 @@ fn navigate(
         && let Some(hit) = item_at(Vec2::new((n.x + 0.5) * W as f32, (n.y + 0.5) * H as f32))
     {
         menu.cursor = hit.0;
-        if mouse.just_pressed(MouseButton::Left) {
+        if click {
             clicked = Some(hit);
         }
     }
@@ -421,7 +430,7 @@ fn navigate(
                     (t > 0.0).then(|| to_canvas(o + d * t)).flatten().and_then(item_at)
                 {
                     menu.cursor = hit.0;
-                    if mouse.just_pressed(MouseButton::Left) {
+                    if click {
                         clicked = Some(hit);
                     }
                 }

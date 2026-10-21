@@ -949,7 +949,8 @@ brings you to the campaign's Ops screen; your aircraft waits at a friendly base.
 ### Hosting
 
 HOST A GAME serves a new campaign (theater, opponents, situation) or one of your saved ones, and
-you fly in it. Choose the UDP port and how many players may join; to play over the internet,
+you fly in it. Give the server a name (the others see it when they join; without one it is
+"<your name>'s campaign"), choose the UDP port and how many players may join; to play over the internet,
 forward that UDP port to your computer in your router. The campaign is saved on your computer as
 when you play alone.
 

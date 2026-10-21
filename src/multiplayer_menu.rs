@@ -249,6 +249,11 @@ fn multiplayer_window(
             }
             Page::Host => {
                 ui.horizontal(|ui| {
+                    ui.label("Server name");
+                    let hint = server_title(&state);
+                    text_entry(ui, "mp_server", &mut state.server_name, 32, Charset::Name, settings.vr, &hint);
+                });
+                ui.horizontal(|ui| {
                     ui.label("UDP port");
                     ui.add(egui::DragValue::new(&mut state.host_port).range(1024..=65535));
                     ui.add_space(20.0);
@@ -353,7 +358,7 @@ fn multiplayer_window(
     }
     match host {
         Some(Ok((name, h))) => {
-            let title = format!("{}'s campaign", state.player_name.trim());
+            let title = server_title(&state);
             match Server::new(
                 &title,
                 state.host_port,
@@ -378,4 +383,12 @@ fn multiplayer_window(
         w.open = false;
     }
     Ok(())
+}
+
+/// The name the server goes by: the one given, else "<player>'s campaign".
+fn server_title(state: &crate::menu::MenuState) -> String {
+    match state.server_name.trim() {
+        "" => format!("{}'s campaign", state.player_name.trim()),
+        name => name.to_string(),
+    }
 }

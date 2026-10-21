@@ -86,9 +86,10 @@ pub struct MenuState {
     /// The mission screen (single mission or career sortie) instead of the main menu.
     pub mission_screen: bool,
     /// Multiplayer: the player's name, the last server joined ("host[:port]"), and how this
-    /// game serves (port, players).
+    /// game serves (name, empty: "<player>'s campaign"; port, players).
     pub player_name: String,
     pub server_addr: String,
+    pub server_name: String,
     pub host_port: u16,
     pub max_players: u8,
     dirty: bool,
@@ -137,6 +138,7 @@ impl Default for MenuState {
                 .any(|a| a == "--open-mission" || a == "--open-planner" || a == "--open-loadout"),
             player_name: String::new(),
             server_addr: String::new(),
+            server_name: String::new(),
             host_port: stealth_net::DEFAULT_PORT,
             max_players: 8,
             dirty: true,

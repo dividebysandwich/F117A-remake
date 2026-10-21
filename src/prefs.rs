@@ -65,6 +65,7 @@ pub struct Prefs {
     /// Multiplayer (`MenuState`).
     pub player_name: String,
     pub server_addr: String,
+    pub server_name: String,
     pub host_port: u16,
     pub max_players: u8,
 }
@@ -103,6 +104,7 @@ impl Default for Prefs {
             vr_scale_version: VR_SCALE_VERSION,
             player_name: menu.player_name,
             server_addr: menu.server_addr,
+            server_name: menu.server_name,
             host_port: menu.host_port,
             max_players: menu.max_players,
         }
@@ -154,6 +156,7 @@ impl Prefs {
             vr_scale_version: VR_SCALE_VERSION,
             player_name: menu.player_name.clone(),
             server_addr: menu.server_addr.clone(),
+            server_name: menu.server_name.clone(),
             host_port: menu.host_port,
             max_players: menu.max_players,
         }
@@ -171,6 +174,7 @@ impl Prefs {
         menu.start_hour = self.start_hour.map(|h| h.min(23));
         menu.player_name = self.player_name.clone();
         menu.server_addr = self.server_addr.clone();
+        menu.server_name = self.server_name.clone();
         if self.host_port != 0 {
             menu.host_port = self.host_port;
         }

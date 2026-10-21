@@ -56,6 +56,10 @@ struct Globals {
     // and reach in metres (w).
     bolt_a: vec4<f32>,
     bolt_b: vec4<f32>,
+    // Continuous time of day: direction to the sun (xyz), on (w = 1); direction to the moon
+    // (xyz), star visibility 0..1 (w).
+    sky_sun: vec4<f32>,
+    sky_moon: vec4<f32>,
 };
 
 struct PaletteMaterial {
@@ -461,6 +465,71 @@ fn cloud_ramp(shade: f32, dist: f32, modern: bool) -> vec3<f32> {
 }
 
 // 4x4 ordered dither threshold (classic mode's soft cloud edges).
+// Angular radius of the moon's disc (drawn about five times its real size).
+const MOON_RADIUS: f32 = 0.022;
+const MOON_COLOR: vec3<f32> = vec3<f32>(0.82, 0.80, 0.74);
+// Star cells (radians) and the share of cells holding a star.
+const STAR_CELL: f32 = 0.012;
+const STAR_SHARE: f32 = 0.035;
+
+fn hash2(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
+// Continuous time of day: stars and the moon over the sky colour (`nd` normalised, above the
+// horizon). The moon is lit from the true sun direction, so its phase shows by itself.
+fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>) -> vec3<f32> {
+    var bg = bg_in;
+    let daylight = clamp(globals.light_info.y, 0.0, 1.0);
+    // Radians per pixel (from the smooth view direction: cell distances jump at cell edges).
+    let px = max(length(fwidth(nd)), 1e-5);
+    let stars = globals.sky_moon.w;
+    if (stars > 0.0) {
+        let az = atan2(nd.x, -nd.z);
+        let el = asin(clamp(nd.y, -1.0, 1.0));
+        // Rows of cells by elevation; narrower azimuth cells near the zenith would crowd the
+        // stars, so each row's cells are as wide as the row's middle is around.
+        let row = floor(el / STAR_CELL);
+        let w = STAR_CELL / max(cos((row + 0.5) * STAR_CELL), 0.05);
+        let cell = vec2<f32>(floor(az / w), row);
+        let h = hash2(cell);
+        if (h < STAR_SHARE) {
+            let c_az = (cell.x + 0.5 + 0.6 * (hash2(cell + 7.1) - 0.5)) * w;
+            let c_el = (cell.y + 0.5 + 0.6 * (hash2(cell + 3.3) - 0.5)) * STAR_CELL;
+            let star = vec3<f32>(cos(c_el) * sin(c_az), sin(c_el), -cos(c_el) * cos(c_az));
+            let d = length(nd - star);
+            let r = max(STAR_CELL * 0.06, px * 0.7);
+            let core = 1.0 - smoothstep(r - px, r + px, d);
+            let mag = 0.35 + 0.65 * pow(h / STAR_SHARE, 3.0);
+            // Fainter towards the horizon (haze).
+            let alt_fade = smoothstep(0.0, 0.15, nd.y);
+            bg += vec3<f32>(0.9, 0.92, 1.0) * core * mag * stars * alt_fade * 0.8;
+        }
+    }
+    let m = normalize(globals.sky_moon.xyz);
+    let c = dot(nd, m);
+    if (m.y > -MOON_RADIUS && c > cos(MOON_RADIUS * 8.0)) {
+        // The disc as a sphere seen from the earth: its normal at this pixel.
+        let o = (nd - m * c) / MOON_RADIUS;
+        let r2 = dot(o, o);
+        let fw = px / MOON_RADIUS;
+        let edge = 1.0 - smoothstep(1.0 - fw, 1.0 + fw, sqrt(r2));
+        if (edge > 0.0) {
+            let n = normalize(o - m * sqrt(max(1.0 - r2, 0.0)));
+            let lit = smoothstep(-0.05, 0.05, dot(n, normalize(globals.sky_sun.xyz)));
+            // Earthshine on the dark side; faint by day.
+            let shade = mix(0.04, 1.0, lit) * mix(1.0, 0.35, daylight);
+            let disc = MOON_COLOR * shade;
+            bg = mix(bg, max(bg, disc), edge);
+        }
+        // A soft halo around the lit moon at night, fading out before the edge of this test.
+        let a = acos(min(c, 1.0)) / MOON_RADIUS;
+        let halo = exp(-a * a * 0.25) * smoothstep(8.0, 5.0, a) * 0.12 * (1.0 - daylight);
+        bg += MOON_COLOR * halo * globals.sky_moon.w;
+    }
+    return bg;
+}
+
 fn bayer4(p: vec2<u32>) -> f32 {
     var m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
     return (m[(p.y & 3u) * 4u + (p.x & 3u)] + 0.5) / 16.0;
@@ -744,6 +813,9 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
             bg = mix(pal(u32(b.x) + k), pal(u32(b.x) + k1), b.z);
         } else {
             bg = pal(band(dir).x);
+        }
+        if (globals.sky_sun.w > 0.0 && dir.y > 0.0) {
+            bg = night_sky(bg, normalize(dir));
         }
         // Lighting options: the ground gradient is lit like flat ground where the view ray
         // meets the ground plane (y = 0), so it takes shadows and local lights.

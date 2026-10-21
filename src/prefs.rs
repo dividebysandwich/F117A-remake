@@ -49,6 +49,7 @@ pub struct Prefs {
     pub modern_shading: bool,
     pub shadows: bool,
     pub local_lights: bool,
+    pub continuous_time: bool,
     pub classic_cockpit: bool,
     pub classic_hud: bool,
     pub classic_avionics: bool,
@@ -78,11 +79,12 @@ impl Default for Prefs {
             realistic_damage: false,
             realistic_guidance: false,
             tacview: false,
-            // New players: modern shaders; classic shadows and lighting; modern cockpit, HUD,
-            // avionics and flight model.
+            // New players: modern shaders and time of day; classic shadows and lighting;
+            // modern cockpit, HUD, avionics and flight model.
             modern_shading: true,
             shadows: false,
             local_lights: false,
+            continuous_time: true,
             classic_cockpit: false,
             classic_hud: false,
             classic_avionics: false,
@@ -127,6 +129,7 @@ impl Prefs {
             modern_shading: s.modern_shading,
             shadows: s.shadows,
             local_lights: s.local_lights,
+            continuous_time: s.continuous_time,
             classic_cockpit: s.classic_cockpit,
             classic_hud: s.classic_hud,
             classic_avionics: s.classic_avionics,
@@ -153,6 +156,7 @@ impl Prefs {
         s.modern_shading |= self.modern_shading;
         s.shadows |= self.shadows;
         s.local_lights |= self.local_lights;
+        s.continuous_time |= self.continuous_time;
         s.classic_cockpit |= self.classic_cockpit;
         s.classic_hud |= self.classic_hud;
         s.classic_avionics |= self.classic_avionics;
@@ -174,6 +178,7 @@ impl Prefs {
         p.modern_shading = s.modern_shading;
         p.shadows = s.shadows;
         p.local_lights = s.local_lights;
+        p.continuous_time = s.continuous_time;
         p.classic_cockpit = s.classic_cockpit;
         p.classic_hud = s.classic_hud;
         p.classic_avionics = s.classic_avionics;

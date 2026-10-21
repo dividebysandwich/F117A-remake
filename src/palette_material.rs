@@ -199,6 +199,10 @@ pub struct Globals {
     /// reach in metres (w).
     pub bolt_a: Vec4,
     pub bolt_b: Vec4,
+    /// Continuous time of day: direction to the sun (xyz), on (w = 1).
+    pub sky_sun: Vec4,
+    /// Direction to the moon (xyz), star visibility 0..1 (w).
+    pub sky_moon: Vec4,
 }
 
 /// Lighting flags in `Globals.ambient.w`.
@@ -225,6 +229,8 @@ impl Default for Globals {
             stratus: Vec4::ZERO,
             bolt_a: Vec4::ZERO,
             bolt_b: Vec4::ZERO,
+            sky_sun: Vec4::ZERO,
+            sky_moon: Vec4::ZERO,
         }
     }
 }

@@ -359,7 +359,7 @@ impl Sim {
                 self.flights[i].flags |= fflags::SAW_PLAYER;
                 self.alarm();
                 if self.flights[i].flags & fflags::VISUAL_ID == 0
-                    && (8 >> (self.night as i32 + self.visual_shift())) > range
+                    && self.visual_range() > range
                     && self.sees((u.x, u.y, u.alt), (self.p.mx, self.p.my, self.p.view_z))
                 {
                     self.flights[i].flags |= fflags::VISUAL_ID;

@@ -186,6 +186,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.modern_shading, "--modern"),
         (settings.shadows, "--shadows"),
         (settings.local_lights, "--local-lights"),
+        (settings.continuous_time, "--continuous-time"),
         (settings.classic_cockpit, "--classic-cockpit"),
         (settings.classic_hud, "--classic-hud"),
         (settings.classic_avionics, "--classic-avionics"),
@@ -789,6 +790,15 @@ fn menu_ui(
                         (&mut s.modern_shading, "Shaders", &["Modern: MSAA anti-aliasing, subtle directional shading, smooth distance haze", "Classic: the original's flat shading"][..]),
                         (&mut s.shadows, "Shadows", &["Modern: sun shadows in the cockpit and the world (costs GPU time)", "Classic: no shadows"][..]),
                         (&mut s.local_lights, "Lighting", &["Modern: cockpit flood and display lights; explosions, plumes and runway lights light the scene", "Classic: sun and sky light only"][..]),
+                        (
+                            &mut s.continuous_time,
+                            "Time of day",
+                            &[
+                                "Modern: the sun and the moon move with the mission clock, the sky darkens and brightens with the sun; stars and the moon's phase at night",
+                                "Modern: moonlight sets how far enemy pilots see you at night (2 km on a moonless night, 4 km under a full moon)",
+                                "Classic: the original's slow change of colours and a fixed sun",
+                            ][..],
+                        ),
                         (
                             &mut cockpit,
                             "Cockpit",

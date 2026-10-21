@@ -227,8 +227,14 @@ fn setup_palette(
     commands.insert_resource(palette);
 }
 
-fn step_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut palette: ResMut<Palette>) {
-    if tod.frozen {
+fn step_time_of_day(
+    time: Res<Time>,
+    settings: Res<Settings>,
+    mut tod: ResMut<TimeOfDay>,
+    mut palette: ResMut<Palette>,
+) {
+    // Continuous time of day sets the palette from the sun (sky.rs).
+    if tod.frozen || settings.continuous_time {
         return;
     }
     tod.timer += time.delta_secs();
@@ -334,6 +340,7 @@ fn update_globals(
     trackcam: Option<Res<crate::trackcam::TrackCamImage>>,
     images: Res<Assets<Image>>,
     time: Res<Time>,
+    sky: Res<crate::sky::Sky>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
 ) {
     let Some(mut buf) = buffers.get_mut(&palette.globals) else { return };
@@ -378,6 +385,10 @@ fn update_globals(
     }
     (g.clouds, g.weather, g.noise, g.stratus) = weather.globals(origin.origin);
     (g.bolt_a, g.bolt_b) = weather.bolt_light(origin.origin);
+    if sky.on {
+        g.sky_sun = sky.sun.extend(1.0);
+        g.sky_moon = sky.moon.extend(sky.stars);
+    }
     buf.set_data(g);
 }
 

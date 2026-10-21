@@ -198,6 +198,10 @@ pub struct Sim {
     /// Map positions of everything destroyed on the ground (campaign damage).
     #[serde(default)]
     pub(crate) destroyed_at: Vec<(i32, i32)>,
+    /// Light for visual identification, 0 (moonless night) .. 255 (day), from the renderer's
+    /// continuous time of day; None: the mission's day or night, as in the original.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) visual_light: Option<u8>,
     /// Apron parking spots for the parked base traffic (not in the original): world x, y and
     /// heading; empty = parked on the base object as in the original.
     #[serde(default)]
@@ -408,6 +412,7 @@ impl Sim {
                 - m.drones.as_ref().map_or(0, |d| d.count.min(w.flights.len())),
             csar: None,
             destroyed_at: Vec::new(),
+            visual_light: None,
             drones: m.drones.as_ref().map(|d| drones::Drones {
                 defend: d.defend,
                 target: d.target as i32,
@@ -1045,6 +1050,23 @@ impl Sim {
 
     pub fn mission_tick(&self) -> i32 {
         self.mission_tick
+    }
+
+    /// Sets the light for visual identification ([`Sim::visual_range`]); None: the mission's
+    /// day or night.
+    pub fn set_visual_light(&mut self, light: Option<u8>) {
+        self.visual_light = light;
+    }
+
+    /// Range (km) at which enemy pilots identify the player by sight: 8 km by day, 4 by
+    /// night (the original), or with a light level from 2 km on a moonless night to 8 by day;
+    /// halved in a storm.
+    pub fn visual_range(&self) -> i32 {
+        let base = match self.visual_light {
+            None => 8 >> self.night as i32,
+            Some(l) => 2 + l as i32 * 6 / 255,
+        };
+        base >> self.visual_shift()
     }
 
     pub fn player(&self) -> PlayerView {

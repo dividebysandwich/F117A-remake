@@ -59,7 +59,7 @@ impl Geo {
 }
 
 /// Days since 1970-01-01 of a civil date, and back (Howard Hinnant's algorithms).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -81,7 +81,7 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 }
 
 /// The briefing date ("June 5, 1991"), else 1 January 1990.
-fn briefing_date(text: &str) -> (i64, i64, i64) {
+pub(crate) fn briefing_date(text: &str) -> (i64, i64, i64) {
     const MONTHS: [&str; 12] =
         ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
     let lower = text.to_ascii_lowercase();

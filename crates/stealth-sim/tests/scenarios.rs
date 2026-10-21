@@ -1222,3 +1222,24 @@ fn guided_sam_hits_a_cruising_player() {
     // An SA-2 at 10 km gets there with its sustainer still burning.
     assert!(!smoke_out);
 }
+
+/// Visual identification range: the mission's day or night, or the light level.
+#[test]
+fn visual_range_follows_the_light() {
+    let d = data();
+    for seed in [0x1234u16, 0x2345, 0x3456] {
+        let m = mission(d, 3, seed, 1);
+        let mut sim = Sim::new(&d.sim, &m);
+        sim.set_visual_light(Some(255));
+        let day = sim.visual_range();
+        // A storm halves every range.
+        let shift = (day == 4) as i32;
+        assert_eq!(day, 8 >> shift);
+        sim.set_visual_light(Some(0));
+        assert_eq!(sim.visual_range(), 2 >> shift);
+        sim.set_visual_light(Some(85));
+        assert_eq!(sim.visual_range(), 4 >> shift);
+        sim.set_visual_light(None);
+        assert_eq!(sim.visual_range(), (8 >> m.night as i32) >> shift);
+    }
+}

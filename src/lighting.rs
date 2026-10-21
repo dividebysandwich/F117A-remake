@@ -147,8 +147,9 @@ pub const LUX_PER_UNIT: f32 = 2600.0;
 fn update_sun(
     settings: Res<Settings>,
     palette: Option<Res<Palette>>,
+    celestial: Res<crate::sky::Sky>,
     mut state: ResMut<LightingState>,
-    mut sun: Query<&mut DirectionalLight, With<Sun>>,
+    mut sun: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
     mut ambient: ResMut<GlobalAmbientLight>,
     weather: Res<crate::weather::WeatherState>,
 ) {
@@ -162,12 +163,22 @@ fn update_sun(
     // darkens shadowed ones. Under an overcast the sun is hidden.
     let overcast = weather.shaded || weather.whiteout > 0.5;
     let strength = 0.45 * daylight * if overcast { 0.15 } else { 1.0 };
-    state.sun = sun_direction().extend(strength);
+    // Continuous time of day: the moving sun, kept a little above the horizon for the shading.
+    let dir = if celestial.on {
+        let s = celestial.sun;
+        Vec3::new(s.x, s.y.max(0.08), s.z).normalize()
+    } else {
+        sun_direction()
+    };
+    state.sun = dir.extend(strength);
     let flags =
         (settings.shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);
     state.ambient =
         Vec4::new(1.0 - strength * 0.6, 1.0 - strength * 0.6, 1.0 - strength * 0.55, flags as f32);
-    if let Ok(mut light) = sun.single_mut() {
+    if let Ok((mut light, mut tf)) = sun.single_mut() {
+        if celestial.on {
+            *tf = Transform::IDENTITY.looking_to(-dir, Vec3::Y);
+        }
         light.illuminance = LUX_PER_UNIT * (0.15 + 0.85 * daylight) * daylight.max(0.05);
         light.shadow_maps_enabled = settings.shadows && !overcast;
         light.color = Color::linear_rgb(1.0, 0.97, 0.9);

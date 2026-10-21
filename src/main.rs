@@ -44,6 +44,7 @@ mod scenery;
 mod script;
 mod settings;
 mod sim_render;
+mod sky;
 mod sound;
 mod stage;
 mod tacview;
@@ -158,6 +159,7 @@ fn main() {
             flight_menu::FlightMenuPlugin,
         ))
         .add_plugins((
+            sky::SkyPlugin,
             lighting::LightingPlugin,
             cockpit3d::Cockpit3dPlugin,
             scenery::SceneryPlugin,

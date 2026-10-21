@@ -61,6 +61,7 @@ enum Item {
     Shaders,
     Shadows,
     Lighting,
+    TimeOfDay,
     Cockpit,
     Hud,
     Avionics,
@@ -69,10 +70,11 @@ enum Item {
     EndMission,
 }
 
-const ITEMS: [Item; 9] = [
+const ITEMS: [Item; 10] = [
     Item::Shaders,
     Item::Shadows,
     Item::Lighting,
+    Item::TimeOfDay,
     Item::Cockpit,
     Item::Hud,
     Item::Avionics,
@@ -87,6 +89,7 @@ impl Item {
             Item::Shaders => "SHADERS",
             Item::Shadows => "SHADOWS",
             Item::Lighting => "POINT LIGHTS",
+            Item::TimeOfDay => "TIME OF DAY",
             Item::Cockpit => "COCKPIT",
             Item::Hud => "HUD",
             Item::Avionics => "AVIONICS",
@@ -103,6 +106,7 @@ impl Item {
             Item::Shaders => style(!s.modern_shading),
             Item::Shadows => on(s.shadows),
             Item::Lighting => on(s.local_lights),
+            Item::TimeOfDay => style(!s.continuous_time),
             Item::Cockpit => style(s.classic_cockpit),
             Item::Hud => style(s.classic_hud),
             Item::Avionics => style(s.classic_avionics),
@@ -130,7 +134,7 @@ const W: usize = 768;
 const H: usize = 512;
 /// Rows of the entries.
 const TOP: f32 = 104.0;
-const ROW: f32 = 43.0;
+const ROW: f32 = 40.0;
 /// Palette colours: background, bright and dim green (the panel's lamp greens), dark row.
 const BG: u8 = 5;
 const BRIGHT: u8 = 47;
@@ -214,11 +218,12 @@ fn set_open(
     }
 }
 
-fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, u32) {
+fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, bool, u32) {
     (
         s.modern_shading,
         s.shadows,
         s.local_lights,
+        s.continuous_time,
         s.classic_cockpit,
         s.classic_hud,
         s.classic_avionics,
@@ -460,6 +465,7 @@ fn navigate(
         Item::Shaders => s.modern_shading = !s.modern_shading,
         Item::Shadows => s.shadows = !s.shadows,
         Item::Lighting => s.local_lights = !s.local_lights,
+        Item::TimeOfDay => s.continuous_time = !s.continuous_time,
         Item::Cockpit => s.classic_cockpit = !s.classic_cockpit,
         Item::Hud => s.classic_hud = !s.classic_hud,
         Item::Avionics => s.classic_avionics = !s.classic_avionics,

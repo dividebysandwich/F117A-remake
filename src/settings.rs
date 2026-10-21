@@ -44,6 +44,9 @@ pub struct Settings {
     pub shadows: bool,
     /// Local lights: cockpit flood/display lights, explosions, plumes, runway lights.
     pub local_lights: bool,
+    /// `--continuous-time`: the sun and moon move with the mission clock, the palette follows
+    /// the sun, moonlight sets the enemy's night sight (sky.rs); off, the original's drift.
+    pub continuous_time: bool,
     /// `--classic-cockpit`: the original instrument panel layout and 77x60 displays instead
     /// of the modern panel with high-resolution displays and bezel buttons.
     pub classic_cockpit: bool,
@@ -178,6 +181,7 @@ impl Settings {
             vr,
             shadows: has("--shadows"),
             local_lights: has("--local-lights"),
+            continuous_time: has("--continuous-time"),
             classic_cockpit: has("--classic-cockpit"),
             classic_hud: has("--classic-hud"),
             classic_avionics: has("--classic-avionics"),

@@ -137,6 +137,35 @@ impl TileOverrides {
 
 /// Metres per original world unit.
 pub const WU: f64 = 512_000.0 / 1_048_576.0;
+
+/// Longitude and latitude of a theater's south-west corner, the map laid on the globe at game
+/// scale around one real airbase (Tacview, the sun and the moon). The game's maps squeeze the
+/// real distances, so places away from that airbase land only roughly where they really are.
+pub fn geo_origin(id: &str) -> (f64, f64) {
+    match id {
+        // Mittenwalde.
+        "ce" => (10.84, 50.34),
+        // Havana.
+        "cu" => (-83.91, 19.15),
+        // Pyongyang.
+        "ko" => (125.04, 38.26),
+        // Baghdad.
+        "ku" => (42.85, 30.05),
+        // Tripoli.
+        "lb" => (12.49, 30.24),
+        // Homs.
+        "me" => (35.09, 32.62),
+        // Monchegorsk.
+        "nc" => (25.51, 66.10),
+        // Bushehr.
+        "pg" => (48.67, 26.48),
+        // Dzhankoi.
+        "ua" => (32.51, 44.78),
+        // Gia Lam (Hanoi).
+        "vn" => (101.84, 17.04),
+        _ => (10.0, 45.0),
+    }
+}
 /// Height step separating coplanar ground overlays (metres).
 const LAYER_STEP_M: f64 = 0.02;
 /// Cells streamed around the camera per LOD (index = LOD), as a radius in cells.

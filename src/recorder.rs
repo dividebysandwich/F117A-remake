@@ -222,7 +222,15 @@ impl FlightRecord {
         if self.frame % CONTACT_EVERY == 0 {
             self.contacts.push(Contacts {
                 frame: self.frame,
-                aircraft: sim.active_aircraft().into_iter().map(|(i, u, _)| (i, u)).collect(),
+                // As drawn: not the destroyed ones nor those not yet placed.
+                aircraft: sim
+                    .active_aircraft()
+                    .into_iter()
+                    .filter(|(_, u, _)| {
+                        u.flags & stealth_sim::fflags::DESTROYED == 0 && (u.wx != 0 || u.wy != 0)
+                    })
+                    .map(|(i, u, _)| (i, u))
+                    .collect(),
                 missiles: sim.active_projectiles().into_iter().map(|(s, m, _, _)| (s, m)).collect(),
             });
         }

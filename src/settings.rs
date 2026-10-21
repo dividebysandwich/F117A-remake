@@ -63,6 +63,8 @@ pub struct Settings {
     /// `--realistic-guidance`: realistic missile guidance instead of the original's
     /// (`stealth_sim::SimOptions::realistic_guidance`).
     pub realistic_guidance: bool,
+    /// `--tacview`: the flight is saved as a Tacview ACMI file when it ends.
+    pub tacview: bool,
     /// `--vr-cockpit-scale <percent>`: size of the cockpit (and the world) in the headset,
     /// 100% = the flown aircraft's `AircraftSpec::vr_scale`.
     pub vr_cockpit_scale: f32,
@@ -183,6 +185,7 @@ impl Settings {
             no_crashes: has("--no-crashes"),
             realistic_damage: has("--realistic-damage"),
             realistic_guidance: has("--realistic-guidance"),
+            tacview: has("--tacview"),
             vr_cockpit_scale: get(&a, "--vr-cockpit-scale")
                 .and_then(|s| s.parse::<f32>().ok())
                 .map_or(DEFAULT_VR_COCKPIT_SCALE, |p| {

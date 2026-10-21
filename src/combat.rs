@@ -1377,6 +1377,7 @@ fn end_overlay(
     mission: Option<Res<ActiveMission>>,
     menu: Res<crate::flight_menu::FlightMenu>,
     hands: Res<crate::cockpit3d::Hands>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let Some(end) = combat.as_ref().and_then(|c| c.end.clone()) else { return };
     let vr_pressed = hands
@@ -1391,6 +1392,11 @@ fn end_overlay(
                 || (o.timer > 1.0 && (keys.get_just_pressed().next().is_some() || vr_pressed))
             {
                 if let Some(c) = &combat {
+                    if settings.tacview
+                        && let Some(m) = &mission
+                    {
+                        crate::tacview::export(&c.record, &m.0, &c.data, settings.aircraft.name());
+                    }
                     commands.insert_resource(crate::debrief::Debrief {
                         title: end.title.clone(),
                         report: c.sim.mission_report(),

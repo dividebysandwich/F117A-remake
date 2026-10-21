@@ -46,6 +46,7 @@ mod settings;
 mod sim_render;
 mod sound;
 mod stage;
+mod tacview;
 mod terrain;
 mod trackcam;
 mod trails;

@@ -193,6 +193,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.no_crashes, "--no-crashes"),
         (settings.realistic_damage, "--realistic-damage"),
         (settings.realistic_guidance, "--realistic-guidance"),
+        (settings.tacview, "--tacview"),
     ] {
         if on {
             cmd.arg(flag);
@@ -715,6 +716,15 @@ fn menu_ui(
                     if facts(
                         ui.checkbox(&mut s.no_crashes, "Crash protection"),
                         &["Pulls up automatically near the ground (gear up)", "Ground contact and collisions are not fatal", "Off: the ground can always be hit"],
+                    )
+                    .changed()
+                    {
+                        settings.set_changed();
+                    }
+                    let s = settings.bypass_change_detection();
+                    if facts(
+                        ui.checkbox(&mut s.tacview, "Tacview export"),
+                        &["Saves each flight as a Tacview recording (.acmi)", "In the game's data folder, under tacview"],
                     )
                     .changed()
                     {

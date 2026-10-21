@@ -44,7 +44,7 @@ the *Cockpit* switch).
 | **Opponents** | Green, Regular, Veteran, Elite. Sets the skill of enemy pilots and SAM crews; Veteran and Elite add ships and patrols. Higher levels also increase radar sensitivity. |
 | **Situation** | *Cold War*: covert peacetime operation, fewer enemy aircraft. *Limited War*: regional conflict, air defences on alert. *Conventional War*: full-scale war, all enemy forces active. The briefing states the exact rules of engagement. |
 | **Mission** | *Strike*: ground target (destroy, photograph or reach), with a primary and a secondary objective. *Air to air*: intercept an enemy aircraft. *Strike training* and *Air training*: practice missions. *Drone defense* (Ukraine only): stop a wave of attack drones, then bomb their launch site (chapter 11). |
-| **Aircraft** | *F-117A* or *F-16C*: the flown aircraft. *Realistic weapons* (F-117A only): two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. |
+| **Aircraft** | *F-117A* or *F-16C*: the flown aircraft. *Realistic weapons* (F-117A only): two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. *Tacview export*: each flight is saved as a Tacview recording (chapter 10). |
 | **Realism** | *Damage*: *Game* keeps the original's weapon damage (hits add up, damaging systems, but never bring the aircraft down). *Real*: a missile hit can destroy the aircraft outright (the engine dies, it burns and breaks up within seconds: eject), otherwise it damages several systems at once and often starts a fire, which either burns out or blows the aircraft up after a while. Hits to the flight controls bend control surfaces: the aircraft rolls or pitches by itself (hold the stick against it) or wobbles. *Guidance*: *Classic* keeps the original's missiles. *Real*: missiles fly proportional navigation to the collision point; their motors burn for the real missile's burn time (the smoke trail ends with it) and then they glide, losing speed with every turn and turning ever more slowly as they slow down, especially up high. SAMs climb at a loft angle against distant targets and dive on them from above. The AIM-120 flies straight for 3 s after launch: pull up before firing to lob it for more range. |
 | **Weather** | Random (based on the theater's climate), Clear, Scattered, Broken, Overcast, Storm. *Random cover* off: a slider sets the coverage of the main cloud layer. Clouds block optical seekers and visual identification for both sides; radar sees through clouds. |
 | **Classic / Modern** | *Shaders*: flat original shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: original panel or modern panel (this manual describes the modern panel). *HUD*: the original HUD, or a high-resolution F-16 style HUD in green. *Flight model*: original flight model, or an aerodynamic model with fly-by-wire: the stick commands pitch rate (up to 7 g) and roll rate; released, the nose stays where it was left and, once the flight path has caught up with it, the path is held (also in turns up to 60° of bank). Angle of attack and g limiters only act near the limits. New players start with modern shaders, cockpit, HUD, avionics and flight model, and classic shadows and lighting. |
@@ -789,6 +789,25 @@ objective 100, secondary 50, each aircraft or ground target 10 (+5 for an aircra
 before it saw you), each drone 15; −5 for each identification, −10 for each missile hit; landing
 +25, crash −50, captured −100. The sum is multiplied by the difficulty (opponents and situation;
 training missions count half).
+
+**Flight map.** *FLIGHT MAP* shows the flight on the theater map, with the track coloured by how
+close the radars came to detecting you: green out of reach, amber close (within 30 points of
+detection), red detectable. The radars that tracked you are drawn with their missile range, and
+symbols mark where a site started tracking you (amber diamond), missiles were fired at you (red
+triangle), you were hit (red cross) and you scored a kill (green cross). Drag the slider below
+the map, or press *PLAY*, to replay the flight: the aircraft symbol moves along the track, a red
+line joins it to every radar tracking it at that moment, and the panel on the right gives the
+altitude, speed, EMV and detection margin (EMV plus the strongest radar's score, minus 100) at that
+time. *Radar exposure* sums up the flight: the time any radar tracked you, the closest you came to
+detection and the radar that tracked you longest. Drag the map to pan it, turn the wheel (in VR,
+push the thumbstick) to zoom. *RESULTS* goes back to the statistics.
+
+**Tacview.** With *Tacview export* checked in the menu, every flight is also saved as a Tacview
+recording (`.acmi`) in the game's data folder under `tacview` (on Linux
+`~/.local/share/stealth-mission-89/tacview`, on Windows `%APPDATA%\stealth-mission-89\tacview`):
+your aircraft, the enemy aircraft and missiles, the radar sites and airfields. The theater is laid
+on the globe around one of its real airbases at the game's scale, so the rest of it lies only
+roughly where the real places are.
 
 **Career.** *Career* in the menu keeps pilot records: enlist a pilot by name, then start a
 **tour of duty**, 12 sorties in the theater, situation and opponents chosen in the menu. The menu

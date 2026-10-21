@@ -388,6 +388,9 @@ fn flight_map(
                     row(ui, "SPEED", format!("{} kt", s.knots), GREEN);
                     row(ui, "EMV", s.emv.to_string(), GREEN);
                     row(ui, "MARGIN", format!("{:+}", s.margin), margin_colour(s.margin));
+                    if let Some(site) = s.site.and_then(|i| rec.sites.get(i)) {
+                        row(ui, "STRONGEST", site.kind.clone(), DIM);
+                    }
                 });
                 let tracking: Vec<&str> = shown
                     .iter()

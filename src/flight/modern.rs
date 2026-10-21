@@ -4,8 +4,8 @@
 //!
 //! - Forces: thrust along the nose (lapsing with air density), lift from the angle of attack
 //!   (linear up to the stall, falling off past it), drag (parasite, induced, gear, flaps, speed
-//!   brake, bay doors, transonic rise), side force from sideslip and gravity, on a mass that
-//!   lightens as fuel burns.
+//!   brake, bay doors, transonic rise, the engine's ram drag at low throttle), side force from
+//!   sideslip and gravity, on a mass that lightens as fuel burns.
 //! - Control laws (rate command, attitude hold): the stick commands pitch rate (squared stick
 //!   shaping), at most what gives 7 g pulling or -3 g pushing, and roll rate about the flight
 //!   path. Released, the nose stays where it was left (the angle of attack then settles as the
@@ -61,6 +61,9 @@ pub struct Aero {
     pub cd_flaps: f32,
     pub cd_speed_brake: f32,
     pub cd_bay: f32,
+    /// Ram and spillage drag of the engine at idle, fading out as the throttle opens (none at
+    /// full throttle), so the speed bleeds off with the throttle back.
+    pub cd_idle: f32,
     /// Side force per radian of sideslip.
     pub cy_beta: f32,
     /// Transonic and supersonic drag rise.
@@ -132,6 +135,7 @@ impl Aero {
         cd_flaps: 0.05,
         cd_speed_brake: 0.12,
         cd_bay: 0.008,
+        cd_idle: 0.028,
         cy_beta: 0.8,
         drag_rise: DragRise::Subsonic,
         n_max: 7.0,
@@ -162,6 +166,7 @@ impl Aero {
         cd_flaps: 0.04,
         cd_speed_brake: 0.10,
         cd_bay: 0.0,
+        cd_idle: 0.022,
         cy_beta: 0.8,
         drag_rise: DragRise::Supersonic { start: 0.85, peak_mach: 1.1, peak: 0.036, supersonic: 0.0245 },
         n_max: 9.0,
@@ -376,6 +381,7 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
         cd += (alpha - alpha_stall(ae, a)) * 1.5;
     }
     cd += ae.drag_rise.cd(mach);
+    cd += ae.cd_idle * (1.0 - a.thrust / 100.0).clamp(0.0, 1.0).powi(2);
     let thrust = ae.thrust_ratio * (1.0 + ae.thrust_mach * mach.min(2.0)) * a.thrust / 100.0 * sigma.powf(0.6) / mass;
     let lift_dir = (up - vhat * up.dot(vhat)).normalize_or(up);
     let side_dir = (right - vhat * right.dot(vhat)).normalize_or(right);

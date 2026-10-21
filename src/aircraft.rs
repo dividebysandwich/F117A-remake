@@ -72,7 +72,11 @@ impl AircraftSpec {
 
     /// The cockpit flown with the cockpit style setting (aircraft with one cockpit ignore it).
     pub fn cockpit(&self, classic: bool) -> (PanelStyle, &'static str) {
-        self.cockpits.iter().copied().find(|(s, _)| (*s == PanelStyle::Classic) == classic).unwrap_or(self.cockpits[0])
+        self.cockpits
+            .iter()
+            .copied()
+            .find(|(s, _)| (*s == PanelStyle::Classic) == classic)
+            .unwrap_or(self.cockpits[0])
     }
 }
 
@@ -112,7 +116,10 @@ static F16: AircraftSpec = AircraftSpec {
     // Under the canopy bubble (x +-6, y 11..30, z -95..-40 model units), eyes a little forward
     // of its middle and level with its upper part.
     eye: model_point(F16_LIFT, 0.0, 24.0, -72.0),
-    cockpit_view: Some(CockpitView { canopy_colours: &[144, 145], cut: (Vec3::new(-0.40, -1.15, -0.85), Vec3::new(0.40, 0.40, 0.80)) }),
+    cockpit_view: Some(CockpitView {
+        canopy_colours: &[144, 145],
+        cut: (Vec3::new(-0.40, -1.15, -0.85), Vec3::new(0.40, 0.40, 0.80)),
+    }),
     cockpits: &[(PanelStyle::F16, "cockpit_f16")],
     shadow: Shadow::Flattened,
     // The symbology (about 920 x 470 canvas pixels) inside the combiner (x +-0.1675, z -0.12 ..
@@ -145,7 +152,11 @@ impl AircraftKind {
 
     pub fn parse(s: &str) -> Option<Self> {
         let s = s.to_ascii_lowercase().replace(['-', '_'], "");
-        Self::ALL.into_iter().find(|k| k.id() == s || (s == "f117a" && *k == AircraftKind::F117) || (s == "f16c" && *k == AircraftKind::F16))
+        Self::ALL.into_iter().find(|k| {
+            k.id() == s
+                || (s == "f117a" && *k == AircraftKind::F117)
+                || (s == "f16c" && *k == AircraftKind::F16)
+        })
     }
 
     pub fn name(self) -> &'static str {
@@ -158,7 +169,8 @@ impl AircraftKind {
 
 /// Every cockpit model file of the flyable aircraft.
 pub fn cockpit_files() -> Vec<&'static str> {
-    let mut v: Vec<&str> = AircraftKind::ALL.iter().flat_map(|k| k.spec().cockpits.iter().map(|(_, f)| *f)).collect();
+    let mut v: Vec<&str> =
+        AircraftKind::ALL.iter().flat_map(|k| k.spec().cockpits.iter().map(|(_, f)| *f)).collect();
     v.sort_unstable();
     v.dedup();
     v
@@ -180,7 +192,8 @@ mod tests {
         let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
         let mut found = 0;
         for p in mesh["primitives"].as_array().unwrap() {
-            let mat = j["materials"][p["material"].as_u64().unwrap() as usize]["name"].as_str().unwrap();
+            let mat =
+                j["materials"][p["material"].as_u64().unwrap() as usize]["name"].as_str().unwrap();
             if !colours.iter().any(|c| mat == format!("pal_{c:03}")) {
                 continue;
             }
@@ -188,7 +201,11 @@ mod tests {
             let acc = &j["accessors"][p["attributes"]["POSITION"].as_u64().unwrap() as usize];
             let v = |k: &str| {
                 let a = acc[k].as_array().unwrap();
-                Vec3::new(a[0].as_f64().unwrap() as f32, a[1].as_f64().unwrap() as f32, a[2].as_f64().unwrap() as f32)
+                Vec3::new(
+                    a[0].as_f64().unwrap() as f32,
+                    a[1].as_f64().unwrap() as f32,
+                    a[2].as_f64().unwrap() as f32,
+                )
             };
             lo = lo.min(v("min"));
             hi = hi.max(v("max"));
@@ -200,10 +217,14 @@ mod tests {
     #[test]
     fn f16_eye_under_the_canopy() {
         let spec = AircraftKind::F16.spec();
-        let (lo, hi) = primitive_bounds("stflt_023_lod0", spec.cockpit_view.as_ref().unwrap().canopy_colours);
+        let (lo, hi) =
+            primitive_bounds("stflt_023_lod0", spec.cockpit_view.as_ref().unwrap().canopy_colours);
         let s = AIRCRAFT_MODEL_SCALE as f32;
         let eye = (spec.eye - Vec3::Y * spec.model_lift) / s;
-        assert!(eye.cmpgt(lo).all() && eye.cmplt(hi).all(), "eye {eye} outside the canopy {lo}..{hi}");
+        assert!(
+            eye.cmpgt(lo).all() && eye.cmplt(hi).all(),
+            "eye {eye} outside the canopy {lo}..{hi}"
+        );
     }
 
     #[test]

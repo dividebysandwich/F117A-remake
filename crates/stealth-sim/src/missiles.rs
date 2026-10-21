@@ -38,7 +38,11 @@ impl Sim {
         self.lights.klaxon = false;
         self.lights.rad_threat = false;
         self.lights.ir_threat = false;
-        let (tgx, tgy) = if self.decoy_active() { (self.cms[0].x, self.cms[0].y) } else { (self.p.mx, self.p.my) };
+        let (tgx, tgy) = if self.decoy_active() {
+            (self.cms[0].x, self.cms[0].y)
+        } else {
+            (self.p.mx, self.p.my)
+        };
         let fs = self.fs;
         for s in 0..N_PROJ {
             if self.proj[s].ttl == 0 {
@@ -62,7 +66,9 @@ impl Sim {
                 locked = self.acquire(s, tgx, tgy, self.p.view_z, cls);
                 best = self.acq_range;
                 aim = self.acq_aim;
-                let jam = (self.ecm_on() && cls > 0) || (self.irj_on() && cls <= 0) || (self.alarm_recent() > self.alarm_timer && spec != 0x21);
+                let jam = (self.ecm_on() && cls > 0)
+                    || (self.irj_on() && cls <= 0)
+                    || (self.alarm_recent() > self.alarm_timer && spec != 0x21);
                 if jam && ((self.diff << 8) + 0x180 < best || cls == 1 || cls == -1) {
                     aim = self.proj[s].heading;
                     locked = false;
@@ -76,7 +82,9 @@ impl Sim {
                         || (c.kind == 2
                             && (cls == 1
                                 || cls == 2
-                                || (cls == 3 && (hi8s(s16(aim - self.p.heading)).abs() - 0x40).abs() < 0x40 - 12 * self.diff)));
+                                || (cls == 3
+                                    && (hi8s(s16(aim - self.p.heading)).abs() - 0x40).abs()
+                                        < 0x40 - 12 * self.diff)));
                     if attract && self.acquire(s, c.x, c.y, self.p.view_z, cls) {
                         aim = 1;
                         locked = false;
@@ -87,7 +95,12 @@ impl Sim {
                     if l > 2 && self.obj(l).flags & oflags::TRACKING == 0 {
                         locked = false;
                     }
-                    if l <= 0 && self.flights.get((-l) as usize).is_none_or(|u| u.flags & fflags::CONTACT == 0) {
+                    if l <= 0
+                        && self
+                            .flights
+                            .get((-l) as usize)
+                            .is_none_or(|u| u.flags & fflags::CONTACT == 0)
+                    {
                         locked = false;
                     }
                 }
@@ -155,7 +168,12 @@ impl Sim {
                 continue;
             }
             // Warning lights / klaxon.
-            if locked && s < 8 && abs16(s16(self.acq_aim - self.proj[s].heading)) < 0x1000 && self.damage & dmg::MW == 0 && !self.decoy_active() {
+            if locked
+                && s < 8
+                && abs16(s16(self.acq_aim - self.proj[s].heading)) < 0x1000
+                && self.damage & dmg::MW == 0
+                && !self.decoy_active()
+            {
                 self.lights.rad_threat |= cls != 0;
                 self.lights.ir_threat |= cls <= 0;
                 if cls <= 0 && self.frame & 2 != 0 {
@@ -167,7 +185,11 @@ impl Sim {
                 if self.frame & 3 == 0 && (self.proj[s].speed << 4) > best {
                     self.lights.klaxon = true;
                     // Site launchers are object indices > 2, aircraft are -flight index.
-                    let tone = if self.proj[s].launcher > 2 { RwrTone::SamLaunch } else { RwrTone::AirLaunch };
+                    let tone = if self.proj[s].launcher > 2 {
+                        RwrTone::SamLaunch
+                    } else {
+                        RwrTone::AirLaunch
+                    };
                     self.emit(SimEvent::Rwr(tone));
                 }
             }
@@ -291,7 +313,14 @@ impl Sim {
             p = [before[0] + (p[0] - before[0]) * t, before[1] + (p[1] - before[1]) * t, 0.0];
         }
         let q = |a: f64| (a * fine).round() as i32;
-        let nf = BombFall { x: q(p[0]), y: q(p[1]), alt: q(p[2]), vx: q(v[0]), vy: q(v[1]), vz: q(v[2]) };
+        let nf = BombFall {
+            x: q(p[0]),
+            y: q(p[1]),
+            alt: q(p[2]),
+            vx: q(v[0]),
+            vy: q(v[1]),
+            vz: q(v[2]),
+        };
         let bam = 65536.0 / std::f64::consts::TAU;
         let pm = &mut self.proj[s];
         pm.fall = Some(nf);
@@ -313,7 +342,11 @@ impl Sim {
         let mut ealt = m.alt;
         self.proj[s].ttl = 0;
         self.flash = Flash { x: ex, y: ey, alt: ealt, timer: -6 };
-        let long = if s >= 8 { self.weapon_types[(m.weapon.max(0) as usize).min(19)].long_name.clone() } else { String::new() };
+        let long = if s >= 8 {
+            self.weapon_types[(m.weapon.max(0) as usize).min(19)].long_name.clone()
+        } else {
+            String::new()
+        };
         let mut kind = -6;
         if self.opts.fix_original_bugs && s >= 8 && m.spec == 38 {
             // Intended airdrop rule, unreachable in the original.
@@ -321,7 +354,10 @@ impl Sim {
             for k in 0..2 {
                 let t = self.targets[k];
                 let o = self.obj(t.object);
-                if approx(ex - o.x, ey - o.y) < 0x100 && t.mission_type == 3 && self.mission_tick < self.deadline {
+                if approx(ex - o.x, ey - o.y) < 0x100
+                    && t.mission_type == 3
+                    && self.mission_tick < self.deadline
+                {
                     self.msg("Equipment Delivered");
                     self.mark_target_reached(k);
                     delivered = true;
@@ -335,7 +371,8 @@ impl Sim {
             let mut text = format!("{long} misses ");
             let o = self.find_object_at(ex, ey);
             if o != -1 && self.obj(o).flags & oflags::DESTROYED == 0 {
-                let (tx, ty) = self.last_tile.map_or((self.obj(o).x, self.obj(o).y), |t| t.map_pos());
+                let (tx, ty) =
+                    self.last_tile.map_or((self.obj(o).x, self.obj(o).y), |t| t.map_pos());
                 let dist = approx(tx - ex, ty - ey);
                 let lim = (self.compat(m.weapon, o) << 6) / (self.diff + 2);
                 if (lim as u16) > (dist as u16) {

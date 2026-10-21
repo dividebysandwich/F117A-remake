@@ -100,7 +100,16 @@ impl Control {
         let effect = parse_effect(extras["control"].as_str()?)?;
         let f = |v: &serde_json::Value| v.as_f64().map(|x| x as f32);
         let half = Vec2::new(f(&extras["half"][0])?, f(&extras["half"][1])?);
-        Some(Self { kind, effect, half, height: f(&extras["height"])?, travel: f(&extras["travel"])?, depth: 0.0, touched: false, click: 0.0 })
+        Some(Self {
+            kind,
+            effect,
+            half,
+            height: f(&extras["height"])?,
+            travel: f(&extras["travel"])?,
+            depth: 0.0,
+            touched: false,
+            click: 0.0,
+        })
     }
 
     pub(super) fn is_eject(&self) -> bool {
@@ -112,7 +121,9 @@ impl Control {
 pub(super) fn parse_effect(s: &str) -> Option<Effect> {
     let s = s.trim();
     let (name, args) = match s.split_once('(') {
-        Some((n, rest)) => (n.trim(), rest.strip_suffix(')')?.split(',').map(str::trim).collect::<Vec<_>>()),
+        Some((n, rest)) => {
+            (n.trim(), rest.strip_suffix(')')?.split(',').map(str::trim).collect::<Vec<_>>())
+        }
         None => (s, Vec::new()),
     };
     Some(match (name, args.as_slice()) {
@@ -191,7 +202,11 @@ impl Fire<'_, '_> {
                 self.actions.write(ActionEvent(next));
             }
             Effect::TimeToggle => {
-                self.actions.write(ActionEvent(if self.accel.on { Action::TimeNormal } else { Action::TimeAccel }));
+                self.actions.write(ActionEvent(if self.accel.on {
+                    Action::TimeNormal
+                } else {
+                    Action::TimeAccel
+                }));
             }
         }
     }
@@ -228,20 +243,26 @@ pub(super) fn interact(
             let lit = matches!(c.effect, Effect::Osb(side, slot) if osb(side, slot, &mfd).is_some_and(|o| o.2));
             (!matches!(c.kind, Kind::Cap | Kind::Osb), lit)
         };
-        if let Some((_, mut c, _)) = controls.iter_mut().filter(|(_, c, _)| c.effect.action(&mfd) == Some(*a)).min_by_key(|(_, c, _)| rank(c)) {
+        if let Some((_, mut c, _)) = controls
+            .iter_mut()
+            .filter(|(_, c, _)| c.effect.action(&mfd) == Some(*a))
+            .min_by_key(|(_, c, _)| rank(c))
+        {
             c.click = CLICK_SECONDS;
             fire.fire(c.effect);
         } else {
             warn!("no 3D cockpit control for {a:?}");
         }
     }
-    let cockpit_view = matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
+    let cockpit_view =
+        matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
 
     // Mouse click: nearest control face under the cursor.
     if !settings.vr
         && cockpit_view
         && buttons.just_pressed(MouseButton::Left)
-        && let (Ok(window), Ok((camera, cam_tf)), Ok(root_tf)) = (windows.single(), cams.single(), root.single())
+        && let (Ok(window), Ok((camera, cam_tf)), Ok(root_tf)) =
+            (windows.single(), cams.single(), root.single())
         && let Some(cursor) = window.cursor_position()
         && let Ok(ray) = camera.viewport_to_world(cam_tf, cursor)
     {
@@ -285,13 +306,19 @@ pub(super) fn interact(
                 continue;
             }
             let local = tf.rotation.inverse() * (hand.finger - tf.translation);
-            let inside = local.x.abs() <= c.half.x + TOUCH_MARGIN && local.y.abs() <= c.half.y + TOUCH_MARGIN && local.z > -0.04;
+            let inside = local.x.abs() <= c.half.x + TOUCH_MARGIN
+                && local.y.abs() <= c.half.y + TOUCH_MARGIN
+                && local.z > -0.04;
             if !inside {
                 continue;
             }
             let face = c.height + FINGER;
             let gap = local.z - face;
-            if hand.squeeze < 0.4 && gap < TOUCH_GAP && gap > -c.travel - TOUCH_GAP && touching[h].is_none_or(|(g, _)| gap.abs() < g) {
+            if hand.squeeze < 0.4
+                && gap < TOUCH_GAP
+                && gap > -c.travel - TOUCH_GAP
+                && touching[h].is_none_or(|(g, _)| gap.abs() < g)
+            {
                 touching[h] = Some((gap.abs(), e));
             }
         }
@@ -339,7 +366,11 @@ pub(super) fn animate(
             if let Ok((mut tf, parts)) = moving.get_mut(child) {
                 for part in parts.iter() {
                     if let Ok(mut v) = highlights.get_mut(part) {
-                        v.set_if_neq(if c.touched { Visibility::Inherited } else { Visibility::Hidden });
+                        v.set_if_neq(if c.touched {
+                            Visibility::Inherited
+                        } else {
+                            Visibility::Hidden
+                        });
                     }
                 }
                 let mut t = Transform::from_xyz(0.0, 0.0, -c.depth);

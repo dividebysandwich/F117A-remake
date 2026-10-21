@@ -25,8 +25,13 @@ pub const RANKS: [(&str, &str, i32); 6] = [
     ("Colonel", "Col.", 6000),
 ];
 /// Decorations for one mission's points (the highest earned is awarded).
-pub const MEDALS: [(&str, i32); 5] =
-    [("Air Medal", 150), ("Distinguished Flying Cross", 300), ("Silver Star", 500), ("Air Force Cross", 800), ("Medal of Honor", 1200)];
+pub const MEDALS: [(&str, i32); 5] = [
+    ("Air Medal", 150),
+    ("Distinguished Flying Cross", 300),
+    ("Silver Star", 500),
+    ("Air Force Cross", 800),
+    ("Medal of Honor", 1200),
+];
 pub const TOUR_LENGTH: u32 = 12;
 /// Points for finishing a tour.
 pub const TOUR_BONUS: i32 = 200;
@@ -90,12 +95,23 @@ fn pilots_dir() -> Option<PathBuf> {
 
 /// File key of a pilot name (letters, digits, '-').
 pub fn file_key(name: &str) -> String {
-    name.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect()
+    name.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect()
 }
 
 impl Pilot {
     pub fn new(name: &str) -> Self {
-        Self { name: name.trim().to_string(), points: 0, sorties: 0, medals: Vec::new(), status: Status::Active, tour: None, tours_completed: 0, history: Vec::new() }
+        Self {
+            name: name.trim().to_string(),
+            points: 0,
+            sorties: 0,
+            medals: Vec::new(),
+            status: Status::Active,
+            tour: None,
+            tours_completed: 0,
+            history: Vec::new(),
+        }
     }
 
     pub fn key(&self) -> String {
@@ -113,7 +129,9 @@ impl Pilot {
 
     pub fn load(key: &str) -> Option<Self> {
         let path = pilots_dir()?.join(format!("{key}.json"));
-        serde_json::from_str(&std::fs::read_to_string(&path).ok()?).map_err(|e| warn!("{}: {e}", path.display())).ok()
+        serde_json::from_str(&std::fs::read_to_string(&path).ok()?)
+            .map_err(|e| warn!("{}: {e}", path.display()))
+            .ok()
     }
 
     pub fn load_all() -> Vec<Self> {
@@ -134,20 +152,33 @@ impl Pilot {
             Ok(t) => t,
             Err(e) => return warn!("saving pilot {}: {e}", self.name),
         };
-        if let Err(e) = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(format!("{}.json", self.key())), text)) {
+        if let Err(e) = std::fs::create_dir_all(&dir)
+            .and_then(|_| std::fs::write(dir.join(format!("{}.json", self.key())), text))
+        {
             warn!("saving pilot {}: {e}", self.name);
         }
     }
 
     /// Records a tour sortie; returns the news for the debrief.
-    pub fn record(&mut self, report: &MissionReport, damage: Option<&WorldDamage>, m: &Mission) -> Vec<String> {
+    pub fn record(
+        &mut self,
+        report: &MissionReport,
+        damage: Option<&WorldDamage>,
+        m: &Mission,
+    ) -> Vec<String> {
         let mut news = Vec::new();
         let rank = self.rank();
         self.sorties += 1;
         let points = if report.outcome == Outcome::Aborted { 0 } else { report.total };
         self.points += points;
         let medal = (report.primary_done || report.drones_killed > 0 || report.air_kills > 0)
-            .then(|| MEDALS.iter().rev().find(|(_, need)| report.total >= *need).map(|(n, _)| n.to_string()))
+            .then(|| {
+                MEDALS
+                    .iter()
+                    .rev()
+                    .find(|(_, need)| report.total >= *need)
+                    .map(|(n, _)| n.to_string())
+            })
             .flatten();
         let mut award = |name: &str, news: &mut Vec<String>| {
             match self.medals.iter_mut().find(|(n, _)| n == name) {
@@ -209,7 +240,12 @@ impl Pilot {
 
 /// Generates the next sortie of a pilot's tour: the first seed from `seed` on whose targets
 /// still stand. Mostly strikes, some intercepts, in Ukraine also drone defense.
-pub fn next_sortie(data: &MissionData, pilot: &Pilot, seed: u16, aircraft: crate::aircraft::AircraftKind) -> Option<(u16, Mission)> {
+pub fn next_sortie(
+    data: &MissionData,
+    pilot: &Pilot,
+    seed: u16,
+    aircraft: crate::aircraft::AircraftKind,
+) -> Option<(u16, Mission)> {
     let t = pilot.tour.as_ref()?;
     let drones = THEATERS.get(t.theater).is_some_and(|(id, _)| *id == "ua");
     for k in 0..SORTIE_TRIES {
@@ -219,12 +255,21 @@ pub fn next_sortie(data: &MissionData, pilot: &Pilot, seed: u16, aircraft: crate
             12..=15 if drones => MissionKind::DroneDefense,
             _ => MissionKind::Air,
         };
-        let mut settings = crate::mission::settings(t.theater, t.roe, kind, t.opponents, t.lockheed && aircraft == crate::aircraft::AircraftKind::F117, None, None);
+        let mut settings = crate::mission::settings(
+            t.theater,
+            t.roe,
+            kind,
+            t.opponents,
+            t.lockheed && aircraft == crate::aircraft::AircraftKind::F117,
+            None,
+            None,
+        );
         settings.pilot = pilot.title();
         settings.sorties = pilot.sorties as u16;
         let Ok(m) = stealth_mission::generate(&data.0, &settings, Seed::Srand(s)) else { continue };
         let standing = |tg: &stealth_mission::Target| {
-            !t.damage.objects.contains(&(tg.object_index as u16)) && !t.damage.near(tg.position.x, tg.position.y, 0x20)
+            !t.damage.objects.contains(&(tg.object_index as u16))
+                && !t.damage.near(tg.position.x, tg.position.y, 0x20)
         };
         if standing(&m.primary) && standing(&m.secondary) {
             return Some((s, m));
@@ -265,7 +310,10 @@ pub fn career_ui(ctx: &egui::Context, w: &mut CareerWindow, state: &mut MenuStat
     }
     let mut close = false;
     let screen = ctx.content_rect();
-    let size = egui::vec2((screen.width() - 64.0).clamp(600.0, 1100.0), (screen.height() - 64.0).clamp(400.0, 800.0));
+    let size = egui::vec2(
+        (screen.width() - 64.0).clamp(600.0, 1100.0),
+        (screen.height() - 64.0).clamp(400.0, 800.0),
+    );
     egui::Window::new("Career")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .collapsible(false)
@@ -438,7 +486,16 @@ mod tests {
         let m = mission();
         let mut p = Pilot::new("Test Pilot");
         assert_eq!((p.title().as_str(), p.key().as_str()), ("2nd Lt. Test Pilot", "test-pilot"));
-        p.tour = Some(Tour { theater: 3, roe: 1, opponents: 1, lockheed: false, sortie: 0, length: 2, points: 0, damage: WorldDamage::default() });
+        p.tour = Some(Tour {
+            theater: 3,
+            roe: 1,
+            opponents: 1,
+            lockheed: false,
+            sortie: 0,
+            length: 2,
+            points: 0,
+            damage: WorldDamage::default(),
+        });
         let hit = WorldDamage { tiles: Vec::new(), objects: vec![40], positions: vec![(100, 200)] };
         let news = p.record(&report(Outcome::Landed, 350), Some(&hit), &m);
         assert!(news.contains(&"Awarded the Distinguished Flying Cross".to_string()), "{news:?}");
@@ -450,7 +507,16 @@ mod tests {
         assert_eq!(p.points, 350 + 100 + TOUR_BONUS);
         assert_eq!(p.history.len(), 2);
         // Captured: the career is over.
-        p.tour = Some(Tour { theater: 3, roe: 1, opponents: 1, lockheed: false, sortie: 0, length: 12, points: 0, damage: WorldDamage::default() });
+        p.tour = Some(Tour {
+            theater: 3,
+            roe: 1,
+            opponents: 1,
+            lockheed: false,
+            sortie: 0,
+            length: 12,
+            points: 0,
+            damage: WorldDamage::default(),
+        });
         p.record(&report(Outcome::Captured, -80), None, &m);
         assert_eq!(p.status, Status::Pow);
         assert!(p.tour.is_none());

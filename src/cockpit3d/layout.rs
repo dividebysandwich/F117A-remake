@@ -148,7 +148,8 @@ impl PanelLayout {
             return Vec::new();
         }
         let s = unit.screen;
-        let (w, h) = if self.style == PanelStyle::F16 { (F16_OSB_W, F16_OSB_H) } else { (OSB_W, OSB_H) };
+        let (w, h) =
+            if self.style == PanelStyle::F16 { (F16_OSB_W, F16_OSB_H) } else { (OSB_W, OSB_H) };
         (0..OSB_COUNT)
             .map(|slot| {
                 let col = (slot % 5) as f32;
@@ -228,16 +229,36 @@ impl PanelLayout {
         for (i, &(x, y, w, h)) in LIGHTS.iter().enumerate() {
             let id = crate::panel::LAMPS[i].0;
             let cap = caps.iter().find(|(l, _)| *l == id).map(|&(_, e)| e);
-            items.push(Placed { elem: Elem::Lamp(id, None), rect: rect(x, y, w + 1.0, h + 1.0), cap, round: false });
+            items.push(Placed {
+                elem: Elem::Lamp(id, None),
+                rect: rect(x, y, w + 1.0, h + 1.0),
+                cap,
+                round: false,
+            });
         }
         // Countermeasure release buttons with their labels, LED readouts and the other texts
         // that were part of the picture.
-        for (k, (label, action, led)) in
-            [("CHAFF", Action::Chaff, LedId::Chaff), ("FLARE", Action::Flare, LedId::Flares), ("DECOY", Action::Decoy, LedId::Decoys)].into_iter().enumerate()
+        for (k, (label, action, led)) in [
+            ("CHAFF", Action::Chaff, LedId::Chaff),
+            ("FLARE", Action::Flare, LedId::Flares),
+            ("DECOY", Action::Decoy, LedId::Decoys),
+        ]
+        .into_iter()
+        .enumerate()
         {
             let y = 147.0 + 10.0 * k as f32;
-            items.push(Placed { elem: Elem::Label(label, 47, 38), rect: rect(4.0, y, 25.0, 9.0), cap: Some(E::Action(action)), round: false });
-            items.push(Placed { elem: Elem::Led(led), rect: rect(33.0, y, 14.0, 10.0), cap: None, round: false });
+            items.push(Placed {
+                elem: Elem::Label(label, 47, 38),
+                rect: rect(4.0, y, 25.0, 9.0),
+                cap: Some(E::Action(action)),
+                round: false,
+            });
+            items.push(Placed {
+                elem: Elem::Led(led),
+                rect: rect(33.0, y, 14.0, 10.0),
+                cap: None,
+                round: false,
+            });
         }
         let fixed = [
             (Elem::Led(LedId::Fuel), rect(259.0, 178.0, 18.0, 9.0)),
@@ -249,7 +270,12 @@ impl PanelLayout {
             (Elem::Label("THRUST", 47, 79), rect(279.0, 190.0, 30.0, 9.0)),
             (Elem::Hazard, rect(307.0, 136.0, 12.0, 40.0)),
         ];
-        items.extend(fixed.into_iter().map(|(elem, rect)| Placed { elem, rect, cap: None, round: false }));
+        items.extend(fixed.into_iter().map(|(elem, rect)| Placed {
+            elem,
+            rect,
+            cap: None,
+            round: false,
+        }));
 
         let screens = [rect(74.0, 110.0, 77.0, 60.0), rect(169.0, 110.0, 77.0, 60.0)];
         // The top two squares outside each screen are buttons (not in the original): map zoom
@@ -260,13 +286,21 @@ impl PanelLayout {
             (249.0, 112.0, "+", Action::NextWaypoint),
             (249.0, 123.0, "-", Action::LastWaypoint),
         ] {
-            items.push(Placed { elem: Elem::Label(label, 47, 22), rect: rect(x, y, 6.0, 6.0), cap: Some(E::Action(action)), round: false });
+            items.push(Placed {
+                elem: Elem::Label(label, 47, 22),
+                rect: rect(x, y, 6.0, 6.0),
+                cap: Some(E::Action(action)),
+                round: false,
+            });
         }
         Self {
             style: PanelStyle::Classic,
             items,
             adi: rect(265.0, 139.0, 32.0, 32.0),
-            mfds: [MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: false }, MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: false }],
+            mfds: [
+                MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: false },
+                MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: false },
+            ],
             rwr: None,
             hsi: None,
             ded: None,
@@ -280,7 +314,9 @@ impl PanelLayout {
         use Effect as E;
         use LampId::*;
         let mut items = Vec::new();
-        let mut lamp = |id: LampId, r: PxRect, cap: Option<Effect>| items.push(Placed { elem: Elem::Lamp(id, None), rect: r, cap, round: false });
+        let mut lamp = |id: LampId, r: PxRect, cap: Option<Effect>| {
+            items.push(Placed { elem: Elem::Lamp(id, None), rect: r, cap, round: false })
+        };
         // HUD mode and lock caps under the glare shield (as in the original).
         lamp(Nav, rect(119.0, 93.0, 19.0, 8.0), Some(E::HudMode(0)));
         lamp(Air, rect(139.0, 93.0, 19.0, 8.0), Some(E::HudMode(1)));
@@ -288,7 +324,10 @@ impl PanelLayout {
         lamp(Lock, rect(184.0, 93.0, 22.0, 8.0), Some(E::Action(Action::DesignateTarget)));
         // Left block: stall, warnings, threats.
         lamp(Stall, rect(2.0, 109.0, 52.0, 8.0), None);
-        for (row, ids) in [[Mw, Eng, Fc], [Jam, Fire, Fuel], [Bd, Av, Blank], [Rad, Ir, Trak]].into_iter().enumerate() {
+        for (row, ids) in [[Mw, Eng, Fc], [Jam, Fire, Fuel], [Bd, Av, Blank], [Rad, Ir, Trak]]
+            .into_iter()
+            .enumerate()
+        {
             let y = if row < 3 { 119.0 + 9.0 * row as f32 } else { 147.0 };
             for (col, id) in ids.into_iter().enumerate() {
                 lamp(id, rect(2.0 + 18.0 * col as f32, y, 16.0, 8.0), None);
@@ -304,12 +343,37 @@ impl PanelLayout {
         .enumerate()
         {
             let y = 157.0 + 9.0 * k as f32;
-            items.push(Placed { elem: Elem::Label(label, 47, 38), rect: rect(2.0, y, 22.0, 8.0), cap: Some(E::Action(action)), round: false });
-            items.push(Placed { elem: Elem::Led(led), rect: rect(25.0, y, 13.0, 8.0), cap: None, round: false });
-            items.push(Placed { elem: Elem::Lamp(act, None), rect: rect(39.0, y, 15.0, 8.0), cap: None, round: false });
+            items.push(Placed {
+                elem: Elem::Label(label, 47, 38),
+                rect: rect(2.0, y, 22.0, 8.0),
+                cap: Some(E::Action(action)),
+                round: false,
+            });
+            items.push(Placed {
+                elem: Elem::Led(led),
+                rect: rect(25.0, y, 13.0, 8.0),
+                cap: None,
+                round: false,
+            });
+            items.push(Placed {
+                elem: Elem::Lamp(act, None),
+                rect: rect(39.0, y, 15.0, 8.0),
+                cap: None,
+                round: false,
+            });
         }
-        items.push(Placed { elem: Elem::Lamp(Ecm, None), rect: rect(2.0, 185.0, 25.0, 9.0), cap: Some(E::Action(Action::Ecm)), round: false });
-        items.push(Placed { elem: Elem::Lamp(Irj, None), rect: rect(29.0, 185.0, 25.0, 9.0), cap: Some(E::Action(Action::IrJammer)), round: false });
+        items.push(Placed {
+            elem: Elem::Lamp(Ecm, None),
+            rect: rect(2.0, 185.0, 25.0, 9.0),
+            cap: Some(E::Action(Action::Ecm)),
+            round: false,
+        });
+        items.push(Placed {
+            elem: Elem::Lamp(Irj, None),
+            rect: rect(29.0, 185.0, 25.0, 9.0),
+            cap: Some(E::Action(Action::IrJammer)),
+            round: false,
+        });
         // Right block: aircraft systems under the attitude ball.
         for (id, x, y, action) in [
             (Bay, 268.0, 158.0, Action::BayDoors),
@@ -318,9 +382,19 @@ impl PanelLayout {
             (Gear, 294.0, 169.0, Action::Gear),
             (Brake, 268.0, 180.0, Action::Brakes),
         ] {
-            items.push(Placed { elem: Elem::Lamp(id, None), rect: rect(x, y, 24.0, 9.0), cap: Some(E::Action(action)), round: false });
+            items.push(Placed {
+                elem: Elem::Lamp(id, None),
+                rect: rect(x, y, 24.0, 9.0),
+                cap: Some(E::Action(action)),
+                round: false,
+            });
         }
-        items.push(Placed { elem: Elem::Lamp(LowFuel, Some("LOW\nFUEL")), rect: rect(294.0, 180.0, 24.0, 9.0), cap: None, round: false });
+        items.push(Placed {
+            elem: Elem::Lamp(LowFuel, Some("LOW\nFUEL")),
+            rect: rect(294.0, 180.0, 24.0, 9.0),
+            cap: None,
+            round: false,
+        });
         // Bottom strip: EMV gauge, engine readouts.
         let fixed = [
             (Elem::Label("EGR\nEAR", 47, 33), rect(58.0, 190.0, 14.0, 9.0)),
@@ -333,7 +407,12 @@ impl PanelLayout {
             (Elem::Label("THRUST", 47, 79), rect(241.0, 190.0, 25.0, 9.0)),
             (Elem::Hazard, rect(268.0, 191.0, 50.0, 7.0)),
         ];
-        items.extend(fixed.into_iter().map(|(elem, rect)| Placed { elem, rect, cap: None, round: false }));
+        items.extend(fixed.into_iter().map(|(elem, rect)| Placed {
+            elem,
+            rect,
+            cap: None,
+            round: false,
+        }));
 
         // Shaped like the HIRES canvas on the panel (panel pixels are not square), so the
         // screen's pixels are.
@@ -342,7 +421,10 @@ impl PanelLayout {
             style: PanelStyle::Modern,
             items,
             adi: rect(273.0, 113.0, 40.0, 40.0),
-            mfds: [MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: true }, MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: true }],
+            mfds: [
+                MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: true },
+                MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: true },
+            ],
             rwr: None,
             hsi: None,
             ded: None,
@@ -370,7 +452,9 @@ impl PanelLayout {
         use Effect as E;
         use LampId::*;
         let mut items = Vec::new();
-        let mut put = |elem: Elem, rect: PxRect, cap: Option<Effect>, round: bool| items.push(Placed { elem, rect, cap, round });
+        let mut put = |elem: Elem, rect: PxRect, cap: Option<Effect>, round: bool| {
+            items.push(Placed { elem, rect, cap, round })
+        };
         // Up-front controls: the override buttons (round, black on light grey), the keypad and
         // the keys right of it (black on grey).
         const OVERRIDE: (u8, u8) = (5, 7);
@@ -408,10 +492,25 @@ impl PanelLayout {
             ("ENTR", None),
         ];
         for (k, (label, cap)) in KEYS.into_iter().enumerate() {
-            put(Elem::Label(label, KEY.0, KEY.1), rect(-63.0 + 24.0 * (k % 3) as f32, -132.0 + 20.0 * (k / 3) as f32, 22.0, 16.0), cap, false);
+            put(
+                Elem::Label(label, KEY.0, KEY.1),
+                rect(-63.0 + 24.0 * (k % 3) as f32, -132.0 + 20.0 * (k / 3) as f32, 22.0, 16.0),
+                cap,
+                false,
+            );
         }
-        put(Elem::Label("DCLT", KEY.0, KEY.1), rect(15.0, -132.0, 20.0, 16.0), Some(E::Action(Action::HudDeclutter)), false);
-        put(Elem::Label("NVG", KEY.0, KEY.1), rect(15.0, -112.0, 20.0, 16.0), Some(E::Action(Action::Nvg)), false);
+        put(
+            Elem::Label("DCLT", KEY.0, KEY.1),
+            rect(15.0, -132.0, 20.0, 16.0),
+            Some(E::Action(Action::HudDeclutter)),
+            false,
+        );
+        put(
+            Elem::Label("NVG", KEY.0, KEY.1),
+            rect(15.0, -112.0, 20.0, 16.0),
+            Some(E::Action(Action::Nvg)),
+            false,
+        );
         put(Elem::Label("WX", KEY.0, KEY.1), rect(15.0, -92.0, 20.0, 16.0), None, false);
         put(Elem::Label("FLIR", KEY.0, KEY.1), rect(15.0, -72.0, 20.0, 16.0), None, false);
         // Flight instruments round the attitude indicator and HSI.
@@ -422,13 +521,27 @@ impl PanelLayout {
         // Threat warnings: square lights left of the RWR (tracking, radar and IR missile
         // launch); master caution and stall light right of them, under the glare shield.
         for (k, id) in [Trak, Rad, Ir].into_iter().enumerate() {
-            put(Elem::Lamp(id, None), rect(-262.0, -150.0 + 25.0 * k as f32, 24.0, 22.0), None, false);
+            put(
+                Elem::Lamp(id, None),
+                rect(-262.0, -150.0 + 25.0 * k as f32, 24.0, 22.0),
+                None,
+                false,
+            );
         }
         put(Elem::Lamp(Mw, Some("MASTER\nCAUTION")), rect(-234.0, -150.0, 46.0, 20.0), None, false);
         put(Elem::Lamp(Stall, None), rect(-234.0, -126.0, 46.0, 14.0), None, false);
         // Aircraft systems at the left edge, level with the lower half of the RWR.
-        for (k, (id, action)) in [(Flaps, Action::Flaps), (Brake, Action::Brakes), (Auto, Action::Autopilot)].into_iter().enumerate() {
-            put(Elem::Lamp(id, None), rect(-316.0, -102.0 + 18.0 * k as f32, 40.0, 14.0), Some(E::Action(action)), false);
+        for (k, (id, action)) in
+            [(Flaps, Action::Flaps), (Brake, Action::Brakes), (Auto, Action::Autopilot)]
+                .into_iter()
+                .enumerate()
+        {
+            put(
+                Elem::Lamp(id, None),
+                rect(-316.0, -102.0 + 18.0 * k as f32, 40.0, 14.0),
+                Some(E::Action(action)),
+                false,
+            );
         }
         // Clock under the HSI.
         put(Elem::Dial(Dial::Clock), rect(-22.0, 116.0, 44.0, 44.0), None, true);
@@ -443,12 +556,26 @@ impl PanelLayout {
         put(Elem::Dial(Dial::Fuel), rect(270.0, 16.0, 48.0, 48.0), None, true);
         // The other warnings on the advisory light panel on the right console (layout
         // x >= 600, see the doc).
-        for (k, (id, label)) in
-            [(Fire, None), (Eng, None), (Fc, None), (Fuel, None), (LowFuel, Some("LOW\nFUEL")), (Jam, None), (Av, None), (EmvWarn, Some("EMV")), (Blank, None)]
-                .into_iter()
-                .enumerate()
+        for (k, (id, label)) in [
+            (Fire, None),
+            (Eng, None),
+            (Fc, None),
+            (Fuel, None),
+            (LowFuel, Some("LOW\nFUEL")),
+            (Jam, None),
+            (Av, None),
+            (EmvWarn, Some("EMV")),
+            (Blank, None),
+        ]
+        .into_iter()
+        .enumerate()
         {
-            put(Elem::Lamp(id, label), rect(640.0 + 42.0 * (k % 3) as f32, -38.0 + 19.0 * (k / 3) as f32, 36.0, 14.0), None, false);
+            put(
+                Elem::Lamp(id, label),
+                rect(640.0 + 42.0 * (k % 3) as f32, -38.0 + 19.0 * (k / 3) as f32, 36.0, 14.0),
+                None,
+                false,
+            );
         }
         // Countermeasures on the right slope: release caps, counts, released lights; jammers.
         for (k, (label, action, led, act)) in [
@@ -460,12 +587,27 @@ impl PanelLayout {
         .enumerate()
         {
             let y = -70.0 + 17.0 * k as f32;
-            put(Elem::Label(label, 47, 38), rect(1150.0, y, 30.0, 13.0), Some(E::Action(action)), false);
+            put(
+                Elem::Label(label, 47, 38),
+                rect(1150.0, y, 30.0, 13.0),
+                Some(E::Action(action)),
+                false,
+            );
             put(Elem::Led(led), rect(1183.0, y, 20.0, 13.0), None, false);
             put(Elem::Lamp(act, None), rect(1206.0, y, 16.0, 13.0), None, false);
         }
-        put(Elem::Lamp(Ecm, None), rect(1150.0, -16.0, 34.0, 13.0), Some(E::Action(Action::Ecm)), false);
-        put(Elem::Lamp(Irj, None), rect(1188.0, -16.0, 34.0, 13.0), Some(E::Action(Action::IrJammer)), false);
+        put(
+            Elem::Lamp(Ecm, None),
+            rect(1150.0, -16.0, 34.0, 13.0),
+            Some(E::Action(Action::Ecm)),
+            false,
+        );
+        put(
+            Elem::Lamp(Irj, None),
+            rect(1188.0, -16.0, 34.0, 13.0),
+            Some(E::Action(Action::IrJammer)),
+            false,
+        );
 
         // The HIRES canvas' shape (231x180), 130 mm wide.
         let (w, h) = (130.0, 130.0 * crate::mfd::HIRES.1 as f32 / crate::mfd::HIRES.0 as f32);
@@ -474,7 +616,10 @@ impl PanelLayout {
             style: PanelStyle::F16,
             items,
             adi: rect(-36.0, -40.0, 72.0, 72.0),
-            mfds: [MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: true }, MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: true }],
+            mfds: [
+                MfdUnit { side: MfdSide::Left, screen: screens[0], osbs: true },
+                MfdUnit { side: MfdSide::Right, screen: screens[1], osbs: true },
+            ],
             rwr: Some(rect(-176.0, -154.0, 76.0, 76.0)),
             hsi: Some(rect(-36.0, 40.0, 72.0, 72.0)),
             ded: Some(rect(95.0, -152.0, DED_W, DED_W * DED_CANVAS.1 as f32 / DED_CANVAS.0 as f32)),
@@ -489,7 +634,8 @@ const DED_W: f32 = 120.0;
 pub const DED_COLS: i32 = 24;
 pub const DED_LINES: i32 = 5;
 pub const DED_SCALE: i32 = 3;
-pub const DED_CANVAS: (usize, usize) = ((DED_COLS * 4 * DED_SCALE + 8) as usize, (DED_LINES * 8 * DED_SCALE + 3) as usize);
+pub const DED_CANVAS: (usize, usize) =
+    ((DED_COLS * 4 * DED_SCALE + 8) as usize, (DED_LINES * 8 * DED_SCALE + 3) as usize);
 
 #[cfg(test)]
 mod tests {
@@ -526,18 +672,35 @@ mod tests {
         for m in &PanelLayout::modern().mfds {
             let s = m.screen;
             let (_, size) = super::super::geometry::panel_rect(s.x, s.y, s.w, s.h, 0.0);
-            assert!((size.x / size.y / canvas - 1.0).abs() < 0.01, "{:?}: {}", m.side, size.x / size.y);
+            assert!(
+                (size.x / size.y / canvas - 1.0).abs() < 0.01,
+                "{:?}: {}",
+                m.side,
+                size.x / size.y
+            );
         }
     }
 
     #[test]
     fn lamps() {
         let lamps = |l: &PanelLayout| -> Vec<LampId> {
-            l.items.iter().filter_map(|p| if let Elem::Lamp(id, _) = p.elem { Some(id) } else { None }).collect()
+            l.items
+                .iter()
+                .filter_map(|p| if let Elem::Lamp(id, _) = p.elem { Some(id) } else { None })
+                .collect()
         };
         assert_eq!(lamps(&PanelLayout::classic()).len(), crate::panel::LAMP_COUNT);
         let modern = lamps(&PanelLayout::modern());
-        for id in [LampId::Map, LampId::Tac, LampId::Flir, LampId::Wpn, LampId::CamDir, LampId::Way, LampId::Ord, LampId::Tc] {
+        for id in [
+            LampId::Map,
+            LampId::Tac,
+            LampId::Flir,
+            LampId::Wpn,
+            LampId::CamDir,
+            LampId::Way,
+            LampId::Ord,
+            LampId::Tc,
+        ] {
             assert!(!modern.contains(&id), "{id:?} is a bezel button in the modern panel");
         }
     }

@@ -35,7 +35,8 @@ pub enum Sky {
 }
 
 impl Sky {
-    pub const ALL: [Sky; 5] = [Self::Clear, Self::Scattered, Self::Broken, Self::Overcast, Self::Storm];
+    pub const ALL: [Sky; 5] =
+        [Self::Clear, Self::Scattered, Self::Broken, Self::Overcast, Self::Storm];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -129,7 +130,9 @@ fn mix(mut z: u64) -> u64 {
 
 /// Lattice value 0..1 of the stratus noise (same integer hash as palette.wgsl `value_hash`).
 fn value_hash(ix: i32, iy: i32, seed: u32) -> f32 {
-    let mut h = (ix as u32).wrapping_mul(0x8DA6_B343) ^ (iy as u32).wrapping_mul(0xD816_3841) ^ seed.wrapping_mul(0xCB1A_B31F);
+    let mut h = (ix as u32).wrapping_mul(0x8DA6_B343)
+        ^ (iy as u32).wrapping_mul(0xD816_3841)
+        ^ seed.wrapping_mul(0xCB1A_B31F);
     h ^= h >> 16;
     h = h.wrapping_mul(0x7FEB_352D);
     h ^= h >> 15;
@@ -215,7 +218,11 @@ impl Weather {
             }
         }
         if let Some(c) = cover {
-            let main = if matches!(sky, Sky::Overcast | Sky::Storm) { &mut w.stratus } else { &mut w.cumulus };
+            let main = if matches!(sky, Sky::Overcast | Sky::Storm) {
+                &mut w.stratus
+            } else {
+                &mut w.cumulus
+            };
             if main.base_ft > 0 {
                 main.cover = c.min(100);
             }
@@ -244,12 +251,17 @@ impl Weather {
     /// Stratus noise field 0..1 at a map position (palette.wgsl `stratus_field`).
     pub fn stratus_field(&self, x: f32, y: f32) -> f32 {
         let s = self.seed & 0xFFFF;
-        STRATUS_OCTAVES.iter().enumerate().map(|(k, &(cell, weight))| weight * value_noise(x / cell, y / cell, s + k as u32)).sum()
+        STRATUS_OCTAVES
+            .iter()
+            .enumerate()
+            .map(|(k, &(cell, weight))| weight * value_noise(x / cell, y / cell, s + k as u32))
+            .sum()
     }
 
     /// Stratus covers this map position (whatever the altitude).
     pub fn stratus_at(&self, x: f32, y: f32) -> bool {
-        self.stratus.present() && self.stratus_field(x, y) * 65535.0 >= self.stratus_threshold as f32
+        self.stratus.present()
+            && self.stratus_field(x, y) * 65535.0 >= self.stratus_threshold as f32
     }
 
     /// Any clouds at all (a clear sky is the original game).
@@ -278,7 +290,11 @@ impl Weather {
             return format!("Weather: clear, visibility {} km.", self.vis_km);
         }
         let mut parts = Vec::new();
-        for (kind, l) in [(CloudKind::Cumulonimbus, self.cumulonimbus), (CloudKind::Cumulus, self.cumulus), (CloudKind::Stratus, self.stratus)] {
+        for (kind, l) in [
+            (CloudKind::Cumulonimbus, self.cumulonimbus),
+            (CloudKind::Cumulus, self.cumulus),
+            (CloudKind::Stratus, self.stratus),
+        ] {
             if !l.present() {
                 continue;
             }
@@ -288,7 +304,11 @@ impl Weather {
                 _ => format!("{name} {}% from {} ft", l.cover, l.base_ft),
             });
         }
-        let preset = if self.sky == Sky::Storm { "thunderstorms".to_string() } else { self.sky.name().to_ascii_lowercase() };
+        let preset = if self.sky == Sky::Storm {
+            "thunderstorms".to_string()
+        } else {
+            self.sky.name().to_ascii_lowercase()
+        };
         format!("Weather: {preset} - {}, visibility {} km.", parts.join(", "), self.vis_km)
     }
 
@@ -307,7 +327,8 @@ impl Weather {
             return None;
         }
         let salt = if kind == CloudKind::Cumulonimbus { 0x5354_4F52_4D00_0000 } else { 0 };
-        let h = mix(((self.seed as u64) << 32) ^ ((gx as u16 as u64) << 16) ^ gy as u16 as u64 ^ salt);
+        let h =
+            mix(((self.seed as u64) << 32) ^ ((gx as u16 as u64) << 16) ^ gy as u16 as u64 ^ salt);
         if h % 100 >= layer.cover as u64 {
             return None;
         }
@@ -341,7 +362,8 @@ impl Weather {
                 let cell = Self::grid(kind);
                 let (gx0, gx1) = ((x - radius).div_euclid(cell), (x + radius).div_euclid(cell));
                 let (gy0, gy1) = ((y - radius).div_euclid(cell), (y + radius).div_euclid(cell));
-                (gy0..=gy1).flat_map(move |gy| (gx0..=gx1).filter_map(move |gx| self.cloud(kind, gx, gy)))
+                (gy0..=gy1)
+                    .flat_map(move |gy| (gx0..=gx1).filter_map(move |gx| self.cloud(kind, gx, gy)))
             })
             .filter(move |c| {
                 let (dx, dy) = ((c.x - x) as i64, (c.y - y) as i64);
@@ -351,7 +373,9 @@ impl Weather {
 
     /// Whether (x, y, alt_ft) is inside a cloud.
     pub fn in_cloud(&self, x: i32, y: i32, alt_ft: i32) -> bool {
-        if (self.stratus.base_ft..=self.stratus.top_ft).contains(&alt_ft) && self.stratus_at(x as f32, y as f32) {
+        if (self.stratus.base_ft..=self.stratus.top_ft).contains(&alt_ft)
+            && self.stratus_at(x as f32, y as f32)
+        {
             return true;
         }
         self.clouds_near(x, y, STORM_CELL).any(|c| {
@@ -362,12 +386,17 @@ impl Weather {
 
     /// Under the stratus layer where it is covered, or under a storm cell (shade, rain).
     pub fn under_cloud(&self, x: i32, y: i32, alt_ft: i32) -> bool {
-        if self.stratus.present() && alt_ft < self.stratus.base_ft && self.stratus_at(x as f32, y as f32) {
+        if self.stratus.present()
+            && alt_ft < self.stratus.base_ft
+            && self.stratus_at(x as f32, y as f32)
+        {
             return true;
         }
         self.clouds_near(x, y, STORM_CELL).any(|c| {
             let (dx, dy) = ((c.x - x) as i64, (c.y - y) as i64);
-            c.kind == CloudKind::Cumulonimbus && dx * dx + dy * dy <= (c.r as i64).pow(2) && alt_ft < c.base_ft
+            c.kind == CloudKind::Cumulonimbus
+                && dx * dx + dy * dy <= (c.r as i64).pow(2)
+                && alt_ft < c.base_ft
         })
     }
 
@@ -375,7 +404,9 @@ impl Weather {
     pub fn under_storm(&self, x: i32, y: i32, alt_ft: i32) -> bool {
         self.clouds_near(x, y, STORM_CELL).any(|c| {
             let (dx, dy) = ((c.x - x) as i64, (c.y - y) as i64);
-            c.kind == CloudKind::Cumulonimbus && dx * dx + dy * dy <= (c.r as i64).pow(2) && alt_ft < c.top_ft
+            c.kind == CloudKind::Cumulonimbus
+                && dx * dx + dy * dy <= (c.r as i64).pow(2)
+                && alt_ft < c.top_ft
         })
     }
 
@@ -384,7 +415,9 @@ impl Weather {
         if !self.any() {
             return true;
         }
-        !self.stratus_blocks(a, b) && !self.cells_block(CloudKind::Cumulus, a, b) && !self.cells_block(CloudKind::Cumulonimbus, a, b)
+        !self.stratus_blocks(a, b)
+            && !self.cells_block(CloudKind::Cumulus, a, b)
+            && !self.cells_block(CloudKind::Cumulonimbus, a, b)
     }
 
     /// Samples the stratus field along the part of the line inside the layer (every km).
@@ -424,13 +457,19 @@ impl Weather {
         let len2 = dx * dx + dy * dy;
         let cell = Self::grid(kind);
         let reach = cell;
-        let (gx0, gx1) = ((a.0.min(b.0) - reach).div_euclid(cell), (a.0.max(b.0) + reach).div_euclid(cell));
-        let (gy0, gy1) = ((a.1.min(b.1) - reach).div_euclid(cell), (a.1.max(b.1) + reach).div_euclid(cell));
+        let (gx0, gx1) =
+            ((a.0.min(b.0) - reach).div_euclid(cell), (a.0.max(b.0) + reach).div_euclid(cell));
+        let (gy0, gy1) =
+            ((a.1.min(b.1) - reach).div_euclid(cell), (a.1.max(b.1) + reach).div_euclid(cell));
         for gy in gy0..=gy1 {
             for gx in gx0..=gx1 {
                 // Skip squares far from the line before hashing.
                 let (cx, cy) = ((gx * cell + cell / 2) as f64, (gy * cell + cell / 2) as f64);
-                let t = if len2 > 0.0 { (((cx - ax) * dx + (cy - ay) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+                let t = if len2 > 0.0 {
+                    (((cx - ax) * dx + (cy - ay) * dy) / len2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
                 let (px, py) = (ax + dx * t - cx, ay + dy * t - cy);
                 if px * px + py * py > (reach as f64).powi(2) {
                     continue;
@@ -482,7 +521,13 @@ mod tests {
     use super::*;
 
     fn cumulus(cover: i32) -> Weather {
-        Weather { sky: Sky::Broken, cumulus: Layer::new(cover, 3000, 8000), vis_km: 20, seed: 1234, ..Default::default() }
+        Weather {
+            sky: Sky::Broken,
+            cumulus: Layer::new(cover, 3000, 8000),
+            vis_km: 20,
+            seed: 1234,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -493,7 +538,8 @@ mod tests {
                 assert_eq!(Weather::roll(0xABCD, t, Some(s), None).sky, s);
             }
         }
-        let skies: std::collections::HashSet<_> = (0..500).map(|h| Weather::roll(h * 7919, 4, None, None).sky).collect();
+        let skies: std::collections::HashSet<_> =
+            (0..500).map(|h| Weather::roll(h * 7919, 4, None, None).sky).collect();
         assert_eq!(skies.len(), 5);
         // Picking the preset that would have been rolled gives the same weather.
         let w = Weather::roll(77, 3, None, None);
@@ -522,7 +568,9 @@ mod tests {
         for cover in [20u8, 50, 80, 100] {
             let w = Weather::stratus_layer(3000, 5000, cover, 4242);
             let n = 200;
-            let hits = (0..n * n).filter(|i| w.stratus_at((i % n * 300 + 50) as f32, (i / n * 300 + 70) as f32)).count();
+            let hits = (0..n * n)
+                .filter(|i| w.stratus_at((i % n * 300 + 50) as f32, (i / n * 300 + 70) as f32))
+                .count();
             let pct = hits * 100 / (n * n);
             assert!((pct as i32 - cover as i32).abs() <= 6, "cover {cover}: {pct}%");
         }
@@ -561,8 +609,9 @@ mod tests {
     #[test]
     fn storm_towers_are_wide() {
         let s = Weather::roll(99, 4, Some(Sky::Storm), None);
-        let towers: Vec<Cloud> =
-            (0..20).flat_map(|y| (0..20).filter_map(move |x| s.cloud(CloudKind::Cumulonimbus, x, y))).collect();
+        let towers: Vec<Cloud> = (0..20)
+            .flat_map(|y| (0..20).filter_map(move |x| s.cloud(CloudKind::Cumulonimbus, x, y)))
+            .collect();
         assert!(!towers.is_empty());
         for c in towers {
             assert!(c.r >= 3 * 64);
@@ -573,7 +622,10 @@ mod tests {
     #[test]
     fn cumulus_cover_matches_layer() {
         let count = |cover| {
-            (0..100).flat_map(|y| (0..100).map(move |x| (x, y))).filter(|&(x, y)| cumulus(cover).cloud(CloudKind::Cumulus, x, y).is_some()).count()
+            (0..100)
+                .flat_map(|y| (0..100).map(move |x| (x, y)))
+                .filter(|&(x, y)| cumulus(cover).cloud(CloudKind::Cumulus, x, y).is_some())
+                .count()
         };
         let (s, b) = (count(25), count(55));
         assert!((2000..3000).contains(&s), "{s}");

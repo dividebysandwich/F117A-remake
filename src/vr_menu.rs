@@ -16,17 +16,20 @@ pub struct VrMenuPlugin;
 
 impl Plugin for VrMenuPlugin {
     fn build(&self, app: &mut App) {
-        let in_menu = |s: Option<Res<State<AppState>>>| s.is_some_and(|s| matches!(s.get(), AppState::Menu | AppState::Debrief));
+        let in_menu = |s: Option<Res<State<AppState>>>| {
+            s.is_some_and(|s| matches!(s.get(), AppState::Menu | AppState::Debrief))
+        };
         let vr = |s: Res<Settings>| s.vr;
-        app.add_systems(Update, (place_panel, pointer).chain().run_if(in_menu).run_if(vr)).add_systems(
-            PreUpdate,
-            feed_egui
-                .after(EguiPreUpdateSet::ProcessInput)
-                .before(EguiPreUpdateSet::BeginPass)
-                .after(crate::cockpit3d::HandsUpdate)
-                .run_if(in_menu)
-                .run_if(vr),
-        );
+        app.add_systems(Update, (place_panel, pointer).chain().run_if(in_menu).run_if(vr))
+            .add_systems(
+                PreUpdate,
+                feed_egui
+                    .after(EguiPreUpdateSet::ProcessInput)
+                    .before(EguiPreUpdateSet::BeginPass)
+                    .after(crate::cockpit3d::HandsUpdate)
+                    .run_if(in_menu)
+                    .run_if(vr),
+            );
     }
 }
 
@@ -65,7 +68,14 @@ const PRESS_HOLD: f32 = 45.0;
 
 /// Spawns the menu's egui context drawing into an image, the panel showing it in the headset
 /// and the desktop mirror; every entity gets `tag` (despawned with the menu camera).
-pub fn spawn(commands: &mut Commands, images: &mut Assets<Image>, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, root: Option<Entity>, tag: impl Bundle + Clone) {
+pub fn spawn(
+    commands: &mut Commands,
+    images: &mut Assets<Image>,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    root: Option<Entity>,
+    tag: impl Bundle + Clone,
+) {
     let mut image = Image::new_fill(
         Extent3d { width: W, height: H, depth_or_array_layers: 1 },
         TextureDimension::D2,
@@ -89,7 +99,13 @@ pub fn spawn(commands: &mut Commands, images: &mut Assets<Image>, meshes: &mut A
         .spawn((
             VrMenuPanel::default(),
             Mesh3d(meshes.add(Rectangle::new(PANEL.x, PANEL.y))),
-            MeshMaterial3d(materials.add(StandardMaterial { base_color_texture: Some(image.clone()), unlit: true, cull_mode: None, fog_enabled: false, ..default() })),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(image.clone()),
+                unlit: true,
+                cull_mode: None,
+                fog_enabled: false,
+                ..default()
+            })),
             Transform::from_xyz(0.0, 1.2, -DISTANCE),
             NotShadowCaster,
             tag.clone(),
@@ -99,7 +115,11 @@ pub fn spawn(commands: &mut Commands, images: &mut Assets<Image>, meshes: &mut A
         .spawn((
             Laser,
             Mesh3d(meshes.add(Cuboid::new(0.003, 0.003, 1.0))),
-            MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(0.3, 1.0, 0.45), unlit: true, ..default() })),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.3, 1.0, 0.45),
+                unlit: true,
+                ..default()
+            })),
             Transform::default(),
             Visibility::Hidden,
             NotShadowCaster,
@@ -110,7 +130,13 @@ pub fn spawn(commands: &mut Commands, images: &mut Assets<Image>, meshes: &mut A
         commands.entity(r).add_children(&[panel, laser]);
     }
     // The desktop window mirrors the menu.
-    let window_cam = commands.spawn((Camera2d, Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() }, tag.clone())).id();
+    let window_cam = commands
+        .spawn((
+            Camera2d,
+            Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() },
+            tag.clone(),
+        ))
+        .id();
     commands.spawn((
         ImageNode::new(image),
         Node { width: percent(100), height: percent(100), ..default() },
@@ -157,7 +183,8 @@ fn pointer(
     let Ok(panel) = panels.single() else { return };
     let Ok((mut ltf, mut lvis)) = laser.single_mut() else { return };
     // The right hand points, the left one if the right is not tracked.
-    let Some(hand) = [1, 0].into_iter().map(|i| &hands.hands[i]).find(|h| h.aim_raw.is_some()) else {
+    let Some(hand) = [1, 0].into_iter().map(|i| &hands.hands[i]).find(|h| h.aim_raw.is_some())
+    else {
         state.pos = None;
         lvis.set_if_neq(Visibility::Hidden);
         return;
@@ -167,13 +194,18 @@ fn pointer(
     // The panel's plane: its local XY, facing +Z.
     let inv = panel.compute_affine().inverse();
     let (lo, ld) = (inv.transform_point3(o), inv.transform_vector3(d));
-    let hit = (ld.z.abs() > 1e-6).then(|| -lo.z / ld.z).filter(|t| *t > 0.0).map(|t| (t, lo + ld * t));
+    let hit =
+        (ld.z.abs() > 1e-6).then(|| -lo.z / ld.z).filter(|t| *t > 0.0).map(|t| (t, lo + ld * t));
     let on_panel = hit.filter(|(_, p)| p.x.abs() <= PANEL.x / 2.0 && p.y.abs() <= PANEL.y / 2.0);
-    state.pos = on_panel.map(|(_, p)| egui::pos2((p.x / PANEL.x + 0.5) * W as f32, (0.5 - p.y / PANEL.y) * H as f32));
+    state.pos = on_panel.map(|(_, p)| {
+        egui::pos2((p.x / PANEL.x + 0.5) * W as f32, (0.5 - p.y / PANEL.y) * H as f32)
+    });
     state.pressed = hand.trigger > if state.pressed { TRIGGER_RELEASE } else { TRIGGER_PRESS };
     state.scroll = if on_panel.is_some() { hand.thumb.y } else { 0.0 };
     let len = on_panel.map_or(3.0, |(t, _)| t);
-    *ltf = Transform::from_translation(o + d * len / 2.0).looking_to(d, Vec3::Y).with_scale(Vec3::new(1.0, 1.0, len));
+    *ltf = Transform::from_translation(o + d * len / 2.0)
+        .looking_to(d, Vec3::Y)
+        .with_scale(Vec3::new(1.0, 1.0, len));
     lvis.set_if_neq(Visibility::Inherited);
 }
 
@@ -212,18 +244,33 @@ fn feed_egui(
                 ev.push(egui::Event::PointerMoved(pos));
             }
             if state.pressed != *down {
-                ev.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: state.pressed, modifiers });
+                ev.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: state.pressed,
+                    modifiers,
+                });
                 *down = state.pressed;
                 *anchor = state.pressed.then_some(pos);
             }
             if state.scroll.abs() > 0.2 {
                 let delta = egui::vec2(0.0, state.scroll * 900.0 * time.delta_secs());
-                ev.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta, phase: egui::TouchPhase::Move, modifiers });
+                ev.push(egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta,
+                    phase: egui::TouchPhase::Move,
+                    modifiers,
+                });
             }
         }
         None => {
             if let (true, Some(pos)) = (*down, *last) {
-                ev.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers });
+                ev.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers,
+                });
                 *down = false;
             }
             if last.is_some() {

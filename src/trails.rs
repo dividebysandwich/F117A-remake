@@ -9,14 +9,16 @@
 
 use std::collections::HashMap;
 
+use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::math::DVec3;
 use bevy::mesh::{Indices, MeshVertexAttribute, MeshVertexBufferLayoutRef, PrimitiveTopology};
 use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError, VertexFormat};
+use bevy::render::render_resource::{
+    AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError, VertexFormat,
+};
 use bevy::render::storage::ShaderBuffer;
-use bevy::asset::RenderAssetUsages;
 use bevy::shader::ShaderRef;
 use stealth_sim::{N_PROJ, fflags};
 
@@ -35,9 +37,11 @@ const SHADER: &str = "shaders/trail.wgsl";
 pub const CONTRAIL_VIEW_Z: i32 = 6000;
 
 /// Trail direction at a point (per vertex).
-pub(crate) const ATTRIBUTE_TANGENT: MeshVertexAttribute = MeshVertexAttribute::new("TrailTangent", 0x7A11_0001, VertexFormat::Float32x3);
+pub(crate) const ATTRIBUTE_TANGENT: MeshVertexAttribute =
+    MeshVertexAttribute::new("TrailTangent", 0x7A11_0001, VertexFormat::Float32x3);
 /// Signed half width (metres) and alpha (per vertex).
-pub(crate) const ATTRIBUTE_SIDE: MeshVertexAttribute = MeshVertexAttribute::new("TrailSide", 0x7A11_0002, VertexFormat::Float32x2);
+pub(crate) const ATTRIBUTE_SIDE: MeshVertexAttribute =
+    MeshVertexAttribute::new("TrailSide", 0x7A11_0002, VertexFormat::Float32x2);
 
 pub struct TrailsPlugin;
 
@@ -169,7 +173,11 @@ struct Trail {
 
 impl Trail {
     fn alive(&self, now: f32) -> bool {
-        self.head.is_some() || self.points.last().is_some_and(|&(_, t)| now - t < self.style.fade_after + self.style.fade)
+        self.head.is_some()
+            || self
+                .points
+                .last()
+                .is_some_and(|&(_, t)| now - t < self.style.fade_after + self.style.fade)
     }
 
     /// Drops faded points from the tail (keeping the last faded one as the ribbon's end).
@@ -274,7 +282,8 @@ fn update_trails(
         }
         let p = combat.prev_proj[s];
         let (mut x, mut y, mut z) = (m.x as f64, m.y as f64, m.alt as f64);
-        if p.ttl != 0 && p.spec == m.spec && (p.x - m.x).abs() < 0x400 && (p.y - m.y).abs() < 0x400 {
+        if p.ttl != 0 && p.spec == m.spec && (p.x - m.x).abs() < 0x400 && (p.y - m.y).abs() < 0x400
+        {
             let t = alpha as f64;
             x = p.x as f64 + (x - p.x as f64) * t;
             y = p.y as f64 + (y - p.y as f64) * t;
@@ -290,7 +299,11 @@ fn update_trails(
         let (east, north, alt) = unit_position(prev, &u, alpha);
         let rot = attitude(u.heading, u.pitch, u.bank);
         for (k, &o) in ENGINES.iter().enumerate() {
-            emitters.push((Source::Aircraft(i, k), &CONTRAIL, wu_to_bevy(east, north, alt) + (rot * o).as_dvec3()));
+            emitters.push((
+                Source::Aircraft(i, k),
+                &CONTRAIL,
+                wu_to_bevy(east, north, alt) + (rot * o).as_dvec3(),
+            ));
         }
     }
     if let Ok((a, pos)) = player.single()
@@ -326,7 +339,8 @@ fn update_trails(
                     m
                 }
             };
-            let mesh = meshes.add(Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default()));
+            let mesh = meshes
+                .add(Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default()));
             let entity = commands
                 .spawn((
                     crate::sim_render::SimObject,
@@ -340,7 +354,10 @@ fn update_trails(
                     bevy::light::NotShadowCaster,
                 ))
                 .id();
-            trails.active.insert(src, Trail { entity, mesh, style, anchor: p, points: vec![(p, now)], head: None });
+            trails.active.insert(
+                src,
+                Trail { entity, mesh, style, anchor: p, points: vec![(p, now)], head: None },
+            );
         }
         let t = trails.active.get_mut(&src).unwrap();
         if t.points.last().is_none_or(|&(q, _)| (p - q).length() >= style.spacing) {

@@ -72,7 +72,9 @@ pub fn noise(seed: u64, p: DVec2, scale: f64) -> f64 {
     let octave = |seed: u64, p: DVec2| {
         let (x0, y0) = (p.x.floor(), p.y.floor());
         let (fx, fy) = (p.x - x0, p.y - y0);
-        let v = |dx: i64, dy: i64| (hash(seed, x0 as i64 + dx, y0 as i64 + dy, 0) >> 11) as f64 / (1u64 << 53) as f64;
+        let v = |dx: i64, dy: i64| {
+            (hash(seed, x0 as i64 + dx, y0 as i64 + dy, 0) >> 11) as f64 / (1u64 << 53) as f64
+        };
         let s = |t: f64| t * t * (3.0 - 2.0 * t);
         let (sx, sy) = (s(fx), s(fy));
         let top = v(0, 0) + (v(1, 0) - v(0, 0)) * sx;
@@ -212,7 +214,8 @@ impl Network {
         !self.segment_index.around(p - d, p + d).any(|i| {
             let (road, s) = self.segments[i as usize];
             let road = &self.roads[road as usize];
-            dist_to_segment(p, road.pts[s as usize], road.pts[s as usize + 1]) < road.width * 0.5 + r
+            dist_to_segment(p, road.pts[s as usize], road.pts[s as usize + 1])
+                < road.width * 0.5 + r
         })
     }
 
@@ -226,7 +229,11 @@ impl Network {
 
     /// The town whose area contains a point (scaled by `f`).
     pub fn town_at(&self, p: DVec2, f: f64) -> Option<&Town> {
-        self.town_index.at(p).iter().map(|&i| &self.towns[i as usize]).find(|t| t.c.distance(p) < t.r * f)
+        self.town_index
+            .at(p)
+            .iter()
+            .map(|&i| &self.towns[i as usize])
+            .find(|t| t.c.distance(p) < t.r * f)
     }
 
     pub fn build(ground: &Ground, style: &Style, sites: &[crate::world::TownSite]) -> Network {
@@ -287,7 +294,10 @@ impl Network {
                 if !rng.chance(style.towns) {
                     continue;
                 }
-                let c = DVec2::new((gx as f64 + rng.range(0.15, 0.85)) * spacing, (gy as f64 + rng.range(0.15, 0.85)) * spacing);
+                let c = DVec2::new(
+                    (gx as f64 + rng.range(0.15, 0.85)) * spacing,
+                    (gy as f64 + rng.range(0.15, 0.85)) * spacing,
+                );
                 let (kind, r) = match rng.weighted(&style.town_mix) {
                     0 => (TownKind::Village, rng.range(160.0, 300.0)),
                     1 => (TownKind::Town, rng.range(420.0, 700.0)),
@@ -332,7 +342,8 @@ impl Network {
             }
             for i in -n..=n {
                 let off = i as f64 * spacing;
-                let half = (r * r - off * off).max(0.0).sqrt() * if i == 0 { 1.0 } else { rng.range(0.75, 1.0) };
+                let half = (r * r - off * off).max(0.0).sqrt()
+                    * if i == 0 { 1.0 } else { rng.range(0.75, 1.0) };
                 if half < spacing * 0.6 {
                     continue;
                 }
@@ -348,7 +359,11 @@ impl Network {
                     }
                     if run.len() >= 4 {
                         let pts = subdivide(&[run[0], *run.last().unwrap()], 120.0);
-                        self.roads.push(Road::new(pts, RoadKind::Street, if i == 0 { width + 2.0 } else { width }));
+                        self.roads.push(Road::new(
+                            pts,
+                            RoadKind::Street,
+                            if i == 0 { width + 2.0 } else { width },
+                        ));
                     }
                     run.clear();
                 }
@@ -390,13 +405,22 @@ impl Network {
                 connected[j] = true;
             }
         }
-        let highway_points: Vec<DVec2> =
-            self.roads.iter().filter(|r| r.kind == RoadKind::Highway).flat_map(|r| r.pts.iter().copied()).collect();
+        let highway_points: Vec<DVec2> = self
+            .roads
+            .iter()
+            .filter(|r| r.kind == RoadKind::Highway)
+            .flat_map(|r| r.pts.iter().copied())
+            .collect();
         for (i, town) in self.towns.iter().enumerate() {
             if connected[i] {
                 continue;
             }
-            let Some(&h) = highway_points.iter().min_by(|a, b| a.distance(town.c).total_cmp(&b.distance(town.c))) else { break };
+            let Some(&h) = highway_points
+                .iter()
+                .min_by(|a, b| a.distance(town.c).total_cmp(&b.distance(town.c)))
+            else {
+                break;
+            };
             if h.distance(town.c) > 9000.0 {
                 continue;
             }
@@ -435,7 +459,11 @@ impl Network {
         let streets: Vec<(DVec2, DVec2, f64)> = self
             .roads
             .iter()
-            .filter(|road| road.kind == RoadKind::Street && road.pts[0].distance(c) <= r + 1.0 && road.pts.last().unwrap().distance(c) <= r + 1.0)
+            .filter(|road| {
+                road.kind == RoadKind::Street
+                    && road.pts[0].distance(c) <= r + 1.0
+                    && road.pts.last().unwrap().distance(c) <= r + 1.0
+            })
             .map(|road| (road.pts[0], *road.pts.last().unwrap(), road.width))
             .collect();
         let mut lots = Vec::new();
@@ -453,10 +481,12 @@ impl Network {
                         continue;
                     }
                     let mut b = style.building(&mut rng, kind, core);
-                    let step = b.l as f64 + rng.range(4.0, 14.0) * if core < 0.3 { 1.8 } else { 1.0 };
+                    let step =
+                        b.l as f64 + rng.range(4.0, 14.0) * if core < 0.3 { 1.8 } else { 1.0 };
                     // Lot centre: across the street, clear of the cross streets.
                     let along = (p - c).dot(dir).rem_euclid(spacing);
-                    let near_cross = kind != TownKind::Village && along.min(spacing - along) < b.l as f64 * 0.5 + 12.0;
+                    let near_cross = kind != TownKind::Village
+                        && along.min(spacing - along) < b.l as f64 * 0.5 + 12.0;
                     let back = width * 0.5 + rng.range(3.0, 7.0) + b.w as f64 * 0.5;
                     b.p = p + dir.perp() * side * back;
                     b.dir = dir;
@@ -478,13 +508,16 @@ impl Network {
             let usable = spacing - 2.0 * 22.0;
             for i in -n..n {
                 for j in -n..n {
-                    let q = c + u * ((i as f64 + 0.5) * spacing) + u.perp() * ((j as f64 + 0.5) * spacing);
+                    let q = c
+                        + u * ((i as f64 + 0.5) * spacing)
+                        + u.perp() * ((j as f64 + 0.5) * spacing);
                     let core = 1.0 - q.distance(c) / r;
                     if !style.panel_district(kind, core) {
                         continue;
                     }
                     // Rows along one of the street axes, 40-50 m apart.
-                    let (along, across) = if (i + j) & 1 == 0 { (u, u.perp()) } else { (u.perp(), u) };
+                    let (along, across) =
+                        if (i + j) & 1 == 0 { (u, u.perp()) } else { (u.perp(), u) };
                     let rows = (usable / rng.range(38.0, 52.0)).floor().max(1.0) as i32;
                     for k in 0..rows {
                         let off = -usable * 0.5 + (k as f64 + 0.5) * usable / rows as f64;
@@ -527,13 +560,27 @@ impl Network {
             lots.push(style.church(&mut rng, p, u));
         }
         for b in lots {
-            if ground.is_free(b.p, b.radius()) && self.road_clear(b.p, b.w as f64 * 0.5) && self.building_clear(b.p, b.radius()) {
+            if ground.is_free(b.p, b.radius())
+                && self.road_clear(b.p, b.w as f64 * 0.5)
+                && self.building_clear(b.p, b.radius())
+            {
                 self.add_building(b);
             }
         }
         if kind != TownKind::Village || rng.chance(0.3) {
             let p = c + DVec2::from_angle(rng.range(0.0, std::f64::consts::TAU)) * (r + 40.0);
-            let wt = Building { p, dir: u, kind: Kind::WaterTower, l: 9.0, w: 9.0, h: 26.0, roof: Roof::Flat, wall: 0xE4, roof_colour: 0xE6, seed: rng.u64() };
+            let wt = Building {
+                p,
+                dir: u,
+                kind: Kind::WaterTower,
+                l: 9.0,
+                w: 9.0,
+                h: 26.0,
+                roof: Roof::Flat,
+                wall: 0xE4,
+                roof_colour: 0xE6,
+                seed: rng.u64(),
+            };
             if ground.is_free(p, 10.0) && self.road_clear(p, 8.0) && self.building_clear(p, 8.0) {
                 self.add_building(wt);
             }
@@ -544,7 +591,8 @@ impl Network {
             TownKind::City => 3,
         };
         for _ in 0..sites {
-            let p = c + DVec2::from_angle(rng.range(0.0, std::f64::consts::TAU)) * (r + rng.range(120.0, 300.0));
+            let p = c + DVec2::from_angle(rng.range(0.0, std::f64::consts::TAU))
+                * (r + rng.range(120.0, 300.0));
             self.industry(p, ground, style, &mut rng);
         }
     }
@@ -631,10 +679,15 @@ impl Network {
             }
         }
         for (p, dir, seed) in sites {
-            if self.town_at(p, 1.0).is_some() || self.towns.iter().any(|t| t.c.distance(p) < t.r + 120.0) {
+            if self.town_at(p, 1.0).is_some()
+                || self.towns.iter().any(|t| t.c.distance(p) < t.r + 120.0)
+            {
                 continue;
             }
-            if !ground.is_free(p, 40.0) || !self.road_clear(p, 25.0) || !self.building_clear(p, 45.0) {
+            if !ground.is_free(p, 40.0)
+                || !self.road_clear(p, 25.0)
+                || !self.building_clear(p, 45.0)
+            {
                 continue;
             }
             let mut rng = Rng::new(seed);
@@ -653,10 +706,26 @@ impl Network {
                 if !rng.chance(0.25) {
                     continue;
                 }
-                let p = DVec2::new((gx as f64 + rng.f()) * spacing, (gy as f64 + rng.f()) * spacing);
-                if ground.is_free(p, 30.0) && self.road_clear(p, 30.0) && self.building_clear(p, 30.0) && self.town_at(p, 1.3).is_none() {
+                let p =
+                    DVec2::new((gx as f64 + rng.f()) * spacing, (gy as f64 + rng.f()) * spacing);
+                if ground.is_free(p, 30.0)
+                    && self.road_clear(p, 30.0)
+                    && self.building_clear(p, 30.0)
+                    && self.town_at(p, 1.3).is_none()
+                {
                     let h = rng.range(60.0, 140.0) as f32;
-                    self.add_building(Building { p, dir: DVec2::X, kind: Kind::Mast, l: 6.0, w: 6.0, h, roof: Roof::Flat, wall: 0xE6, roof_colour: 0xE6, seed: rng.u64() });
+                    self.add_building(Building {
+                        p,
+                        dir: DVec2::X,
+                        kind: Kind::Mast,
+                        l: 6.0,
+                        w: 6.0,
+                        h,
+                        roof: Roof::Flat,
+                        wall: 0xE6,
+                        roof_colour: 0xE6,
+                        seed: rng.u64(),
+                    });
                 }
             }
         }
@@ -670,7 +739,8 @@ impl Network {
     /// Transmission lines linking the towns and cities (a spanning tree of short links), and
     /// pole lines along some of the roads.
     fn power_lines(&mut self, ground: &Ground, style: &Style) {
-        let hubs: Vec<usize> = (0..self.towns.len()).filter(|&i| self.towns[i].kind != TownKind::Village).collect();
+        let hubs: Vec<usize> =
+            (0..self.towns.len()).filter(|&i| self.towns[i].kind != TownKind::Village).collect();
         let mut joined = vec![false; hubs.len()];
         for start in 0..hubs.len() {
             if joined[start] {
@@ -719,7 +789,10 @@ impl Network {
             while s < total - 20.0 {
                 let (p, dir) = point_at(road, s);
                 let q = p + dir.perp() * side * off;
-                if ground.is_free(q, 3.0) && self.building_clear(q, 4.0) && self.town_at(q, 0.95).is_none() {
+                if ground.is_free(q, 3.0)
+                    && self.building_clear(q, 4.0)
+                    && self.town_at(q, 0.95).is_none()
+                {
                     run.push(q);
                 } else if run.len() > 1 {
                     runs.push(std::mem::take(&mut run));
@@ -739,7 +812,13 @@ impl Network {
 
     /// Pylons every ~330 m from `a` to `b`, bending once around obstacles; a pylon that can't
     /// stand is moved along the line or left out if the span stays under 700 m.
-    fn pylon_route(&self, ground: &Ground, rng: &mut Rng, a: DVec2, b: DVec2) -> Option<Vec<DVec2>> {
+    fn pylon_route(
+        &self,
+        ground: &Ground,
+        rng: &mut Rng,
+        a: DVec2,
+        b: DVec2,
+    ) -> Option<Vec<DVec2>> {
         let bends = [0.0, 0.12, -0.12, 0.25, -0.25];
         'attempt: for &bend in &bends {
             let mid = (a + b) * 0.5 + (b - a).perp() * bend * rng.range(0.8, 1.2);
@@ -753,7 +832,10 @@ impl Network {
                     }
                     let base = p.lerp(q, i as f64 / n as f64);
                     let dir = (q - p).normalize();
-                    let spot = [0.0, 40.0, -40.0, 80.0, -80.0].iter().map(|&o| base + dir * o).find(|&s| self.pylon_spot(ground, s));
+                    let spot = [0.0, 40.0, -40.0, 80.0, -80.0]
+                        .iter()
+                        .map(|&o| base + dir * o)
+                        .find(|&s| self.pylon_spot(ground, s));
                     match spot {
                         Some(s) => out.push(s),
                         None if i != 0 && i != n => {}
@@ -791,7 +873,10 @@ pub fn street_spacing(kind: TownKind) -> f64 {
 /// Where a road towards `to` leaves a town: the end of a main street facing it.
 fn exit(t: &Town, to: DVec2) -> DVec2 {
     let d = (to - t.c).normalize_or_zero();
-    let axis = [t.u, -t.u, t.u.perp(), -t.u.perp()].into_iter().max_by(|a, b| a.dot(d).total_cmp(&b.dot(d))).unwrap();
+    let axis = [t.u, -t.u, t.u.perp(), -t.u.perp()]
+        .into_iter()
+        .max_by(|a, b| a.dot(d).total_cmp(&b.dot(d)))
+        .unwrap();
     t.c + axis * t.r
 }
 
@@ -829,7 +914,8 @@ fn route(ground: &Ground, seed: u64, a: DVec2, b: DVec2) -> Option<Vec<DVec2>> {
             let mut next = vec![pts[0]];
             for w in pts.windows(2) {
                 let d = w[1] - w[0];
-                let m = (w[0] + w[1]) * 0.5 + d.perp() * rng.range(-amp, amp) / (level as f64 + 1.0);
+                let m =
+                    (w[0] + w[1]) * 0.5 + d.perp() * rng.range(-amp, amp) / (level as f64 + 1.0);
                 next.extend([m, w[1]]);
             }
             pts = next;

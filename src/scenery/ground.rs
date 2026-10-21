@@ -97,7 +97,11 @@ impl FlatTri {
     /// Whether the triangle overlaps an axis-aligned rectangle (separating axes).
     fn overlaps(&self, lo: Vec2, hi: Vec2) -> bool {
         let [a, b, c] = self.p;
-        if a.x.max(b.x).max(c.x) < lo.x || a.x.min(b.x).min(c.x) > hi.x || a.y.max(b.y).max(c.y) < lo.y || a.y.min(b.y).min(c.y) > hi.y {
+        if a.x.max(b.x).max(c.x) < lo.x
+            || a.x.min(b.x).min(c.x) > hi.x
+            || a.y.max(b.y).max(c.y) < lo.y
+            || a.y.min(b.y).min(c.y) > hi.y
+        {
             return false;
         }
         let corners = [lo, Vec2::new(hi.x, lo.y), hi, Vec2::new(lo.x, hi.y)];
@@ -106,7 +110,10 @@ impl FlatTri {
             let tri = [a, b, c].map(|v| n.dot(v));
             let (tmin, tmax) = (tri[0].min(tri[1]).min(tri[2]), tri[0].max(tri[1]).max(tri[2]));
             let box_ = corners.map(|v| n.dot(v));
-            let (bmin, bmax) = (box_[0].min(box_[1]).min(box_[2]).min(box_[3]), box_[0].max(box_[1]).max(box_[2]).max(box_[3]));
+            let (bmin, bmax) = (
+                box_[0].min(box_[1]).min(box_[2]).min(box_[3]),
+                box_[0].max(box_[1]).max(box_[2]).max(box_[3]),
+            );
             if bmax < tmin || bmin > tmax {
                 return false;
             }
@@ -210,7 +217,8 @@ impl Ground {
     /// Not water or concrete at the point, and at least `r` metres from raised geometry
     /// (concrete nearby is fine).
     pub fn is_clear(&self, p: DVec2, r: f64) -> bool {
-        !matches!(self.top(p), Some(Surface::Water | Surface::Solid)) && self.boxes_clear(p, r, true)
+        !matches!(self.top(p), Some(Surface::Water | Surface::Solid))
+            && self.boxes_clear(p, r, true)
     }
 
     /// Not water at the point and at least `r` metres from raised geometry.
@@ -224,7 +232,11 @@ impl Ground {
         let d = DVec2::splat(r as f64);
         !self.box_index.around(p - d, p + d).any(|i| {
             let (b, raised) = self.boxes[i as usize];
-            (raised || !raised_only) && q.x > b.min.x - r && q.x < b.max.x + r && q.y > b.min.y - r && q.y < b.max.y + r
+            (raised || !raised_only)
+                && q.x > b.min.x - r
+                && q.x < b.max.x + r
+                && q.y > b.min.y - r
+                && q.y < b.max.y + r
         })
     }
 
@@ -233,9 +245,23 @@ impl Ground {
         self.add_box(r, true);
     }
 
-    pub fn build(theater: &Theater, handles: &ShapeHandles, assets: &ModelAssets, files: &HashMap<String, Handle<Gltf>>, remap: &[u16], day: &VgaPalette) -> Ground {
+    pub fn build(
+        theater: &Theater,
+        handles: &ShapeHandles,
+        assets: &ModelAssets,
+        files: &HashMap<String, Handle<Gltf>>,
+        remap: &[u16],
+        day: &VgaPalette,
+    ) -> Ground {
         let mut shapes: HashMap<u8, ShapeGeom> = HashMap::new();
-        let mut g = Ground { tris: vec![], tri_index: Index::default(), boxes: vec![], box_index: Index::default(), highways: vec![], runways: vec![] };
+        let mut g = Ground {
+            tris: vec![],
+            tri_index: Index::default(),
+            boxes: vec![],
+            box_index: Index::default(),
+            highways: vec![],
+            runways: vec![],
+        };
         let mut road_segments = Vec::new();
         for lod in 1..=4usize {
             let unit = LEVEL_UNIT[lod];
@@ -244,46 +270,82 @@ impl Ground {
             for row in lo..GRID_DIM[lod] + lo {
                 for col in lo..GRID_DIM[lod] + lo {
                     let tile = theater.grid.tile(lod, col, row) as usize;
-                    let Some(objects) = theater.tiles.tiles.get(lod).and_then(|t| t.get(tile)) else { continue };
+                    let Some(objects) = theater.tiles.tiles.get(lod).and_then(|t| t.get(tile))
+                    else {
+                        continue;
+                    };
                     let centre = |c: i32| (c as f64 * 4096.0 + 2048.0) * unit;
                     for (k, o) in objects.iter().enumerate() {
                         let geom = shapes.entry(o.shape).or_insert_with(|| {
                             handles
                                 .model(o.shape as usize)
-                                .and_then(|(file, name)| Some(extract(assets, assets.gltfs.get(files.get(file)?)?, &name, remap, day)))
+                                .and_then(|(file, name)| {
+                                    Some(extract(
+                                        assets,
+                                        assets.gltfs.get(files.get(file)?)?,
+                                        &name,
+                                        remap,
+                                        day,
+                                    ))
+                                })
                                 .unwrap_or_default()
                         });
                         let origin = Vec2::new(
                             ((centre(col) + o.x as f64 * unit) * WU) as f32,
                             ((centre(row) + o.y as f64 * unit) * WU) as f32,
                         );
-                        let scale = handles.model(o.shape as usize).map_or(scale, |(_, n)| crate::models::tile_model_scale(&n, unit));
+                        let scale = handles
+                            .model(o.shape as usize)
+                            .map_or(scale, |(_, n)| crate::models::tile_model_scale(&n, unit));
                         let place = |p: Vec2| origin + p * scale;
                         for (j, (tri, s)) in geom.flat.iter().enumerate() {
                             let p = tri.map(place);
                             let id = g.tris.len() as u32;
                             let (min, max) = (p[0].min(p[1]).min(p[2]), p[0].max(p[1]).max(p[2]));
                             g.tri_index.insert(min.as_dvec2(), max.as_dvec2(), id);
-                            let order = ((4 - lod as u32) << 28) | ((k as u32 & 0xFFF) << 16) | (j as u32 & 0xFFFF);
+                            let order = ((4 - lod as u32) << 28)
+                                | ((k as u32 & 0xFFF) << 16)
+                                | (j as u32 & 0xFFFF);
                             g.tris.push(FlatTri { p, order, surface: *s });
                             if *s == Surface::Solid {
-                                g.add_box(Rect::from_corners(min, max).inflate(SOLID_MARGIN), false);
+                                g.add_box(
+                                    Rect::from_corners(min, max).inflate(SOLID_MARGIN),
+                                    false,
+                                );
                             }
                         }
                         for r in &geom.runways {
                             let r = Rect::from_corners(place(r.min), place(r.max));
                             let (c, size) = (r.center().as_dvec2(), r.size().as_dvec2());
                             let along_north = size.y > size.x;
-                            let (len, width) = if along_north { (size.y, size.x) } else { (size.x, size.y) };
-                            if len >= 1200.0 && len >= 6.0 * width && width <= 250.0 && !g.runways.iter().any(|w| w.c.distance(c) < 50.0) {
+                            let (len, width) =
+                                if along_north { (size.y, size.x) } else { (size.x, size.y) };
+                            if len >= 1200.0
+                                && len >= 6.0 * width
+                                && width <= 250.0
+                                && !g.runways.iter().any(|w| w.c.distance(c) < 50.0)
+                            {
                                 let axis = if along_north { DVec2::Y } else { DVec2::X };
-                                g.runways.push(Runway { c, axis, half_len: len * 0.5, half_width: width * 0.5 });
+                                g.runways.push(Runway {
+                                    c,
+                                    axis,
+                                    half_len: len * 0.5,
+                                    half_width: width * 0.5,
+                                });
                             }
                         }
                         if let Some(r) = geom.raised {
-                            g.add_box(Rect::from_corners(place(r.min), place(r.max)).inflate(RAISED_MARGIN), true);
+                            g.add_box(
+                                Rect::from_corners(place(r.min), place(r.max))
+                                    .inflate(RAISED_MARGIN),
+                                true,
+                            );
                         } else if lod >= 2 {
-                            road_segments.extend(geom.lines.iter().map(|&(a, b)| (place(a).as_dvec2(), place(b).as_dvec2())));
+                            road_segments.extend(
+                                geom.lines
+                                    .iter()
+                                    .map(|&(a, b)| (place(a).as_dvec2(), place(b).as_dvec2())),
+                            );
                         }
                     }
                 }
@@ -297,7 +359,8 @@ impl Ground {
         for r in std::mem::take(&mut g.runways) {
             let near = kept.iter().any(|k| {
                 let d = r.c - k.c;
-                d.dot(k.axis).abs() < k.half_len + 200.0 && d.dot(k.axis.perp()).abs() < k.half_width + 400.0
+                d.dot(k.axis).abs() < k.half_len + 200.0
+                    && d.dot(k.axis.perp()).abs() < k.half_width + 400.0
             });
             if !near {
                 kept.push(r);
@@ -321,7 +384,9 @@ fn chain(segments: Vec<(DVec2, DVec2)>) -> Vec<Vec<DVec2>> {
     let mut at: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
     let segs: Vec<_> = segments
         .into_iter()
-        .filter(|&(a, b)| a.distance(b) > 1.0 && seen.insert((key(a).min(key(b)), key(a).max(key(b)))))
+        .filter(|&(a, b)| {
+            a.distance(b) > 1.0 && seen.insert((key(a).min(key(b)), key(a).max(key(b))))
+        })
         .collect();
     for (i, &(a, b)) in segs.iter().enumerate() {
         at.entry(key(a)).or_default().push(i);
@@ -351,10 +416,17 @@ fn chain(segments: Vec<(DVec2, DVec2)>) -> Vec<Vec<DVec2>> {
 }
 
 /// Collects the finest detail level of a model: flat polygons, raised footprint, road lines.
-fn extract(assets: &ModelAssets, gltf: &Gltf, name: &str, remap: &[u16], day: &VgaPalette) -> ShapeGeom {
+fn extract(
+    assets: &ModelAssets,
+    gltf: &Gltf,
+    name: &str,
+    remap: &[u16],
+    day: &VgaPalette,
+) -> ShapeGeom {
     let mut geom = ShapeGeom::default();
     let Some(node) = gltf.named_nodes.get(name) else { return geom };
-    let materials: HashMap<AssetId<GltfMaterial>, &str> = gltf.named_materials.iter().map(|(n, h)| (h.id(), n.as_ref())).collect();
+    let materials: HashMap<AssetId<GltfMaterial>, &str> =
+        gltf.named_materials.iter().map(|(n, h)| (h.id(), n.as_ref())).collect();
     walk(assets, node, Transform::IDENTITY, false, false, &materials, remap, day, &mut geom);
     geom
 }
@@ -383,18 +455,28 @@ fn walk(
     if lod0 && let Some(mesh) = node.mesh.as_ref().and_then(|m| assets.meshes.get(m)) {
         for prim in &mesh.primitives {
             let Some(m) = assets.mesh_data.get(&prim.mesh) else { continue };
-            let Some(VertexAttributeValues::Float32x3(pos)) = m.attribute(Mesh::ATTRIBUTE_POSITION) else { continue };
+            let Some(VertexAttributeValues::Float32x3(pos)) = m.attribute(Mesh::ATTRIBUTE_POSITION)
+            else {
+                continue;
+            };
             let pos: Vec<Vec3> = pos.iter().map(|&p| tf.transform_point(Vec3::from(p))).collect();
-            let idx: Vec<usize> = m.indices().map_or_else(|| (0..pos.len()).collect(), |i| i.iter().collect());
+            let idx: Vec<usize> =
+                m.indices().map_or_else(|| (0..pos.len()).collect(), |i| i.iter().collect());
             let ground = |p: Vec3| Vec2::new(p.x, -p.z);
             let colour = index_from_name(name)
-                .or_else(|| prim.material.as_ref().and_then(|h| materials.get(&h.id())).and_then(|n| index_from_name(n)))
+                .or_else(|| {
+                    prim.material
+                        .as_ref()
+                        .and_then(|h| materials.get(&h.id()))
+                        .and_then(|n| index_from_name(n))
+                })
                 .unwrap_or(15);
             let word = remap.get(colour as usize).copied().unwrap_or(0xFF00 | colour as u16);
             if m.primitive_topology() == PrimitiveTopology::LineList {
                 for l in idx.as_chunks::<2>().0 {
                     let (a, b) = (pos[l[0]], pos[l[1]]);
-                    if a.y.abs() < 1.0 && b.y.abs() < 1.0 && (0xE0..=0xEF).contains(&(word & 0xFF)) {
+                    if a.y.abs() < 1.0 && b.y.abs() < 1.0 && (0xE0..=0xEF).contains(&(word & 0xFF))
+                    {
                         geom.lines.push((ground(a), ground(b)));
                     }
                 }
@@ -406,12 +488,19 @@ fn walk(
             for t in idx.as_chunks::<3>().0 {
                 let p = [pos[t[0]], pos[t[1]], pos[t[2]]];
                 if p.iter().all(|v| v.y.abs() < 1.0) {
-                    if let Some(s) = surface(word, day).map(|s| if forest { Surface::Forest } else { s }) {
+                    if let Some(s) =
+                        surface(word, day).map(|s| if forest { Surface::Forest } else { s })
+                    {
                         let q = p.map(ground);
                         if s == Surface::Solid {
-                            let r = Rect::from_corners(q[0].min(q[1]).min(q[2]), q[0].max(q[1]).max(q[2]));
+                            let r = Rect::from_corners(
+                                q[0].min(q[1]).min(q[2]),
+                                q[0].max(q[1]).max(q[2]),
+                            );
                             let size = r.size();
-                            if size.max_element() >= 6.0 * size.min_element() && !geom.runways.contains(&r) {
+                            if size.max_element() >= 6.0 * size.min_element()
+                                && !geom.runways.contains(&r)
+                            {
                                 geom.runways.push(r);
                             }
                         }
@@ -420,7 +509,9 @@ fn walk(
                 } else {
                     for v in p {
                         let q = ground(v);
-                        geom.raised = Some(geom.raised.map_or(Rect::from_corners(q, q), |r| r.union_point(q)));
+                        geom.raised = Some(
+                            geom.raised.map_or(Rect::from_corners(q, q), |r| r.union_point(q)),
+                        );
                     }
                 }
             }

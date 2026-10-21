@@ -18,7 +18,10 @@
 
 use std::collections::HashMap;
 
-use bevy::audio::{AudioSink, PlaybackMode, PlaybackSettings, SpatialAudioSink, SpatialListener, SpatialScale, Volume};
+use bevy::audio::{
+    AudioSink, PlaybackMode, PlaybackSettings, SpatialAudioSink, SpatialListener, SpatialScale,
+    Volume,
+};
 use bevy::prelude::*;
 use stealth_sim::{AircraftKind, fflags};
 
@@ -38,9 +41,14 @@ impl Plugin for SoundPlugin {
             .add_systems(Startup, load_bank)
             .add_systems(
                 Update,
-                (flight_sounds, play_sounds, engine_drone, beacon).chain().run_if(in_state(AppState::Flight)),
+                (flight_sounds, play_sounds, engine_drone, beacon)
+                    .chain()
+                    .run_if(in_state(AppState::Flight)),
             )
-            .add_systems(Update, distant_aircraft.after(CombatSystems).run_if(in_state(AppState::Flight)))
+            .add_systems(
+                Update,
+                distant_aircraft.after(CombatSystems).run_if(in_state(AppState::Flight)),
+            )
             .add_systems(OnExit(AppState::Flight), stop_all);
     }
 }
@@ -160,7 +168,9 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
         let path = format!("sounds/{name}");
         if let Some(k) = stem.strip_prefix("engine_").and_then(|k| k.parse::<f32>().ok()) {
             bank.engine.push((k, server.load(path)));
-        } else if let Some(rest) = stem.strip_prefix("sfx_").or_else(|| stem.strip_prefix("speech_")) {
+        } else if let Some(rest) =
+            stem.strip_prefix("sfx_").or_else(|| stem.strip_prefix("speech_"))
+        {
             let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
             if let Ok(id) = digits.parse::<u8>() {
                 bank.sfx.entry(id).or_default().push(server.load(path));
@@ -169,10 +179,17 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     }
     for (tone, file) in RWR_FILES {
         if crate::asset_path::asset(&format!("sounds/rwr/{file}")).exists() {
-            bank.sfx.entry(rwr_id(tone)).or_default().push(server.load(format!("sounds/rwr/{file}")));
+            bank.sfx
+                .entry(rwr_id(tone))
+                .or_default()
+                .push(server.load(format!("sounds/rwr/{file}")));
         }
     }
-    let optional = |name: &str| crate::asset_path::asset(&format!("sounds/{name}")).exists().then(|| server.load(format!("sounds/{name}")));
+    let optional = |name: &str| {
+        crate::asset_path::asset(&format!("sounds/{name}"))
+            .exists()
+            .then(|| server.load(format!("sounds/{name}")))
+    };
     bank.beacon = optional("beacon.flac");
     bank.jet = optional("jet.flac");
     bank.helicopter = optional("helicopter.flac");
@@ -220,8 +237,10 @@ fn play_sounds(
         return;
     };
     for r in requests.read() {
-        let allowed = r.priority == DIRECT || (level.0 > 0 && r.priority as i32 >= 3 - level.0 as i32);
-        if !allowed || !survives(r.id) || playing.iter().any(|(_, p)| p.0 == r.id && survives(p.0)) {
+        let allowed =
+            r.priority == DIRECT || (level.0 > 0 && r.priority as i32 >= 3 - level.0 as i32);
+        if !allowed || !survives(r.id) || playing.iter().any(|(_, p)| p.0 == r.id && survives(p.0))
+        {
             continue;
         }
         let Some(variants) = bank.sfx.get(&r.id) else { continue };
@@ -311,7 +330,11 @@ fn engine_drone(
     let Some(bank) = bank else { return };
     let Ok(a) = player.single() else { return };
     let knots = a.knots().min(768.0);
-    let on = level.0 == 3 && a.set_thrust > 0.0 && knots >= 2.0 && a.ended.is_none() && !has_ejected(combat.as_deref());
+    let on = level.0 == 3
+        && a.set_thrust > 0.0
+        && knots >= 2.0
+        && a.ended.is_none()
+        && !has_ejected(combat.as_deref());
     if !on || bank.engine.is_empty() {
         for (e, _, _) in &drone {
             commands.entity(e).despawn();
@@ -319,13 +342,8 @@ fn engine_drone(
         return;
     }
     // Nearest recording at or below the airspeed, pitched to the exact original frequency.
-    let (sample_knots, handle) = bank
-        .engine
-        .iter()
-        .rev()
-        .find(|(k, _)| *k <= knots)
-        .unwrap_or(&bank.engine[0])
-        .clone();
+    let (sample_knots, handle) =
+        bank.engine.iter().rev().find(|(k, _)| *k <= knots).unwrap_or(&bank.engine[0]).clone();
     let freq = |k: f32| 0x83 as f32 + ((k as u32) & !1) as f32;
     let speed = freq(knots) / freq(sample_knots);
     let volume = if level.1 { ENGINE_VOLUME * 0.5 } else { ENGINE_VOLUME };
@@ -344,10 +362,21 @@ fn engine_drone(
     }
 }
 
-fn spawn_drone(commands: &mut Commands, handle: Handle<AudioSource>, sample_knots: f32, speed: f32, volume: f32) {
+fn spawn_drone(
+    commands: &mut Commands,
+    handle: Handle<AudioSource>,
+    sample_knots: f32,
+    speed: f32,
+    volume: f32,
+) {
     commands.spawn((
         AudioPlayer(handle),
-        PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(volume), speed, ..default() },
+        PlaybackSettings {
+            mode: PlaybackMode::Loop,
+            volume: Volume::Linear(volume),
+            speed,
+            ..default()
+        },
         EngineDrone { sample_knots },
     ));
 }
@@ -376,7 +405,11 @@ fn beacon(
     if *wait <= 0.0 {
         *wait = BEACON_INTERVAL;
         if level.0 > 0 {
-            commands.spawn((AudioPlayer(handle), PlaybackSettings::DESPAWN.with_volume(Volume::Linear(BEACON_VOLUME)), Beacon));
+            commands.spawn((
+                AudioPlayer(handle),
+                PlaybackSettings::DESPAWN.with_volume(Volume::Linear(BEACON_VOLUME)),
+                Beacon,
+            ));
         }
     }
 }
@@ -393,10 +426,19 @@ fn distant_aircraft(
     origin: Res<FloatingOrigin>,
     virt: Res<Time<Virtual>>,
     eye: Query<(Entity, &GlobalTransform, Has<SpatialListener>), With<EyeCamera>>,
-    mut playing: Query<(Entity, &mut DistantAircraft, &mut WorldPos, Option<&mut SpatialAudioSink>)>,
+    mut playing: Query<(
+        Entity,
+        &mut DistantAircraft,
+        &mut WorldPos,
+        Option<&mut SpatialAudioSink>,
+    )>,
 ) {
-    let heard = level.0 == 3 && has_ejected(combat.as_deref()) && combat.as_ref().is_some_and(|c| c.end.is_none());
-    let (Some(bank), Some(combat), Ok((cam, eye_tf, listening))) = (bank.filter(|_| heard), combat, eye.single()) else {
+    let heard = level.0 == 3
+        && has_ejected(combat.as_deref())
+        && combat.as_ref().is_some_and(|c| c.end.is_none());
+    let (Some(bank), Some(combat), Ok((cam, eye_tf, listening))) =
+        (bank.filter(|_| heard), combat, eye.single())
+    else {
         for (e, ..) in &playing {
             commands.entity(e).despawn();
         }
@@ -405,7 +447,10 @@ fn distant_aircraft(
     if !listening {
         // rodio's panning plays an emitter on the right louder in the left channel, so the ears
         // are swapped to come out right.
-        commands.entity(cam).insert(SpatialListener { left_ear_offset: Vec3::X * EAR_GAP / 2.0, right_ear_offset: Vec3::X * EAR_GAP / -2.0 });
+        commands.entity(cam).insert(SpatialListener {
+            left_ear_offset: Vec3::X * EAR_GAP / 2.0,
+            right_ear_offset: Vec3::X * EAR_GAP / -2.0,
+        });
     }
     let ear = origin.origin + eye_tf.translation().as_dvec3();
     let sim = &combat.sim;
@@ -413,7 +458,11 @@ fn distant_aircraft(
     let mut heard: Vec<(usize, bool, bevy::math::DVec3, f32)> = sim
         .active_aircraft()
         .into_iter()
-        .filter(|(_, u, _)| u.flags & fflags::DESTROYED == 0 && (u.wx != 0 || u.wy != 0) && (u.flags & fflags::AIRBORNE != 0 || u.speed > 0))
+        .filter(|(_, u, _)| {
+            u.flags & fflags::DESTROYED == 0
+                && (u.wx != 0 || u.wy != 0)
+                && (u.flags & fflags::AIRBORNE != 0 || u.speed > 0)
+        })
         .filter_map(|(i, u, _)| {
             let helicopter = match sim.aircraft_kind(u.spec) {
                 AircraftKind::Plane => false,
@@ -433,7 +482,9 @@ fn distant_aircraft(
     let dt = virt.delta_secs();
     let mut have = Vec::new();
     for (e, mut d, mut pos, sink) in &mut playing {
-        let Some(&(_, helicopter, p, dist)) = heard.iter().find(|h| h.0 == d.unit && h.1 == d.helicopter) else {
+        let Some(&(_, helicopter, p, dist)) =
+            heard.iter().find(|h| h.0 == d.unit && h.1 == d.helicopter)
+        else {
             commands.entity(e).despawn();
             continue;
         };
@@ -441,7 +492,8 @@ fn distant_aircraft(
         pos.0 = p;
         if dt > 0.0 {
             let away = (dist - d.dist) / dt;
-            let target = (SPEED_OF_SOUND / (SPEED_OF_SOUND + away).max(1.0)).clamp(DOPPLER_RANGE.0, DOPPLER_RANGE.1);
+            let target = (SPEED_OF_SOUND / (SPEED_OF_SOUND + away).max(1.0))
+                .clamp(DOPPLER_RANGE.0, DOPPLER_RANGE.1);
             d.doppler += (target - d.doppler) * (dt * 4.0).min(1.0);
         }
         d.dist = dist;
@@ -479,7 +531,11 @@ fn distant_aircraft(
 
 /// Volume of an aircraft heard `dist` metres away, fading out over the last quarter of the range.
 fn distant_volume(helicopter: bool, dist: f32) -> f32 {
-    let (range, reference, volume) = if helicopter { (HELICOPTER_RANGE, HELICOPTER_REF, HELICOPTER_VOLUME) } else { (JET_RANGE, JET_REF, JET_VOLUME) };
+    let (range, reference, volume) = if helicopter {
+        (HELICOPTER_RANGE, HELICOPTER_REF, HELICOPTER_VOLUME)
+    } else {
+        (JET_RANGE, JET_REF, JET_VOLUME)
+    };
     let fade = ((range - dist) / (0.25 * range)).clamp(0.0, 1.0);
     volume * (reference / dist.max(1.0)).min(1.0) * fade
 }

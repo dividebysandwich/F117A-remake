@@ -22,12 +22,12 @@ use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use bevy::diagnostic::DiagnosticsStore;
+use bevy::log::BoxedLayer;
+use bevy::log::tracing::Subscriber;
 use bevy::log::tracing::field::{Field, Visit};
 use bevy::log::tracing::span::{Attributes, Id};
-use bevy::log::tracing::Subscriber;
 use bevy::log::tracing_subscriber::layer::{Context, Layer};
 use bevy::log::tracing_subscriber::registry::LookupSpan;
-use bevy::log::BoxedLayer;
 use bevy::prelude::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -77,13 +77,23 @@ pub struct ProfilePlugin(pub ProfileConfig);
 impl Plugin for ProfilePlugin {
     fn build(&self, app: &mut App) {
         let c = self.0;
-        info!("profiling: report every {} s, GPU timestamps {}", c.interval, if c.gpu { "on" } else { "off" });
+        info!(
+            "profiling: report every {} s, GPU timestamps {}",
+            c.interval,
+            if c.gpu { "on" } else { "off" }
+        );
         if c.gpu {
             use bevy::core_pipeline::{Core3d, Core3dSystems, upscaling::upscaling};
             app.add_plugins(bevy::render::diagnostic::RenderDiagnosticsPlugin);
             // Each 3D view's whole frame, timed between passes.
             if let Some(render) = app.get_sub_app_mut(bevy::render::RenderApp) {
-                render.add_systems(Core3d, (view_span_begin.before(Core3dSystems::Prepass), view_span_end.after(upscaling)));
+                render.add_systems(
+                    Core3d,
+                    (
+                        view_span_begin.before(Core3dSystems::Prepass),
+                        view_span_end.after(upscaling),
+                    ),
+                );
             }
         }
         app.insert_resource(Report::new(c)).add_systems(Last, report);
@@ -104,7 +114,11 @@ fn view_span_end(world: &mut World) {
 fn view_span(world: &mut World, begin: bool) {
     use bevy::render::diagnostic::{DiagnosticsRecorder, RecordDiagnostics};
     use bevy::render::renderer::{PendingCommandBuffers, RenderDevice};
-    let (Some(d), Some(device)) = (world.get_resource::<DiagnosticsRecorder>(), world.get_resource::<RenderDevice>()) else { return };
+    let (Some(d), Some(device)) =
+        (world.get_resource::<DiagnosticsRecorder>(), world.get_resource::<RenderDevice>())
+    else {
+        return;
+    };
     let mut encoder = device.create_command_encoder(&Default::default());
     if begin {
         d.begin_time_span(&mut encoder, "view".into());
@@ -226,7 +240,14 @@ struct Report {
 
 impl Report {
     fn new(config: ProfileConfig) -> Self {
-        Self { config, since: Instant::now(), last_frame: None, frames: Vec::new(), passes: HashMap::new(), seen: HashMap::new() }
+        Self {
+            config,
+            since: Instant::now(),
+            last_frame: None,
+            frames: Vec::new(),
+            passes: HashMap::new(),
+            seen: HashMap::new(),
+        }
     }
 
     /// This frame's new render diagnostics (sync_diagnostics adds one batch per rendered frame).
@@ -234,7 +255,10 @@ impl Report {
         let mut frame: HashMap<(String, String), (f64, u32)> = HashMap::new();
         for d in store.iter() {
             let path = d.path().as_str();
-            let Some((pass, field)) = path.strip_prefix("render/").and_then(|p| p.rsplit_once('/')) else { continue };
+            let Some((pass, field)) = path.strip_prefix("render/").and_then(|p| p.rsplit_once('/'))
+            else {
+                continue;
+            };
             let last = self.seen.get(path).copied();
             let mut newest = last;
             for m in d.measurements().filter(|m| last.is_none_or(|t| m.time > t)) {
@@ -299,14 +323,29 @@ fn report(
     );
     for (cam, msaa) in cameras.iter().filter(|(c, _)| c.is_active) {
         if let Some(size) = cam.physical_viewport_size() {
-            let _ = writeln!(out, "  view {}x{} order {} msaa {}", size.x, size.y, cam.order, msaa.map_or(1, |m| m.samples()));
+            let _ = writeln!(
+                out,
+                "  view {}x{} order {} msaa {}",
+                size.x,
+                size.y,
+                cam.order,
+                msaa.map_or(1, |m| m.samples())
+            );
         }
     }
     let visible = meshes.iter().filter(|v| v.get()).count();
-    let _ = writeln!(out, "  entities {}, meshes {} ({visible} visible)", entities.iter().count(), meshes.iter().count());
+    let _ = writeln!(
+        out,
+        "  entities {}, meshes {} ({visible} visible)",
+        entities.iter().count(),
+        meshes.iter().count()
+    );
 
     if !r.passes.is_empty() {
-        let _ = writeln!(out, "  GPU per frame, summed over views (pass: gpu ms [worst] / encode cpu ms / vertex, fragment invocations):");
+        let _ = writeln!(
+            out,
+            "  GPU per frame, summed over views (pass: gpu ms [worst] / encode cpu ms / vertex, fragment invocations):"
+        );
         let mut passes: Vec<_> = r.passes.iter().collect();
         let gpu = |p: &PassStat| p.fields.get("elapsed_gpu").map_or(0.0, |f| f.0);
         passes.sort_by(|a, b| gpu(b.1).total_cmp(&gpu(a.1)).then(a.0.cmp(b.0)));
@@ -322,22 +361,32 @@ fn report(
                 let _ = write!(line, " / cpu {:.2} ms", sum * per_frame);
             }
             // (Turnip returns garbage pipeline statistics for some passes.)
-            if let (Some((v, _)), Some((fr, _))) = (f("vertex_shader_invocations"), f("fragment_shader_invocations"))
+            if let (Some((v, _)), Some((fr, _))) =
+                (f("vertex_shader_invocations"), f("fragment_shader_invocations"))
                 && v * per_frame < 1e10
                 && fr * per_frame < 1e10
             {
-                let _ = write!(line, " / {:.2} M vs, {:.2} M fs", v * per_frame / 1e6, fr * per_frame / 1e6);
+                let _ = write!(
+                    line,
+                    " / {:.2} M vs, {:.2} M fs",
+                    v * per_frame / 1e6,
+                    fr * per_frame / 1e6
+                );
             }
             let _ = writeln!(out, "{line}");
         }
     } else if r.config.gpu {
-        let _ = writeln!(out, "  GPU: no timestamps (the device lacks TIMESTAMP_QUERY_INSIDE_PASSES?)");
+        let _ =
+            writeln!(out, "  GPU: no timestamps (the device lacks TIMESTAMP_QUERY_INSIDE_PASSES?)");
     }
 
-    let mut cpu: Vec<_> = std::mem::take(&mut *CPU.lock().unwrap_or_else(|e| e.into_inner())).into_iter().collect();
+    let mut cpu: Vec<_> =
+        std::mem::take(&mut *CPU.lock().unwrap_or_else(|e| e.into_inner())).into_iter().collect();
     cpu.sort_by_key(|(_, s)| std::cmp::Reverse(s.total));
     let _ = writeln!(out, "  CPU per frame, top spans (ms avg / worst call / calls per frame):");
-    for (label, s) in cpu.iter().take(100).filter(|(_, s)| s.total.as_secs_f64() * 1000.0 * per_frame >= 0.02) {
+    for (label, s) in
+        cpu.iter().take(100).filter(|(_, s)| s.total.as_secs_f64() * 1000.0 * per_frame >= 0.02)
+    {
         let mut l: String = label.chars().take(110).collect();
         if label.chars().count() > 110 {
             l.push('~');

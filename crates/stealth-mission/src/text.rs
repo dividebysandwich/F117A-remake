@@ -166,7 +166,10 @@ impl TextCtx<'_> {
     /// Intelligence paragraph of a target slot.
     pub fn summary(&self, slot: usize) -> String {
         let row = self.g.targets[slot].num as usize;
-        self.texts.summaries.get(row).map_or(String::new(), |v| self.pick(v, 0x100 + slot as u32).to_string())
+        self.texts
+            .summaries
+            .get(row)
+            .map_or(String::new(), |v| self.pick(v, 0x100 + slot as u32).to_string())
     }
 
     /// Objective text by mission type.
@@ -207,7 +210,12 @@ impl TextCtx<'_> {
             4 => fill(&pick(&o_t.airstrip), &[("coord", &coord), ("deadline", deadline)]),
             5 => fill(
                 &pick(&o_t.route),
-                &[("origin", self.name(self.obj(g.special_start).name as i32)), ("depart", depart), ("place", place), ("deadline", deadline)],
+                &[
+                    ("origin", self.name(self.obj(g.special_start).name as i32)),
+                    ("depart", depart),
+                    ("place", place),
+                    ("deadline", deadline),
+                ],
             ),
             6 => fill(&pick(&o_t.leaving), &[("place", place), ("depart", depart)]),
             7 => fill(
@@ -231,7 +239,11 @@ impl TextCtx<'_> {
     /// Briefing date: the theater's start date advanced by the missions flown.
     pub fn date(&self, sorties: u16) -> String {
         let x = self.x;
-        let (m, d, y) = self.date.unwrap_or((x.date_month[self.theater], x.date_day[self.theater], x.date_year[self.theater]));
+        let (m, d, y) = self.date.unwrap_or((
+            x.date_month[self.theater],
+            x.date_day[self.theater],
+            x.date_year[self.theater],
+        ));
         let mut mon = m as usize;
         let mut yr = y as u32;
         let mut day = d as u32 + sorties as u32;
@@ -266,7 +278,10 @@ impl TextCtx<'_> {
             depart_line: fill(self.pick(&tx.depart, 4), &[("base", &takeoff), ("time", &g.depart)]),
             land_line: fill(self.pick(&tx.land, 5), &[("base", &self.base_name(t[1].base))]),
             roe_text: tx.roe.get(self.roe).map_or("", |v| self.pick(v, 6)).into(),
-            armament: g.weapons[..nbays].iter().map(|&w| x.weapon_name(w as i16).to_string()).collect(),
+            armament: g.weapons[..nbays]
+                .iter()
+                .map(|&w| x.weapon_name(w as i16).to_string())
+                .collect(),
             fuel_line: fill(self.pick(&tx.fuel, 7), &[("fuel", &fuel)]),
             weather_line: String::new(),
             lines: Vec::new(),
@@ -305,7 +320,8 @@ impl TextCtx<'_> {
     fn vgame_obj_name(&self, i: i32) -> String {
         let o = self.obj(i);
         let place = self.name(o.name as i32);
-        let mut s: String = if !place.is_empty() { place.into() } else { self.name(o.shape() as i32).into() };
+        let mut s: String =
+            if !place.is_empty() { place.into() } else { self.name(o.shape() as i32).into() };
         if s.chars().count() > 18 {
             s = s.chars().take(18).collect::<String>() + ".";
         }

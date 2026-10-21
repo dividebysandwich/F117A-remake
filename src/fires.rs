@@ -19,7 +19,10 @@ use crate::combat::{Combat, CombatSystems};
 use crate::lighting::LightEmitter;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
-use crate::palette_material::{FLAG_CLOUD, FLAG_LINE, FLAG_CLOUD_SOFT, PaletteMaterial, PaletteParams, TAG_SMOKE, TAG_SMOKE_FIRE, TAG_WARM, mesh_tag};
+use crate::palette_material::{
+    FLAG_CLOUD, FLAG_CLOUD_SOFT, FLAG_LINE, PaletteMaterial, PaletteParams, TAG_SMOKE,
+    TAG_SMOKE_FIRE, TAG_WARM, mesh_tag,
+};
 use crate::settings::{AppState, SetupSet};
 use crate::world::{Theater, WU, WorldAnchor, WorldPos, map_to_wu, wu_to_bevy};
 
@@ -32,7 +35,12 @@ impl Plugin for FiresPlugin {
             .add_systems(OnExit(AppState::Flight), teardown)
             .add_systems(
                 Update,
-                (ignite.run_if(resource_exists::<Combat>), war_fires, stream, (grow_smoke, animate_fires))
+                (
+                    ignite.run_if(resource_exists::<Combat>),
+                    war_fires,
+                    stream,
+                    (grow_smoke, animate_fires),
+                )
                     .chain()
                     .after(CombatSystems)
                     .run_if(in_state(AppState::Flight)),
@@ -139,7 +147,11 @@ struct Fires {
 
 impl Fires {
     fn flame_material(&self, c: u8) -> Handle<PaletteMaterial> {
-        self.flame_materials.iter().find(|(k, _)| *k == c).map(|(_, m)| m.clone()).unwrap_or_default()
+        self.flame_materials
+            .iter()
+            .find(|(k, _)| *k == c)
+            .map(|(_, m)| m.clone())
+            .unwrap_or_default()
     }
 
     fn random(&mut self) -> f32 {
@@ -172,10 +184,13 @@ impl Fires {
 /// palette.wgsl `proxy_fragment`).
 fn plume_proxy() -> Mesh {
     // Circumscribes the shader's unit cylinder.
-    let mut mesh = Cylinder::new(1.0 / (std::f32::consts::PI / 16.0).cos(), 1.0).mesh().resolution(16).build();
+    let mut mesh =
+        Cylinder::new(1.0 / (std::f32::consts::PI / 16.0).cos(), 1.0).mesh().resolution(16).build();
     mesh.remove_attribute(Mesh::ATTRIBUTE_NORMAL);
     mesh.remove_attribute(Mesh::ATTRIBUTE_UV_0);
-    if let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
+    if let Some(VertexAttributeValues::Float32x3(pos)) =
+        mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+    {
         for p in pos.iter_mut() {
             p[1] += 0.5;
         }
@@ -191,10 +206,12 @@ fn plume_proxy() -> Mesh {
 fn flame_mesh() -> Mesh {
     let top = Vec3::new(0.0, 1.5, 0.0);
     let bottom = Vec3::new(0.0, -0.4, 0.0);
-    let ring: Vec<Vec3> = (0..4).map(|i| {
-        let a = i as f32 * std::f32::consts::FRAC_PI_2;
-        Vec3::new(a.cos() * 0.5, 0.0, a.sin() * 0.5)
-    }).collect();
+    let ring: Vec<Vec3> = (0..4)
+        .map(|i| {
+            let a = i as f32 * std::f32::consts::FRAC_PI_2;
+            Vec3::new(a.cos() * 0.5, 0.0, a.sin() * 0.5)
+        })
+        .collect();
     let mut pos = Vec::new();
     for i in 0..4 {
         let (a, b) = (ring[i], ring[(i + 1) % 4]);
@@ -207,7 +224,8 @@ fn flame_mesh() -> Mesh {
             pos.extend(t);
         }
     }
-    Mesh::new(PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default()).with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    Mesh::new(PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
 }
 
 fn setup(
@@ -225,7 +243,11 @@ fn setup(
         wind: ((seed >> 7) & 0xFFFF) as f32 / 65535.0 * std::f32::consts::TAU,
         rng,
         smoke_material: materials.add(PaletteMaterial {
-            params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | FLAG_CLOUD_SOFT, ..default() },
+            params: PaletteParams {
+                word: 0xFFE0,
+                flags: FLAG_CLOUD | FLAG_CLOUD_SOFT,
+                ..default()
+            },
             globals: palette.globals.clone(),
         }),
         proxy: meshes.add(plume_proxy()),
@@ -235,7 +257,11 @@ fn setup(
             .chain(&[FLAME_WARM, FLAME_COOL])
             .map(|&c| {
                 let m = materials.add(PaletteMaterial {
-                    params: PaletteParams { word: 0xFF00 | c as u32, flags: FLAG_LINE, ..default() },
+                    params: PaletteParams {
+                        word: 0xFF00 | c as u32,
+                        flags: FLAG_LINE,
+                        ..default()
+                    },
                     globals: palette.globals.clone(),
                 });
                 (c, m)
@@ -268,17 +294,63 @@ fn ignite(combat: Res<Combat>, mut fires: ResMut<Fires>) {
 /// Theater object names that are not towns (for the theaters without generated towns).
 fn is_town_name(name: &str) -> bool {
     const NOT: [&str; 46] = [
-        "air", "hangar", "tower", "sam", "missile", "radar", "depot", "hq", "headquarters", "bridge", "camp", "boat",
-        "ship", "destroyer", "uss ", "cv ", "tank", "dump", "plant", "rig", "refinery", "pump", "special", "runway",
-        "oil", "sub pen", "typhoon", "krivak", "cruiser", "palace", "mosque", "command", "guards", "island", "manifold",
-        "trail", "buildings", "windmill", "trawler", "cargo", "merchant", "scud", "well", "lpar", "h3", "aegis",
+        "air",
+        "hangar",
+        "tower",
+        "sam",
+        "missile",
+        "radar",
+        "depot",
+        "hq",
+        "headquarters",
+        "bridge",
+        "camp",
+        "boat",
+        "ship",
+        "destroyer",
+        "uss ",
+        "cv ",
+        "tank",
+        "dump",
+        "plant",
+        "rig",
+        "refinery",
+        "pump",
+        "special",
+        "runway",
+        "oil",
+        "sub pen",
+        "typhoon",
+        "krivak",
+        "cruiser",
+        "palace",
+        "mosque",
+        "command",
+        "guards",
+        "island",
+        "manifold",
+        "trail",
+        "buildings",
+        "windmill",
+        "trawler",
+        "cargo",
+        "merchant",
+        "scud",
+        "well",
+        "lpar",
+        "h3",
+        "aegis",
     ];
     let n = name.to_ascii_lowercase();
     !n.is_empty() && !NOT.iter().any(|k| n.contains(k))
 }
 
 /// Fires along the front line and in the ruined towns: (ground point in metres, big).
-fn front_sites(theater: &Theater, scenery: &crate::scenery::Scenery, seed: u64) -> Vec<(DVec2, bool)> {
+fn front_sites(
+    theater: &Theater,
+    scenery: &crate::scenery::Scenery,
+    seed: u64,
+) -> Vec<(DVec2, bool)> {
     let mut rng = crate::scenery::Rng::new(seed ^ 0xF407);
     let mut out = Vec::new();
     for w in theater.front.windows(2) {
@@ -291,7 +363,9 @@ fn front_sites(theater: &Theater, scenery: &crate::scenery::Scenery, seed: u64) 
         for _ in 0..n {
             // Most fires close to the line, some deep in the rear.
             let off = rng.range(-1.0, 1.0);
-            let p = a + along * rng.range(0.0, len) + along.perp() * off * off * off.signum() * FRONT_DEPTH_M;
+            let p = a
+                + along * rng.range(0.0, len)
+                + along.perp() * off * off * off.signum() * FRONT_DEPTH_M;
             if scenery.is_open(p, 8.0) {
                 out.push((p, rng.chance(0.3 * k)));
             }
@@ -300,7 +374,8 @@ fn front_sites(theater: &Theater, scenery: &crate::scenery::Scenery, seed: u64) 
     for t in theater.towns.iter().filter(|t| t.ruined >= 0.3) {
         let c = DVec2::new(t.x, t.y);
         for _ in 0..1 + (t.ruined * 2.5) as usize {
-            let p = c + DVec2::from_angle(rng.range(0.0, std::f64::consts::TAU)) * rng.range(0.0, t.r * 0.9);
+            let p = c + DVec2::from_angle(rng.range(0.0, std::f64::consts::TAU))
+                * rng.range(0.0, t.r * 0.9);
             out.push((p, rng.chance(0.35)));
         }
     }
@@ -308,7 +383,11 @@ fn front_sites(theater: &Theater, scenery: &crate::scenery::Scenery, seed: u64) 
 }
 
 /// The front line's fires and the war's, once the scenery layout exists.
-fn war_fires(mut fires: ResMut<Fires>, scenery: Option<Res<crate::scenery::Scenery>>, theater: Option<Res<Theater>>) {
+fn war_fires(
+    mut fires: ResMut<Fires>,
+    scenery: Option<Res<crate::scenery::Scenery>>,
+    theater: Option<Res<Theater>>,
+) {
     if fires.war_done && fires.front_done {
         return;
     }
@@ -320,7 +399,11 @@ fn war_fires(mut fires: ResMut<Fires>, scenery: Option<Res<crate::scenery::Scene
             info!("fires: {} burning along the front", sites.len());
         }
         for (p, big) in sites {
-            fires.add(wu_to_bevy(p.x / WU, p.y / WU, 0.0), if big { Size::Big } else { Size::Small }, GROW_SECS);
+            fires.add(
+                wu_to_bevy(p.x / WU, p.y / WU, 0.0),
+                if big { Size::Big } else { Size::Small },
+                GROW_SECS,
+            );
         }
     }
     if fires.war_done {
@@ -339,7 +422,8 @@ fn war_fires(mut fires: ResMut<Fires>, scenery: Option<Res<crate::scenery::Scene
             let (e, n) = map_to_wu(o.x, o.y);
             let c = DVec2::new(e, n) * WU;
             for _ in 0..1 + rng.u64() % 3 {
-                let p = c + DVec2::from_angle(rng.range(0.0, std::f64::consts::TAU)) * rng.range(100.0, 1500.0);
+                let p = c + DVec2::from_angle(rng.range(0.0, std::f64::consts::TAU))
+                    * rng.range(100.0, 1500.0);
                 if scenery.is_open(p, 8.0) {
                     sites.push((p, rng.chance(0.4)));
                 }
@@ -349,7 +433,11 @@ fn war_fires(mut fires: ResMut<Fires>, scenery: Option<Res<crate::scenery::Scene
     info!("fires: {} burning in the war", sites.len());
     for (p, big) in sites {
         // Long burning already: full grown plumes.
-        fires.add(wu_to_bevy(p.x / WU, p.y / WU, 0.0), if big { Size::Big } else { Size::Small }, GROW_SECS);
+        fires.add(
+            wu_to_bevy(p.x / WU, p.y / WU, 0.0),
+            if big { Size::Big } else { Size::Small },
+            GROW_SECS,
+        );
     }
 }
 
@@ -373,12 +461,14 @@ fn stream(
         (rng >> 8) as f32 / (1u32 << 24) as f32
     };
     let materials: Vec<(u8, Handle<PaletteMaterial>)> = fires.flame_materials.clone();
-    let flame_material = |c: u8| materials.iter().find(|(k, _)| *k == c).map(|(_, m)| m.clone()).unwrap_or_default();
+    let flame_material =
+        |c: u8| materials.iter().find(|(k, _)| *k == c).map(|(_, m)| m.clone()).unwrap_or_default();
     for s in &mut fires.sites {
         let d = DVec2::new(s.pos.x - eye.x, s.pos.z - eye.z).length();
         match (d < SMOKE_RANGE, s.smoke) {
             (true, None) => {
-                let tag = mesh_tag(1, 0, true) | TAG_SMOKE | TAG_SMOKE_FIRE | (s.seed & 0xFFFF) << 16;
+                let tag =
+                    mesh_tag(1, 0, true) | TAG_SMOKE | TAG_SMOKE_FIRE | (s.seed & 0xFFFF) << 16;
                 s.smoke = Some(
                     commands
                         .spawn((
@@ -426,7 +516,13 @@ fn stream(
                         ))
                         .id();
                     commands.entity(root).add_child(entity);
-                    flames.push(Flame { entity, offset: Vec2::from_angle(a) * r, phase: random(), life: 0.7 + 0.7 * random(), colour });
+                    flames.push(Flame {
+                        entity,
+                        offset: Vec2::from_angle(a) * r,
+                        phase: random(),
+                        life: 0.7 + 0.7 * random(),
+                        colour,
+                    });
                 }
                 s.fire = Some((root, flames));
             }
@@ -488,13 +584,23 @@ fn animate_fires(
             let drift = wind * k * k * height * 0.4;
             let wobble = (t * 7.0 + f.phase * 20.0).sin() * 0.3 * size;
             if let Ok(mut tf) = tfs.get_mut(f.entity) {
-                tf.translation = Vec3::new(f.offset.x + drift.x + wobble, rise - LIGHT_HEIGHT, -(f.offset.y + drift.y));
+                tf.translation = Vec3::new(
+                    f.offset.x + drift.x + wobble,
+                    rise - LIGHT_HEIGHT,
+                    -(f.offset.y + drift.y),
+                );
                 let shrink = (1.0 - k) * (0.4 + 2.4 * k).min(1.0);
                 tf.scale = Vec3::new(size, size * (1.2 + k), size) * shrink * strength;
                 tf.rotation = Quat::from_rotation_y(f.phase * 6.0 + t * 1.5);
             }
             // Cooling: the base colour, then orange-brown, then dark red.
-            let colour = if k < 0.45 { f.colour } else if k < 0.75 { FLAME_WARM } else { FLAME_COOL };
+            let colour = if k < 0.45 {
+                f.colour
+            } else if k < 0.75 {
+                FLAME_WARM
+            } else {
+                FLAME_COOL
+            };
             if let Ok(mut m) = mats.get_mut(f.entity) {
                 let want = fires.flame_material(colour);
                 if m.0 != want {
@@ -504,7 +610,10 @@ fn animate_fires(
         }
         if let Ok(mut light) = lights.get_mut(*root) {
             let p = s.seed as f32 * 0.37;
-            let flicker = 0.72 + 0.14 * (t * 11.0 + p).sin() + 0.09 * (t * 23.7 + p * 2.0).sin() + 0.05 * (t * 41.3).sin();
+            let flicker = 0.72
+                + 0.14 * (t * 11.0 + p).sin()
+                + 0.09 * (t * 23.7 + p * 2.0).sin()
+                + 0.05 * (t * 41.3).sin();
             let (k, _) = s.size.light();
             light.color = Vec3::new(1.0, 0.5, 0.16) * k * flicker * strength;
         }

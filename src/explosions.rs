@@ -9,16 +9,22 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::math::DVec3;
-use bevy::mesh::{Indices, MeshTag, MeshVertexAttribute, MeshVertexBufferLayoutRef, PrimitiveTopology};
+use bevy::mesh::{
+    Indices, MeshTag, MeshVertexAttribute, MeshVertexBufferLayoutRef, PrimitiveTopology,
+};
 use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError, VertexFormat};
+use bevy::render::render_resource::{
+    AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError, VertexFormat,
+};
 use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
 use stealth_sim::Smoke;
 
 use crate::combat::{Combat, CombatSystems};
-use crate::palette_material::{FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, mesh_tag};
+use crate::palette_material::{
+    FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, mesh_tag,
+};
 use crate::settings::AppState;
 use crate::sim_render::{SimObject, map_point};
 use crate::world::{FloatingOrigin, WorldPos};
@@ -26,11 +32,14 @@ use crate::world::{FloatingOrigin, WorldPos};
 const SHADER: &str = "shaders/particle.wgsl";
 
 /// Corner (xy), radius and rotation (per vertex).
-const ATTRIBUTE_CORNER: MeshVertexAttribute = MeshVertexAttribute::new("ParticleCorner", 0x7A12_0001, VertexFormat::Float32x4);
+const ATTRIBUTE_CORNER: MeshVertexAttribute =
+    MeshVertexAttribute::new("ParticleCorner", 0x7A12_0001, VertexFormat::Float32x4);
 /// Linear colour and alpha (per vertex).
-const ATTRIBUTE_COLOUR: MeshVertexAttribute = MeshVertexAttribute::new("ParticleColour", 0x7A12_0002, VertexFormat::Float32x4);
+const ATTRIBUTE_COLOUR: MeshVertexAttribute =
+    MeshVertexAttribute::new("ParticleColour", 0x7A12_0002, VertexFormat::Float32x4);
 /// Glow and noise seed (per vertex).
-const ATTRIBUTE_LOOK: MeshVertexAttribute = MeshVertexAttribute::new("ParticleLook", 0x7A12_0003, VertexFormat::Float32x2);
+const ATTRIBUTE_LOOK: MeshVertexAttribute =
+    MeshVertexAttribute::new("ParticleLook", 0x7A12_0003, VertexFormat::Float32x2);
 
 /// Most translucent puffs alive at once (the oldest smoke goes first).
 const MAX_PUFFS: usize = 700;
@@ -196,7 +205,11 @@ impl Puff {
                 let c = Vec3::splat(g) + Vec3::new(0.6, 0.25, 0.05) * warm;
                 (c, self.opacity * fade_in * (1.0 - smooth(0.35, 1.0, t)), warm * 0.6)
             }
-            PuffLook::Dust => (Vec3::new(0.30, 0.24, 0.17), self.opacity * fade_in * (1.0 - smooth(0.3, 1.0, t)), 0.0),
+            PuffLook::Dust => (
+                Vec3::new(0.30, 0.24, 0.17),
+                self.opacity * fade_in * (1.0 - smooth(0.3, 1.0, t)),
+                0.0,
+            ),
         }
     }
 }
@@ -268,7 +281,17 @@ impl Particles {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn puff(&mut self, pos: DVec3, vel: Vec3, life: f32, size: (f32, f32), look: PuffLook, drag: f32, lift: f32, opacity: f32) {
+    fn puff(
+        &mut self,
+        pos: DVec3,
+        vel: Vec3,
+        life: f32,
+        size: (f32, f32),
+        look: PuffLook,
+        drag: f32,
+        lift: f32,
+        opacity: f32,
+    ) {
         if self.puffs.len() >= MAX_PUFFS {
             // Drop the oldest smoke (relative to its life) first.
             if let Some(i) = (0..self.puffs.len()).max_by(|&a, &b| {
@@ -281,7 +304,20 @@ impl Particles {
         let rot = self.range(0.0, std::f32::consts::TAU);
         let spin = self.range(-0.6, 0.6);
         let seed = self.rand();
-        self.puffs.push(Puff { pos, vel, age: 0.0, life, size, look, rot, spin, seed, drag, lift, opacity });
+        self.puffs.push(Puff {
+            pos,
+            vel,
+            age: 0.0,
+            life,
+            size,
+            look,
+            rot,
+            spin,
+            seed,
+            drag,
+            lift,
+            opacity,
+        });
     }
 }
 
@@ -313,7 +349,8 @@ fn cleanup(mut commands: Commands, mut p: ResMut<Particles>, mut ex: ResMut<Expl
         commands.entity(e).try_despawn();
     }
     // Keep the shared assets.
-    let (material, meshes, colours) = (p.material.take(), p.meshes.take(), std::mem::take(&mut p.colours));
+    let (material, meshes, colours) =
+        (p.material.take(), p.meshes.take(), std::mem::take(&mut p.colours));
     *p = Particles { material, meshes, colours, ..default() };
     ex.pending.clear();
 }
@@ -344,7 +381,11 @@ fn spawn_blasts(
         ex.pending.drain(..).map(|(pos, b)| (pos, b, true)).collect();
     for &(x, y, alt, kind) in &combat.explosions {
         let ground = alt <= 0;
-        blasts.push((map_point(x as f64 + 0.5, y as f64 + 0.5, alt.max(0) as f64), Blast::from_kind(kind), ground));
+        blasts.push((
+            map_point(x as f64 + 0.5, y as f64 + 0.5, alt.max(0) as f64),
+            Blast::from_kind(kind),
+            ground,
+        ));
     }
     for &(x, y) in &combat.round_impacts {
         blasts.push((map_point(x, y, 0.0), Blast::GunHit, true));
@@ -372,7 +413,8 @@ fn spawn_blasts(
                 continue;
             }
             p.smoke_clock[i] = p.range(0.25, 0.45);
-            let pos = map_point(s.x as f64 + 0.5, s.y as f64 + 0.5, s.alt as f64) + (p.dir(0.0) * 4.0).as_dvec3();
+            let pos = map_point(s.x as f64 + 0.5, s.y as f64 + 0.5, s.alt as f64)
+                + (p.dir(0.0) * 4.0).as_dvec3();
             let shade = p.range(0.05, 0.35);
             let r = 6.0 + 1.5 * ((s.age & 0xE) >> 1) as f32;
             let life = p.range(5.0, 8.0);
@@ -381,7 +423,12 @@ fn spawn_blasts(
     }
 }
 
-fn colour_material(p: &mut Particles, materials: &mut Assets<PaletteMaterial>, globals: &Handle<ShaderBuffer>, idx: u8) -> Handle<PaletteMaterial> {
+fn colour_material(
+    p: &mut Particles,
+    materials: &mut Assets<PaletteMaterial>,
+    globals: &Handle<ShaderBuffer>,
+    idx: u8,
+) -> Handle<PaletteMaterial> {
     if let Some((_, m)) = p.colours.iter().find(|(c, _)| *c == idx) {
         return m.clone();
     }
@@ -478,7 +525,18 @@ fn spawn_blast(
         for _ in 0..sparks {
             let v = p.dir(if ground { 0.5 } else { 0.0 }) * p.range(15.0, 45.0);
             let life = p.range(0.2, 0.45);
-            spawn_chunk(commands, p, materials, globals, ChunkKind::GunSpark, at, v, life, 1.2, false);
+            spawn_chunk(
+                commands,
+                p,
+                materials,
+                globals,
+                ChunkKind::GunSpark,
+                at,
+                v,
+                life,
+                1.2,
+                false,
+            );
         }
         let look = if ground { PuffLook::Dust } else { PuffLook::Smoke(0.6) };
         let life = p.range(1.2, 2.0);
@@ -502,15 +560,38 @@ fn spawn_blast(
         let v = p.dir(up * 0.6) * p.range(r * 2.0, r * 5.0);
         let life = p.range(0.5, 1.4);
         let size = p.range(0.8, 1.6);
-        spawn_chunk(commands, p, materials, globals, ChunkKind::Spark, centre, v, life, size, false);
+        spawn_chunk(
+            commands,
+            p,
+            materials,
+            globals,
+            ChunkKind::Spark,
+            centre,
+            v,
+            life,
+            size,
+            false,
+        );
     }
     // Debris: tumbling chunks thrown out on ballistic paths, some trailing smoke.
     for _ in 0..debris {
-        let v = p.dir(up) * p.range(r * 0.8, r * 2.8) + Vec3::Y * if ground { r * 0.8 } else { 0.0 };
+        let v =
+            p.dir(up) * p.range(r * 0.8, r * 2.8) + Vec3::Y * if ground { r * 0.8 } else { 0.0 };
         let life = p.range(3.0, 6.0);
         let smoking = p.rand() < 0.35;
         let size = p.range(0.4, 1.5) * (r / 14.0).sqrt();
-        spawn_chunk(commands, p, materials, globals, ChunkKind::Debris, centre, v, life, size, smoking);
+        spawn_chunk(
+            commands,
+            p,
+            materials,
+            globals,
+            ChunkKind::Debris,
+            centre,
+            v,
+            life,
+            size,
+            smoking,
+        );
     }
     // Smoke left behind: dark, slowly rising and spreading.
     for i in 0..smoke {
@@ -521,7 +602,16 @@ fn spawn_blast(
         let s = p.range(0.5, 0.8) * r;
         let v = d * r * 0.25 + Vec3::Y * p.range(1.0, 4.0);
         // Born a little later than the fireball so it shows as the fire dies.
-        p.puff(centre + o.as_dvec3(), v, life, (s * 0.6, s * 2.2), PuffLook::Smoke(shade), 0.5, 1.2, 0.85);
+        p.puff(
+            centre + o.as_dvec3(),
+            v,
+            life,
+            (s * 0.6, s * 2.2),
+            PuffLook::Smoke(shade),
+            0.5,
+            1.2,
+            0.85,
+        );
         let last = p.puffs.len() - 1;
         p.puffs[last].age = -0.15 - 0.03 * i as f32;
     }
@@ -532,7 +622,16 @@ fn spawn_blast(
             let d = Vec3::new(a.cos(), 0.05, a.sin());
             let s = r * p.range(0.35, 0.55);
             let life = p.range(3.0, 5.0);
-            p.puff(pos + DVec3::Y * (s as f64 * 0.4), d * r * 1.8, life, (s * 0.5, s * 1.6), PuffLook::Dust, 1.4, 0.3, 0.7);
+            p.puff(
+                pos + DVec3::Y * (s as f64 * 0.4),
+                d * r * 1.8,
+                life,
+                (s * 0.5, s * 1.6),
+                PuffLook::Dust,
+                1.4,
+                0.3,
+                0.7,
+            );
         }
     }
     if light > 0.0 {
@@ -610,7 +709,10 @@ fn simulate(
                 let speed = c.vel.length();
                 let dir = c.vel.try_normalize().unwrap_or(Vec3::Y);
                 let w = c.size * 0.6 * (1.0 - t * 0.5);
-                (Quat::from_rotation_arc(Vec3::Z, dir), Vec3::new(w, w, (speed * 0.05).clamp(0.4, 6.0) * c.size))
+                (
+                    Quat::from_rotation_arc(Vec3::Z, dir),
+                    Vec3::new(w, w, (speed * 0.05).clamp(0.4, 6.0) * c.size),
+                )
             }
             // Debris shrinks away at the end of its life.
             ChunkKind::Debris => (c.rot, Vec3::splat(c.size * (1.0 - smooth(0.8, 1.0, t)))),
@@ -622,7 +724,8 @@ fn simulate(
             v.set_if_neq(Visibility::Inherited);
         }
         if c.kind != ChunkKind::Debris {
-            let colours = if c.kind == ChunkKind::Spark { SPARK_COLOURS } else { GUN_SPARK_COLOURS };
+            let colours =
+                if c.kind == ChunkKind::Spark { SPARK_COLOURS } else { GUN_SPARK_COLOURS };
             let want = colours[((t * 3.0) as usize).min(2)];
             if want != c.colour {
                 c.colour = want;
@@ -672,9 +775,13 @@ fn simulate(
     });
 
     if p.material.is_none() {
-        p.material = Some(puff_materials.add(ParticleMaterial { unused: Vec4::ZERO, globals: palette.globals.clone() }));
+        p.material = Some(
+            puff_materials
+                .add(ParticleMaterial { unused: Vec4::ZERO, globals: palette.globals.clone() }),
+        );
     }
-    let eye = cams.single().map(|g| origin.origin + g.translation().as_dvec3()).unwrap_or(origin.origin);
+    let eye =
+        cams.single().map(|g| origin.origin + g.translation().as_dvec3()).unwrap_or(origin.origin);
     let anchor = eye;
     // Back to front.
     let mut order: Vec<(f64, usize)> = p
@@ -721,7 +828,8 @@ fn simulate(
         match &p.batch {
             Some((_, mesh)) => drawn = meshes.get_mut(mesh).map(|mut m| fill(&mut m)).is_some(),
             None => {
-                let mut m = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+                let mut m =
+                    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
                 fill(&mut m);
                 let mesh = meshes.add(m);
                 let e = commands

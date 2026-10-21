@@ -37,7 +37,8 @@ pub struct CockpitArt {
 
 pub(crate) fn load_idx(name: &str) -> Canvas {
     let path = crate::asset_path::asset(&format!("images/{name}.idx"));
-    let px = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e} (run tools/gen_images.py)", path.display()));
+    let px = std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("{}: {e} (run tools/gen_images.py)", path.display()));
     assert_eq!(px.len() % 320, 0, "{}: not 320 pixels wide", path.display());
     Canvas::from_pixels(320, px.len() / 320, px)
 }

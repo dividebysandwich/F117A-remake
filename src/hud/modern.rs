@@ -62,11 +62,26 @@ fn boxed(c: &mut Canvas, x: f32, y: f32, s: &str, min_chars: usize, align: Align
         Align::Right => x - w,
     };
     stroke_text(c, x0 + (w - stroke_width(s, TEXT)), y - TEXT / 2.0, s, TEXT, PEN * 0.85, INK);
-    c.frame(Vec2::new(x0 - 6.0, y - TEXT / 2.0 - 6.0), Vec2::new(x0 + w + 6.0, y + TEXT / 2.0 + 6.0), THIN, INK);
+    c.frame(
+        Vec2::new(x0 - 6.0, y - TEXT / 2.0 - 6.0),
+        Vec2::new(x0 + w + 6.0, y + TEXT / 2.0 + 6.0),
+        THIN,
+        INK,
+    );
 }
 
 fn diamond(c: &mut Canvas, p: Vec2, r: f32) {
-    c.polyline(&[p + Vec2::new(0.0, -r), p + Vec2::new(r, 0.0), p + Vec2::new(0.0, r), p + Vec2::new(-r, 0.0), p + Vec2::new(0.0, -r)], PEN, INK);
+    c.polyline(
+        &[
+            p + Vec2::new(0.0, -r),
+            p + Vec2::new(r, 0.0),
+            p + Vec2::new(0.0, r),
+            p + Vec2::new(-r, 0.0),
+            p + Vec2::new(0.0, -r),
+        ],
+        PEN,
+        INK,
+    );
 }
 
 /// Screen directions of the horizon (to the right) and of world "down", from the attitude.
@@ -92,7 +107,11 @@ fn euler(f: &HudFrame) -> (f32, f32, f32) {
     let fw = o * Vec3::NEG_Z;
     let r = o * Vec3::X;
     let u = o * Vec3::Y;
-    (fw.x.atan2(-fw.z).rem_euclid(std::f32::consts::TAU), fw.y.clamp(-1.0, 1.0).asin(), (-r.y).atan2(u.y))
+    (
+        fw.x.atan2(-fw.z).rem_euclid(std::f32::consts::TAU),
+        fw.y.clamp(-1.0, 1.0).asin(),
+        (-r.y).atan2(u.y),
+    )
 }
 
 /// Draws the whole HUD.
@@ -135,7 +154,11 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     // Upper left: load factor, Mach, maximum load factor.
     let g = f.gees as f32 / 16.0;
     text(c, 300.0, 100.0, &format!("{g:.1}"), Align::Left);
-    let mach = if f.mach < 1.0 { format!(".{:02}", (f.mach * 100.0).round().min(99.0) as i32) } else { format!("{:.2}", f.mach) };
+    let mach = if f.mach < 1.0 {
+        format!(".{:02}", (f.mach * 100.0).round().min(99.0) as i32)
+    } else {
+        format!("{:.2}", f.mach)
+    };
     text(c, 300.0, 126.0, &mach, Align::Left);
     text(c, 300.0, 152.0, &format!("{:.1}", f.state.max_gees as f32 / 16.0), Align::Left);
 
@@ -170,11 +193,16 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
         text(c, 1010.0, 392.0, &format!("STPT {n}"), Align::Right);
         text(c, 1010.0, 418.0, &format!("{km:.1} KM"), Align::Right);
         let s = secs.clamp(0.0, 359_999.0) as i32;
-        let t = if s >= 3600 { format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60) } else { format!("{:02}:{:02}", s / 60, s % 60) };
+        let t = if s >= 3600 {
+            format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+        } else {
+            format!("{:02}:{:02}", s / 60, s % 60)
+        };
         text(c, 1010.0, 444.0, &t, Align::Right);
     }
     if st.mode == HudMode::Nav
-        && let Some(p) = f.steerpoint_dir.and_then(|d| project(inv * d, f.scale)).filter(|&p| inside(p))
+        && let Some(p) =
+            f.steerpoint_dir.and_then(|d| project(inv * d, f.scale)).filter(|&p| inside(p))
     {
         diamond(c, p, 9.0);
     }
@@ -193,7 +221,11 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     if let Some(m) = &f.message {
         text(c, CX, 105.0, m, Align::Centre);
     }
-    let status: Vec<&str> = [(f.accel, "ACCEL"), (f.training, "TRAINING")].iter().filter(|s| s.0).map(|s| s.1).collect();
+    let status: Vec<&str> = [(f.accel, "ACCEL"), (f.training, "TRAINING")]
+        .iter()
+        .filter(|s| s.0)
+        .map(|s| s.1)
+        .collect();
     if !status.is_empty() {
         text(c, CX, 131.0, &status.join("  "), Align::Centre);
     }
@@ -217,10 +249,18 @@ fn pitch_ladder(c: &mut Canvas, f: &HudFrame, fpm: Vec2, h: Vec2, down: Vec2) {
     let inv = f.orientation.inverse();
     let track = Vec3::new(f.path_dir.x, 0.0, f.path_dir.z)
         .try_normalize()
-        .or_else(|| { let n = f.orientation * Vec3::NEG_Z; Vec3::new(n.x, 0.0, n.z).try_normalize() })
+        .or_else(|| {
+            let n = f.orientation * Vec3::NEG_Z;
+            Vec3::new(n.x, 0.0, n.z).try_normalize()
+        })
         .unwrap_or(Vec3::NEG_Z);
     let gamma = f.path_dir.y.clamp(-1.0, 1.0).asin().to_degrees();
-    c.set_clip(FIELD.0.x as i32 - 20, FIELD.0.y as i32 - 10, FIELD.1.x as i32 + 20, FIELD.1.y as i32 + 10);
+    c.set_clip(
+        FIELD.0.x as i32 - 20,
+        FIELD.0.y as i32 - 10,
+        FIELD.1.x as i32 + 20,
+        FIELD.1.y as i32 + 10,
+    );
     for k in -18..=18 {
         let deg = k as f32 * 5.0;
         if (deg - gamma).abs() > 22.0 || deg.abs() > 89.0 {
@@ -248,7 +288,8 @@ fn pitch_ladder(c: &mut Canvas, f: &HudFrame, fpm: Vec2, h: Vec2, down: Vec2) {
                 let bend = (deg.abs() * 0.5).to_radians().tan() * len;
                 c.dashed(a, b + tip_dir * bend, 12.0, 8.0, PEN, INK);
             }
-            let end = if k > 0 { b } else { b + tip_dir * (deg.abs() * 0.5).to_radians().tan() * len };
+            let end =
+                if k > 0 { b } else { b + tip_dir * (deg.abs() * 0.5).to_radians().tan() * len };
             c.stroke(a, a + tip_dir * tip, PEN, INK);
             let label = format!("{}", deg.abs() as i32);
             let lp = end + h * side * 26.0 + tip_dir * 2.0;
@@ -278,7 +319,16 @@ fn airspeed(c: &mut Canvas, f: &HudFrame) {
             }
         }
         c.reset_clip();
-        c.polyline(&[Vec2::new(x + 4.0, CY), Vec2::new(x + 12.0, CY - 6.0), Vec2::new(x + 12.0, CY + 6.0), Vec2::new(x + 4.0, CY)], THIN, INK);
+        c.polyline(
+            &[
+                Vec2::new(x + 4.0, CY),
+                Vec2::new(x + 12.0, CY - 6.0),
+                Vec2::new(x + 12.0, CY + 6.0),
+                Vec2::new(x + 4.0, CY),
+            ],
+            THIN,
+            INK,
+        );
     }
     boxed(c, x + 22.0, CY, &format!("{}", kt.round() as i32), 3, Align::Left);
 }
@@ -303,13 +353,28 @@ fn altitude(c: &mut Canvas, f: &HudFrame) {
             }
         }
         c.reset_clip();
-        c.polyline(&[Vec2::new(x - 4.0, CY), Vec2::new(x - 12.0, CY - 6.0), Vec2::new(x - 12.0, CY + 6.0), Vec2::new(x - 4.0, CY)], THIN, INK);
+        c.polyline(
+            &[
+                Vec2::new(x - 4.0, CY),
+                Vec2::new(x - 12.0, CY - 6.0),
+                Vec2::new(x - 12.0, CY + 6.0),
+                Vec2::new(x - 4.0, CY),
+            ],
+            THIN,
+            INK,
+        );
     }
     let a = (alt / 10.0).round() as i32 * 10;
     let s = if a >= 1000 { format!("{},{:03}", a / 1000, a % 1000) } else { a.to_string() };
     boxed(c, x - 22.0, CY, &s, 6, Align::Right);
     if f.radar_alt < 5000.0 {
-        text(c, x - 22.0, CY + 40.0, &format!("R {:05}", (f.radar_alt / 10.0).round() as i32 * 10), Align::Right);
+        text(
+            c,
+            x - 22.0,
+            CY + 40.0,
+            &format!("R {:05}", (f.radar_alt / 10.0).round() as i32 * 10),
+            Align::Right,
+        );
     }
     // Climb rate (feet per minute) above the readout.
     let vvi = (f.climb as f32 * 60.0 / 10.0).round() as i32 * 10;
@@ -340,7 +405,11 @@ fn heading(c: &mut Canvas, f: &HudFrame) {
     if let Some(brg) = f.waypoint_bearing {
         let d = ((brg as f32 / 65536.0 * 360.0 - hdg + 540.0).rem_euclid(360.0)) - 180.0;
         let x = CX + d.clamp(-28.0, 28.0) * 6.0;
-        c.polyline(&[Vec2::new(x - 6.0, y + 12.0), Vec2::new(x, y + 4.0), Vec2::new(x + 6.0, y + 12.0)], PEN, INK);
+        c.polyline(
+            &[Vec2::new(x - 6.0, y + 12.0), Vec2::new(x, y + 4.0), Vec2::new(x + 6.0, y + 12.0)],
+            PEN,
+            INK,
+        );
     }
     c.reset_clip();
     c.stroke(Vec2::new(CX, y + 2.0), Vec2::new(CX, y + 14.0), PEN, INK);
@@ -377,7 +446,16 @@ fn aoa_bracket(c: &mut Canvas, fpm: Vec2, aoa: f32) {
     let x = fpm.x - 48.0;
     let y = fpm.y - (aoa - APPROACH_AOA) * 8.0;
     let half = 18.0;
-    c.polyline(&[Vec2::new(x + 6.0, y - half), Vec2::new(x, y - half), Vec2::new(x, y + half), Vec2::new(x + 6.0, y + half)], PEN, INK);
+    c.polyline(
+        &[
+            Vec2::new(x + 6.0, y - half),
+            Vec2::new(x, y - half),
+            Vec2::new(x, y + half),
+            Vec2::new(x + 6.0, y + half),
+        ],
+        PEN,
+        INK,
+    );
 }
 
 /// AA: target designator box with the missile diamond when locked, SHOOT cue in range,
@@ -458,7 +536,10 @@ fn gun_sight(c: &mut Canvas, f: &HudFrame) {
     let Some(m) = g.range_m else { return };
     let sweep = (m / 3657.6).clamp(0.0, 1.0) * std::f32::consts::TAU;
     let n = ((sweep / std::f32::consts::TAU) * 48.0).ceil().max(1.0) as usize;
-    let arc: Vec<Vec2> = (0..=n).map(|k| sweep * k as f32 / n as f32).map(|a| q + Vec2::new(a.sin(), -a.cos()) * (r + 6.0)).collect();
+    let arc: Vec<Vec2> = (0..=n)
+        .map(|k| sweep * k as f32 / n as f32)
+        .map(|a| q + Vec2::new(a.sin(), -a.cos()) * (r + 6.0))
+        .collect();
     c.polyline(&arc, PEN * 1.3, INK);
     small(c, q.x, q.y + r + 22.0, &format!("{:.1}", m / 1000.0), Align::Centre);
     if g.in_range && f.blink {
@@ -479,7 +560,16 @@ fn launch_zone(c: &mut Canvas, f: &HudFrame) {
     small(c, x + 16.0, top - 14.0, &format!("{:.0}", full), Align::Centre);
     if let Some(r) = f.target_range_km {
         let yy = y(r);
-        c.polyline(&[Vec2::new(x - 2.0, yy), Vec2::new(x - 12.0, yy - 6.0), Vec2::new(x - 12.0, yy + 6.0), Vec2::new(x - 2.0, yy)], PEN, INK);
+        c.polyline(
+            &[
+                Vec2::new(x - 2.0, yy),
+                Vec2::new(x - 12.0, yy - 6.0),
+                Vec2::new(x - 12.0, yy + 6.0),
+                Vec2::new(x - 2.0, yy),
+            ],
+            PEN,
+            INK,
+        );
     }
 }
 
@@ -499,7 +589,13 @@ fn bomb_readouts(c: &mut Canvas, b: &super::BombCue) {
         let rel = b.release_secs.map_or("--:--".to_string(), min_sec);
         text(c, 1010.0, 418.0, &format!("REL {rel}"), Align::Right);
     }
-    text(c, 1010.0, if b.ccrp { 444.0 } else { 418.0 }, &format!("TOF {:.1}", b.fall_secs), Align::Right);
+    text(
+        c,
+        1010.0,
+        if b.ccrp { 444.0 } else { 418.0 },
+        &format!("TOF {:.1}", b.fall_secs),
+        Align::Right,
+    );
 }
 
 /// Pixels per second to the release the CCRP solution cue sits above the flight path marker.
@@ -551,7 +647,11 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2, down: Vec2) {
         let r = 10.0;
         let p = project(dir, f.scale).unwrap_or(Vec2::new(CX, FIELD.1.y));
         let along = (p - fpm).normalize_or(Vec2::Y);
-        let q = if inside(p) { p } else { field_line(fpm, along).map_or(p.clamp(FIELD.0, FIELD.1), |(_, e)| e - along * r) };
+        let q = if inside(p) {
+            p
+        } else {
+            field_line(fpm, along).map_or(p.clamp(FIELD.0, FIELD.1), |(_, e)| e - along * r)
+        };
         if (q - fpm).dot(along) > r + 9.0 {
             c.stroke(fpm + along * 9.0, q - along * r, PEN, INK);
         }
@@ -647,7 +747,12 @@ mod tests {
                 let mut c = Canvas::new(WIDTH, HEIGHT);
                 draw(&mut c, &f);
                 let ink = c.px.iter().filter(|&&p| p != 0).count();
-                f.cues.gun = Some(crate::hud::GunCue { dir: Vec3::new(0.0, -0.01, -1.0), screen: None, range_m: Some(900.0), in_range: true });
+                f.cues.gun = Some(crate::hud::GunCue {
+                    dir: Vec3::new(0.0, -0.01, -1.0),
+                    screen: None,
+                    range_m: Some(900.0),
+                    in_range: true,
+                });
                 let mut c = Canvas::new(WIDTH, HEIGHT);
                 draw(&mut c, &f);
                 assert!(c.px.iter().filter(|&&p| p != 0).count() > ink, "{mode:?} {declutter} gun");
@@ -667,13 +772,28 @@ mod tests {
         let plain = ink(&f);
         // CCIP: the pipper on its fall line.
         f.cues.ccip_dir = Some(Vec3::new(0.0, -0.3, -1.0));
-        f.cues.bomb = Some(crate::hud::BombCue { ccrp: false, fall_secs: 5.5, range_m: Some(1200.0), release_secs: None });
+        f.cues.bomb = Some(crate::hud::BombCue {
+            ccrp: false,
+            fall_secs: 5.5,
+            range_m: Some(1200.0),
+            release_secs: None,
+        });
         let ccip = ink(&f);
         assert!(ccip > plain);
         // CCRP: no pipper, the steering line and the solution cue instead.
-        f.cues.bomb = Some(crate::hud::BombCue { ccrp: true, fall_secs: 5.5, range_m: Some(4000.0), release_secs: None });
+        f.cues.bomb = Some(crate::hud::BombCue {
+            ccrp: true,
+            fall_secs: 5.5,
+            range_m: Some(4000.0),
+            release_secs: None,
+        });
         let asl = ink(&f);
-        f.cues.bomb = Some(crate::hud::BombCue { ccrp: true, fall_secs: 5.5, range_m: Some(4000.0), release_secs: Some(8.0) });
+        f.cues.bomb = Some(crate::hud::BombCue {
+            ccrp: true,
+            fall_secs: 5.5,
+            range_m: Some(4000.0),
+            release_secs: Some(8.0),
+        });
         assert!(ink(&f) > asl, "solution cue");
     }
 

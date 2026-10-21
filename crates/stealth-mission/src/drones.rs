@@ -94,7 +94,9 @@ fn drone(m: &Mission, r: &mut R, ty: i16, target: i32, from: (i32, i32), eta: i3
 }
 
 fn friendly_place(o: &WorldObject) -> bool {
-    o.flags & F::FRIENDLY != 0 && o.flags & (F::AIRFIELD | F::NEUTRAL | F::DISABLED) == 0 && o.name != 0
+    o.flags & F::FRIENDLY != 0
+        && o.flags & (F::AIRFIELD | F::NEUTRAL | F::DISABLED) == 0
+        && o.name != 0
 }
 
 /// Turns a generated air mission into a drone defense mission.
@@ -105,21 +107,43 @@ pub(crate) fn defend(m: &mut Mission, data: &GameData, th: &TheaterData) -> Resu
     let roe = m.settings.roe as i32;
     let w = &m.world;
     // The place: a nuclear plant now and then, else a city.
-    let places: Vec<i32> = (0..w.objects.len() as i32).filter(|&i| friendly_place(&w.objects[i as usize])).collect();
+    let places: Vec<i32> =
+        (0..w.objects.len() as i32).filter(|&i| friendly_place(&w.objects[i as usize])).collect();
     ensure!(!places.is_empty(), "no friendly places in {}", m.theater_name);
-    let npps: Vec<i32> = places.iter().copied().filter(|&i| NPP_SHAPES.contains(&w.objects[i as usize].shape())).collect();
-    let target = if !npps.is_empty() && r.r(4) == 0 { npps[r.r(npps.len() as i32) as usize] } else { places[r.r(places.len() as i32) as usize] };
+    let npps: Vec<i32> = places
+        .iter()
+        .copied()
+        .filter(|&i| NPP_SHAPES.contains(&w.objects[i as usize].shape()))
+        .collect();
+    let target = if !npps.is_empty() && r.r(4) == 0 {
+        npps[r.r(npps.len() as i32) as usize]
+    } else {
+        places[r.r(places.len() as i32) as usize]
+    };
     let to = w.objects[target as usize];
     let tp = pos(&to);
     // The two nearest launch sites send the wave; the nearest is the secondary target.
-    let mut sites: Vec<i32> = th.launch_sites.iter().map(|&i| i as i32).filter(|&i| (i as usize) < w.objects.len()).collect();
-    sites.sort_by(|&a, &b| dist(pos(&w.objects[a as usize]), tp).total_cmp(&dist(pos(&w.objects[b as usize]), tp)));
+    let mut sites: Vec<i32> = th
+        .launch_sites
+        .iter()
+        .map(|&i| i as i32)
+        .filter(|&i| (i as usize) < w.objects.len())
+        .collect();
+    sites.sort_by(|&a, &b| {
+        dist(pos(&w.objects[a as usize]), tp).total_cmp(&dist(pos(&w.objects[b as usize]), tp))
+    });
     sites.truncate(2);
     let site = sites[0];
     // Takeoff and landing: the friendly airfield nearest the place.
     let base = (0..w.objects.len() as i32)
-        .filter(|&i| w.objects[i as usize].flags & (F::AIRFIELD | F::FRIENDLY | F::NEUTRAL | F::CARRIER | F::DISABLED) == F::AIRFIELD | F::FRIENDLY)
-        .min_by(|&a, &b| dist(pos(&w.objects[a as usize]), tp).total_cmp(&dist(pos(&w.objects[b as usize]), tp)))
+        .filter(|&i| {
+            w.objects[i as usize].flags
+                & (F::AIRFIELD | F::FRIENDLY | F::NEUTRAL | F::CARRIER | F::DISABLED)
+                == F::AIRFIELD | F::FRIENDLY
+        })
+        .min_by(|&a, &b| {
+            dist(pos(&w.objects[a as usize]), tp).total_cmp(&dist(pos(&w.objects[b as usize]), tp))
+        })
         .ok_or_else(|| anyhow::anyhow!("no friendly airfield in {}", m.theater_name))?;
     let bo = w.objects[base as usize];
     let so = w.objects[site as usize];
@@ -148,7 +172,8 @@ pub(crate) fn defend(m: &mut Mission, data: &GameData, th: &TheaterData) -> Resu
     let nuclear = NPP_SHAPES.contains(&to.shape());
     let ott = |o: &WorldObject| m.world.ott(o.shape()) as i8;
     let class = |o: &WorldObject| m.world.buf7.get(o.shape()).copied().unwrap_or(0) & 0xF;
-    let launch_names: Vec<String> = sites.iter().map(|&s| names(&m.world.objects[s as usize])).collect();
+    let launch_names: Vec<String> =
+        sites.iter().map(|&s| names(&m.world.objects[s as usize])).collect();
     let what = if nuclear { "the nuclear power plant" } else { "the city" };
     let primary_summary = format!(
         "Early warning reports a wave of {count} Geran attack drones launched from {} and heading for {what} {target_name}. \
@@ -163,7 +188,8 @@ pub(crate) fn defend(m: &mut Mission, data: &GameData, th: &TheaterData) -> Resu
             n => format!("No more than {n} may get through."),
         }
     );
-    let secondary_summary = format!("The drones are launched and stored at a depot near {site_name}.");
+    let secondary_summary =
+        format!("The drones are launched and stored at a depot near {site_name}.");
     let secondary_objective = format!("Destroy the drone launch site at {site_name}.");
     m.primary = Target {
         mission_type: DRONE_INTERCEPT,
@@ -226,8 +252,14 @@ pub(crate) fn defend(m: &mut Mission, data: &GameData, th: &TheaterData) -> Resu
     // Route: out toward the launch sites to meet the wave, the place, the launch site, home.
     let sp = pos(&so);
     let meet = (tp.0 + (sp.0 - tp.0) / 3, tp.1 + (sp.1 - tp.1) / 3);
-    m.waypoints = [MapPoint { x: meet.0, y: meet.1 }, MapPoint { x: tp.0, y: tp.1 }, MapPoint { x: sp.0, y: sp.1 }, MapPoint { x: bp.0, y: bp.1 }];
-    m.route_length = ((dist(bp, meet) + dist(meet, tp) + dist(tp, sp) + dist(sp, bp)) / 64.0) as i16;
+    m.waypoints = [
+        MapPoint { x: meet.0, y: meet.1 },
+        MapPoint { x: tp.0, y: tp.1 },
+        MapPoint { x: sp.0, y: sp.1 },
+        MapPoint { x: bp.0, y: bp.1 },
+    ];
+    m.route_length =
+        ((dist(bp, meet) + dist(meet, tp) + dist(tp, sp) + dist(sp, bp)) / 64.0) as i16;
     m.time.has_deadline = false;
     let old_fuel = m.fuel_lbs.to_string();
     m.fuel_lbs = 12 * m.route_length;
@@ -238,7 +270,11 @@ pub(crate) fn defend(m: &mut Mission, data: &GameData, th: &TheaterData) -> Resu
     let x = &data.tables;
     let unavailable = |w: i16| m.weapon_unavailable.get(w as usize).is_some_and(|&u| u != 0);
     let aim = if unavailable(AIM120) { AIM9 } else { AIM120 };
-    let bays: Vec<i16> = if m.loadout.usable_bays == 2 { vec![GBU12, EXTRA_FUEL, 0, 0] } else { vec![aim, AIM9, GBU12, AIM9] };
+    let bays: Vec<i16> = if m.loadout.usable_bays == 2 {
+        vec![GBU12, EXTRA_FUEL, 0, 0]
+    } else {
+        vec![aim, AIM9, GBU12, AIM9]
+    };
     for (b, w) in m.loadout.bays.iter_mut().zip(bays) {
         b.weapon = w;
         b.name = x.weapon_name(w).into();
@@ -296,7 +332,15 @@ pub(crate) fn defend(m: &mut Mission, data: &GameData, th: &TheaterData) -> Resu
     o.secondary = format!("DESTROY DRONE LAUNCH SITE AT {}", site_name.to_uppercase());
     o.return_to = format!("RETURN TO {}", base_name.to_uppercase());
 
-    m.drones = Some(DroneWave { defend: true, target: target as i16, target_name, nuclear, first_unit, count, allowance });
+    m.drones = Some(DroneWave {
+        defend: true,
+        target: target as i16,
+        target_name,
+        nuclear,
+        first_unit,
+        count,
+        allowance,
+    });
     Ok(())
 }
 
@@ -305,8 +349,14 @@ pub(crate) fn defend(m: &mut Mission, data: &GameData, th: &TheaterData) -> Resu
 pub(crate) fn crossing(m: &mut Mission, th: &TheaterData) {
     let mut r = R(m.rng.holdrand_exit ^ 0xC20_55ED);
     let w = &m.world;
-    let places: Vec<i32> = (0..w.objects.len() as i32).filter(|&i| friendly_place(&w.objects[i as usize])).collect();
-    let sites: Vec<i32> = th.launch_sites.iter().map(|&i| i as i32).filter(|&i| (i as usize) < w.objects.len()).collect();
+    let places: Vec<i32> =
+        (0..w.objects.len() as i32).filter(|&i| friendly_place(&w.objects[i as usize])).collect();
+    let sites: Vec<i32> = th
+        .launch_sites
+        .iter()
+        .map(|&i| i as i32)
+        .filter(|&i| (i as usize) < w.objects.len())
+        .collect();
     if places.is_empty() || sites.is_empty() {
         return;
     }

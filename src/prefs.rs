@@ -149,7 +149,9 @@ impl Prefs {
             s.aircraft = self.aircraft;
         }
         if !std::env::args().any(|a| a == "--vr-cockpit-scale") {
-            s.vr_cockpit_scale = self.vr_cockpit_scale.clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
+            s.vr_cockpit_scale = self
+                .vr_cockpit_scale
+                .clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
         }
     }
 
@@ -188,12 +190,15 @@ mod tests {
 
     #[test]
     fn old_vr_cockpit_size_is_reset() {
-        for old in [r#"{"vr_cockpit_scale": 0.7}"#, r#"{"vr_cockpit_scale": 1.25, "vr_scale_version": 1}"#] {
+        for old in
+            [r#"{"vr_cockpit_scale": 0.7}"#, r#"{"vr_cockpit_scale": 1.25, "vr_scale_version": 1}"#]
+        {
             let mut p: Prefs = serde_json::from_str(old).unwrap();
             p.migrate();
             assert!((p.vr_cockpit_scale - 1.0).abs() < 1e-6);
         }
-        let mut p: Prefs = serde_json::from_str(r#"{"vr_cockpit_scale": 0.9, "vr_scale_version": 2}"#).unwrap();
+        let mut p: Prefs =
+            serde_json::from_str(r#"{"vr_cockpit_scale": 0.9, "vr_scale_version": 2}"#).unwrap();
         p.migrate();
         assert!((p.vr_cockpit_scale - 0.9).abs() < 1e-6);
         let mut q: Prefs = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();

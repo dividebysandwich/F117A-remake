@@ -25,7 +25,10 @@ impl Plugin for TrackCamPlugin {
         app.add_systems(Update, flir_background.run_if(in_state(AppState::Flight)))
             .add_systems(OnEnter(AppState::Flight), spawn_camera.in_set(SetupSet::Spawn))
             .add_systems(OnExit(AppState::Flight), despawn_camera)
-            .add_systems(Update, update_camera.after(CombatSystems).run_if(in_state(AppState::Flight)));
+            .add_systems(
+                Update,
+                update_camera.after(CombatSystems).run_if(in_state(AppState::Flight)),
+            );
     }
 }
 
@@ -44,7 +47,12 @@ pub struct TrackCamera;
 pub struct TrackCamImage(pub Handle<Image>);
 
 fn create_image(images: &mut Assets<Image>, scale: u32) -> Handle<Image> {
-    let mut image = Image::new_target_texture(77 * scale, 60 * scale, TextureFormat::Rgba8Unorm, Some(TextureFormat::Rgba8UnormSrgb));
+    let mut image = Image::new_target_texture(
+        77 * scale,
+        60 * scale,
+        TextureFormat::Rgba8Unorm,
+        Some(TextureFormat::Rgba8UnormSrgb),
+    );
     image.sampler = ImageSampler::nearest();
     images.add(image)
 }
@@ -54,7 +62,13 @@ fn projection(z: u8) -> PerspectiveProjection {
     let f = (256u32 << z.min(6)) as f32;
     let half_h = 30.0 / (0.75 * f);
     let half_w = 38.5 / f;
-    PerspectiveProjection { fov: 2.0 * half_h.atan(), aspect_ratio: half_w / half_h, near: 20.0, far: 600_000.0, ..default() }
+    PerspectiveProjection {
+        fov: 2.0 * half_h.atan(),
+        aspect_ratio: half_w / half_h,
+        near: 20.0,
+        far: 600_000.0,
+        ..default()
+    }
 }
 
 fn spawn_camera(
@@ -66,19 +80,25 @@ fn spawn_camera(
     settings: Res<crate::settings::Settings>,
 ) {
     let scale = scale(&settings);
-    let image = match image.filter(|i| images.get(&i.0).is_some_and(|img| img.width() == 77 * scale)) {
-        Some(i) => i.0.clone(),
-        None => {
-            let h = create_image(&mut images, scale);
-            commands.insert_resource(TrackCamImage(h.clone()));
-            h
-        }
-    };
+    let image =
+        match image.filter(|i| images.get(&i.0).is_some_and(|img| img.width() == 77 * scale)) {
+            Some(i) => i.0.clone(),
+            None => {
+                let h = create_image(&mut images, scale);
+                commands.insert_resource(TrackCamImage(h.clone()));
+                h
+            }
+        };
     let cam = commands
         .spawn((
             TrackCamera,
             Camera3d::default(),
-            Camera { order: -1, is_active: false, clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() },
+            Camera {
+                order: -1,
+                is_active: false,
+                clear_color: ClearColorConfig::Custom(Color::BLACK),
+                ..default()
+            },
             RenderTarget::Image(image.into()),
             Projection::Perspective(projection(0)),
             Tonemapping::None,
@@ -88,9 +108,19 @@ fn spawn_camera(
         ))
         .id();
     if let Some(palette) = palette {
-        let sphere = crate::camera::spawn_background(&mut commands, cam, &mut meshes, &palette, crate::camera::TRACKCAM_BACKGROUND_LAYER);
+        let sphere = crate::camera::spawn_background(
+            &mut commands,
+            cam,
+            &mut meshes,
+            &palette,
+            crate::camera::TRACKCAM_BACKGROUND_LAYER,
+        );
         commands.entity(sphere).insert(TrackCamBackground);
-        commands.entity(cam).insert(bevy::camera::visibility::RenderLayers::from_layers(&[0, crate::camera::TRACKCAM_BACKGROUND_LAYER, crate::camera::TRACKCAM_LOD_LAYER]));
+        commands.entity(cam).insert(bevy::camera::visibility::RenderLayers::from_layers(&[
+            0,
+            crate::camera::TRACKCAM_BACKGROUND_LAYER,
+            crate::camera::TRACKCAM_LOD_LAYER,
+        ]));
     }
 }
 
@@ -108,7 +138,10 @@ pub(crate) fn update_camera(
     mut info: ResMut<TrackCam>,
     papi: Res<crate::scenery::PapiSites>,
     player: Query<(&Aircraft, &WorldPos), (With<Player>, Without<TrackCamera>)>,
-    mut cam: Query<(&mut Camera, &mut Projection, &mut WorldPos, &mut Transform), With<TrackCamera>>,
+    mut cam: Query<
+        (&mut Camera, &mut Projection, &mut WorldPos, &mut Transform),
+        With<TrackCamera>,
+    >,
 ) {
     let Ok((mut camera, mut proj, mut pos, mut tf)) = cam.single_mut() else { return };
     let ac = player.single().ok();
@@ -152,10 +185,22 @@ pub(crate) fn update_camera(
         && let Some(dir) = crate::avionics::pod_direction(&mfd.av.tgp, a.orientation, eye)
     {
         let range_m = mfd.av.tgp.los_ground.map(|g| (g - eye).length() as f32);
-        let zoom = mfd.cam_zoom.unwrap_or_else(|| range_m.map_or(0, |r| crate::combat::camera_zoom((r / (32.0 * crate::world::WU as f32)) as i32)));
+        let zoom = mfd.cam_zoom.unwrap_or_else(|| {
+            range_m.map_or(0, |r| {
+                crate::combat::camera_zoom((r / (32.0 * crate::world::WU as f32)) as i32)
+            })
+        });
         *info = TrackCam {
             live: true,
-            name: [if matches!(mfd.av.tgp.mode, crate::avionics::TgpMode::Point(_)) { "POINT" } else { "AREA" }.into(), String::new()],
+            name: [
+                if matches!(mfd.av.tgp.mode, crate::avionics::TgpMode::Point(_)) {
+                    "POINT"
+                } else {
+                    "AREA"
+                }
+                .into(),
+                String::new(),
+            ],
             range_km: range_m.map(|r| r / 1000.0),
             bearing: None,
             zoom: zoom + 1,
@@ -200,7 +245,14 @@ pub(crate) fn update_camera(
 }
 
 /// Points the camera from `eye` along `dir` with zoom shift `z`.
-fn aim(tf: &mut Transform, pos: &mut WorldPos, proj: &mut Projection, dir: Vec3, eye: bevy::math::DVec3, z: u8) {
+fn aim(
+    tf: &mut Transform,
+    pos: &mut WorldPos,
+    proj: &mut Projection,
+    dir: Vec3,
+    eye: bevy::math::DVec3,
+    z: u8,
+) {
     let up = if dir.y.abs() > 0.99 { Vec3::NEG_Z } else { Vec3::Y };
     tf.rotation = Transform::IDENTITY.looking_to(dir, up).rotation;
     if pos.0 != eye {
@@ -214,7 +266,6 @@ fn aim(tf: &mut Transform, pos: &mut WorldPos, proj: &mut Projection, dir: Vec3,
     }
 }
 
-
 /// Half width (tangent) of the unzoomed camera: 38.5 pixels at f = 256.
 const BASE_TAN_HALF_W: f32 = 38.5 / 256.0;
 /// Widest ILS view (about 30 degrees each side).
@@ -223,7 +274,13 @@ const MAX_TAN_HALF_W: f32 = 0.58;
 /// Projection with a given half-width tangent, keeping the MFD's 77x60 picture shape.
 fn view_projection(tan_half_w: f32) -> PerspectiveProjection {
     let tan_half_h = tan_half_w * (30.0 / 0.75) / 38.5;
-    PerspectiveProjection { fov: 2.0 * tan_half_h.atan(), aspect_ratio: tan_half_w / tan_half_h, near: 20.0, far: 600_000.0, ..default() }
+    PerspectiveProjection {
+        fov: 2.0 * tan_half_h.atan(),
+        aspect_ratio: tan_half_w / tan_half_h,
+        near: 20.0,
+        far: 600_000.0,
+        ..default()
+    }
 }
 
 struct IlsView {
@@ -236,8 +293,13 @@ struct IlsView {
 
 /// The nearest runway end the aircraft is approaching (ahead, within 25 km and the approach
 /// cone): the camera looks at the runway centreline abeam its PAPI, as wide as the PAPI needs.
-fn ils_view(sites: &[crate::scenery::PapiSite], eye: bevy::math::DVec3, heading: f32) -> Option<IlsView> {
-    let (site, _, _) = crate::scenery::approach_to(sites, bevy::math::DVec2::new(eye.x, -eye.z), heading)?;
+fn ils_view(
+    sites: &[crate::scenery::PapiSite],
+    eye: bevy::math::DVec3,
+    heading: f32,
+) -> Option<IlsView> {
+    let (site, _, _) =
+        crate::scenery::approach_to(sites, bevy::math::DVec2::new(eye.x, -eye.z), heading)?;
     let aim = bevy::math::DVec3::new(site.aim.x, 1.0, -site.aim.y);
     let d = aim - eye;
     let range = d.length();
@@ -250,7 +312,8 @@ fn ils_view(sites: &[crate::scenery::PapiSite], eye: bevy::math::DVec3, heading:
     Some(IlsView {
         dir: d.as_vec3().normalize(),
         // Zoomed in far out, widening on short final so the PAPI stays in the picture.
-        tan_half_w: ((site.half_width / range) as f32).clamp(BASE_TAN_HALF_W * 0.05, MAX_TAN_HALF_W),
+        tan_half_w: ((site.half_width / range) as f32)
+            .clamp(BASE_TAN_HALF_W * 0.05, MAX_TAN_HALF_W),
         range_m: range as f32,
         runway,
     })
@@ -263,7 +326,10 @@ struct TrackCamBackground;
 fn flir_background(
     mfd: Res<MfdState>,
     palette: Option<Res<crate::palette::Palette>>,
-    mut q: Query<&mut MeshMaterial3d<crate::palette_material::PaletteMaterial>, With<TrackCamBackground>>,
+    mut q: Query<
+        &mut MeshMaterial3d<crate::palette_material::PaletteMaterial>,
+        With<TrackCamBackground>,
+    >,
 ) {
     let Some(palette) = palette else { return };
     let want = if mfd.flir { &palette.background_flir } else { &palette.background };

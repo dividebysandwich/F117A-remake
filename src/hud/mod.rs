@@ -116,7 +116,13 @@ pub struct Stores {
 
 impl Default for Stores {
     fn default() -> Self {
-        let bay = |name: &str, count, picture, air_to_air| Bay { name: name.into(), count, picture, air_to_air, range_km: 0.0 };
+        let bay = |name: &str, count, picture, air_to_air| Bay {
+            name: name.into(),
+            count,
+            picture,
+            air_to_air,
+            range_km: 0.0,
+        };
         Self {
             bays: vec![
                 bay("IN Cluster", 2, 9, false),
@@ -248,7 +254,13 @@ fn reset_hud(mut hud: ResMut<HudState>, mut msg: ResMut<HudMessages>) {
     *msg = HudMessages::default();
 }
 
-fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, mut wps: ResMut<Waypoints>, stores: Res<Stores>, mut msg: ResMut<HudMessages>) {
+fn hud_keys(
+    mut actions: MessageReader<ActionEvent>,
+    mut hud: ResMut<HudState>,
+    mut wps: ResMut<Waypoints>,
+    stores: Res<Stores>,
+    mut msg: ResMut<HudMessages>,
+) {
     let n = wps.points.len();
     for ActionEvent(a) in actions.read() {
         match a {
@@ -260,7 +272,8 @@ fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, 
                 }
             }
             Action::NearestTarget => {
-                let air = stores.gun_selected || stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
+                let air = stores.gun_selected
+                    || stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
                 hud.mode = if air { HudMode::Air } else { HudMode::Gnd };
             }
             Action::BombMode => {
@@ -273,7 +286,9 @@ fn hud_keys(mut actions: MessageReader<ActionEvent>, mut hud: ResMut<HudState>, 
             // returns to the mission's current waypoint (F7 shows the WAY page, see mfd.rs).
             // Weapon selection (Space) is done by the combat simulation.
             Action::LastWaypoint if n > 0 => wps.current = (wps.current + n - 1) % n,
-            Action::NextWaypoint | Action::ChangeWaypoint if n > 0 => wps.current = (wps.current + 1) % n,
+            Action::NextWaypoint | Action::ChangeWaypoint if n > 0 => {
+                wps.current = (wps.current + 1) % n
+            }
             Action::ResetWaypoint if n > 0 => wps.current = wps.mission_current.min(n - 1),
             _ => {}
         }
@@ -423,7 +438,11 @@ impl HudParams<'_, '_> {
         let (a, pos) = self.aircraft.single().ok()?;
         let (h, p, r) = a.euler();
         // Avionics damage also takes out the INS waypoint cue.
-        let bearing = self.waypoints.target().filter(|_| !a.damage.autopilot_failed).map(|wp| waypoint_bearing(pos, wp));
+        let bearing = self
+            .waypoints
+            .target()
+            .filter(|_| !a.damage.autopilot_failed)
+            .map(|wp| waypoint_bearing(pos, wp));
         let bay = self.stores.bays.get(self.stores.selected).filter(|_| !self.stores.gun_selected);
         let knots = a.knots();
         let (_, sound) = speed_of_sound(a.altitude);
@@ -431,18 +450,24 @@ impl HudParams<'_, '_> {
         let body = a.orientation.inverse() * path;
         let steer = self.waypoints.target().filter(|_| !a.damage.autopilot_failed).map(|wp| {
             let (e, n, _) = bevy_to_wu(pos.0);
-            let d = crate::world::wu_to_bevy(wp.east, wp.north, a.ground_altitude as f64) - crate::world::wu_to_bevy(e, n, a.altitude as f64);
+            let d = crate::world::wu_to_bevy(wp.east, wp.north, a.ground_altitude as f64)
+                - crate::world::wu_to_bevy(e, n, a.altitude as f64);
             let km = (d.x.hypot(d.z) / 1000.0) as f32;
             let ms = knots * 0.5144;
-            ((self.waypoints.current, km, if ms > 1.0 { km * 1000.0 / ms } else { 0.0 }), d.as_vec3())
+            (
+                (self.waypoints.current, km, if ms > 1.0 { km * 1000.0 / ms } else { 0.0 }),
+                d.as_vec3(),
+            )
         });
-        let ils = self.mfd.as_ref().filter(|m| m.ils).zip(self.papi.as_ref()).and_then(|(_, papi)| {
-            let eye = pos.0 + (a.orientation * self.settings.cockpit_eye()).as_dvec3();
-            let (_, along, lateral) = crate::scenery::approach_to(&papi.0, bevy::math::DVec2::new(eye.x, -eye.z), h)?;
-            let loc = lateral.atan2(along).to_degrees();
-            let gs = eye.y.max(0.0).atan2(along).to_degrees() - crate::scenery::GLIDE_PATH_DEG;
-            Some((loc as f32, gs as f32))
-        });
+        let ils =
+            self.mfd.as_ref().filter(|m| m.ils).zip(self.papi.as_ref()).and_then(|(_, papi)| {
+                let eye = pos.0 + (a.orientation * self.settings.cockpit_eye()).as_dvec3();
+                let (_, along, lateral) =
+                    crate::scenery::approach_to(&papi.0, bevy::math::DVec2::new(eye.x, -eye.z), h)?;
+                let loc = lateral.atan2(along).to_degrees();
+                let gs = eye.y.max(0.0).atan2(along).to_degrees() - crate::scenery::GLIDE_PATH_DEG;
+                Some((loc as f32, gs as f32))
+            });
         Some(HudFrame {
             ils,
             scale: self.settings.hud_scale(),
@@ -468,7 +493,11 @@ impl HudParams<'_, '_> {
             accel: self.messages.accel,
             training: self.messages.training,
             camera_sight,
-            gun_lead: self.cues.gun.and_then(|g| g.screen).map_or((self.lead.x, self.lead.y), |(x, y)| ((x - 160) << 4, (y - 52) << 4)),
+            gun_lead: self
+                .cues
+                .gun
+                .and_then(|g| g.screen)
+                .map_or((self.lead.x, self.lead.y), |(x, y)| ((x - 160) << 4, (y - 52) << 4)),
             cues: self.cues.clone(),
             orientation: a.orientation,
             path_dir: path,
@@ -488,7 +517,12 @@ mod route_tests {
     use super::*;
 
     fn wps(n: usize, anchors: Vec<usize>) -> Waypoints {
-        Waypoints { points: vec![Waypoint { east: 0.0, north: 0.0 }; n], current: 0, mission_current: 0, anchors }
+        Waypoints {
+            points: vec![Waypoint { east: 0.0, north: 0.0 }; n],
+            current: 0,
+            mission_current: 0,
+            anchors,
+        }
     }
 
     #[test]

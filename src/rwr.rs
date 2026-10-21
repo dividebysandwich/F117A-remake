@@ -42,14 +42,23 @@ pub struct Emitters {
 /// ("MIG-29" -> "29", "F-14" -> "F14").
 pub fn rwr_label(name: &str, air: bool) -> String {
     let up = name.to_ascii_uppercase();
-    let named = [("HAWK", "HK"), ("RAPIER", "RA"), ("TIGER", "TG"), ("SEACAT", "SC"), ("OTH", "OT"), ("IL76", "AW"), ("IL-76", "AW")];
+    let named = [
+        ("HAWK", "HK"),
+        ("RAPIER", "RA"),
+        ("TIGER", "TG"),
+        ("SEACAT", "SC"),
+        ("OTH", "OT"),
+        ("IL76", "AW"),
+        ("IL-76", "AW"),
+    ];
     if let Some((_, l)) = named.iter().find(|(n, _)| up == *n) {
         return l.to_string();
     }
     if let Some(rest) = up.strip_prefix("SA-") {
         return rest.replace('-', "");
     }
-    let digits: String = up.rsplit('-').next().unwrap_or("").chars().filter(char::is_ascii_alphanumeric).collect();
+    let digits: String =
+        up.rsplit('-').next().unwrap_or("").chars().filter(char::is_ascii_alphanumeric).collect();
     if air && up.starts_with("F-") {
         return format!("F{digits}");
     }
@@ -64,7 +73,8 @@ pub fn rwr_label(name: &str, air: bool) -> String {
 /// aircraft heading (BAM).
 pub fn view(e: &Emitter, name: &str, heading_bam: f32) -> EmitterView {
     let (east, north) = crate::combat::map_wu(e.x, e.y);
-    let rel = (e.bearing as f32 - heading_bam).rem_euclid(65536.0) / 65536.0 * std::f32::consts::TAU;
+    let rel =
+        (e.bearing as f32 - heading_bam).rem_euclid(65536.0) / 65536.0 * std::f32::consts::TAU;
     let air = matches!(e.source, EmitterSource::Aircraft(_));
     EmitterView {
         source: e.source,
@@ -106,7 +116,15 @@ const WHITE: u8 = 15;
 /// Draws the emitter symbols on a scope of radius `r` centred at `c`: the label (with a hat for
 /// airborne radars), a diamond around the most dangerous one, a circle around a launching one
 /// (flashing with `blink`). `locked`: a box around that emitter.
-pub fn draw_symbols(c: &mut Canvas, emitters: &[EmitterView], centre: Vec2, r: f32, blink: bool, locked: Option<EmitterSource>, filter: impl Fn(&EmitterView) -> bool) {
+pub fn draw_symbols(
+    c: &mut Canvas,
+    emitters: &[EmitterView],
+    centre: Vec2,
+    r: f32,
+    blink: bool,
+    locked: Option<EmitterSource>,
+    filter: impl Fn(&EmitterView) -> bool,
+) {
     let h = (r * 0.13).clamp(7.0, 22.0);
     let w = (h / 7.0).max(1.0);
     for (rank, e) in emitters.iter().enumerate().filter(|(_, e)| filter(e)).rev() {
@@ -115,11 +133,29 @@ pub fn draw_symbols(c: &mut Canvas, emitters: &[EmitterView], centre: Vec2, r: f
         stroke_text_at(c, p.x, p.y, &e.label, h, w, col, Align::Centre);
         if e.air {
             let half = h * 0.6;
-            c.polyline(&[p + Vec2::new(-half, -h * 0.75), p + Vec2::new(0.0, -h * 1.05), p + Vec2::new(half, -h * 0.75)], w, col);
+            c.polyline(
+                &[
+                    p + Vec2::new(-half, -h * 0.75),
+                    p + Vec2::new(0.0, -h * 1.05),
+                    p + Vec2::new(half, -h * 0.75),
+                ],
+                w,
+                col,
+            );
         }
         let s = h * 1.15;
         if rank == 0 {
-            c.polyline(&[p + Vec2::new(0.0, -s), p + Vec2::new(s, 0.0), p + Vec2::new(0.0, s), p + Vec2::new(-s, 0.0), p + Vec2::new(0.0, -s)], w, GREEN);
+            c.polyline(
+                &[
+                    p + Vec2::new(0.0, -s),
+                    p + Vec2::new(s, 0.0),
+                    p + Vec2::new(0.0, s),
+                    p + Vec2::new(-s, 0.0),
+                    p + Vec2::new(0.0, -s),
+                ],
+                w,
+                GREEN,
+            );
         }
         if e.launch && blink {
             c.ring(p, s * 1.2, w, WHITE);

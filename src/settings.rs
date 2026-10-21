@@ -26,7 +26,10 @@ pub enum SetupSet {
 
 pub fn configure(app: &mut App) {
     for s in [AppState::Flight, AppState::Viewer] {
-        app.configure_sets(OnEnter(s), (SetupSet::Mission, SetupSet::Palette, SetupSet::World, SetupSet::Spawn).chain());
+        app.configure_sets(
+            OnEnter(s),
+            (SetupSet::Mission, SetupSet::Palette, SetupSet::World, SetupSet::Spawn).chain(),
+        );
     }
 }
 
@@ -174,8 +177,13 @@ impl Settings {
             no_crashes: has("--no-crashes"),
             vr_cockpit_scale: get(&a, "--vr-cockpit-scale")
                 .and_then(|s| s.parse::<f32>().ok())
-                .map_or(DEFAULT_VR_COCKPIT_SCALE, |p| (p / 100.0).clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end())),
-            aircraft: get(&a, "--aircraft").and_then(|s| crate::aircraft::AircraftKind::parse(&s)).unwrap_or_default(),
+                .map_or(DEFAULT_VR_COCKPIT_SCALE, |p| {
+                    (p / 100.0)
+                        .clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end())
+                }),
+            aircraft: get(&a, "--aircraft")
+                .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
+                .unwrap_or_default(),
         }
     }
 }

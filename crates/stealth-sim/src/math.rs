@@ -1,4 +1,3 @@
-
 /// Wrap to a signed 16-bit value.
 #[inline]
 pub fn s16(v: i32) -> i32 {
@@ -183,7 +182,8 @@ impl Trig {
                 if i % 256 == 0 || i == 128 {
                     0
                 } else {
-                    (((i as f64) * std::f64::consts::PI * 2.0 / 256.0).sin() * 32767.0).round() as i16
+                    (((i as f64) * std::f64::consts::PI * 2.0 / 256.0).sin() * 32767.0).round()
+                        as i16
                 }
             })
             .collect();

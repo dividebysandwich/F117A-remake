@@ -13,7 +13,8 @@
 use bevy::prelude::*;
 
 use super::{
-    BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT, BUTTON_STICK_UP, BUTTON_THUMB, Hands,
+    BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT,
+    BUTTON_STICK_UP, BUTTON_THUMB, Hands,
 };
 use crate::flight::{Aircraft, Player};
 use crate::hotas::{ButtonTarget, InputConfig, VrHand, VrInput};
@@ -163,7 +164,10 @@ pub(super) fn grab_levers(
         if grabs.stick.take().is_some() {
             right.haptic = right.haptic.max(0.2);
         }
-    } else if grabs.stick.is_none() && right.squeeze > 0.6 && right.grip.translation.distance(grip_centre) < GRAB_REACH {
+    } else if grabs.stick.is_none()
+        && right.squeeze > 0.6
+        && right.grip.translation.distance(grip_centre) < GRAB_REACH
+    {
         grabs.stick = Some(StickGrab { rot0: right.grip.rotation, twisted: false });
         right.haptic = right.haptic.max(0.4);
     }
@@ -182,7 +186,8 @@ pub(super) fn grab_levers(
         }
         // Rescaled past the deadzone so the rudder starts from zero at its edge.
         controls.yaw = if g.twisted {
-            (yaw.signum() * (yaw.abs() - TWIST_DEADZONE).max(0.0) / (1.0 - TWIST_DEADZONE)).clamp(-1.0, 1.0)
+            (yaw.signum() * (yaw.abs() - TWIST_DEADZONE).max(0.0) / (1.0 - TWIST_DEADZONE))
+                .clamp(-1.0, 1.0)
         } else {
             0.0
         };
@@ -194,7 +199,10 @@ pub(super) fn grab_levers(
         if grabs.throttle.take().is_some() {
             left.haptic = left.haptic.max(0.2);
         }
-    } else if grabs.throttle.is_none() && left.squeeze > 0.6 && left.grip.translation.distance(handle) < GRAB_REACH {
+    } else if grabs.throttle.is_none()
+        && left.squeeze > 0.6
+        && left.grip.translation.distance(handle) < GRAB_REACH
+    {
         let notch = (set_thrust * THROTTLE_NOTCHES).floor() as i32;
         grabs.throttle = Some(ThrottleGrab { p0: left.grip.translation, t0: set_thrust, notch });
         left.haptic = left.haptic.max(0.4);
@@ -223,13 +231,17 @@ pub(super) fn grab_levers(
     // --- mapped buttons; a trigger only while its hand holds the throttle / stick (otherwise it
     // presses the cockpit control under the fingertip), but for the brakes
     let mut brakes_held = false;
-    for (side, hand, holding) in [(VrHand::Left, &*left, grabs.throttle.is_some()), (VrHand::Right, &*right, grabs.stick.is_some())] {
+    for (side, hand, holding) in [
+        (VrHand::Left, &*left, grabs.throttle.is_some()),
+        (VrHand::Right, &*right, grabs.stick.is_some()),
+    ] {
         if !hand.active {
             continue;
         }
         for m in config.vr_buttons.iter().filter(|m| m.hand == side) {
             // The brakes also on the trigger of a free hand that touches no control.
-            let brakes = m.target == ButtonTarget::Action(Action::Brakes) && (!hand.touching || grabs.brakes);
+            let brakes = m.target == ButtonTarget::Action(Action::Brakes)
+                && (!hand.touching || grabs.brakes);
             let (held, pressed) = match m.input {
                 VrInput::Trigger if !holding && !brakes => continue,
                 VrInput::Trigger => (hand.trigger > 0.7, hand.trigger_pulled()),
@@ -274,7 +286,8 @@ pub(super) fn grab_levers(
     // --- ejection handle: grab with either hand and pull up 6 cm
     let handle = anchors.eject;
     for (i, h) in [&mut *left, &mut *right].into_iter().enumerate() {
-        let is_grabbing_other = (i == 1 && grabs.stick.is_some()) || (i == 0 && grabs.throttle.is_some());
+        let is_grabbing_other =
+            (i == 1 && grabs.stick.is_some()) || (i == 0 && grabs.throttle.is_some());
         match grabs.eject {
             Some((who, y0)) if who == i => {
                 if !h.active || h.squeeze < 0.4 {
@@ -285,7 +298,11 @@ pub(super) fn grab_levers(
                     grabs.eject = None;
                 }
             }
-            None if h.active && !is_grabbing_other && h.squeeze > 0.6 && h.grip.translation.distance(handle) < 0.07 => {
+            None if h.active
+                && !is_grabbing_other
+                && h.squeeze > 0.6
+                && h.grip.translation.distance(handle) < 0.07 =>
+            {
                 grabs.eject = Some((i, h.grip.translation.y));
                 h.haptic = h.haptic.max(0.3);
             }

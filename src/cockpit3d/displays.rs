@@ -12,13 +12,15 @@ use bevy::prelude::*;
 
 use super::geometry::panel_rect;
 use super::hud_glass::HudGlassMaterial;
-use super::shading::{CockpitMaterial, cockpit_material};
 use super::layout::{DED_CANVAS, Elem, PanelLayout, PanelStyle, Placed, PxRect};
+use super::shading::{CockpitMaterial, cockpit_material};
 use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit::{CockpitArt, Displays};
 use crate::font::Fonts;
 use crate::mfd::{CLASSIC, HIRES, MfdSide, osb};
-use crate::panel::{BUTTON, LAMPS, LampId, draw_gauge, draw_label, draw_lamp, draw_led, draw_led_bars};
+use crate::panel::{
+    BUTTON, LAMPS, LampId, draw_gauge, draw_label, draw_lamp, draw_led, draw_led_bars,
+};
 
 /// Emissive strength of the displays and lit lights when the cockpit is lit.
 const GLOW_NITS: f32 = 1.0;
@@ -198,10 +200,15 @@ pub(super) fn panel_materials(
     let slots = pack(&faces.iter().map(|(_, r)| texels(r, k, square)).collect::<Vec<_>>());
     let uv = |s: &[i32; 4]| {
         let n = ATLAS as f32;
-        (Vec2::new(s[0] as f32 / n, s[1] as f32 / n), Vec2::new((s[0] + s[2]) as f32 / n, (s[1] + s[3]) as f32 / n))
+        (
+            Vec2::new(s[0] as f32 / n, s[1] as f32 / n),
+            Vec2::new((s[0] + s[2]) as f32 / n, (s[1] + s[3]) as f32 / n),
+        )
     };
-    let atlas_tex = CanvasTexture::mipmapped_levels(Canvas::new(ATLAS, ATLAS), images, false, ATLAS_MIPS);
-    let glow_tex = CanvasTexture::mipmapped_levels(Canvas::new(ATLAS, ATLAS), images, false, ATLAS_MIPS);
+    let atlas_tex =
+        CanvasTexture::mipmapped_levels(Canvas::new(ATLAS, ATLAS), images, false, ATLAS_MIPS);
+    let glow_tex =
+        CanvasTexture::mipmapped_levels(Canvas::new(ATLAS, ATLAS), images, false, ATLAS_MIPS);
     let atlas = materials.add(cockpit_material(StandardMaterial {
         base_color_texture: Some(atlas_tex.image.clone()),
         emissive_texture: Some(glow_tex.image.clone()),
@@ -212,7 +219,10 @@ pub(super) fn panel_materials(
         fog_enabled: false,
         ..default()
     }));
-    let info = InstrumentAtlas { faces: faces.iter().zip(&slots).map(|((f, _), s)| (*f, *s)).collect(), texels: k };
+    let info = InstrumentAtlas {
+        faces: faces.iter().zip(&slots).map(|((f, _), s)| (*f, *s)).collect(),
+        texels: k,
+    };
     let e = commands.spawn((CanvasRole::Atlas, info, atlas_tex, LitMaterial(atlas.clone()))).id();
     commands.entity(root).add_child(e);
     let e = commands.spawn((CanvasRole::Glow, glow_tex)).id();
@@ -239,7 +249,8 @@ pub(super) fn atlas_faces(layout: &PanelLayout) -> Vec<(Face, PxRect)> {
         Elem::Gauge if modern => Face::LedBars,
         elem => Face::Item(elem),
     };
-    let mut faces: Vec<(Face, PxRect)> = layout.items.iter().map(|p| (face_of(p), p.rect)).collect();
+    let mut faces: Vec<(Face, PxRect)> =
+        layout.items.iter().map(|p| (face_of(p), p.rect)).collect();
     for m in &layout.mfds {
         faces.extend(layout.osbs(m).into_iter().map(|(slot, r)| (Face::Osb(m.side, slot), r)));
     }
@@ -248,9 +259,17 @@ pub(super) fn atlas_faces(layout: &PanelLayout) -> Vec<(Face, PxRect)> {
 
 /// A self-luminous screen: an MFD (`Left` / `Right`), the attitude ball, the RWR scope, the HSI
 /// or the approach indexer, with its canvas.
-pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materials: &mut Assets<CockpitMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<CockpitMaterial>) {
+pub(super) fn screen(
+    role: CanvasRole,
+    layout: &PanelLayout,
+    hires: bool,
+    materials: &mut Assets<CockpitMaterial>,
+    images: &mut Assets<Image>,
+) -> (CanvasTexture, Handle<CockpitMaterial>) {
     let (canvas, transparent) = match role {
-        CanvasRole::Left | CanvasRole::Right if hires => (Canvas::scaled(HIRES.0, HIRES.1, crate::mfd::HIRES_SCALE), false),
+        CanvasRole::Left | CanvasRole::Right if hires => {
+            (Canvas::scaled(HIRES.0, HIRES.1, crate::mfd::HIRES_SCALE), false)
+        }
         CanvasRole::Left | CanvasRole::Right => (Canvas::new(CLASSIC.0, CLASSIC.1), false),
         CanvasRole::Adi | CanvasRole::Rwr | CanvasRole::Hsi => {
             let r = match role {
@@ -262,7 +281,14 @@ pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materi
             (Canvas::new(n, n), true)
         }
         // Only the F-16 has a data entry display.
-        CanvasRole::Ded => (if layout.ded.is_some() { Canvas::new(DED_CANVAS.0, DED_CANVAS.1) } else { Canvas::new(8, 8) }, true),
+        CanvasRole::Ded => (
+            if layout.ded.is_some() {
+                Canvas::new(DED_CANVAS.0, DED_CANVAS.1)
+            } else {
+                Canvas::new(8, 8)
+            },
+            true,
+        ),
         _ => (Canvas::new(crate::panel::INDEXER_CANVAS.0, crate::panel::INDEXER_CANVAS.1), true),
     };
     let tex = CanvasTexture::mipmapped(canvas, images, transparent);
@@ -281,7 +307,10 @@ pub(super) fn screen(role: CanvasRole, layout: &PanelLayout, hires: bool, materi
 }
 
 /// The tracking camera picture behind the right screen (seen where its page is see-through).
-pub(super) fn trackcam_material(materials: &mut Assets<CockpitMaterial>, tc_image: Option<&crate::trackcam::TrackCamImage>) -> Handle<CockpitMaterial> {
+pub(super) fn trackcam_material(
+    materials: &mut Assets<CockpitMaterial>,
+    tc_image: Option<&crate::trackcam::TrackCamImage>,
+) -> Handle<CockpitMaterial> {
     materials.add(cockpit_material(StandardMaterial {
         base_color_texture: tc_image.map(|i| i.0.clone()),
         unlit: true,
@@ -292,7 +321,12 @@ pub(super) fn trackcam_material(materials: &mut Assets<CockpitMaterial>, tc_imag
 }
 
 /// A side panel button label (the button's text on a green cap).
-pub(super) fn side_label(text: &str, fonts: &Fonts, materials: &mut Assets<CockpitMaterial>, images: &mut Assets<Image>) -> (CanvasTexture, Handle<CockpitMaterial>) {
+pub(super) fn side_label(
+    text: &str,
+    fonts: &Fonts,
+    materials: &mut Assets<CockpitMaterial>,
+    images: &mut Assets<Image>,
+) -> (CanvasTexture, Handle<CockpitMaterial>) {
     let mut canvas = Canvas::new(28, 11);
     canvas.clear(44);
     let w = fonts.text(&mut Canvas::new(64, 16), 0, 0, text.as_bytes(), 47);
@@ -310,15 +344,25 @@ pub(super) fn side_label(text: &str, fonts: &Fonts, materials: &mut Assets<Cockp
 }
 
 /// The HUD combiner glass material and canvas.
-pub(super) fn hud_material(materials: &mut Assets<HudGlassMaterial>, images: &mut Assets<Image>, classic: bool, scale: f32) -> (CanvasTexture, Handle<HudGlassMaterial>) {
+pub(super) fn hud_material(
+    materials: &mut Assets<HudGlassMaterial>,
+    images: &mut Assets<Image>,
+    classic: bool,
+    scale: f32,
+) -> (CanvasTexture, Handle<HudGlassMaterial>) {
     let (tex, proj, style) = hud_canvas(images, classic, scale);
-    let material = materials.add(HudGlassMaterial { tint: Vec4::ZERO, image: tex.image.clone(), proj, style });
+    let material =
+        materials.add(HudGlassMaterial { tint: Vec4::ZERO, image: tex.image.clone(), proj, style });
     (tex, material)
 }
 
 /// The HUD canvas for the classic (320x200 palette picture) or the modern HUD (large
 /// monochrome mask, filtered), with the glass projection and style.
-fn hud_canvas(images: &mut Assets<Image>, classic: bool, scale: f32) -> (CanvasTexture, Vec4, Vec4) {
+fn hud_canvas(
+    images: &mut Assets<Image>,
+    classic: bool,
+    scale: f32,
+) -> (CanvasTexture, Vec4, Vec4) {
     let ((w, h), proj, style) = HudGlassMaterial::layout(classic, scale);
     let tex = CanvasTexture::new(Canvas::new(w, h), images, true);
     if !classic && let Some(mut img) = images.get_mut(&tex.image) {
@@ -364,9 +408,22 @@ pub(super) fn update_displays(
 ) {
     let find = |r: CanvasRole| roles.iter().find(|(_, x)| **x == r).map(|(e, _)| e);
     for (screen, mut v) in &mut tc {
-        v.set_if_neq(if d.mfd.camera_see_through(screen.0) { Visibility::Inherited } else { Visibility::Hidden });
+        v.set_if_neq(if d.mfd.camera_see_through(screen.0) {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        });
     }
-    for role in [CanvasRole::Left, CanvasRole::Right, CanvasRole::Adi, CanvasRole::Hud, CanvasRole::Approach, CanvasRole::Rwr, CanvasRole::Hsi, CanvasRole::Ded] {
+    for role in [
+        CanvasRole::Left,
+        CanvasRole::Right,
+        CanvasRole::Adi,
+        CanvasRole::Hud,
+        CanvasRole::Approach,
+        CanvasRole::Rwr,
+        CanvasRole::Hsi,
+        CanvasRole::Ded,
+    ] {
         let Some(mut tex) = find(role).and_then(|e| texes.get_mut(e).ok()) else { continue };
         let tex = tex.as_mut();
         tex.canvas.reset_clip();
@@ -411,12 +468,28 @@ pub(super) fn update_displays(
             Face::Item(Elem::Lamp(id, label)) => {
                 let on = lit[id as usize];
                 let style = LAMPS[id as usize].2;
-                draw_lamp(c, &fonts, r, label.unwrap_or_else(|| d.panel.lamp_label(id)), if on { style.on } else { style.off }, k, t);
+                draw_lamp(
+                    c,
+                    &fonts,
+                    r,
+                    label.unwrap_or_else(|| d.panel.lamp_label(id)),
+                    if on { style.on } else { style.off },
+                    k,
+                    t,
+                );
                 on
             }
             Face::Button(id, label) => {
                 let on = lit[id as usize];
-                draw_lamp(c, &fonts, r, label.unwrap_or_else(|| d.panel.lamp_label(id)), if on { BUTTON.on } else { BUTTON.off }, k, t);
+                draw_lamp(
+                    c,
+                    &fonts,
+                    r,
+                    label.unwrap_or_else(|| d.panel.lamp_label(id)),
+                    if on { BUTTON.on } else { BUTTON.off },
+                    k,
+                    t,
+                );
                 on
             }
             Face::Item(Elem::Led(id)) => {
@@ -461,7 +534,15 @@ pub(super) fn update_displays(
                 // Unlit: light grey label on a dark cap.
                 Some((label, _, false)) => {
                     draw_lamp(c, &fonts, r, "", (35, 38), k, t);
-                    draw_label(c, &fonts, [r[0] + k, r[1] + k, r[2] - 2 * k, r[3] - 2 * k], label, 7, 38, t);
+                    draw_label(
+                        c,
+                        &fonts,
+                        [r[0] + k, r[1] + k, r[2] - 2 * k, r[3] - 2 * k],
+                        label,
+                        7,
+                        38,
+                        t,
+                    );
                     false
                 }
                 None => {
@@ -488,7 +569,9 @@ mod tests {
         for style in [PanelStyle::Classic, PanelStyle::Modern, PanelStyle::F16] {
             let layout = PanelLayout::for_style(style);
             let (k, square) = atlas_scale(style);
-            let slots = pack(&atlas_faces(&layout).iter().map(|(_, r)| texels(r, k, square)).collect::<Vec<_>>());
+            let slots = pack(
+                &atlas_faces(&layout).iter().map(|(_, r)| texels(r, k, square)).collect::<Vec<_>>(),
+            );
             let used = slots.iter().map(|s| s[1] + s[3]).max().unwrap_or(0);
             println!("{style:?}: {} faces, atlas rows used {used}/{ATLAS}", slots.len());
         }

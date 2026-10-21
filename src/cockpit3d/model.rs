@@ -55,7 +55,9 @@ pub struct CockpitModels(pub std::collections::HashMap<&'static str, Handle<Gltf
 
 pub(super) fn load_models(mut commands: Commands, server: Res<AssetServer>) {
     let files = crate::aircraft::cockpit_files();
-    commands.insert_resource(CockpitModels(files.into_iter().map(|f| (f, server.load(format!("models/{f}.glb")))).collect()));
+    commands.insert_resource(CockpitModels(
+        files.into_iter().map(|f| (f, server.load(format!("models/{f}.glb")))).collect(),
+    ));
 }
 
 impl CockpitMaterials {
@@ -148,12 +150,23 @@ impl<'a> Spawner<'a> {
     }
 
     /// Spawns the model's root objects under `root`. Returns false if the file is not loaded.
-    pub fn spawn(&mut self, commands: &mut Commands, assets: &ModelAssets, file: &Handle<Gltf>, root: Entity) -> bool {
+    pub fn spawn(
+        &mut self,
+        commands: &mut Commands,
+        assets: &ModelAssets,
+        file: &Handle<Gltf>,
+        root: Entity,
+    ) -> bool {
         let Some(g) = assets.gltfs.get(file) else { return false };
-        let names: HashMap<AssetId<GltfMaterial>, String> = g.named_materials.iter().map(|(n, h)| (h.id(), n.to_string())).collect();
+        let names: HashMap<AssetId<GltfMaterial>, String> =
+            g.named_materials.iter().map(|(n, h)| (h.id(), n.to_string())).collect();
         self.left_trackcam_missing = !names.values().any(|n| n == "trackcam_left");
-        let children: std::collections::HashSet<AssetId<GltfNode>> =
-            g.nodes.iter().filter_map(|n| assets.nodes.get(n)).flat_map(|n| n.children.iter().map(|c| c.id())).collect();
+        let children: std::collections::HashSet<AssetId<GltfNode>> = g
+            .nodes
+            .iter()
+            .filter_map(|n| assets.nodes.get(n))
+            .flat_map(|n| n.children.iter().map(|c| c.id()))
+            .collect();
         for n in g.nodes.iter().filter(|n| !children.contains(&n.id())) {
             let e = self.node(commands, assets, &names, n, Transform::IDENTITY);
             commands.entity(root).add_child(e);
@@ -161,11 +174,24 @@ impl<'a> Spawner<'a> {
         true
     }
 
-    fn node(&mut self, commands: &mut Commands, assets: &ModelAssets, names: &HashMap<AssetId<GltfMaterial>, String>, handle: &Handle<GltfNode>, parent: Transform) -> Entity {
+    fn node(
+        &mut self,
+        commands: &mut Commands,
+        assets: &ModelAssets,
+        names: &HashMap<AssetId<GltfMaterial>, String>,
+        handle: &Handle<GltfNode>,
+        parent: Transform,
+    ) -> Entity {
         let Some(node) = assets.nodes.get(handle) else { return commands.spawn_empty().id() };
-        let extras: serde_json::Value = node.extras.as_ref().and_then(|x| serde_json::from_str(&x.value).ok()).unwrap_or_default();
+        let extras: serde_json::Value = node
+            .extras
+            .as_ref()
+            .and_then(|x| serde_json::from_str(&x.value).ok())
+            .unwrap_or_default();
         let at = parent * node.transform;
-        let e = commands.spawn((Name::new(node.name.clone()), node.transform, Visibility::default())).id();
+        let e = commands
+            .spawn((Name::new(node.name.clone()), node.transform, Visibility::default()))
+            .id();
         let mut ec = commands.entity(e);
         if extras.get("control").is_some() {
             match Control::from_model(&extras) {
@@ -218,11 +244,19 @@ impl<'a> Spawner<'a> {
         if let Some(mesh) = node.mesh.as_ref().and_then(|m| assets.meshes.get(m)) {
             let single = mesh.primitives.len() == 1;
             for prim in &mesh.primitives {
-                let target = if single { e } else { commands.spawn((Transform::default(), Visibility::default())).id() };
+                let target = if single {
+                    e
+                } else {
+                    commands.spawn((Transform::default(), Visibility::default())).id()
+                };
                 if !single {
                     commands.entity(e).add_child(target);
                 }
-                let name = prim.material.as_ref().and_then(|m| names.get(&m.id())).map_or("", String::as_str);
+                let name = prim
+                    .material
+                    .as_ref()
+                    .and_then(|m| names.get(&m.id()))
+                    .map_or("", String::as_str);
                 self.primitive(commands, target, name, prim, &extras, assets);
                 let mut t = commands.entity(target);
                 t.insert(NoFrustumCulling);
@@ -231,13 +265,22 @@ impl<'a> Spawner<'a> {
                 }
             }
         }
-        let kids: Vec<Entity> = node.children.iter().map(|c| self.node(commands, assets, names, c, at)).collect();
+        let kids: Vec<Entity> =
+            node.children.iter().map(|c| self.node(commands, assets, names, c, at)).collect();
         commands.entity(e).add_children(&kids);
         e
     }
 
     /// A mesh primitive with its run-time material (by material name).
-    fn primitive(&mut self, commands: &mut Commands, e: Entity, name: &str, prim: &bevy::gltf::GltfPrimitive, extras: &serde_json::Value, assets: &ModelAssets) {
+    fn primitive(
+        &mut self,
+        commands: &mut Commands,
+        e: Entity,
+        name: &str,
+        prim: &bevy::gltf::GltfPrimitive,
+        extras: &serde_json::Value,
+        assets: &ModelAssets,
+    ) {
         let mut mesh = prim.mesh.clone();
         let mut ec = commands.entity(e);
         let material = match name {
@@ -258,7 +301,8 @@ impl<'a> Spawner<'a> {
                     "ded" => CanvasRole::Ded,
                     _ => CanvasRole::Approach,
                 };
-                let (tex, m) = displays::screen(role, self.layout, self.hires, self.materials, self.images);
+                let (tex, m) =
+                    displays::screen(role, self.layout, self.hires, self.materials, self.images);
                 ec.insert((role, tex));
                 if role == CanvasRole::Left && self.left_trackcam_missing {
                     self.left_trackcam(commands, e, &prim.mesh);
@@ -266,17 +310,31 @@ impl<'a> Spawner<'a> {
                 m
             }
             "trackcam" | "trackcam_left" => {
-                let side = if name == "trackcam" { crate::mfd::MfdSide::Right } else { crate::mfd::MfdSide::Left };
+                let side = if name == "trackcam" {
+                    crate::mfd::MfdSide::Right
+                } else {
+                    crate::mfd::MfdSide::Left
+                };
                 ec.insert((TrackCamScreen(side), Visibility::Hidden));
                 displays::trackcam_material(self.materials, self.tc_image)
             }
             "hud_glass" => {
-                let (tex, m) = displays::hud_material(self.hud_materials, self.images, self.classic_hud, self.hud_scale);
+                let (tex, m) = displays::hud_material(
+                    self.hud_materials,
+                    self.images,
+                    self.classic_hud,
+                    self.hud_scale,
+                );
                 ec.insert((CanvasRole::Hud, tex, Mesh3d(mesh), MeshMaterial3d(m), NotShadowCaster));
                 return;
             }
             n if n.starts_with("label_") => {
-                let (tex, m) = displays::side_label(&n["label_".len()..], self.fonts, self.materials, self.images);
+                let (tex, m) = displays::side_label(
+                    &n["label_".len()..],
+                    self.fonts,
+                    self.materials,
+                    self.images,
+                );
                 ec.insert((tex, LitMaterial(m.clone())));
                 m
             }
@@ -291,7 +349,10 @@ impl<'a> Spawner<'a> {
     /// The tracking camera picture 3 mm behind the left screen, from the screen's mesh.
     fn left_trackcam(&mut self, commands: &mut Commands, screen: Entity, mesh: &Handle<Mesh>) {
         let Some(m) = self.meshes.get(mesh) else { return };
-        let Some(VertexAttributeValues::Float32x3(p)) = m.attribute(Mesh::ATTRIBUTE_POSITION) else { return };
+        let Some(VertexAttributeValues::Float32x3(p)) = m.attribute(Mesh::ATTRIBUTE_POSITION)
+        else {
+            return;
+        };
         if p.len() < 3 {
             return;
         }
@@ -318,13 +379,21 @@ impl<'a> Spawner<'a> {
     }
 
     /// The face's mesh with its UVs moved to the face's place in the instrument atlas.
-    fn atlas_mesh(&mut self, mesh: &Handle<Mesh>, extras: &serde_json::Value) -> Option<Handle<Mesh>> {
+    fn atlas_mesh(
+        &mut self,
+        mesh: &Handle<Mesh>,
+        extras: &serde_json::Value,
+    ) -> Option<Handle<Mesh>> {
         let key = extras["atlas_face"].as_str()?;
         let Some(&(n0, n1)) = self.panel.faces.get(key) else {
             warn!("cockpit model: no atlas face {key}");
             return None;
         };
-        let r: Vec<f32> = extras["atlas_uv"].as_array()?.iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect();
+        let r: Vec<f32> = extras["atlas_uv"]
+            .as_array()?
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect();
         let (o0, o1) = (Vec2::new(*r.first()?, *r.get(1)?), Vec2::new(*r.get(2)?, *r.get(3)?));
         let mut m = self.meshes.get(mesh)?.clone();
         if let Some(VertexAttributeValues::Float32x2(uv)) = m.attribute_mut(Mesh::ATTRIBUTE_UV_0) {
@@ -337,20 +406,25 @@ impl<'a> Spawner<'a> {
     }
 
     /// A material as modelled in Blender.
-    fn modelled(&mut self, material: Option<&Handle<GltfMaterial>>, assets: &ModelAssets) -> Handle<CockpitMaterial> {
+    fn modelled(
+        &mut self,
+        material: Option<&Handle<GltfMaterial>>,
+        assets: &ModelAssets,
+    ) -> Handle<CockpitMaterial> {
         let Some(h) = material else { return self.mats.panel_grey.clone() };
         if let Some(m) = self.modelled.get(&h.id()) {
             return m.clone();
         }
-        let m = assets.materials.get(h).map_or_else(StandardMaterial::default, |g| StandardMaterial {
-            base_color: g.base_color,
-            base_color_texture: g.base_color_texture.clone(),
-            emissive: g.emissive,
-            perceptual_roughness: g.perceptual_roughness,
-            metallic: g.metallic,
-            fog_enabled: false,
-            ..default()
-        });
+        let m =
+            assets.materials.get(h).map_or_else(StandardMaterial::default, |g| StandardMaterial {
+                base_color: g.base_color,
+                base_color_texture: g.base_color_texture.clone(),
+                emissive: g.emissive,
+                perceptual_roughness: g.perceptual_roughness,
+                metallic: g.metallic,
+                fog_enabled: false,
+                ..default()
+            });
         let m = self.materials.add(cockpit_material(m));
         self.modelled.insert(h.id(), m.clone());
         m
@@ -409,57 +483,101 @@ mod tests {
     /// `UPDATE_F16_LAYOUT=1 cargo test f16_layout_file`, then rebuild the model).
     #[test]
     fn f16_layout_file() {
-        let path = format!("{}/assets-src/blend/cockpit_f16_layout.json", env!("CARGO_MANIFEST_DIR"));
+        let path =
+            format!("{}/assets-src/blend/cockpit_f16_layout.json", env!("CARGO_MANIFEST_DIR"));
         let want = serde_json::to_string_pretty(&f16_layout_json()).unwrap() + "\n";
         if std::env::var_os("UPDATE_F16_LAYOUT").is_some() {
             std::fs::write(&path, &want).unwrap();
         }
         let have = std::fs::read_to_string(&path).unwrap_or_default();
-        assert!(have == want, "{path} is stale: run UPDATE_F16_LAYOUT=1 cargo test f16_layout_file and tools/models/build_cockpit_f16.py");
+        assert!(
+            have == want,
+            "{path} is stale: run UPDATE_F16_LAYOUT=1 cargo test f16_layout_file and tools/models/build_cockpit_f16.py"
+        );
     }
 
     /// Every cockpit model has everything the game binds to, and nothing it can't read.
     #[test]
     fn cockpit_models() {
         use crate::cockpit3d::layout::PanelStyle;
-        for (name, style) in [("cockpit_modern", PanelStyle::Modern), ("cockpit_classic", PanelStyle::Classic), ("cockpit_f16", PanelStyle::F16)] {
+        for (name, style) in [
+            ("cockpit_modern", PanelStyle::Modern),
+            ("cockpit_classic", PanelStyle::Classic),
+            ("cockpit_f16", PanelStyle::F16),
+        ] {
             let j = gltf_json(name);
             let nodes = j["nodes"].as_array().unwrap();
             let extras: Vec<&serde_json::Value> = nodes.iter().map(|n| &n["extras"]).collect();
-            let materials: Vec<&str> = j["materials"].as_array().unwrap().iter().filter_map(|m| m["name"].as_str()).collect();
-            let mut required = vec!["atlas", "screen_left", "screen_right", "adi", "approach", "trackcam", "hud_glass"];
+            let materials: Vec<&str> = j["materials"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|m| m["name"].as_str())
+                .collect();
+            let mut required = vec![
+                "atlas",
+                "screen_left",
+                "screen_right",
+                "adi",
+                "approach",
+                "trackcam",
+                "hud_glass",
+            ];
             // The F-16's MENU button is the LIST key of its up-front controls (an atlas face).
-            required.extend(if style == PanelStyle::F16 { vec!["screen_rwr", "hsi", "ded", "trackcam_left", "label_NEAR"] } else { vec!["swatch", "label_MENU"] });
+            required.extend(if style == PanelStyle::F16 {
+                vec!["screen_rwr", "hsi", "ded", "trackcam_left", "label_NEAR"]
+            } else {
+                vec!["swatch", "label_MENU"]
+            });
             for m in required {
                 assert!(materials.contains(&m), "{name}: no material {m}");
             }
             let has = |k: &str| extras.iter().filter(|x| x.get(k).is_some()).count();
             assert_eq!(has("stick"), 1, "{name}: stick");
             assert_eq!(has("throttle"), 1, "{name}: throttle");
-            assert!(extras.iter().any(|x| x["anchor"] == "throttle_full"), "{name}: throttle_full anchor");
+            assert!(
+                extras.iter().any(|x| x["anchor"] == "throttle_full"),
+                "{name}: throttle_full anchor"
+            );
             // The throttle travels the whole rail: idle (its origin) to full well apart.
             let pos = |k: &str, v: serde_json::Value| {
-                let n = nodes.iter().find(|n| n["extras"][k] == v).unwrap_or_else(|| panic!("{name}: no {k} node"));
+                let n = nodes
+                    .iter()
+                    .find(|n| n["extras"][k] == v)
+                    .unwrap_or_else(|| panic!("{name}: no {k} node"));
                 n["translation"][2].as_f64().unwrap_or(0.0)
             };
-            let travel = (pos("throttle", true.into()) - pos("anchor", "throttle_full".into())).abs();
+            let travel =
+                (pos("throttle", true.into()) - pos("anchor", "throttle_full".into())).abs();
             assert!(travel > 0.15, "{name}: throttle travel {travel} m");
             assert!(extras.iter().any(|x| x["kind"] == "eject"), "{name}: ejection handle");
             assert!(extras.iter().any(|x| x["control"] == "Action(Menu)"), "{name}: MENU button");
-            let keys: Vec<String> = atlas_faces(&PanelLayout::for_style(style)).iter().map(|(f, _)| format!("{f:?}")).collect();
+            let keys: Vec<String> = atlas_faces(&PanelLayout::for_style(style))
+                .iter()
+                .map(|(f, _)| format!("{f:?}"))
+                .collect();
             for x in &extras {
                 if let Some(c) = x["control"].as_str() {
                     assert!(parse_effect(c).is_some(), "{name}: control {c}");
-                    assert!(super::super::controls::Control::from_model(x).is_some(), "{name}: control {x}");
+                    assert!(
+                        super::super::controls::Control::from_model(x).is_some(),
+                        "{name}: control {x}"
+                    );
                 }
                 if let Some(f) = x["atlas_face"].as_str() {
-                    assert!(keys.iter().any(|k| k == f), "{name}: atlas face {f} not in the layout");
+                    assert!(
+                        keys.iter().any(|k| k == f),
+                        "{name}: atlas face {f} not in the layout"
+                    );
                 }
             }
             if style == PanelStyle::F16 {
                 // The generated model has every face of its layout.
                 for k in &keys {
-                    assert!(extras.iter().any(|x| x["atlas_face"].as_str() == Some(k)), "{name}: no atlas face {k}");
+                    assert!(
+                        extras.iter().any(|x| x["atlas_face"].as_str() == Some(k)),
+                        "{name}: no atlas face {k}"
+                    );
                 }
             }
         }

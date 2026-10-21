@@ -5,7 +5,9 @@
 use bevy::mesh::MeshVertexBufferLayoutRef;
 use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError};
+use bevy::render::render_resource::{
+    AsBindGroup, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError,
+};
 use bevy::render::storage::ShaderBuffer;
 use bevy::shader::ShaderRef;
 
@@ -249,9 +251,13 @@ pub fn dot_scale(scale: u32) -> u32 {
 
 /// Switches every palette material to the shader variant with or without the lighting options
 /// (also materials created later).
-pub fn sync_lighting(settings: Res<crate::settings::Settings>, mut materials: ResMut<Assets<PaletteMaterial>>) {
+pub fn sync_lighting(
+    settings: Res<crate::settings::Settings>,
+    mut materials: ResMut<Assets<PaletteMaterial>>,
+) {
     let lit = (settings.shadows || settings.local_lights) as u32;
-    let stale: Vec<_> = materials.iter().filter(|(_, m)| m.params.lit != lit).map(|(id, _)| id).collect();
+    let stale: Vec<_> =
+        materials.iter().filter(|(_, m)| m.params.lit != lit).map(|(id, _)| id).collect();
     for id in stale {
         if let Some(mut m) = materials.get_mut(id) {
             m.params.lit = lit;

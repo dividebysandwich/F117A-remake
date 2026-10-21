@@ -57,25 +57,44 @@ fn spawn(
     let ground = target
         .or(pos)
         .or_else(|| theater.object_position(&at))
-        .or_else(|| theater.world.objects.iter().find(|o| o.target_flags & 0x100 != 0).map(|o| {
-            let (e, n) = crate::world::map_to_wu(o.x, o.y);
-            crate::world::wu_to_bevy(e, n, 0.0)
-        }))
+        .or_else(|| {
+            theater.world.objects.iter().find(|o| o.target_flags & 0x100 != 0).map(|o| {
+                let (e, n) = crate::world::map_to_wu(o.x, o.y);
+                crate::world::wu_to_bevy(e, n, 0.0)
+            })
+        })
         .unwrap_or(DVec3::new(256_000.0, 0.0, -256_000.0));
     let alt: f64 = arg("--alt").and_then(|s| s.parse().ok()).unwrap_or(300.0);
     let yaw = arg("--yaw").and_then(|s| s.parse::<f32>().ok()).unwrap_or(0.0).to_radians();
-    let pitch = arg("--look-pitch").and_then(|s| s.parse::<f32>().ok()).unwrap_or(-15.0).to_radians();
-    let cam = commands.spawn((
-        Camera3d::default(),
-        bevy::core_pipeline::tonemapping::Tonemapping::None,
-        Projection::Perspective(PerspectiveProjection { near: 0.5, far: 600_000.0, ..default() }),
-        FreeCam { yaw, pitch },
-        WorldAnchor,
-        WorldPos(ground + DVec3::Y * alt),
-        Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0)),
-    )).id();
-    crate::camera::spawn_background(&mut commands, cam, &mut meshes, &palette, crate::camera::MAIN_BACKGROUND_LAYER);
-    commands.entity(cam).insert(bevy::camera::visibility::RenderLayers::from_layers(&[0, crate::camera::MAIN_BACKGROUND_LAYER, crate::camera::MAIN_LOD_LAYER]));
+    let pitch =
+        arg("--look-pitch").and_then(|s| s.parse::<f32>().ok()).unwrap_or(-15.0).to_radians();
+    let cam = commands
+        .spawn((
+            Camera3d::default(),
+            bevy::core_pipeline::tonemapping::Tonemapping::None,
+            Projection::Perspective(PerspectiveProjection {
+                near: 0.5,
+                far: 600_000.0,
+                ..default()
+            }),
+            FreeCam { yaw, pitch },
+            WorldAnchor,
+            WorldPos(ground + DVec3::Y * alt),
+            Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0)),
+        ))
+        .id();
+    crate::camera::spawn_background(
+        &mut commands,
+        cam,
+        &mut meshes,
+        &palette,
+        crate::camera::MAIN_BACKGROUND_LAYER,
+    );
+    commands.entity(cam).insert(bevy::camera::visibility::RenderLayers::from_layers(&[
+        0,
+        crate::camera::MAIN_BACKGROUND_LAYER,
+        crate::camera::MAIN_LOD_LAYER,
+    ]));
 }
 
 fn fly(

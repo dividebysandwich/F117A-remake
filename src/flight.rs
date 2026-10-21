@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use serde::Deserialize;
 
 use crate::input::{Action, ActionEvent, FlightControls};
-use crate::settings::{SetupSet, Settings};
+use crate::settings::{Settings, SetupSet};
 use crate::world::{Theater, WorldPos, bevy_to_wu, wu_to_bevy};
 
 pub mod modern;
@@ -25,7 +25,10 @@ pub struct FlightPlugin;
 impl Plugin for FlightPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(FlightConstants::default())
-            .add_systems(OnEnter(crate::settings::AppState::Flight), apply_settings.in_set(SetupSet::Mission))
+            .add_systems(
+                OnEnter(crate::settings::AppState::Flight),
+                apply_settings.in_set(SetupSet::Mission),
+            )
             .add_systems(
                 Update,
                 (handle_actions, step_flight)
@@ -67,7 +70,8 @@ pub struct SimTables {
 impl SimTables {
     pub fn load() -> Self {
         let path = crate::asset_path::asset("sim/tables.ron");
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let text =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         ron::from_str(&text).expect("tables.ron")
     }
 }
@@ -284,7 +288,9 @@ impl Aircraft {
     }
 
     pub fn from_euler(heading: f32, pitch: f32, roll: f32) -> Quat {
-        Quat::from_rotation_y(-heading) * Quat::from_rotation_x(pitch) * Quat::from_rotation_z(-roll)
+        Quat::from_rotation_y(-heading)
+            * Quat::from_rotation_x(pitch)
+            * Quat::from_rotation_z(-roll)
     }
 }
 
@@ -303,7 +309,10 @@ pub fn view_z(alt: f32) -> f32 {
 #[derive(Component)]
 pub struct Player;
 
-fn handle_actions(mut actions: MessageReader<ActionEvent>, mut q: Query<&mut Aircraft, With<Player>>) {
+fn handle_actions(
+    mut actions: MessageReader<ActionEvent>,
+    mut q: Query<&mut Aircraft, With<Player>>,
+) {
     let Ok(mut a) = q.single_mut() else {
         actions.clear();
         return;
@@ -311,7 +320,10 @@ fn handle_actions(mut actions: MessageReader<ActionEvent>, mut q: Query<&mut Air
     for ActionEvent(action) in actions.read() {
         match action {
             // '=' / '-' / '+' / '_' (they do not release the brakes in the F-117A).
-            Action::ThrottleUp => a.set_thrust = (a.set_thrust + if a.set_thrust < 10.0 { 5.0 } else { 10.0 }).min(100.0),
+            Action::ThrottleUp => {
+                a.set_thrust =
+                    (a.set_thrust + if a.set_thrust < 10.0 { 5.0 } else { 10.0 }).min(100.0)
+            }
             Action::ThrottleDown => a.set_thrust = (a.set_thrust - 10.0).max(0.0),
             Action::ThrottleMax => a.set_thrust = 100.0,
             Action::ThrottleIdle => a.set_thrust = 0.0,
@@ -437,7 +449,12 @@ fn step_one(
 
         // --- auto pull-up ("barometric altimeter"; the original's no-crash and easy skills, here
         // crash protection only, so the ground can always be hit otherwise)
-        if !a.gear_down && pitch_input <= 0.0 && a.velocity > a.stall_speed && k.landing == 0 && roll_b.abs() < 12288.0 {
+        if !a.gear_down
+            && pitch_input <= 0.0
+            && a.velocity > a.stall_speed
+            && k.landing == 0
+            && roll_b.abs() < 12288.0
+        {
             let kk = ((a.trim - pitch_b) / 8.0 - vz + 200.0) / 8.0;
             if kk > 0.0 {
                 pitch_input = kk.clamp(0.0, 32.0);
@@ -492,7 +509,8 @@ fn step_one(
         a.velocity = a.velocity.max(0.0);
 
         // --- rotation
-        let mut yaw = (roll.sin() * a.gees * 16.0 * 128.0) / ((a.velocity / 256.0).floor() + 32.0) * pitch.cos();
+        let mut yaw = (roll.sin() * a.gees * 16.0 * 128.0) / ((a.velocity / 256.0).floor() + 32.0)
+            * pitch.cos();
         // Rudder (extension): up to 10 deg/s in the air.
         let rudder = controls.yaw.clamp(-1.0, 1.0);
         yaw += rudder * 1820.0;
@@ -507,11 +525,16 @@ fn step_one(
         let d_roll = bam(roll_input * 128.0 * dt);
         let d_pitch = bam(pitch_input * 128.0 * dt);
         let d_yaw = bam(yaw * dt);
-        a.orientation = (Quat::from_rotation_y(-d_yaw) * a.orientation * Quat::from_rotation_x(d_pitch) * Quat::from_rotation_z(-d_roll)).normalize();
+        a.orientation = (Quat::from_rotation_y(-d_yaw)
+            * a.orientation
+            * Quat::from_rotation_x(d_pitch)
+            * Quat::from_rotation_z(-d_roll))
+        .normalize();
 
         // Stall: the nose drops (per original frame, scaled with fs).
         if air && a.stall_speed > a.velocity {
-            let shift = (if k.landing == 2 { 2.0 } else { 4.0 }) / if a.damage.heavy_stall { 2.0 } else { 1.0 };
+            let shift = (if k.landing == 2 { 2.0 } else { 4.0 })
+                / if a.damage.heavy_stall { 2.0 } else { 1.0 };
             let drop = bam((a.stall_speed - a.velocity) / shift * k.fs * dt);
             let (h, p, r) = a.euler();
             a.orientation = Aircraft::from_euler(h, (p - drop).max(-1.5), r);
@@ -570,9 +593,19 @@ fn engine(a: &mut Aircraft, controls: &FlightControls, k: &FlightConstants, dt: 
 /// Ground altitude and landing corridor, touchdown, ground crashes and the safe landing end.
 /// `a.altitude` has been integrated from `prev_alt`; `a.climb_rate` is the sink at contact.
 #[allow(clippy::too_many_arguments)]
-fn ground_contact(a: &mut Aircraft, k: &FlightConstants, roll: f32, prev_alt: f32, east: f64, north: f64, theater: Option<&Theater>, dt: f32) {
+fn ground_contact(
+    a: &mut Aircraft,
+    k: &FlightConstants,
+    roll: f32,
+    prev_alt: f32,
+    east: f64,
+    north: f64,
+    theater: Option<&Theater>,
+    dt: f32,
+) {
     // --- landing corridor at the nearest friendly base
-    let (corridor, ground) = theater.map(|t| landing_corridor(t, east, north, k.landing)).unwrap_or((false, 0.0));
+    let (corridor, ground) =
+        theater.map(|t| landing_corridor(t, east, north, k.landing)).unwrap_or((false, 0.0));
     a.in_landing_corridor = corridor;
     a.ground_altitude = ground;
     a.altitude = a.altitude.clamp(a.ground_altitude, 60000.0);
@@ -642,11 +675,23 @@ mod tests {
 
     /// Flies one model for `secs` (no theater: no runways, ground at 0), with the controls set
     /// by `ctl` every step. Returns the aircraft and the distance flown (wu).
-    fn fly(classic: bool, a: Aircraft, secs: f32, landing: u8, ctl: impl FnMut(&Aircraft, &mut FlightControls)) -> (Aircraft, f64) {
+    fn fly(
+        classic: bool,
+        a: Aircraft,
+        secs: f32,
+        landing: u8,
+        ctl: impl FnMut(&Aircraft, &mut FlightControls),
+    ) -> (Aircraft, f64) {
         fly_with(FlightConstants { landing, ..default() }, classic, a, secs, ctl)
     }
 
-    fn fly_with(k: FlightConstants, classic: bool, mut a: Aircraft, secs: f32, mut ctl: impl FnMut(&Aircraft, &mut FlightControls)) -> (Aircraft, f64) {
+    fn fly_with(
+        k: FlightConstants,
+        classic: bool,
+        mut a: Aircraft,
+        secs: f32,
+        mut ctl: impl FnMut(&Aircraft, &mut FlightControls),
+    ) -> (Aircraft, f64) {
         let tables = SimTables::load();
         let mut pos = WorldPos(wu_to_bevy(0.0, 0.0, a.view_z() as f64));
         let mut tf = Transform::default();
@@ -689,7 +734,11 @@ mod tests {
             let name = if classic { "classic" } else { "modern" };
             for alt in [1000.0, 15000.0] {
                 let (a, _) = fly(classic, level(airborne(alt, 400.0, 100.0)), 240.0, 1, |_, _| {});
-                println!("{name}: max speed at {alt} ft: {:.0} kt (alt {:.0})", a.knots(), a.altitude);
+                println!(
+                    "{name}: max speed at {alt} ft: {:.0} kt (alt {:.0})",
+                    a.knots(),
+                    a.altitude
+                );
                 assert!((480.0..680.0).contains(&a.knots()), "{name} max speed {}", a.knots());
             }
             let mut t500 = None;
@@ -703,7 +752,13 @@ mod tests {
             println!("{name}: 300 to 500 kt at full throttle: {t500:?} s");
             // Idle at 1000 ft with the altitude held: speed it falls to.
             let (a, _) = fly(classic, level(airborne(1000.0, 300.0, 0.0)), 120.0, 1, |_, _| {});
-            println!("{name}: idle, altitude held: {:.0} kt alt {:.0} stall {:.0} {:?}", a.knots(), a.altitude, a.stall_speed / 27.0, a.ended);
+            println!(
+                "{name}: idle, altitude held: {:.0} kt alt {:.0} stall {:.0} {:?}",
+                a.knots(),
+                a.altitude,
+                a.stall_speed / 27.0,
+                a.ended
+            );
             // Take-off run: full throttle, pull at 160 kt.
             let mut lift_off = None;
             let mut t = 0.0;
@@ -716,7 +771,11 @@ mod tests {
                     lift_off = Some((t, a.knots()));
                 }
             });
-            println!("{name}: lift-off {lift_off:?}, after 60 s {:.0} kt alt {:.0}", a.knots(), a.altitude);
+            println!(
+                "{name}: lift-off {lift_off:?}, after 60 s {:.0} kt alt {:.0}",
+                a.knots(),
+                a.altitude
+            );
             assert!(lift_off.is_some(), "{name} did not take off");
             // Full pull, bank 75 deg, 400 kt at 10000 ft for 10 s: heading change and speed.
             let mut a0 = airborne(10000.0, 400.0, 100.0);
@@ -737,7 +796,12 @@ mod tests {
             println!("{name}: roll after 1 s full stick {:.0} deg", a.euler().2.to_degrees());
             // Hands off at 400 kt: the path stays level.
             let (a, _) = fly(classic, airborne(5000.0, 400.0, 70.0), 20.0, 1, |_, _| {});
-            println!("{name}: 20 s hands off: alt {:.0} pitch {:.1} {:.0} kt", a.altitude, a.euler().1.to_degrees(), a.knots());
+            println!(
+                "{name}: 20 s hands off: alt {:.0} pitch {:.1} {:.0} kt",
+                a.altitude,
+                a.euler().1.to_degrees(),
+                a.knots()
+            );
         }
     }
 
@@ -747,14 +811,21 @@ mod tests {
         let k = FlightConstants::f16;
         for classic in [false, true] {
             let name = if classic { "classic" } else { "modern" };
-            let (a, _) = fly_with(k(), classic, level(airborne(1000.0, 500.0, 100.0)), 240.0, |_, _| {});
+            let (a, _) =
+                fly_with(k(), classic, level(airborne(1000.0, 500.0, 100.0)), 240.0, |_, _| {});
             println!("F-16 {name}: max speed at 1000 ft: {:.0} kt", a.knots());
             assert!((700.0..840.0).contains(&a.knots()), "{name} sea level {}", a.knots());
-            let (a, _) = fly_with(k(), classic, level(airborne(36000.0, 600.0, 100.0)), 400.0, |_, _| {});
+            let (a, _) =
+                fly_with(k(), classic, level(airborne(36000.0, 600.0, 100.0)), 400.0, |_, _| {});
             println!("F-16 {name}: max speed at 36000 ft: {:.0} kt", a.knots());
             // The classic model's altitude gain is the original's (about +27% at 36000 ft).
-            assert!(a.knots() > if classic { 900.0 } else { 1050.0 }, "{name} at altitude {}", a.knots());
-            let (a, _) = fly_with(k(), classic, airborne(10000.0, 400.0, 70.0), 1.0, |_, c| c.roll = 1.0);
+            assert!(
+                a.knots() > if classic { 900.0 } else { 1050.0 },
+                "{name} at altitude {}",
+                a.knots()
+            );
+            let (a, _) =
+                fly_with(k(), classic, airborne(10000.0, 400.0, 70.0), 1.0, |_, c| c.roll = 1.0);
             let roll = a.euler().2.to_degrees();
             println!("F-16 {name}: roll after 1 s full stick {roll:.0} deg");
         }
@@ -801,7 +872,10 @@ mod tests {
                         stop = Some(t);
                     }
                 });
-                println!("classic {classic} throttle {throttle}: stopped {stop:?} after {d:.0} wu, {:.0} kt after 30 s", a.knots());
+                println!(
+                    "classic {classic} throttle {throttle}: stopped {stop:?} after {d:.0} wu, {:.0} kt after 30 s",
+                    a.knots()
+                );
             }
             // Speed brake: 10 s at idle from 400 kt, altitude held, with and without.
             let speeds = [false, true].map(|brakes| {
@@ -809,7 +883,10 @@ mod tests {
                 a0.brakes = brakes;
                 fly(classic, a0, 10.0, 1, |_, _| {}).0.knots()
             });
-            println!("classic {classic}: 10 s idle from 400 kt: {:.0} kt, with speed brake {:.0} kt", speeds[0], speeds[1]);
+            println!(
+                "classic {classic}: 10 s idle from 400 kt: {:.0} kt, with speed brake {:.0} kt",
+                speeds[0], speeds[1]
+            );
             assert!(speeds[1] < speeds[0] - 50.0);
         }
     }
@@ -834,7 +911,10 @@ mod tests {
             });
             println!("{kts} kt: pitch at release {at_release:.1}, lowest after {lowest:.1}");
             assert!(at_release > 3.0, "the pull raised the nose ({at_release:.1})");
-            assert!(lowest > at_release - 1.0, "{kts} kt: nose dropped from {at_release:.1} to {lowest:.1}");
+            assert!(
+                lowest > at_release - 1.0,
+                "{kts} kt: nose dropped from {at_release:.1} to {lowest:.1}"
+            );
         }
     }
 
@@ -845,7 +925,12 @@ mod tests {
         a0.orientation = Aircraft::from_euler(0.0, 0.0, 45f32.to_radians());
         let (a, _) = fly(false, a0, 10.0, 1, |_, _| {});
         let (h, _, r) = a.euler();
-        println!("10 s in a 45 deg bank: alt {:.0} heading {:.0} roll {:.0}", a.altitude, h.to_degrees(), r.to_degrees());
+        println!(
+            "10 s in a 45 deg bank: alt {:.0} heading {:.0} roll {:.0}",
+            a.altitude,
+            h.to_degrees(),
+            r.to_degrees()
+        );
         assert!((a.altitude - 8000.0).abs() < 150.0, "altitude {}", a.altitude);
         assert!(h.to_degrees() > 20.0, "the aircraft turned");
     }
@@ -897,7 +982,10 @@ mod tests {
             }
         }
         println!("flaps lowered: pitch {start:.1} -> lowest {pitch_min:.1}, alt {:.0}", a.altitude);
-        assert!(pitch_min > start - 1.0, "nose dropped from {start:.1} to {pitch_min:.1} with the flaps");
+        assert!(
+            pitch_min > start - 1.0,
+            "nose dropped from {start:.1} to {pitch_min:.1} with the flaps"
+        );
     }
 
     #[test]

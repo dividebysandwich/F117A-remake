@@ -29,7 +29,14 @@ pub enum AxisControl {
 }
 
 impl AxisControl {
-    pub const ALL: [AxisControl; 6] = [AxisControl::Roll, AxisControl::Pitch, AxisControl::Yaw, AxisControl::Throttle, AxisControl::SlewX, AxisControl::SlewY];
+    pub const ALL: [AxisControl; 6] = [
+        AxisControl::Roll,
+        AxisControl::Pitch,
+        AxisControl::Yaw,
+        AxisControl::Throttle,
+        AxisControl::SlewX,
+        AxisControl::SlewY,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -184,7 +191,8 @@ mod key_name {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<KeyCode, D::Error> {
         let name = String::deserialize(d)?;
-        crate::input::key_from_name(&name).ok_or_else(|| D::Error::custom(format!("unknown key {name}")))
+        crate::input::key_from_name(&name)
+            .ok_or_else(|| D::Error::custom(format!("unknown key {name}")))
     }
 }
 
@@ -272,28 +280,43 @@ impl InputConfig {
         use crate::input::{Action, Mods};
         if self.version < 1 {
             for k in &mut self.keys {
-                if k.mods == Mods::None && k.key == KeyCode::NumpadEnter && k.target == ButtonTarget::Action(Action::FireWeapon) {
+                if k.mods == Mods::None
+                    && k.key == KeyCode::NumpadEnter
+                    && k.target == ButtonTarget::Action(Action::FireWeapon)
+                {
                     k.target = ButtonTarget::Action(Action::LockCursor);
                 }
             }
-            let slot = |c: &Self, hand: VrHand, input: VrInput| c.vr_buttons.iter().position(|m| m.hand == hand && m.input == input);
+            let slot = |c: &Self, hand: VrHand, input: VrInput| {
+                c.vr_buttons.iter().position(|m| m.hand == hand && m.input == input)
+            };
             if let Some(i) = slot(self, VrHand::Left, VrInput::ThumbClick)
                 && self.vr_buttons[i].target == ButtonTarget::Action(Action::Decoy)
             {
                 self.vr_buttons[i].target = ButtonTarget::Action(Action::LockCursor);
                 if slot(self, VrHand::Right, VrInput::ThumbUp).is_none() {
-                    self.vr_buttons.push(VrButtonMapping { hand: VrHand::Right, input: VrInput::ThumbUp, target: ButtonTarget::Action(Action::Decoy) });
+                    self.vr_buttons.push(VrButtonMapping {
+                        hand: VrHand::Right,
+                        input: VrInput::ThumbUp,
+                        target: ButtonTarget::Action(Action::Decoy),
+                    });
                 }
             }
         }
         if self.version < 3 {
-            let slot = |c: &Self, hand: VrHand, input: VrInput| c.vr_buttons.iter().position(|m| m.hand == hand && m.input == input);
+            let slot = |c: &Self, hand: VrHand, input: VrInput| {
+                c.vr_buttons.iter().position(|m| m.hand == hand && m.input == input)
+            };
             if let Some(i) = slot(self, VrHand::Left, VrInput::Trigger)
                 && self.vr_buttons[i].target == ButtonTarget::Action(Action::BayDoors)
             {
                 self.vr_buttons[i].target = ButtonTarget::Action(Action::Brakes);
                 if slot(self, VrHand::Right, VrInput::ThumbLeft).is_none() {
-                    self.vr_buttons.push(VrButtonMapping { hand: VrHand::Right, input: VrInput::ThumbLeft, target: ButtonTarget::Action(Action::BayDoors) });
+                    self.vr_buttons.push(VrButtonMapping {
+                        hand: VrHand::Right,
+                        input: VrInput::ThumbLeft,
+                        target: ButtonTarget::Action(Action::BayDoors),
+                    });
                 }
             }
         }
@@ -369,7 +392,8 @@ pub struct Device {
 
 impl Device {
     fn active(&self, source: Source, prev: bool) -> bool {
-        let (buttons, axes) = if prev { (&self.prev_buttons, &self.prev_axes) } else { (&self.buttons, &self.axes) };
+        let (buttons, axes) =
+            if prev { (&self.prev_buttons, &self.prev_axes) } else { (&self.buttons, &self.axes) };
         match source {
             Source::Button(c) => buttons.contains(&c),
             Source::AxisPositive(c) => axes.get(&c).is_some_and(|v| *v > 0.5),
@@ -390,7 +414,11 @@ pub struct Hotas {
 
 impl Hotas {
     fn new() -> Self {
-        let gilrs = match gilrs::GilrsBuilder::new().with_default_filters(false).set_update_state(false).build() {
+        let gilrs = match gilrs::GilrsBuilder::new()
+            .with_default_filters(false)
+            .set_update_state(false)
+            .build()
+        {
             Ok(g) => Some(g),
             Err(e) => {
                 warn!("joystick input unavailable: {e}");
@@ -470,7 +498,10 @@ pub fn read_hotas(
     hotas.poll();
     if block.0 {
         for m in &config.buttons {
-            if m.target == ButtonTarget::Action(Action::Menu) && hotas.active(&m.device, m.source, false) && !hotas.active(&m.device, m.source, true) {
+            if m.target == ButtonTarget::Action(Action::Menu)
+                && hotas.active(&m.device, m.source, false)
+                && !hotas.active(&m.device, m.source, true)
+            {
                 actions.write(ActionEvent(Action::Menu));
             }
         }
@@ -485,7 +516,9 @@ pub fn read_hotas(
             AxisControl::Yaw => controls.yaw = crate::input::stronger(controls.yaw, v),
             AxisControl::SlewX => controls.slew.x = crate::input::stronger(controls.slew.x, v),
             AxisControl::SlewY => controls.slew.y = crate::input::stronger(controls.slew.y, v),
-            AxisControl::Throttle if hotas.throttle_applied.is_none_or(|t| (t - v).abs() > 0.01) => {
+            AxisControl::Throttle
+                if hotas.throttle_applied.is_none_or(|t| (t - v).abs() > 0.01) =>
+            {
                 hotas.throttle_applied = Some(v);
                 controls.throttle = Some(v);
             }
@@ -540,8 +573,22 @@ mod tests {
     fn old_mapping_migrates() {
         use crate::input::Mods;
         let mut c = InputConfig { version: 0, ..InputConfig::default() };
-        c.keys.retain(|k| !matches!(k.target, ButtonTarget::Action(Action::LockCursor | Action::SwapSoi | Action::CameraZoomIn | Action::CameraZoomOut)));
-        c.keys.push(KeyMapping { target: ButtonTarget::Action(Action::FireWeapon), mods: Mods::None, key: KeyCode::NumpadEnter });
+        c.keys.retain(|k| {
+            !matches!(
+                k.target,
+                ButtonTarget::Action(
+                    Action::LockCursor
+                        | Action::SwapSoi
+                        | Action::CameraZoomIn
+                        | Action::CameraZoomOut
+                )
+            )
+        });
+        c.keys.push(KeyMapping {
+            target: ButtonTarget::Action(Action::FireWeapon),
+            mods: Mods::None,
+            key: KeyCode::NumpadEnter,
+        });
         c.vr_buttons.retain(|m| !(m.hand == VrHand::Right && m.input == VrInput::ThumbUp));
         for m in &mut c.vr_buttons {
             if m.hand == VrHand::Left && m.input == VrInput::ThumbClick {
@@ -552,13 +599,17 @@ mod tests {
         let mut c: InputConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(c.version, 0);
         assert!(c.migrate());
-        let key = |t| c.keys_for(ButtonTarget::Action(t)).map(|k| (k.mods, k.key)).collect::<Vec<_>>();
+        let key =
+            |t| c.keys_for(ButtonTarget::Action(t)).map(|k| (k.mods, k.key)).collect::<Vec<_>>();
         assert_eq!(key(Action::LockCursor), vec![(Mods::None, KeyCode::NumpadEnter)]);
         assert_eq!(key(Action::SwapSoi), vec![(Mods::Alt, KeyCode::KeyS)]);
         assert_eq!(key(Action::CameraZoomIn), vec![(Mods::None, KeyCode::BracketRight)]);
         assert_eq!(key(Action::FireWeapon), vec![(Mods::None, KeyCode::Enter)]);
         let vr = |h, i| c.vr_buttons.iter().find(|m| m.hand == h && m.input == i).map(|m| m.target);
-        assert_eq!(vr(VrHand::Left, VrInput::ThumbClick), Some(ButtonTarget::Action(Action::LockCursor)));
+        assert_eq!(
+            vr(VrHand::Left, VrInput::ThumbClick),
+            Some(ButtonTarget::Action(Action::LockCursor))
+        );
         assert_eq!(vr(VrHand::Right, VrInput::ThumbUp), Some(ButtonTarget::Action(Action::Decoy)));
         assert!(!c.migrate());
     }
@@ -569,15 +620,31 @@ mod tests {
     fn stick_keys_migrate() {
         use crate::input::Mods;
         let mut c = InputConfig { version: 3, ..InputConfig::default() };
-        c.keys.retain(|k| !matches!(k.target, ButtonTarget::Action(Action::PitchUp | Action::PitchDown | Action::RollLeft | Action::RollRight)));
+        c.keys.retain(|k| {
+            !matches!(
+                k.target,
+                ButtonTarget::Action(
+                    Action::PitchUp | Action::PitchDown | Action::RollLeft | Action::RollRight
+                )
+            )
+        });
         assert!(c.migrate());
-        let key = |c: &InputConfig, t| c.keys_for(ButtonTarget::Action(t)).map(|k| (k.mods, k.key)).collect::<Vec<_>>();
+        let key = |c: &InputConfig, t| {
+            c.keys_for(ButtonTarget::Action(t)).map(|k| (k.mods, k.key)).collect::<Vec<_>>()
+        };
         assert_eq!(key(&c, Action::PitchUp), vec![(Mods::None, KeyCode::ArrowDown)]);
         assert_eq!(key(&c, Action::RollLeft), vec![(Mods::None, KeyCode::ArrowLeft)]);
         assert!(key(&c, Action::YawLeft).is_empty(), "no rudder key by default");
 
         let mut c = InputConfig { version: 3, ..InputConfig::default() };
-        c.keys.retain(|k| !matches!(k.target, ButtonTarget::Action(Action::PitchUp | Action::PitchDown | Action::RollLeft | Action::RollRight)));
+        c.keys.retain(|k| {
+            !matches!(
+                k.target,
+                ButtonTarget::Action(
+                    Action::PitchUp | Action::PitchDown | Action::RollLeft | Action::RollRight
+                )
+            )
+        });
         c.bind_key(ButtonTarget::Action(Action::RollLeft), Mods::None, KeyCode::KeyA);
         c.migrate();
         assert_eq!(key(&c, Action::RollLeft), vec![(Mods::None, KeyCode::KeyA)]);
@@ -591,7 +658,11 @@ mod tests {
         assert_eq!(c.axes.len(), 1, "an axis drives one control");
         c.bind_button(ButtonTarget::Gun, "Stick".into(), Source::Button(0x10120));
         c.bind_button(ButtonTarget::Action(Action::Flare), "Stick".into(), Source::Button(0x10120));
-        c.bind_button(ButtonTarget::Action(Action::Chaff), "Stick".into(), Source::AxisNegative(0x30010));
+        c.bind_button(
+            ButtonTarget::Action(Action::Chaff),
+            "Stick".into(),
+            Source::AxisNegative(0x30010),
+        );
         assert_eq!(c.buttons.len(), 2, "a button does one thing");
         c.bind_vr(VrHand::Left, VrInput::Trigger, Some(ButtonTarget::Gun));
         assert_eq!(c.vr_button(VrHand::Left, VrInput::Trigger), Some(ButtonTarget::Gun));
@@ -605,7 +676,10 @@ mod tests {
         assert_eq!(partial.vr_buttons, default_vr_buttons());
         assert_eq!(partial.keys, crate::input::default_key_mappings());
         c.bind_key(ButtonTarget::Action(Action::Chaff), Mods::None, KeyCode::Digit1);
-        assert!(c.keys_for(ButtonTarget::Action(Action::Flare)).next().is_none(), "a key does one thing");
+        assert!(
+            c.keys_for(ButtonTarget::Action(Action::Flare)).next().is_none(),
+            "a key does one thing"
+        );
         assert_eq!(c.keys_for(ButtonTarget::Action(Action::Chaff)).count(), 2);
         let back: InputConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
         assert_eq!(back, c);
@@ -613,7 +687,13 @@ mod tests {
 
     #[test]
     fn axis_shaping() {
-        let m = AxisMapping { control: AxisControl::Roll, device: String::new(), code: 0, invert: false, deadzone: 0.1 };
+        let m = AxisMapping {
+            control: AxisControl::Roll,
+            device: String::new(),
+            code: 0,
+            invert: false,
+            deadzone: 0.1,
+        };
         assert_eq!(m.output(0.05), 0.0);
         assert_eq!(m.output(1.0), 1.0);
         assert!((m.output(-0.55) + 0.5).abs() < 1e-6);

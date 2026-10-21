@@ -77,7 +77,10 @@ impl Frame {
     }
 
     fn contains(&self, p: DVec2) -> bool {
-        p.x >= self.min.x && p.y >= self.min.y && p.x < self.min.x + BLOCK && p.y < self.min.y + BLOCK
+        p.x >= self.min.x
+            && p.y >= self.min.y
+            && p.x < self.min.x + BLOCK
+            && p.y < self.min.y + BLOCK
     }
 }
 
@@ -138,7 +141,15 @@ fn belt_rect(sc: &Scenery, a: DVec2, b: DVec2) -> Option<(DVec2, DVec2)> {
 fn farmland(sc: &Scenery, f: &Frame, min: DVec2, max: DVec2, g: &mut Geom) {
     let Some(style) = &sc.style else { return };
     let quad = |g: &mut Geom, lo: DVec2, hi: DVec2, y: f32, c: u8| {
-        g.ground(c, &[f.at(lo, y), f.at(DVec2::new(hi.x, lo.y), y), f.at(hi, y), f.at(DVec2::new(lo.x, hi.y), y)]);
+        g.ground(
+            c,
+            &[
+                f.at(lo, y),
+                f.at(DVec2::new(hi.x, lo.y), y),
+                f.at(hi, y),
+                f.at(DVec2::new(lo.x, hi.y), y),
+            ],
+        );
     };
     for (sx, sy) in fields::sections(min, max - 1.0) {
         let corner = DVec2::new(sx as f64, sy as f64) * fields::SECTION;
@@ -189,7 +200,10 @@ fn roads(net: &Network, f: &Frame, g: &mut Geom) {
         let mid = (a + b) * 0.5;
         let lit = match road.kind {
             RoadKind::Street => true,
-            _ => net.town_at(mid, 1.0).is_some() || net.towns.iter().any(|t| t.c.distance(mid) < t.r + 350.0),
+            _ => {
+                net.town_at(mid, 1.0).is_some()
+                    || net.towns.iter().any(|t| t.c.distance(mid) < t.r + 350.0)
+            }
         };
         if !lit {
             continue;
@@ -217,10 +231,19 @@ fn roads(net: &Network, f: &Frame, g: &mut Geom) {
 
 /// Ground surface of segment `s` of a polyline, `half` wide on each side, with mitred ends so
 /// consecutive segments join without gaps.
-pub(super) fn strip(g: &mut Geom, f: &Frame, pts: &[DVec2], s: usize, half: f64, y: f32, colour: u8) {
+pub(super) fn strip(
+    g: &mut Geom,
+    f: &Frame,
+    pts: &[DVec2],
+    s: usize,
+    half: f64,
+    y: f32,
+    colour: u8,
+) {
     let side = |i: usize| -> DVec2 {
         let prev = if i > 0 { (pts[i] - pts[i - 1]).normalize_or_zero() } else { DVec2::ZERO };
-        let next = if i + 1 < pts.len() { (pts[i + 1] - pts[i]).normalize_or_zero() } else { DVec2::ZERO };
+        let next =
+            if i + 1 < pts.len() { (pts[i + 1] - pts[i]).normalize_or_zero() } else { DVec2::ZERO };
         let n = (prev + next).normalize_or_zero().perp();
         let cos = n.dot((if next != DVec2::ZERO { next } else { prev }).perp()).max(0.5);
         n * half / cos
@@ -313,7 +336,10 @@ pub(super) fn building(b: &Building, f: &Frame, g: &mut Geom) {
             g.block(b.wall, b.wall, &rect(c, d, 6.0, 6.0), 0.0, top);
             let rings = [(4.6, 0.0), (5.6, 2.5), (5.0, 5.5), (3.2, 7.8)];
             for w in rings.windows(2) {
-                let (lo, hi) = (ring(c + Vec3::Y * (top + w[0].1), w[0].0, 10, 0.0), ring(c + Vec3::Y * (top + w[1].1), w[1].0, 10, 0.0));
+                let (lo, hi) = (
+                    ring(c + Vec3::Y * (top + w[0].1), w[0].0, 10, 0.0),
+                    ring(c + Vec3::Y * (top + w[1].1), w[1].0, 10, 0.0),
+                );
                 for i in 0..10 {
                     let j = (i + 1) % 10;
                     let out = (lo[i] + lo[j] + hi[i] + hi[j]) * 0.25 - (c + Vec3::Y * (top + 4.0));
@@ -346,7 +372,11 @@ pub(super) fn building(b: &Building, f: &Frame, g: &mut Geom) {
         Kind::Sign => {
             let foot = rect(c, d, b.l, b.w);
             g.block(b.wall, b.roof_colour, &foot, 0.4, b.h);
-            g.face(b.roof_colour, &foot.iter().map(|p| *p + Vec3::Y * 0.4).collect::<Vec<_>>(), -Vec3::Y);
+            g.face(
+                b.roof_colour,
+                &foot.iter().map(|p| *p + Vec3::Y * 0.4).collect::<Vec<_>>(),
+                -Vec3::Y,
+            );
         }
     }
 }
@@ -387,7 +417,11 @@ fn ruin(b: &Building, c: Vec3, d: Vec2, rng: &mut Rng, g: &mut Geom) {
             prev = h1;
             g.face(wall, &[a, e, e + Vec3::Y * h1, a + Vec3::Y * h0], out);
             let inset = -out * 0.3;
-            g.face(SOOT, &[a + inset, e + inset, e + inset + Vec3::Y * h1, a + inset + Vec3::Y * h0], -out);
+            g.face(
+                SOOT,
+                &[a + inset, e + inset, e + inset + Vec3::Y * h1, a + inset + Vec3::Y * h0],
+                -out,
+            );
         }
     }
     // A slab hanging from a floor that still stands.
@@ -396,18 +430,28 @@ fn ruin(b: &Building, c: Vec3, d: Vec2, rng: &mut Rng, g: &mut Geom) {
         let x0 = rng.range(-0.45, 0.1) as f32 * b.l;
         let x1 = x0 + rng.range(0.15, 0.35) as f32 * b.l;
         let drop = rng.range(1.5, 5.0) as f32;
-        let at = |x: f32, s: f32, dy: f32| c + along * x + across * s * (b.w * 0.5 - 0.4) + Vec3::Y * (y - dy);
-        let pts = [at(x0, -1.0, 0.0), at(x1, -1.0, drop), at(x1, 1.0, drop * 0.4), at(x0, 1.0, 0.0)];
+        let at = |x: f32, s: f32, dy: f32| {
+            c + along * x + across * s * (b.w * 0.5 - 0.4) + Vec3::Y * (y - dy)
+        };
+        let pts =
+            [at(x0, -1.0, 0.0), at(x1, -1.0, drop), at(x1, 1.0, drop * 0.4), at(x0, 1.0, 0.0)];
         g.face(0xE6, &pts, Vec3::Y);
         g.face(SOOT, &pts, -Vec3::Y);
     }
     // Rubble inside and spilling out.
     let mounds = 2 + (b.l / 25.0) as usize;
     for _ in 0..mounds {
-        let p = c + along * rng.range(-0.5, 0.5) as f32 * b.l + across * rng.range(-0.7, 0.7) as f32 * b.w;
+        let p = c
+            + along * rng.range(-0.5, 0.5) as f32 * b.l
+            + across * rng.range(-0.7, 0.7) as f32 * b.w;
         let r = rng.range(2.5, 6.0) as f32 + b.w * 0.15;
         let h = (b.h * (1.0 - s0.min(s1)) * 0.25 + rng.range(0.8, 2.5) as f32).min(r * 0.9);
-        g.spire(rng.pick(&[RUBBLE, 0xE7, 0xE9, 0xEA]), &ring(p, r, 5, rng.range(0.0, 6.3) as f32), 0.0, p + Vec3::Y * h);
+        g.spire(
+            rng.pick(&[RUBBLE, 0xE7, 0xE9, 0xEA]),
+            &ring(p, r, 5, rng.range(0.0, 6.3) as f32),
+            0.0,
+            p + Vec3::Y * h,
+        );
     }
 }
 
@@ -426,7 +470,10 @@ fn windows(b: &Building, c: Vec3, d: Vec2, rng: &mut Rng, g: &mut Geom) {
         let side = if rng.chance(0.5) { 1.0 } else { -1.0 };
         let floor = (rng.f() * floors as f64).floor() as f32;
         let x = rng.range(-0.4, 0.4) as f32 * b.l;
-        g.lamp(WINDOW, c + along * x + across * side * (b.w * 0.5 + 0.15) + Vec3::Y * (floor * 3.0 + 1.6));
+        g.lamp(
+            WINDOW,
+            c + along * x + across * side * (b.w * 0.5 + 0.15) + Vec3::Y * (floor * 3.0 + 1.6),
+        );
     }
 }
 
@@ -436,8 +483,13 @@ fn lattice(g: &mut Geom, c: Vec3, along: Vec3, sections: &[(f32, f32)], legs: us
         let phase = along.z.atan2(along.x);
         (0..legs)
             .map(|i| {
-                let a = phase + TAU / 8.0 * if legs == 4 { 1.0 } else { 0.0 } + i as f32 * TAU / legs as f32;
-                c + Vec3::new(a.cos(), 0.0, a.sin()) * hw * if legs == 4 { std::f32::consts::SQRT_2 } else { 1.0 } + Vec3::Y * y
+                let a = phase
+                    + TAU / 8.0 * if legs == 4 { 1.0 } else { 0.0 }
+                    + i as f32 * TAU / legs as f32;
+                c + Vec3::new(a.cos(), 0.0, a.sin())
+                    * hw
+                    * if legs == 4 { std::f32::consts::SQRT_2 } else { 1.0 }
+                    + Vec3::Y * y
             })
             .collect()
     };
@@ -462,7 +514,12 @@ fn lattice(g: &mut Geom, c: Vec3, along: Vec3, sections: &[(f32, f32)], legs: us
 /// Conductor attachment points of a pylon (relative, `across` = horizontal unit across the line).
 fn conductors(big: bool, across: Vec3) -> Vec<Vec3> {
     if big {
-        vec![across * -8.5 + Vec3::Y * 23.0, across * 8.5 + Vec3::Y * 23.0, across * -5.5 + Vec3::Y * 29.0, across * 5.5 + Vec3::Y * 29.0]
+        vec![
+            across * -8.5 + Vec3::Y * 23.0,
+            across * 8.5 + Vec3::Y * 23.0,
+            across * -5.5 + Vec3::Y * 29.0,
+            across * 5.5 + Vec3::Y * 29.0,
+        ]
     } else {
         vec![across * -1.1 + Vec3::Y * 8.6, across * 1.1 + Vec3::Y * 8.6]
     }
@@ -528,7 +585,10 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
         for i in 0..n {
             let (gx, gy) = (gx0 + i, gy0 + j);
             let mut rng = Rng::new(hash(seed, gx, gy, 9));
-            let p = DVec2::new((gx as f64 + rng.range(0.1, 0.9)) * TREE_GRID, (gy as f64 + rng.range(0.1, 0.9)) * TREE_GRID);
+            let p = DVec2::new(
+                (gx as f64 + rng.range(0.1, 0.9)) * TREE_GRID,
+                (gy as f64 + rng.range(0.1, 0.9)) * TREE_GRID,
+            );
             // The theater's own woods are dense, elsewhere the noise decides.
             let wood = sc.ground.is_forest(p, 3.0);
             let cover = noise(seed, p, 1600.0);
@@ -543,7 +603,10 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
             if !tree && !bush {
                 continue;
             }
-            if !(wood || sc.ground.is_free(p, 3.0)) || !sc.net.road_clear(p, 4.0) || !sc.net.building_clear(p, 3.0) {
+            if !(wood || sc.ground.is_free(p, 3.0))
+                || !sc.net.road_clear(p, 4.0)
+                || !sc.net.building_clear(p, 3.0)
+            {
                 continue;
             }
             let c = f.at(p, 0.0);
@@ -552,7 +615,12 @@ fn trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
             }
             if bush {
                 let s = rng.range(1.5, 3.0) as f32;
-                g.spire(0xAC, &ring(c, s, 5, rng.range(0.0, 6.3) as f32), 0.0, c + Vec3::Y * s * 1.2);
+                g.spire(
+                    0xAC,
+                    &ring(c, s, 5, rng.range(0.0, 6.3) as f32),
+                    0.0,
+                    c + Vec3::Y * s * 1.2,
+                );
                 continue;
             }
             let h = rng.range(8.0, 18.0) as f32;
@@ -584,8 +652,15 @@ fn belt_trees(sc: &Scenery, f: &Frame, g: &mut Geom, far: bool) {
             let mut k = (s0 / 8.0).ceil();
             while k * 8.0 < s1 {
                 for row in [-1.0, 1.0] {
-                    let mut rng = Rng::new(hash(style.seed, (a.x + k * 8.0 * dir.x) as i64, (a.y + k * 8.0 * dir.y) as i64, row as i64 + 20));
-                    let p = a + dir * (k * 8.0 + row * 2.0 + rng.range(-1.5, 1.5)) + side * row * rng.range(2.0, 4.5);
+                    let mut rng = Rng::new(hash(
+                        style.seed,
+                        (a.x + k * 8.0 * dir.x) as i64,
+                        (a.y + k * 8.0 * dir.y) as i64,
+                        row as i64 + 20,
+                    ));
+                    let p = a
+                        + dir * (k * 8.0 + row * 2.0 + rng.range(-1.5, 1.5))
+                        + side * row * rng.range(2.0, 4.5);
                     if !f.contains(p) || rng.chance(0.08) || !sc.net.road_clear(p, 4.0) {
                         continue;
                     }
@@ -631,7 +706,8 @@ fn tree_at(g: &mut Geom, rng: &mut Rng, kind: Tree, c: Vec3, h: f32, phase: f32,
             g.spire(col, &crown, mid, c + Vec3::Y * h * 0.28);
         }
         Tree::Palm => {
-            let lean = Vec3::new(rng.range(-1.0, 1.0) as f32, 0.0, rng.range(-1.0, 1.0) as f32) * h * 0.08;
+            let lean =
+                Vec3::new(rng.range(-1.0, 1.0) as f32, 0.0, rng.range(-1.0, 1.0) as f32) * h * 0.08;
             let top = c + lean + Vec3::Y * h;
             let base = ring(c, 0.35, 3, phase);
             for k in 0..3 {
@@ -652,5 +728,5 @@ fn tree_at(g: &mut Geom, rng: &mut Rng, kind: Tree, c: Vec3, h: f32, phase: f32,
                 g.face(0xA8, &[top, tip, mid - side], -Vec3::Y);
             }
         }
-            }
+    }
 }

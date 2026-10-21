@@ -7,8 +7,8 @@ use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
 
 use crate::models::{ModelAssets, ModelLibrary, ModelState};
-use crate::settings::{AppState, SetupSet};
 use crate::palette::{Palette, VgaPalette};
+use crate::settings::{AppState, SetupSet};
 
 pub struct ViewerPlugin;
 
@@ -16,7 +16,10 @@ impl Plugin for ViewerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ViewerState>()
             .add_systems(OnEnter(AppState::Viewer), setup.in_set(SetupSet::Spawn))
-            .add_systems(Update, (navigate, respawn, orbit, label).chain().run_if(in_state(AppState::Viewer)));
+            .add_systems(
+                Update,
+                (navigate, respawn, orbit, label).chain().run_if(in_state(AppState::Viewer)),
+            );
     }
 }
 
@@ -97,7 +100,10 @@ fn setup(
         Transform::from_xyz(0.0, 10.0, 60.0),
     ));
     commands.insert_resource(ClearColor(palette.color(1)));
-    commands.spawn((DirectionalLight { illuminance: 3000.0, ..default() }, Transform::from_xyz(1.0, 2.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y)));
+    commands.spawn((
+        DirectionalLight { illuminance: 3000.0, ..default() },
+        Transform::from_xyz(1.0, 2.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y),
+    ));
     commands.spawn((
         Text::new(""),
         ViewerLabel,
@@ -160,7 +166,12 @@ fn navigate(
     }
 }
 
-fn respawn(mut commands: Commands, mut state: ResMut<ViewerState>, library: Res<ModelLibrary>, assets: ModelAssets) {
+fn respawn(
+    mut commands: Commands,
+    mut state: ResMut<ViewerState>,
+    library: Res<ModelLibrary>,
+    assets: ModelAssets,
+) {
     if !state.dirty || state.files.is_empty() {
         return;
     }
@@ -191,10 +202,15 @@ fn orbit(
     }
     state.distance = (state.distance * (1.0 - scroll.delta.y * 0.1)).clamp(1.0, 100_000.0);
     let rot = Quat::from_euler(EulerRot::YXZ, state.yaw, -state.pitch, 0.0);
-    **cam = Transform::from_translation(rot * Vec3::new(0.0, 0.0, state.distance)).looking_at(Vec3::ZERO, Vec3::Y);
+    **cam = Transform::from_translation(rot * Vec3::new(0.0, 0.0, state.distance))
+        .looking_at(Vec3::ZERO, Vec3::Y);
 }
 
-fn label(state: Res<ViewerState>, palette: Res<Palette>, mut text: Single<&mut Text, With<ViewerLabel>>) {
+fn label(
+    state: Res<ViewerState>,
+    palette: Res<Palette>,
+    mut text: Single<&mut Text, With<ViewerLabel>>,
+) {
     if std::env::args().any(|a| a == "--no-label") {
         text.0.clear();
         return;

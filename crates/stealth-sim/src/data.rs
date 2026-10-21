@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use stealth_formats::{THEATERS, terrain};
 use serde::{Deserialize, Serialize};
+use stealth_formats::{THEATERS, terrain};
 
 use crate::math::Trig;
 
@@ -122,10 +122,11 @@ pub struct SimData {
 }
 
 impl SimData {
-
     /// Read `sim.json` and `theaters/<code>.json` from `dir` (`assets/sim`).
     pub fn load_json(dir: &Path) -> Result<Self> {
-        let read = |name: &str| std::fs::read(dir.join(name)).with_context(|| format!("{}", dir.join(name).display()));
+        let read = |name: &str| {
+            std::fs::read(dir.join(name)).with_context(|| format!("{}", dir.join(name).display()))
+        };
         let mut d: Self = serde_json::from_slice(&read("sim.json")?).context("sim.json")?;
         d.theaters = THEATERS
             .iter()
@@ -142,7 +143,10 @@ impl SimData {
         std::fs::create_dir_all(dir.join("theaters"))?;
         std::fs::write(dir.join("sim.json"), serde_json::to_string_pretty(self)?)?;
         for (t, code) in self.theaters.iter().zip(THEATERS) {
-            std::fs::write(dir.join(format!("theaters/{}.json", code.to_ascii_lowercase())), serde_json::to_string(t)?)?;
+            std::fs::write(
+                dir.join(format!("theaters/{}.json", code.to_ascii_lowercase())),
+                serde_json::to_string(t)?,
+            )?;
         }
         Ok(())
     }

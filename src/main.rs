@@ -1,7 +1,7 @@
 mod aircraft;
 mod asset_path;
-mod avionics;
 mod autoshot;
+mod avionics;
 mod camera;
 mod canvas;
 mod career;
@@ -13,9 +13,9 @@ mod csar_view;
 mod debrief;
 mod dots;
 mod explosions;
-mod flight_menu;
 mod fires;
 mod flight;
+mod flight_menu;
 mod font;
 mod freecam;
 mod hotas;
@@ -26,8 +26,8 @@ mod keyboard_layout;
 mod lighting;
 mod lightning;
 mod loadout;
-mod mfd;
 mod menu;
+mod mfd;
 mod mission;
 mod models;
 mod palette;
@@ -41,19 +41,19 @@ mod rwr;
 mod scenery;
 mod script;
 mod settings;
+mod sim_render;
 mod sound;
 mod stage;
-mod sim_render;
 mod terrain;
 mod trackcam;
 mod trails;
 mod viewer;
-mod weather;
-mod world;
 #[cfg(feature = "xr")]
 mod vr_menu;
+mod weather;
 #[cfg(windows)]
 mod win_console;
+mod world;
 #[cfg(feature = "xr")]
 mod xr;
 
@@ -71,33 +71,40 @@ fn main() {
         prefs::Prefs::load().apply(&mut menu_state, &mut settings);
     }
     let mut app = App::new();
-    let plugins = DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: "Stealth Mission 89".into(),
-            // Wayland app id / X11 class, matching packaging/linux/stealth-mission-89.desktop.
-            name: Some("stealth-mission-89".into()),
-            // `--window-size WxH` (screenshots).
-            resolution: std::env::args()
-                .collect::<Vec<_>>()
-                .windows(2)
-                .find(|w| w[0] == "--window-size")
-                .and_then(|w| w[1].split_once('x').and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.parse::<u32>().ok()?))))
-                .map_or_else(Default::default, |(w, h)| bevy::window::WindowResolution::new(w, h)),
-            // --novsync: uncapped frame rate (performance measurements).
-            present_mode: if std::env::args().any(|a| a == "--novsync") {
-                bevy::window::PresentMode::AutoNoVsync
-            } else {
-                bevy::window::PresentMode::AutoVsync
-            },
+    let plugins = DefaultPlugins
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Stealth Mission 89".into(),
+                // Wayland app id / X11 class, matching packaging/linux/stealth-mission-89.desktop.
+                name: Some("stealth-mission-89".into()),
+                // `--window-size WxH` (screenshots).
+                resolution: std::env::args()
+                    .collect::<Vec<_>>()
+                    .windows(2)
+                    .find(|w| w[0] == "--window-size")
+                    .and_then(|w| {
+                        w[1].split_once('x').and_then(|(a, b)| {
+                            Some((a.parse::<u32>().ok()?, b.parse::<u32>().ok()?))
+                        })
+                    })
+                    .map_or_else(Default::default, |(w, h)| {
+                        bevy::window::WindowResolution::new(w, h)
+                    }),
+                // --novsync: uncapped frame rate (performance measurements).
+                present_mode: if std::env::args().any(|a| a == "--novsync") {
+                    bevy::window::PresentMode::AutoNoVsync
+                } else {
+                    bevy::window::PresentMode::AutoVsync
+                },
+                ..default()
+            }),
             ..default()
-        }),
-        ..default()
-    })
-    .set(bevy::log::LogPlugin {
-        filter: format!("{}{}", bevy::log::DEFAULT_FILTER, profile::log_filter()),
-        custom_layer: profile::log_layer,
-        ..default()
-    });
+        })
+        .set(bevy::log::LogPlugin {
+            filter: format!("{}{}", bevy::log::DEFAULT_FILTER, profile::log_filter()),
+            custom_layer: profile::log_layer,
+            ..default()
+        });
     // --vr: OpenXR replaces the render plugin (the window stays for the menu / mirror).
     #[cfg(feature = "xr")]
     if settings.vr {
@@ -114,29 +121,51 @@ fn main() {
     }
     app.add_plugins(crash_log::CrashLogPlugin);
     app.insert_state(settings.initial_state)
-    .insert_resource(settings.clone())
-    .insert_resource(menu_state)
-    .insert_resource(MissionSetup::from_args())
-    .insert_resource(flight::SimTables::load())
-    .add_plugins(settings::configure)
-    .add_plugins((palette::PalettePlugin, models::ModelsPlugin, dots::DotsPlugin, canvas::CanvasPlugin))
-    .add_plugins((menu::MenuPlugin, debrief::DebriefPlugin, viewer::ViewerPlugin))
-    .add_plugins((
-        world::WorldPlugin,
-        freecam::FreeCamPlugin,
-        input::InputPlugin,
-        keyboard_layout::KeyboardLayoutPlugin,
-        cockpit::CockpitPlugin,
-        flight::FlightPlugin,
-        camera::CameraPlugin,
-        player::PlayerPlugin,
-        script::ScriptPlugin,
-        sound::SoundPlugin,
-    ))
-    .add_plugins((hud::HudPlugin, mfd::MfdPlugin, avionics::AvionicsPlugin, panel::PanelPlugin))
-    .add_plugins((combat::CombatPlugin, sim_render::SimRenderPlugin, trackcam::TrackCamPlugin, trails::TrailsPlugin, explosions::ExplosionsPlugin, flight_menu::FlightMenuPlugin))
-    .add_plugins((lighting::LightingPlugin, cockpit3d::Cockpit3dPlugin, scenery::SceneryPlugin, weather::WeatherPlugin))
-    .add_plugins((fires::FiresPlugin, terrain::TerrainPlugin, csar_view::CsarViewPlugin, stage::StagePlugin));
+        .insert_resource(settings.clone())
+        .insert_resource(menu_state)
+        .insert_resource(MissionSetup::from_args())
+        .insert_resource(flight::SimTables::load())
+        .add_plugins(settings::configure)
+        .add_plugins((
+            palette::PalettePlugin,
+            models::ModelsPlugin,
+            dots::DotsPlugin,
+            canvas::CanvasPlugin,
+        ))
+        .add_plugins((menu::MenuPlugin, debrief::DebriefPlugin, viewer::ViewerPlugin))
+        .add_plugins((
+            world::WorldPlugin,
+            freecam::FreeCamPlugin,
+            input::InputPlugin,
+            keyboard_layout::KeyboardLayoutPlugin,
+            cockpit::CockpitPlugin,
+            flight::FlightPlugin,
+            camera::CameraPlugin,
+            player::PlayerPlugin,
+            script::ScriptPlugin,
+            sound::SoundPlugin,
+        ))
+        .add_plugins((hud::HudPlugin, mfd::MfdPlugin, avionics::AvionicsPlugin, panel::PanelPlugin))
+        .add_plugins((
+            combat::CombatPlugin,
+            sim_render::SimRenderPlugin,
+            trackcam::TrackCamPlugin,
+            trails::TrailsPlugin,
+            explosions::ExplosionsPlugin,
+            flight_menu::FlightMenuPlugin,
+        ))
+        .add_plugins((
+            lighting::LightingPlugin,
+            cockpit3d::Cockpit3dPlugin,
+            scenery::SceneryPlugin,
+            weather::WeatherPlugin,
+        ))
+        .add_plugins((
+            fires::FiresPlugin,
+            terrain::TerrainPlugin,
+            csar_view::CsarViewPlugin,
+            stage::StagePlugin,
+        ));
     mission::from_args(&mut app);
     if let Some(scale) = std::env::args()
         .collect::<Vec<_>>()

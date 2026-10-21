@@ -21,7 +21,13 @@ fn data() -> &'static Data {
 }
 
 fn mission(d: &Data, theater: usize, seed: u16, opponents: u8) -> Mission {
-    let s = MissionSettings { theater, roe: 2, opponents, kind: MissionKind::Strike, ..Default::default() };
+    let s = MissionSettings {
+        theater,
+        roe: 2,
+        opponents,
+        kind: MissionKind::Strike,
+        ..Default::default()
+    };
     stealth_mission::generate(&d.gdata, &s, Seed::Srand(seed)).unwrap()
 }
 
@@ -37,7 +43,9 @@ fn sandbox(sim: &mut Sim, m: &Mission) -> (i32, i32) {
         u.flags = 0;
     }
     let g = &m.world.grid;
-    let c = (0..256).find(|&i| g[i] & 0x0C >= 8 && (3..13).contains(&(i % 16)) && (3..13).contains(&(i / 16))).expect("flat cell");
+    let c = (0..256)
+        .find(|&i| g[i] & 0x0C >= 8 && (3..13).contains(&(i % 16)) && (3..13).contains(&(i / 16)))
+        .expect("flat cell");
     (((c % 16) as i32) * 2048 + 1024, ((c / 16) as i32) * 2048 + 1024)
 }
 
@@ -74,8 +82,19 @@ fn sim_data_tables() {
     assert_eq!((s.threats[4].lethality, s.threats[4].tier, s.threats[4].flags), (320, 7, 1));
     assert_eq!(s.threats[21].lethality, 500);
     assert_eq!(s.aircraft[4].name, "Su-27");
-    assert_eq!((s.aircraft[2].max_speed, s.aircraft[2].agility, s.aircraft[2].radar, s.aircraft[2].model), (700, 5, 19, 16));
-    assert_eq!((s.missiles[1].lock_range, s.missiles[1].max_speed, s.missiles[1].class, s.missiles[1].turn), (125, 2000, 1, 4));
+    assert_eq!(
+        (s.aircraft[2].max_speed, s.aircraft[2].agility, s.aircraft[2].radar, s.aircraft[2].model),
+        (700, 5, 19, 16)
+    );
+    assert_eq!(
+        (
+            s.missiles[1].lock_range,
+            s.missiles[1].max_speed,
+            s.missiles[1].class,
+            s.missiles[1].turn
+        ),
+        (125, 2000, 1, 4)
+    );
     assert_eq!(s.missiles[38].name, "Equip.");
     assert_eq!(s.weapons[6].long_name, "Paveway");
     assert_eq!(s.weapons[16].spec, -1);
@@ -104,7 +123,9 @@ fn site_detects_and_launches() {
         p.cmd = Commands::default();
         for e in &ev {
             match e {
-                SimEvent::MissileLaunched { slot, spec, launcher: Launcher::Site(3) } => launched = Some((f, *slot, *spec)),
+                SimEvent::MissileLaunched { slot, spec, launcher: Launcher::Site(3) } => {
+                    launched = Some((f, *slot, *spec))
+                }
                 SimEvent::Message(s) if s.ends_with(" detected") => detected_msg = true,
                 _ => {}
             }
@@ -379,7 +400,17 @@ fn aim9_shot(d: &Data, weather: Weather) -> bool {
     // A slow An-72 (no radar) 3 km ahead, flying north like the player.
     {
         let u = &mut sim.flights_mut()[1];
-        *u = FlightUnit { x: mx, y: my - 64 * 3, alt: 5000, spec: 9, flags: 0x43, speed: 200, timer: 30000, wp: 3, ..Default::default() };
+        *u = FlightUnit {
+            x: mx,
+            y: my - 64 * 3,
+            alt: 5000,
+            spec: 9,
+            flags: 0x43,
+            speed: 200,
+            timer: 30000,
+            wp: 3,
+            ..Default::default()
+        };
         u.wx = u.x << 5;
         u.wy = u.y << 5;
     }
@@ -420,7 +451,10 @@ fn aim9_shot(d: &Data, weather: Weather) -> bool {
 #[test]
 fn bomb_vs_target_uses_effectiveness_table() {
     let d = data();
-    let (m, seed) = (1..400u16).map(|s| (mission(d, 3, s, 0), s)).find(|(m, _)| m.primary.mission_type == 2).unwrap();
+    let (m, seed) = (1..400u16)
+        .map(|s| (mission(d, 3, s, 0), s))
+        .find(|(m, _)| m.primary.mission_type == 2)
+        .unwrap();
     let t = m.primary.object_index as usize;
     let cat = (m.world.buf7[m.world.objects[t].shape()] & 0xF) as i32;
     // Retarded weapons (spec 29): Rockeye 7, Durandal 8, Snakeye 10, IN Cluster 14, Minelets 15.
@@ -456,7 +490,11 @@ fn bomb_vs_target_uses_effectiveness_table() {
         if expect_kill {
             assert!(sim.objectives().primary_done);
             assert_eq!(sim.objectives().waypoint, 2);
-            assert!(sim.event_log().iter().any(|e| e.kind & 0x80 != 0 && matches!(e.kind & 0x3F, 1 | 12)));
+            assert!(
+                sim.event_log()
+                    .iter()
+                    .any(|e| e.kind & 0x80 != 0 && matches!(e.kind & 0x3F, 1 | 12))
+            );
             let r = sim.mission_report();
             assert!(r.primary_done && r.training && r.ground_kills >= 1);
             assert!(r.timeline.iter().any(|t| t.text.ends_with("(primary)")), "{:?}", r.timeline);
@@ -467,7 +505,11 @@ fn bomb_vs_target_uses_effectiveness_table() {
             let json = serde_json::to_string(&damage).unwrap();
             let back: WorldDamage = serde_json::from_str(&json).unwrap();
             assert_eq!(back, damage);
-            let next = Sim::with_options(&d.sim, &m, SimOptions { prior_damage: Some(back), ..Default::default() });
+            let next = Sim::with_options(
+                &d.sim,
+                &m,
+                SimOptions { prior_damage: Some(back), ..Default::default() },
+            );
             if t >= 3 {
                 assert!(next.objects()[t].flags & oflags::DESTROYED != 0);
             }
@@ -529,7 +571,10 @@ fn ten_minute_missions_all_theaters() {
                 // Climb out and fly towards the primary, then the secondary.
                 let wp = m.waypoints[if f < 15 * 300 { 1 } else { 2 }];
                 let (tx, ty) = Sim::map_to_world(wp.x, wp.y);
-                let h = stealth_sim::math::bearing(((tx as i64 - wx) >> 6) as i32, ((ty as i64 - wy) >> 6) as i32);
+                let h = stealth_sim::math::bearing(
+                    ((tx as i64 - wx) >> 6) as i32,
+                    ((ty as i64 - wy) >> 6) as i32,
+                );
                 p.heading = h as u16;
                 alt = (alt + 20).min(if f < 15 * 400 { 3000 } else { 300 });
                 p.altitude = alt as u16;
@@ -572,12 +617,17 @@ fn ten_minute_missions_all_theaters() {
                     break;
                 }
             }
-            eprintln!("theater {th}: {} s, end {:?}, launches {}, log {}", sim.mission_tick(), sim.mission_end(), sim.launches, sim.event_log().len());
+            eprintln!(
+                "theater {th}: {} s, end {:?}, launches {}, log {}",
+                sim.mission_tick(),
+                sim.mission_end(),
+                sim.launches,
+                sim.event_log().len()
+            );
             assert!(sim.mission_tick() > 0);
         }
     }
 }
-
 
 /// Supply drop: unreachable in the original (spec vs class test), fixed behind `fix_original_bugs`.
 #[test]
@@ -585,7 +635,11 @@ fn supply_drop_fixed_and_original() {
     let d = data();
     let m = mission(d, 3, 0x1234, 1);
     for fix in [true, false] {
-        let mut sim = Sim::with_options(&d.sim, &m, SimOptions { fix_original_bugs: fix, ..Default::default() });
+        let mut sim = Sim::with_options(
+            &d.sim,
+            &m,
+            SimOptions { fix_original_bugs: fix, ..Default::default() },
+        );
         sim.set_training(true);
         let o = sim.objects()[5];
         sim.set_deadline(1000);
@@ -642,7 +696,13 @@ fn nearest_target_skips_friendlies_and_waits_for_hud_mode() {
 
 fn drone_mission(d: &Data, seed: u16, opponents: u8) -> Mission {
     let theater = stealth_formats::ALL_THEATERS.iter().position(|t| *t == "UA").unwrap();
-    let s = MissionSettings { theater, roe: 1, opponents, kind: MissionKind::DroneDefense, ..Default::default() };
+    let s = MissionSettings {
+        theater,
+        roe: 1,
+        opponents,
+        kind: MissionKind::DroneDefense,
+        ..Default::default()
+    };
     stealth_mission::generate(&d.gdata, &s, Seed::Srand(seed)).unwrap()
 }
 
@@ -658,7 +718,8 @@ fn unopposed_drone_wave_gets_through() {
     let p = player_at(m.takeoff.position.x, m.takeoff.position.y, 30000, 0, 300);
     let mut impacts = 0;
     for _ in 0..15 * 60 * 40 {
-        impacts += sim.step(&p, 15).iter().filter(|e| matches!(e, SimEvent::DroneImpact { .. })).count();
+        impacts +=
+            sim.step(&p, 15).iter().filter(|e| matches!(e, SimEvent::DroneImpact { .. })).count();
         if sim.drones().unwrap().resolved {
             break;
         }
@@ -683,7 +744,10 @@ fn sidewinder_kills_a_drone() {
     sim.set_training(true);
     let u = sim.flights()[w.first_unit];
     // 2 km behind the first drone, at its altitude, on its heading.
-    let (hs, hc) = ((u.heading as u16 as f64 / 65536.0 * std::f64::consts::TAU).sin(), (u.heading as u16 as f64 / 65536.0 * std::f64::consts::TAU).cos());
+    let (hs, hc) = (
+        (u.heading as u16 as f64 / 65536.0 * std::f64::consts::TAU).sin(),
+        (u.heading as u16 as f64 / 65536.0 * std::f64::consts::TAU).cos(),
+    );
     let (px, py) = (u.x - (hs * 128.0) as i32, u.y + (hc * 128.0) as i32);
     sim.set_bay(0, 0, 4);
     sim.select_bay(0);
@@ -725,7 +789,14 @@ fn eject_at(sim: &mut Sim, x: i32, y: i32) -> PlayerState {
 
 fn enemy_cell(m: &Mission) -> (i32, i32) {
     let g = &m.world.grid;
-    let c = (0..256).find(|&i| g[i] & 3 == 0 && g[i] & 0x0C >= 8 && (3..13).contains(&(i % 16)) && (3..13).contains(&(i / 16))).expect("enemy land");
+    let c = (0..256)
+        .find(|&i| {
+            g[i] & 3 == 0
+                && g[i] & 0x0C >= 8
+                && (3..13).contains(&(i % 16))
+                && (3..13).contains(&(i / 16))
+        })
+        .expect("enemy land");
     (((c % 16) as i32) * 2048 + 1024, ((c / 16) as i32) * 2048 + 1024)
 }
 
@@ -773,7 +844,10 @@ fn csar_hinds_capture_the_pilot() {
     let objects = sim.objects().to_vec();
     let (bx, by) = objects
         .iter()
-        .filter(|o| o.flags & (oflags::AIRFIELD | oflags::FRIENDLY | oflags::NEUTRAL | oflags::CARRIER) == oflags::AIRFIELD)
+        .filter(|o| {
+            o.flags & (oflags::AIRFIELD | oflags::FRIENDLY | oflags::NEUTRAL | oflags::CARRIER)
+                == oflags::AIRFIELD
+        })
         .map(|o| (o.x, o.y))
         .find(|&(x, y)| m.world.grid[((y >> 11) * 16 + (x >> 11)) as usize] & 3 == 0)
         .expect("enemy airfield in enemy territory");
@@ -821,7 +895,17 @@ fn trigger_fires_the_selected_gun() {
         let (mx, my) = sandbox(&mut sim, &m);
         {
             let u = &mut sim.flights_mut()[1];
-            *u = FlightUnit { x: mx, y: my - 38, alt: 3000, spec: 9, flags: 0x43, speed: 200, timer: 30000, wp: 3, ..Default::default() };
+            *u = FlightUnit {
+                x: mx,
+                y: my - 38,
+                alt: 3000,
+                spec: 9,
+                flags: 0x43,
+                speed: 200,
+                timer: 30000,
+                wp: 3,
+                ..Default::default()
+            };
             u.wx = u.x << 5;
             u.wy = u.y << 5;
         }
@@ -906,7 +990,10 @@ fn bombs_land_on_the_ccip_point() {
         let (x, y, alt) = sim.projectiles()[slot].map_pos();
         assert!(alt.abs() < 1e-6, "weapon {w}: landed at {alt}");
         let (x, y) = (x as i32, y as i32);
-        assert!((x - ccip.0).abs() <= 1 && (y - ccip.1).abs() <= 1, "weapon {w}: impact {x},{y} ccip {ccip:?}");
+        assert!(
+            (x - ccip.0).abs() <= 1 && (y - ccip.1).abs() <= 1,
+            "weapon {w}: impact {x},{y} ccip {ccip:?}"
+        );
         assert!((x - mx).abs() <= 1);
         ahead.push(my - y);
     }
@@ -963,7 +1050,12 @@ fn ccrp_releases_at_the_release_point() {
         let slot = (8..12).find(|&s| sim.projectiles()[s].fall.is_some()).unwrap();
         let (x, y, _) = sim.projectiles()[slot].map_pos();
         let o = sim.objects()[t];
-        assert!((x - (o.x as f64 + 0.5)).abs() < 2.0 && (y - (o.y as f64 + 0.5)).abs() < 3.0, "weapon {w}: impact {x},{y} target {},{}", o.x, o.y);
+        assert!(
+            (x - (o.x as f64 + 0.5)).abs() < 2.0 && (y - (o.y as f64 + 0.5)).abs() < 3.0,
+            "weapon {w}: impact {x},{y} target {},{}",
+            o.x,
+            o.y
+        );
         assert_eq!(sim.weapon_groups().0[0].1, 1, "weapon {w}: one bomb");
     }
 }

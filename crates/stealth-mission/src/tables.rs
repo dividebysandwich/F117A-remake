@@ -60,10 +60,14 @@ pub struct StartTables {
 }
 
 impl StartTables {
-
     /// Plane table entry, or a zero entry for an out-of-range type.
     pub fn plane(&self, t: i16) -> PlaneInfo {
-        self.planes.get(t as usize).cloned().unwrap_or(PlaneInfo { name: String::new(), nick: String::new(), speed: 0, range: 0 })
+        self.planes.get(t as usize).cloned().unwrap_or(PlaneInfo {
+            name: String::new(),
+            nick: String::new(),
+            speed: 0,
+            range: 0,
+        })
     }
 
     pub fn weapon_name(&self, w: i16) -> &str {

@@ -18,11 +18,11 @@
 
 mod controls;
 mod displays;
-mod model;
 pub mod geometry;
 mod hud_glass;
 pub mod layout;
 mod levers;
+mod model;
 mod shading;
 
 use bevy::camera::visibility::NoFrustumCulling;
@@ -43,33 +43,52 @@ pub struct Cockpit3dPlugin;
 
 impl Plugin for Cockpit3dPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((MaterialPlugin::<hud_glass::HudGlassMaterial>::default(), MaterialPlugin::<shading::CockpitMaterial>::default()))
-            .init_resource::<Hands>()
-            .init_resource::<levers::CockpitAnchors>()
-            .add_message::<PressControl>()
-            .add_systems(Startup, (setup_materials, initial_look, model::load_models))
-            .add_systems(
-                Update,
-                (respawn_on_style_change, spawn_cockpit, follow_eye, sync_materials, sync_shading, cockpit_visibility).chain().run_if(in_state(AppState::Flight)),
+        app.add_plugins((
+            MaterialPlugin::<hud_glass::HudGlassMaterial>::default(),
+            MaterialPlugin::<shading::CockpitMaterial>::default(),
+        ))
+        .init_resource::<Hands>()
+        .init_resource::<levers::CockpitAnchors>()
+        .add_message::<PressControl>()
+        .add_systems(Startup, (setup_materials, initial_look, model::load_models))
+        .add_systems(
+            Update,
+            (
+                respawn_on_style_change,
+                spawn_cockpit,
+                follow_eye,
+                sync_materials,
+                sync_shading,
+                cockpit_visibility,
             )
-            .add_systems(
-                PreUpdate,
-                (
-                    (mouse_look, controls::interact, levers::grab_levers)
-                        .chain()
-                        .after(crate::input::InputSystemsSet)
-                        .after(HandsUpdate),
-                )
-                    .run_if(in_state(AppState::Flight)),
+                .chain()
+                .run_if(in_state(AppState::Flight)),
+        )
+        .add_systems(
+            PreUpdate,
+            ((mouse_look, controls::interact, levers::grab_levers)
+                .chain()
+                .after(crate::input::InputSystemsSet)
+                .after(HandsUpdate),)
+                .run_if(in_state(AppState::Flight)),
+        )
+        .add_systems(
+            PostUpdate,
+            (
+                set_projection,
+                displays::restyle_hud,
+                displays::update_displays,
+                controls::animate,
+                levers::animate_levers,
+                update_hand_proxies,
+                damage_flash,
+                cockpit_lamps,
             )
-            .add_systems(
-                PostUpdate,
-                (set_projection, displays::restyle_hud, displays::update_displays, controls::animate, levers::animate_levers, update_hand_proxies, damage_flash, cockpit_lamps)
-                    .after(crate::camera::RigSystems)
-                    .before(TransformSystems::Propagate)
-                    .run_if(in_state(AppState::Flight)),
-            )
-            .add_systems(OnExit(AppState::Flight), release_cursor);
+                .after(crate::camera::RigSystems)
+                .before(TransformSystems::Propagate)
+                .run_if(in_state(AppState::Flight)),
+        )
+        .add_systems(OnExit(AppState::Flight), release_cursor);
     }
 }
 
@@ -137,7 +156,10 @@ impl Hand {
 pub struct CockpitRoot(pub layout::PanelStyle, pub bool, pub bool);
 
 /// Keeps the cockpit at the eye point (in VR it follows the cockpit size).
-fn follow_eye(settings: Res<crate::settings::Settings>, mut roots: Query<&mut Transform, With<CockpitRoot>>) {
+fn follow_eye(
+    settings: Res<crate::settings::Settings>,
+    mut roots: Query<&mut Transform, With<CockpitRoot>>,
+) {
     let eye = settings.cockpit_eye();
     for mut tf in &mut roots {
         if tf.translation != eye {
@@ -148,10 +170,15 @@ fn follow_eye(settings: Res<crate::settings::Settings>, mut roots: Query<&mut Tr
 
 /// Rebuilds the cockpit when the panel layout, the local lights setting or the MFD resolution
 /// changes.
-fn respawn_on_style_change(mut commands: Commands, settings: Res<Settings>, roots: Query<(Entity, &CockpitRoot)>) {
+fn respawn_on_style_change(
+    mut commands: Commands,
+    settings: Res<Settings>,
+    roots: Query<(Entity, &CockpitRoot)>,
+) {
     let want = settings.cockpit().0;
     for (e, root) in &roots {
-        if root.0 != want || root.1 != settings.local_lights || root.2 != settings.hires_displays() {
+        if root.0 != want || root.1 != settings.local_lights || root.2 != settings.hires_displays()
+        {
             commands.entity(e).despawn();
         }
     }
@@ -257,7 +284,11 @@ fn sync_materials(
 /// materials created later).
 fn sync_shading(settings: Res<Settings>, mut materials: ResMut<Assets<CockpitMaterial>>) {
     let full = lighting_on(&settings);
-    let stale: Vec<_> = materials.iter().filter(|(_, m)| m.extension.unlit != m.base.unlit || m.extension.full != full).map(|(id, _)| id).collect();
+    let stale: Vec<_> = materials
+        .iter()
+        .filter(|(_, m)| m.extension.unlit != m.base.unlit || m.extension.full != full)
+        .map(|(id, _)| id)
+        .collect();
     for id in stale {
         if let Some(mut m) = materials.get_mut(id) {
             m.extension.unlit = m.base.unlit;
@@ -279,8 +310,13 @@ struct FlashQuad;
 struct CockpitLamp;
 
 /// Flood lamps: on with the local lighting option, brighter as it gets dark.
-fn cockpit_lamps(settings: Res<Settings>, lighting: Res<crate::lighting::LightingState>, mut q: Query<&mut PointLight, With<CockpitLamp>>) {
-    let lumens = if settings.local_lights { 300.0 + 1500.0 * (1.0 - lighting.daylight) } else { 0.0 };
+fn cockpit_lamps(
+    settings: Res<Settings>,
+    lighting: Res<crate::lighting::LightingState>,
+    mut q: Query<&mut PointLight, With<CockpitLamp>>,
+) {
+    let lumens =
+        if settings.local_lights { 300.0 + 1500.0 * (1.0 - lighting.daylight) } else { 0.0 };
     for mut l in &mut q {
         if l.intensity != lumens {
             l.intensity = lumens;
@@ -290,7 +326,8 @@ fn cockpit_lamps(settings: Res<Settings>, lighting: Res<crate::lighting::Lightin
 
 /// The cockpit is only drawn from the pilot's seat, not in the external views.
 fn cockpit_visibility(state: Res<ViewState>, mut roots: Query<&mut Visibility, With<CockpitRoot>>) {
-    let inside = matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
+    let inside =
+        matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
     for mut v in &mut roots {
         v.set_if_neq(if inside { Visibility::Inherited } else { Visibility::Hidden });
     }
@@ -326,11 +363,16 @@ fn spawn_cockpit(
     }
     let layout = layout::PanelLayout::for_style(style);
     let root = commands
-        .spawn((CockpitRoot(layout.style, settings.local_lights, settings.hires_displays()), Transform::from_translation(settings.cockpit_eye()), Visibility::default()))
+        .spawn((
+            CockpitRoot(layout.style, settings.local_lights, settings.hires_displays()),
+            Transform::from_translation(settings.cockpit_eye()),
+            Visibility::default(),
+        ))
         .id();
     commands.entity(aircraft).add_child(root);
 
-    let panel = displays::panel_materials(&mut commands, root, &layout, &mut materials, &mut images);
+    let panel =
+        displays::panel_materials(&mut commands, root, &layout, &mut materials, &mut images);
     let mut spawner = model::Spawner::new(
         &mats,
         &panel,
@@ -412,7 +454,10 @@ fn update_hand_proxies(
 }
 
 /// Red flash over the view when hit.
-fn damage_flash(mut flash: ResMut<crate::hud::DamageFlash>, mut q: Query<&mut Visibility, With<FlashQuad>>) {
+fn damage_flash(
+    mut flash: ResMut<crate::hud::DamageFlash>,
+    mut q: Query<&mut Visibility, With<FlashQuad>>,
+) {
     let on = flash.0 > 0;
     if on {
         flash.0 -= 1;
@@ -423,7 +468,11 @@ fn damage_flash(mut flash: ResMut<crate::hud::DamageFlash>, mut q: Query<&mut Vi
 }
 
 /// Desktop: a normal perspective projection.
-fn set_projection(settings: Res<Settings>, state: Res<ViewState>, mut cams: Query<(&mut Camera, &mut Projection), With<EyeCamera>>) {
+fn set_projection(
+    settings: Res<Settings>,
+    state: Res<ViewState>,
+    mut cams: Query<(&mut Camera, &mut Projection), With<EyeCamera>>,
+) {
     if settings.vr {
         return;
     }
@@ -461,11 +510,26 @@ fn mouse_look(
     scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
 ) {
     for ActionEvent(a) in actions.read() {
-        if matches!(a, Action::ViewCockpit | Action::LookAhead | Action::LookLeft | Action::LookRight | Action::LookRear) {
+        if matches!(
+            a,
+            Action::ViewCockpit
+                | Action::LookAhead
+                | Action::LookLeft
+                | Action::LookRight
+                | Action::LookRear
+        ) {
             *look = HeadLook::default();
             state.magnify = 1.0;
         }
-        if matches!(a, Action::ViewChase | Action::ViewSlot | Action::ViewSide | Action::ViewTactical | Action::ViewInverseTactical | Action::ViewMissile) {
+        if matches!(
+            a,
+            Action::ViewChase
+                | Action::ViewSlot
+                | Action::ViewSide
+                | Action::ViewTactical
+                | Action::ViewInverseTactical
+                | Action::ViewMissile
+        ) {
             *orbit = Orbit::default();
             state.wheel_zoom = 0.0;
         }
@@ -473,10 +537,12 @@ fn mouse_look(
     if settings.vr {
         return;
     }
-    let cockpit = matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
+    let cockpit =
+        matches!(state.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
     let held = buttons.pressed(MouseButton::Right);
     if let Ok(mut c) = cursor.single_mut() {
-        let (grab, visible) = if held { (CursorGrabMode::Locked, false) } else { (CursorGrabMode::None, true) };
+        let (grab, visible) =
+            if held { (CursorGrabMode::Locked, false) } else { (CursorGrabMode::None, true) };
         if c.grab_mode != grab {
             c.grab_mode = grab;
             c.visible = visible;
@@ -495,7 +561,8 @@ fn mouse_look(
         if state.first_person() {
             state.magnify = (state.magnify * 1.2f32.powf(notches)).clamp(1.0, MAX_MAGNIFY);
         } else {
-            state.wheel_zoom = (state.wheel_zoom + notches * 0.25).clamp(-3.0 - state.zoom as f32, 4.0 - state.zoom as f32);
+            state.wheel_zoom = (state.wheel_zoom + notches * 0.25)
+                .clamp(-3.0 - state.zoom as f32, 4.0 - state.zoom as f32);
         }
     }
     if cockpit {

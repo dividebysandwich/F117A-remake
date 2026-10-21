@@ -4,7 +4,9 @@
 use bevy::mesh::MeshVertexBufferLayoutRef;
 use bevy::pbr::{MaterialPipeline, MaterialPipelineKey};
 use bevy::prelude::*;
-use bevy::render::render_resource::{AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError};
+use bevy::render::render_resource::{
+    AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
+};
 use bevy::shader::ShaderRef;
 
 const SHADER: &str = "shaders/hud_glass.wgsl";
@@ -33,9 +35,17 @@ impl HudGlassMaterial {
         use crate::hud::modern;
         if classic {
             let f = crate::cockpit::FOCAL;
-            ((320, 200), Vec4::new(159.5, 52.0, f, f * crate::cockpit::VSCALE), Vec4::new(0.0, 1.0, 0.0, 0.0))
+            (
+                (320, 200),
+                Vec4::new(159.5, 52.0, f, f * crate::cockpit::VSCALE),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+            )
         } else {
-            ((modern::WIDTH, modern::HEIGHT), Vec4::new(modern::CX, modern::CY, scale, scale), Vec4::new(1.0, 1.0, 0.0, 0.0))
+            (
+                (modern::WIDTH, modern::HEIGHT),
+                Vec4::new(modern::CX, modern::CY, scale, scale),
+                Vec4::new(1.0, 1.0, 0.0, 0.0),
+            )
         }
     }
 }
@@ -67,7 +77,8 @@ impl Material for HudGlassMaterial {
         layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        let vertex_layout = layout.0.get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0)])?;
+        let vertex_layout =
+            layout.0.get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0)])?;
         descriptor.vertex.buffers = vec![vertex_layout];
         descriptor.primitive.cull_mode = None;
         Ok(())

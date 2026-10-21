@@ -23,13 +23,15 @@ pub struct ModelsPlugin;
 
 impl Plugin for ModelsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ModelLibrary>().init_resource::<ModelGlobals>().add_systems(
-            PostUpdate,
-            (update_camera_distance, apply_model_state)
-                .chain()
-                .before(bevy::transform::TransformSystems::Propagate),
-        )
-        .add_systems(Update, flicker_exhaust);
+        app.init_resource::<ModelLibrary>()
+            .init_resource::<ModelGlobals>()
+            .add_systems(
+                PostUpdate,
+                (update_camera_distance, apply_model_state)
+                    .chain()
+                    .before(bevy::transform::TransformSystems::Propagate),
+            )
+            .add_systems(Update, flicker_exhaust);
     }
 }
 
@@ -225,7 +227,11 @@ pub const TILE_HELICOPTERS: [&str; 2] = ["vn_066", "vn_077"];
 
 /// Model scale (metres per model unit) of a tile object at a level of `unit` world units.
 pub fn tile_model_scale(name: &str, unit: f64) -> f32 {
-    if TILE_HELICOPTERS.contains(&name) { crate::player::AIRCRAFT_MODEL_SCALE as f32 } else { (unit * crate::world::WU) as f32 }
+    if TILE_HELICOPTERS.contains(&name) {
+        crate::player::AIRCRAFT_MODEL_SCALE as f32
+    } else {
+        (unit * crate::world::WU) as f32
+    }
 }
 
 /// Range multiplier for a model's last (coarsest) detail level.
@@ -246,7 +252,10 @@ pub struct LodBias(pub f32);
 
 fn apply_model_state(
     roots: Query<(&ModelState, &CameraDistance, Option<&LodRange>, Option<&LodBias>)>,
-    mut lods: Query<(&LodLevel, &mut LodShown, &mut Visibility), (Without<CondNode>, Without<ArticulatedPart>)>,
+    mut lods: Query<
+        (&LodLevel, &mut LodShown, &mut Visibility),
+        (Without<CondNode>, Without<ArticulatedPart>),
+    >,
     mut conds: Query<(&CondNode, &mut Visibility), Without<LodLevel>>,
     mut parts: Query<(&ArticulatedPart, &mut Transform)>,
     all_lods: Query<&LodLevel>,
@@ -352,17 +361,39 @@ impl ModelAssets<'_> {
     /// Spawns a model (a root node with its LODs, parts and conditional geometry) from a loaded
     /// file. `level` is the unit level for distance haze (`palette_material::mesh_tag`).
     /// Returns `None` if the file is not loaded yet or the model does not exist.
-    pub fn spawn(&self, commands: &mut Commands, file: &Handle<Gltf>, name: &str, level: u32, no_fog: bool) -> Option<Entity> {
+    pub fn spawn(
+        &self,
+        commands: &mut Commands,
+        file: &Handle<Gltf>,
+        name: &str,
+        level: u32,
+        no_fog: bool,
+    ) -> Option<Entity> {
         self.spawn_parts(commands, file, name, level, no_fog, false)
     }
 
     /// Spawns only a model's dot lights (with their conditions and detail levels), for an
     /// aircraft whose exterior is drawn another way (the own aircraft from its cockpit).
-    pub fn spawn_lights(&self, commands: &mut Commands, file: &Handle<Gltf>, name: &str, level: u32, no_fog: bool) -> Option<Entity> {
+    pub fn spawn_lights(
+        &self,
+        commands: &mut Commands,
+        file: &Handle<Gltf>,
+        name: &str,
+        level: u32,
+        no_fog: bool,
+    ) -> Option<Entity> {
         self.spawn_parts(commands, file, name, level, no_fog, true)
     }
 
-    fn spawn_parts(&self, commands: &mut Commands, file: &Handle<Gltf>, name: &str, level: u32, no_fog: bool, lights_only: bool) -> Option<Entity> {
+    fn spawn_parts(
+        &self,
+        commands: &mut Commands,
+        file: &Handle<Gltf>,
+        name: &str,
+        level: u32,
+        no_fog: bool,
+        lights_only: bool,
+    ) -> Option<Entity> {
         let g = self.gltfs.get(file)?;
         let node = g.named_nodes.get(name)?;
         let material_names: HashMap<AssetId<GltfMaterial>, &str> =
@@ -375,7 +406,13 @@ impl ModelAssets<'_> {
             .and_then(|v| v["attr"].as_u64())
             .unwrap_or(0) as u32;
         let tag = MeshTag(mesh_tag(level, attr & 7, no_fog));
-        let root = commands.spawn((ModelState::default(), CameraDistance::default(), ModelInfo { attr: attr as u8 })).id();
+        let root = commands
+            .spawn((
+                ModelState::default(),
+                CameraDistance::default(),
+                ModelInfo { attr: attr as u8 },
+            ))
+            .id();
         self.spawn_node(commands, node, &material_names, root, Some(root), None, tag, lights_only);
         Some(root)
     }
@@ -399,8 +436,11 @@ impl ModelAssets<'_> {
         };
         let mut e = commands.entity(entity);
         e.insert((Name::new(node.name.clone()), node.transform, Visibility::default()));
-        let extras: serde_json::Value =
-            node.extras.as_ref().and_then(|x| serde_json::from_str(&x.value).ok()).unwrap_or_default();
+        let extras: serde_json::Value = node
+            .extras
+            .as_ref()
+            .and_then(|x| serde_json::from_str(&x.value).ok())
+            .unwrap_or_default();
         let name = node.name.as_str();
         if let Some(k) = suffix_number(name, "_lod") {
             let max_dist = extras["max_dist"].as_u64().unwrap_or(0x8001) as f32;
@@ -411,7 +451,11 @@ impl ModelAssets<'_> {
                 .map(|a| {
                     a.iter()
                         .filter_map(|p| {
-                            let v: Vec<f32> = p.as_array()?.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect();
+                            let v: Vec<f32> = p
+                                .as_array()?
+                                .iter()
+                                .filter_map(|x| x.as_f64().map(|f| f as f32))
+                                .collect();
                             (v.len() == 4).then(|| [v[0], v[1], v[2], v[3]])
                         })
                         .collect()
@@ -451,18 +495,27 @@ impl ModelAssets<'_> {
                 for prim in &mesh.primitives {
                     for p in self.positions(&prim.mesh) {
                         let child = commands
-                            .spawn((crate::dots::DotLight::bundle(p, &self.dots, tag.0), MeshMaterial3d(self.palette.line_material(color))))
+                            .spawn((
+                                crate::dots::DotLight::bundle(p, &self.dots, tag.0),
+                                MeshMaterial3d(self.palette.line_material(color)),
+                            ))
                             .id();
                         if let Some(l) = lod {
-                            commands.entity(child).insert((LodMesh(l), bevy::camera::visibility::RenderLayers::layer(0)));
+                            commands.entity(child).insert((
+                                LodMesh(l),
+                                bevy::camera::visibility::RenderLayers::layer(0),
+                            ));
                         }
                         commands.entity(entity).add_child(child);
                     }
                 }
             } else if !lights_only {
                 for prim in &mesh.primitives {
-                    let prim_color =
-                        prim.material.as_ref().and_then(|m| material_names.get(&m.id())).and_then(|n| index_from_name(n));
+                    let prim_color = prim
+                        .material
+                        .as_ref()
+                        .and_then(|m| material_names.get(&m.id()))
+                        .and_then(|n| index_from_name(n));
                     let color = node_color.or(prim_color).unwrap_or(15);
                     let material = if name.contains("_lines_pal_") {
                         self.palette.line_material(color)
@@ -471,7 +524,9 @@ impl ModelAssets<'_> {
                     };
                     let (flat, warm) = self.shape_class(&prim.mesh, tag.0 & 7);
                     let child_tag = if warm { MeshTag(tag.0 | TAG_WARM) } else { tag.clone() };
-                    let child = commands.spawn((Mesh3d(prim.mesh.clone()), MeshMaterial3d(material), child_tag)).id();
+                    let child = commands
+                        .spawn((Mesh3d(prim.mesh.clone()), MeshMaterial3d(material), child_tag))
+                        .id();
                     // `_s14v1` is the missile motor flame (STFLT 1/10/15). The F-117 keeps its
                     // original shape, so its nozzle faces stay in the body mesh.
                     if name.ends_with("_exhaust")
@@ -487,14 +542,25 @@ impl ModelAssets<'_> {
                         commands.entity(child).insert(bevy::light::NotShadowCaster);
                     }
                     if let Some(l) = lod {
-                        commands.entity(child).insert((LodMesh(l), bevy::camera::visibility::RenderLayers::layer(0)));
+                        commands
+                            .entity(child)
+                            .insert((LodMesh(l), bevy::camera::visibility::RenderLayers::layer(0)));
                     }
                     commands.entity(entity).add_child(child);
                 }
             }
         }
         for c in &node.children {
-            let child = self.spawn_node(commands, c, material_names, root, None, lod, tag.clone(), lights_only);
+            let child = self.spawn_node(
+                commands,
+                c,
+                material_names,
+                root,
+                None,
+                lod,
+                tag.clone(),
+                lights_only,
+            );
             commands.entity(entity).add_child(child);
         }
         entity
@@ -504,19 +570,32 @@ impl ModelAssets<'_> {
     /// (model units).
     pub fn node_triangles(&self, file: &Handle<Gltf>, name: &str) -> Vec<(u8, Vec<[Vec3; 3]>)> {
         let Some(g) = self.gltfs.get(file) else { return vec![] };
-        let Some(node) = g.named_nodes.get(name).and_then(|n| self.nodes.get(n)) else { return vec![] };
+        let Some(node) = g.named_nodes.get(name).and_then(|n| self.nodes.get(n)) else {
+            return vec![];
+        };
         let Some(mesh) = node.mesh.as_ref().and_then(|m| self.meshes.get(m)) else { return vec![] };
-        let names: HashMap<AssetId<GltfMaterial>, &str> = g.named_materials.iter().map(|(n, h)| (h.id(), n.as_ref())).collect();
+        let names: HashMap<AssetId<GltfMaterial>, &str> =
+            g.named_materials.iter().map(|(n, h)| (h.id(), n.as_ref())).collect();
         let mut out = Vec::new();
         for prim in &mesh.primitives {
             let Some(m) = self.mesh_data.get(&prim.mesh) else { continue };
-            let colour = prim.material.as_ref().and_then(|m| names.get(&m.id())).and_then(|n| index_from_name(n)).unwrap_or(15);
+            let colour = prim
+                .material
+                .as_ref()
+                .and_then(|m| names.get(&m.id()))
+                .and_then(|n| index_from_name(n))
+                .unwrap_or(15);
             let p = self.positions(&prim.mesh);
             let idx: Vec<usize> = match m.indices() {
                 Some(i) => i.iter().collect(),
                 None => (0..p.len()).collect(),
             };
-            let tris = idx.as_chunks::<3>().0.iter().filter_map(|t| Some([*p.get(t[0])?, *p.get(t[1])?, *p.get(t[2])?])).collect();
+            let tris = idx
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .filter_map(|t| Some([*p.get(t[0])?, *p.get(t[1])?, *p.get(t[2])?]))
+                .collect();
             out.push((colour, tris));
         }
         out
@@ -524,14 +603,21 @@ impl ModelAssets<'_> {
 
     /// A model node's triangles flattened onto its ground plane (y = 0), as one mesh.
     pub fn flattened(&self, file: &Handle<Gltf>, name: &str) -> Option<Mesh> {
-        let tris: Vec<[Vec3; 3]> = self.node_triangles(file, name).into_iter().flat_map(|(_, t)| t).map(|t| t.map(|v| Vec3::new(v.x, 0.0, v.z))).collect();
+        let tris: Vec<[Vec3; 3]> = self
+            .node_triangles(file, name)
+            .into_iter()
+            .flat_map(|(_, t)| t)
+            .map(|t| t.map(|v| Vec3::new(v.x, 0.0, v.z)))
+            .collect();
         (!tris.is_empty()).then(|| triangle_mesh(&tris))
     }
 
     fn positions(&self, mesh: &Handle<Mesh>) -> Vec<Vec3> {
         let Some(m) = self.mesh_data.get(mesh) else { return vec![] };
         match m.attribute(Mesh::ATTRIBUTE_POSITION) {
-            Some(bevy::mesh::VertexAttributeValues::Float32x3(v)) => v.iter().map(|&p| Vec3::from(p)).collect(),
+            Some(bevy::mesh::VertexAttributeValues::Float32x3(v)) => {
+                v.iter().map(|&p| Vec3::from(p)).collect()
+            }
             _ => vec![],
         }
     }
@@ -553,7 +639,9 @@ impl ModelAssets<'_> {
             return (true, false);
         }
         let (lo, hi) = p.iter().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
-        let metres = (hi - lo) * (stealth_formats::terrain::LEVEL_UNIT[(level as usize).min(4)] * crate::world::WU) as f32;
+        let metres = (hi - lo)
+            * (stealth_formats::terrain::LEVEL_UNIT[(level as usize).min(4)] * crate::world::WU)
+                as f32;
         (false, metres.x.max(metres.z) < WARM_MAX_SIZE && metres.y < WARM_MAX_HEIGHT)
     }
 }
@@ -561,7 +649,10 @@ impl ModelAssets<'_> {
 /// A mesh of separate triangles (positions only, like the model files).
 pub fn triangle_mesh(tris: &[[Vec3; 3]]) -> Mesh {
     let pos: Vec<[f32; 3]> = tris.iter().flatten().map(|v| v.to_array()).collect();
-    let mut m = Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::RENDER_WORLD);
+    let mut m = Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::RENDER_WORLD,
+    );
     m.insert_attribute(Mesh::ATTRIBUTE_POSITION, pos);
     m
 }
@@ -584,11 +675,16 @@ mod tests {
                 .unwrap()
                 .iter()
                 .map(|p| {
-                    let v: Vec<f32> = p.as_array().unwrap().iter().map(|x| x.as_f64().unwrap() as f32).collect();
+                    let v: Vec<f32> =
+                        p.as_array().unwrap().iter().map(|x| x.as_f64().unwrap() as f32).collect();
                     [v[0], v[1], v[2], v[3]]
                 })
                 .collect();
-            CollisionHull { planes, radius: node["extras"]["radius"].as_f64().unwrap() as f32, surface: None }
+            CollisionHull {
+                planes,
+                radius: node["extras"]["radius"].as_f64().unwrap() as f32,
+                surface: None,
+            }
         };
         let mountain = hull("ce_003_lod0");
         assert!(mountain.contains(bevy::math::Vec3::new(0.0, 10.0, 0.0)));

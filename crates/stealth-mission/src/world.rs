@@ -90,10 +90,13 @@ pub struct MissionWorld {
 }
 
 impl MissionWorld {
-
     /// Name table entry, "" when out of range.
     pub fn name(&self, i: i32) -> &str {
-        if (0..TABLE as i32).contains(&i) { self.names.get(i as usize).map_or("", String::as_str) } else { "" }
+        if (0..TABLE as i32).contains(&i) {
+            self.names.get(i as usize).map_or("", String::as_str)
+        } else {
+            ""
+        }
     }
 
     /// Category of a shape (objectTypeTable), 0 if out of range.
@@ -142,7 +145,6 @@ pub struct TheaterData {
 }
 
 impl TheaterData {
-
     /// Decode a theater exported with [`serde_json`] and rebuild the candidate lists.
     pub fn from_json(json: &[u8]) -> Result<Self> {
         let mut td: Self = serde_json::from_slice(json)?;
@@ -156,7 +158,9 @@ impl TheaterData {
         if col < 0 || row < 0 || gs <= col || gs <= row {
             return -1;
         }
-        let at = |v: &Vec<u8>, i: i32| if i < 0 { -1 } else { v.get(i as usize).map_or(-1, |&b| b as i32) };
+        let at = |v: &Vec<u8>, i: i32| {
+            if i < 0 { -1 } else { v.get(i as usize).map_or(-1, |&b| b as i32) }
+        };
         match lv {
             4 => at(&self.g[4], col + row * 4),
             3 => at(&self.g[3], col + row * 16),
@@ -176,7 +180,8 @@ impl TheaterData {
     /// by the generator, so the lists are valid for every mission of the theater.
     fn build_candidates(&mut self) {
         let grid = &self.world.grid;
-        let enemy = |col: i32, row_north_up: i32| grid[((15 - row_north_up) * 16 + col) as usize] & 3 == 0;
+        let enemy =
+            |col: i32, row_north_up: i32| grid[((15 - row_north_up) * 16 + col) as usize] & 3 == 0;
         let mut l3 = vec![Vec::new(); 256];
         for a in 0..16 {
             for e in 0..16 {
@@ -188,7 +193,13 @@ impl TheaterData {
                     continue;
                 }
                 for &(ox, oy, sh) in self.tile_objects(3, c) {
-                    l3[sh as usize].push(Candidate { ox, oy, a: (a << 4) & 0xFF, e: (e << 4) & 0xFF, level: 3 });
+                    l3[sh as usize].push(Candidate {
+                        ox,
+                        oy,
+                        a: (a << 4) & 0xFF,
+                        e: (e << 4) & 0xFF,
+                        level: 3,
+                    });
                 }
             }
         }
@@ -199,7 +210,8 @@ impl TheaterData {
                     if !enemy(a >> 4, e >> 4) {
                         continue;
                     }
-                    let c = if lv == 1 { self.lookup(1, a, e) } else { self.lookup(2, a >> 2, e >> 2) };
+                    let c =
+                        if lv == 1 { self.lookup(1, a, e) } else { self.lookup(2, a >> 2, e >> 2) };
                     if c == -1 {
                         continue;
                     }

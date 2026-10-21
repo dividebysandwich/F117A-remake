@@ -76,32 +76,113 @@ const NO_AIR_TO_AIR: [u8; 17] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 // tools/models/planform.py
 /// stflt_024 seen from above: half span 4.86 m, length 15.62 m.
 const F117_OUTLINE: &[(f32, f32)] = &[
-    (0.00, 0.00), (0.02, 0.32), (0.18, 0.34), (0.22, 0.88), (0.42, 0.90), (0.46, 1.48), (0.96, 2.58), (4.86, 12.34), (4.86, 12.86),
-    (4.38, 13.32), (2.08, 10.86), (1.88, 10.86), (1.82, 11.38), (0.66, 12.62), (0.66, 12.90), (1.08, 14.52), (1.08, 15.62), (0.12, 13.58),
-    (0.00, 13.56), (-0.12, 13.58), (-1.08, 15.62), (-1.08, 14.52), (-0.66, 12.90), (-0.66, 12.62), (-1.82, 11.38), (-1.88, 10.86),
-    (-2.08, 10.86), (-4.38, 13.32), (-4.86, 12.86), (-4.86, 12.34), (-0.96, 2.58), (-0.46, 1.48), (-0.42, 0.90), (-0.22, 0.88),
-    (-0.18, 0.34), (-0.02, 0.32),
+    (0.00, 0.00),
+    (0.02, 0.32),
+    (0.18, 0.34),
+    (0.22, 0.88),
+    (0.42, 0.90),
+    (0.46, 1.48),
+    (0.96, 2.58),
+    (4.86, 12.34),
+    (4.86, 12.86),
+    (4.38, 13.32),
+    (2.08, 10.86),
+    (1.88, 10.86),
+    (1.82, 11.38),
+    (0.66, 12.62),
+    (0.66, 12.90),
+    (1.08, 14.52),
+    (1.08, 15.62),
+    (0.12, 13.58),
+    (0.00, 13.56),
+    (-0.12, 13.58),
+    (-1.08, 15.62),
+    (-1.08, 14.52),
+    (-0.66, 12.90),
+    (-0.66, 12.62),
+    (-1.82, 11.38),
+    (-1.88, 10.86),
+    (-2.08, 10.86),
+    (-4.38, 13.32),
+    (-4.86, 12.86),
+    (-4.86, 12.34),
+    (-0.96, 2.58),
+    (-0.46, 1.48),
+    (-0.42, 0.90),
+    (-0.22, 0.88),
+    (-0.18, 0.34),
+    (-0.02, 0.32),
 ];
 /// stflt_023 seen from above: half span 5.12 m, length 17.12 m.
 const F16_OUTLINE: &[(f32, f32)] = &[
-    (0.00, 0.00), (0.32, 0.88), (0.64, 3.76), (1.26, 7.22), (4.80, 10.32), (5.02, 10.30), (5.02, 8.86), (5.06, 8.56), (5.12, 8.94),
-    (5.12, 12.12), (5.02, 12.12), (5.00, 11.70), (0.76, 11.72), (0.74, 12.54), (3.04, 14.24), (3.04, 15.28), (0.54, 14.98), (0.48, 15.60),
-    (0.30, 15.66), (0.00, 17.12), (-0.30, 15.66), (-0.48, 15.60), (-0.54, 14.98), (-3.04, 15.28), (-3.04, 14.24), (-0.74, 12.54),
-    (-0.76, 11.72), (-5.00, 11.70), (-5.02, 12.12), (-5.12, 12.12), (-5.12, 8.94), (-5.06, 8.56), (-5.02, 8.86), (-5.02, 10.30),
-    (-4.80, 10.32), (-1.26, 7.22), (-0.64, 3.76), (-0.32, 0.88),
+    (0.00, 0.00),
+    (0.32, 0.88),
+    (0.64, 3.76),
+    (1.26, 7.22),
+    (4.80, 10.32),
+    (5.02, 10.30),
+    (5.02, 8.86),
+    (5.06, 8.56),
+    (5.12, 8.94),
+    (5.12, 12.12),
+    (5.02, 12.12),
+    (5.00, 11.70),
+    (0.76, 11.72),
+    (0.74, 12.54),
+    (3.04, 14.24),
+    (3.04, 15.28),
+    (0.54, 14.98),
+    (0.48, 15.60),
+    (0.30, 15.66),
+    (0.00, 17.12),
+    (-0.30, 15.66),
+    (-0.48, 15.60),
+    (-0.54, 14.98),
+    (-3.04, 15.28),
+    (-3.04, 14.24),
+    (-0.74, 12.54),
+    (-0.76, 11.72),
+    (-5.00, 11.70),
+    (-5.02, 12.12),
+    (-5.12, 12.12),
+    (-5.12, 8.94),
+    (-5.06, 8.56),
+    (-5.02, 8.86),
+    (-5.02, 10.30),
+    (-4.80, 10.32),
+    (-1.26, 7.22),
+    (-0.64, 3.76),
+    (-0.32, 0.88),
 ];
 
-const fn bay(name: &'static str, label: &'static str, x: f32, y: f32, fantasy: bool, mirror: usize, loads: &'static [u8]) -> Hardpoint {
+const fn bay(
+    name: &'static str,
+    label: &'static str,
+    x: f32,
+    y: f32,
+    fantasy: bool,
+    mirror: usize,
+    loads: &'static [u8],
+) -> Hardpoint {
     Hardpoint { name, label, pos: (x, y), bay: true, fantasy, mirror: Some(mirror), loads }
 }
 
-const fn pylon(name: &'static str, label: &'static str, x: f32, y: f32, mirror: Option<usize>, loads: &'static [u8]) -> Hardpoint {
+const fn pylon(
+    name: &'static str,
+    label: &'static str,
+    x: f32,
+    y: f32,
+    mirror: Option<usize>,
+    loads: &'static [u8],
+) -> Hardpoint {
     Hardpoint { name, label, pos: (x, y), bay: false, fantasy: false, mirror, loads }
 }
 
 /// The real F-117A: two bays, no air-to-air missiles.
-static F117_REAL: [Hardpoint; 2] =
-    [bay("Left bay", "L", -0.5, 8.0, false, 1, &NO_AIR_TO_AIR), bay("Right bay", "R", 0.5, 8.0, false, 0, &NO_AIR_TO_AIR)];
+static F117_REAL: [Hardpoint; 2] = [
+    bay("Left bay", "L", -0.5, 8.0, false, 1, &NO_AIR_TO_AIR),
+    bay("Right bay", "R", 0.5, 8.0, false, 0, &NO_AIR_TO_AIR),
+];
 /// The original's F-117A: two more bays, inside the wing roots.
 static F117_FANTASY: [Hardpoint; 4] = [
     bay("Left bay", "L", -0.5, 8.0, false, 1, &ALL),
@@ -126,9 +207,12 @@ static F16_STATIONS: [Hardpoint; 9] = [
     pylon("Station 9, right wingtip", "9", 5.06, 10.6, Some(0), &TIP),
 ];
 
-static F117_REAL_LAYOUT: Layout = Layout { outline: F117_OUTLINE, half_span: 4.86, length: 15.62, hardpoints: &F117_REAL };
-static F117_FANTASY_LAYOUT: Layout = Layout { outline: F117_OUTLINE, half_span: 4.86, length: 15.62, hardpoints: &F117_FANTASY };
-static F16_LAYOUT: Layout = Layout { outline: F16_OUTLINE, half_span: 5.12, length: 17.12, hardpoints: &F16_STATIONS };
+static F117_REAL_LAYOUT: Layout =
+    Layout { outline: F117_OUTLINE, half_span: 4.86, length: 15.62, hardpoints: &F117_REAL };
+static F117_FANTASY_LAYOUT: Layout =
+    Layout { outline: F117_OUTLINE, half_span: 4.86, length: 15.62, hardpoints: &F117_FANTASY };
+static F16_LAYOUT: Layout =
+    Layout { outline: F16_OUTLINE, half_span: 5.12, length: 17.12, hardpoints: &F16_STATIONS };
 
 /// The hardpoints of an aircraft (`realistic`: the F-117A's real two bays).
 pub fn layout(aircraft: AircraftKind, realistic: bool) -> &'static Layout {
@@ -184,7 +268,10 @@ impl PlannedLoadout {
                     if w == 0 && stores.contains(&Some(0)) {
                         continue;
                     }
-                    if let Some(&i) = order.iter().find(|&&i| stores[i].is_none() && lay.hardpoints[i].loads.contains(&w)) {
+                    if let Some(&i) = order
+                        .iter()
+                        .find(|&&i| stores[i].is_none() && lay.hardpoints[i].loads.contains(&w))
+                    {
                         stores[i] = Some(w);
                         if let Some(j) = lay.hardpoints[i].mirror {
                             stores[j] = Some(w);
@@ -209,14 +296,23 @@ impl PlannedLoadout {
 
     /// The simulation's stations: (weapon type, rounds), -1 empty.
     pub fn stations(&self) -> Vec<(i32, i32)> {
-        self.layout().hardpoints.iter().zip(&self.stores).map(|(h, s)| s.map_or((-1, 0), |w| (w as i32, h.rounds(w) as i32))).collect()
+        self.layout()
+            .hardpoints
+            .iter()
+            .zip(&self.stores)
+            .map(|(h, s)| s.map_or((-1, 0), |w| (w as i32, h.rounds(w) as i32)))
+            .collect()
     }
 
     /// The station selected at the start: the one with the briefed main weapon, else the first
     /// loaded one.
     pub fn first_choice(&self, m: &Mission) -> usize {
         let main = m.loadout.bays.first().map(|b| b.weapon as u8);
-        self.stores.iter().position(|s| s.is_some() && *s == main).or_else(|| self.stores.iter().position(Option::is_some)).unwrap_or(0)
+        self.stores
+            .iter()
+            .position(|s| s.is_some() && *s == main)
+            .or_else(|| self.stores.iter().position(Option::is_some))
+            .unwrap_or(0)
     }
 
     /// The stores in words, e.g. "4 AIM-9M Sidewinder, 2 GBU-12 Paveway".
@@ -233,7 +329,11 @@ impl PlannedLoadout {
         if totals.is_empty() {
             return "None".into();
         }
-        totals.iter().map(|(w, n)| format!("{n} {}", WEAPONS[*w as usize].0)).collect::<Vec<_>>().join(", ")
+        totals
+            .iter()
+            .map(|(w, n)| format!("{n} {}", WEAPONS[*w as usize].0))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -251,7 +351,12 @@ impl LoadoutWindow {
     }
 }
 
-pub fn loadout_ui(ctx: &egui::Context, w: &mut LoadoutWindow, state: &mut MenuState, aircraft: AircraftKind) {
+pub fn loadout_ui(
+    ctx: &egui::Context,
+    w: &mut LoadoutWindow,
+    state: &mut MenuState,
+    aircraft: AircraftKind,
+) {
     if !w.open {
         return;
     }
@@ -267,7 +372,10 @@ pub fn loadout_ui(ctx: &egui::Context, w: &mut LoadoutWindow, state: &mut MenuSt
     w.selected = w.selected.min(lay.hardpoints.len() - 1);
     let mirror = w.mirror.get_or_insert(true);
     let screen = ctx.content_rect();
-    let size = egui::vec2((screen.width() - 32.0).clamp(600.0, 1100.0), (screen.height() - 32.0).clamp(400.0, 760.0));
+    let size = egui::vec2(
+        (screen.width() - 32.0).clamp(600.0, 1100.0),
+        (screen.height() - 32.0).clamp(400.0, 760.0),
+    );
     egui::Window::new("Loadout")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .collapsible(false)
@@ -278,12 +386,16 @@ pub fn loadout_ui(ctx: &egui::Context, w: &mut LoadoutWindow, state: &mut MenuSt
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("LOADOUT").heading().color(BRIGHT));
-                ui.label(egui::RichText::new(format!("  {}", aircraft.name().to_ascii_uppercase())).color(DIM));
+                ui.label(
+                    egui::RichText::new(format!("  {}", aircraft.name().to_ascii_uppercase()))
+                        .color(DIM),
+                );
             });
             ui.separator();
             ui.horizontal_top(|ui| {
                 let side = 380.0;
-                let draw = egui::vec2(ui.available_width() - side - 12.0, ui.available_height() - 60.0);
+                let draw =
+                    egui::vec2(ui.available_width() - side - 12.0, ui.available_height() - 60.0);
                 if let Some(i) = diagram(ui, lay, &lo.stores, w.selected, draw) {
                     w.selected = i;
                 }
@@ -292,7 +404,9 @@ pub fn loadout_ui(ctx: &egui::Context, w: &mut LoadoutWindow, state: &mut MenuSt
                     let hp = &lay.hardpoints[w.selected];
                     section(ui, hp.name);
                     if hp.fantasy {
-                        ui.label(egui::RichText::new("Not on the real aircraft").small().color(AMBER));
+                        ui.label(
+                            egui::RichText::new("Not on the real aircraft").small().color(AMBER),
+                        );
                     }
                     let mut pick = lo.stores[w.selected];
                     egui::ScrollArea::vertical().max_height(size.y - 260.0).show(ui, |ui| {
@@ -300,7 +414,13 @@ pub fn loadout_ui(ctx: &egui::Context, w: &mut LoadoutWindow, state: &mut MenuSt
                         for &wpn in hp.loads {
                             let (name, role) = WEAPONS[wpn as usize];
                             let stock = !out_of_stock(&m, wpn);
-                            let r = ui.add_enabled(stock, egui::RadioButton::new(pick == Some(wpn), format!("{}x {name}", hp.rounds(wpn))));
+                            let r = ui.add_enabled(
+                                stock,
+                                egui::RadioButton::new(
+                                    pick == Some(wpn),
+                                    format!("{}x {name}", hp.rounds(wpn)),
+                                ),
+                            );
                             let r = r.on_disabled_hover_text("None in stock for this mission");
                             if facts(r, &[role]).clicked() {
                                 pick = Some(wpn);
@@ -309,7 +429,13 @@ pub fn loadout_ui(ctx: &egui::Context, w: &mut LoadoutWindow, state: &mut MenuSt
                     });
                     if let Some(j) = hp.mirror {
                         ui.add_space(4.0);
-                        facts(ui.checkbox(mirror, "Same on both sides"), &[&format!("Loads {} too", lay.hardpoints[j].name.to_ascii_lowercase())]);
+                        facts(
+                            ui.checkbox(mirror, "Same on both sides"),
+                            &[&format!(
+                                "Loads {} too",
+                                lay.hardpoints[j].name.to_ascii_lowercase()
+                            )],
+                        );
                     }
                     if pick != lo.stores[w.selected] {
                         lo.stores[w.selected] = pick;
@@ -320,13 +446,24 @@ pub fn loadout_ui(ctx: &egui::Context, w: &mut LoadoutWindow, state: &mut MenuSt
                     section(ui, "Stores");
                     ui.label(egui::RichText::new(lo.summary()).color(GREEN));
                     if m.loadout.bays.iter().any(|b| b.weapon == 16 || b.weapon == 18) {
-                        ui.label(egui::RichText::new("The mission needs its camera or special equipment").small().color(AMBER));
+                        ui.label(
+                            egui::RichText::new(
+                                "The mission needs its camera or special equipment",
+                            )
+                            .small()
+                            .color(AMBER),
+                        );
                     }
                 });
             });
             ui.separator();
             ui.horizontal(|ui| {
-                if facts(ui.add(big_button("BRIEFED")), &["The stores the mission was briefed with"]).clicked() {
+                if facts(
+                    ui.add(big_button("BRIEFED")),
+                    &["The stores the mission was briefed with"],
+                )
+                .clicked()
+                {
                     *lo = PlannedLoadout::of(&m, aircraft);
                 }
                 if facts(ui.add(big_button("CLEAR")), &["Every hardpoint empty"]).clicked() {
@@ -342,7 +479,13 @@ pub fn loadout_ui(ctx: &egui::Context, w: &mut LoadoutWindow, state: &mut MenuSt
 }
 
 /// The aircraft from above with its hardpoints; returns the one clicked.
-fn diagram(ui: &mut egui::Ui, lay: &Layout, stores: &[Option<u8>], selected: usize, size: egui::Vec2) -> Option<usize> {
+fn diagram(
+    ui: &mut egui::Ui,
+    lay: &Layout,
+    stores: &[Option<u8>],
+    selected: usize,
+    size: egui::Vec2,
+) -> Option<usize> {
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let s = (rect.width() / (2.0 * lay.half_span + 3.0)).min(rect.height() / (lay.length + 2.0));
     let origin = egui::pos2(rect.center().x, rect.center().y - lay.length * s / 2.0);
@@ -353,32 +496,61 @@ fn diagram(ui: &mut egui::Ui, lay: &Layout, stores: &[Option<u8>], selected: usi
     let mut clicked = None;
     for (i, hp) in lay.hardpoints.iter().enumerate() {
         let c = at(hp.pos.0, hp.pos.1);
-        let r = if hp.bay { egui::Rect::from_center_size(c, egui::vec2(0.8 * s, 3.4 * s)) } else { egui::Rect::from_center_size(c, egui::vec2(16.0, 16.0)) };
+        let r = if hp.bay {
+            egui::Rect::from_center_size(c, egui::vec2(0.8 * s, 3.4 * s))
+        } else {
+            egui::Rect::from_center_size(c, egui::vec2(16.0, 16.0))
+        };
         let resp = ui.interact(r.expand(4.0), ui.id().with(("hardpoint", i)), egui::Sense::click());
         if resp.clicked() {
             clicked = Some(i);
         }
-        let colour = if i == selected { BRIGHT } else if resp.hovered() { GREEN } else if hp.fantasy { AMBER } else { DIM };
-        let fill = if stores[i].is_some() && !hp.bay { DIM.gamma_multiply(0.6) } else { egui::Color32::TRANSPARENT };
+        let colour = if i == selected {
+            BRIGHT
+        } else if resp.hovered() {
+            GREEN
+        } else if hp.fantasy {
+            AMBER
+        } else {
+            DIM
+        };
+        let fill = if stores[i].is_some() && !hp.bay {
+            DIM.gamma_multiply(0.6)
+        } else {
+            egui::Color32::TRANSPARENT
+        };
         let width = if i == selected { 2.5 } else { 1.5 };
         if hp.bay {
             p.rect(r, 0.0, fill, egui::Stroke::new(width, colour), egui::StrokeKind::Inside);
         } else {
             p.circle(c, 7.0, fill, egui::Stroke::new(width, colour));
         }
-        let label_at = if hp.bay { r.center_bottom() + egui::vec2(0.0, 10.0) } else { c - egui::vec2(0.0, 18.0) };
-        p.text(label_at, egui::Align2::CENTER_CENTER, hp.label, egui::FontId::monospace(12.0), colour);
+        let label_at = if hp.bay {
+            r.center_bottom() + egui::vec2(0.0, 10.0)
+        } else {
+            c - egui::vec2(0.0, 18.0)
+        };
+        p.text(
+            label_at,
+            egui::Align2::CENTER_CENTER,
+            hp.label,
+            egui::FontId::monospace(12.0),
+            colour,
+        );
         // The store's name turned along the bay, or down from the pylon.
         let Some(w) = stores[i] else { continue };
         let name = WEAPONS[w as usize].0.split(' ').next().unwrap_or("").to_string();
-        let galley = ui.ctx().fonts_mut(|f| f.layout_no_wrap(name, egui::FontId::monospace(11.0), colour));
+        let galley =
+            ui.ctx().fonts_mut(|f| f.layout_no_wrap(name, egui::FontId::monospace(11.0), colour));
         let size = galley.size();
         let quarter = std::f32::consts::FRAC_PI_2;
         let shape = if hp.bay {
-            egui::epaint::TextShape::new(r.center() - size / 2.0, galley, colour).with_angle_and_anchor(quarter, egui::Align2::CENTER_CENTER)
+            egui::epaint::TextShape::new(r.center() - size / 2.0, galley, colour)
+                .with_angle_and_anchor(quarter, egui::Align2::CENTER_CENTER)
         } else {
             let start = c + egui::vec2(0.0, 12.0);
-            egui::epaint::TextShape::new(start - egui::vec2(0.0, size.y / 2.0), galley, colour).with_angle_and_anchor(quarter, egui::Align2::LEFT_CENTER)
+            egui::epaint::TextShape::new(start - egui::vec2(0.0, size.y / 2.0), galley, colour)
+                .with_angle_and_anchor(quarter, egui::Align2::LEFT_CENTER)
         };
         p.add(shape);
     }
@@ -391,7 +563,20 @@ mod tests {
 
     fn mission(seed: u16, realistic: bool) -> Mission {
         let data = crate::mission::MissionData::load().expect("mission data");
-        crate::mission::generate(&data, &crate::mission::settings(3, 1, stealth_mission::MissionKind::Strike, 1, realistic, None, None), seed).unwrap()
+        crate::mission::generate(
+            &data,
+            &crate::mission::settings(
+                3,
+                1,
+                stealth_mission::MissionKind::Strike,
+                1,
+                realistic,
+                None,
+                None,
+            ),
+            seed,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -409,7 +594,13 @@ mod tests {
             let m = mission(7, realistic);
             let lo = PlannedLoadout::of(&m, AircraftKind::F117);
             assert!(lo.fits(&m, AircraftKind::F117));
-            let bays: Vec<(i32, i32)> = m.loadout.bays.iter().take(m.loadout.usable_bays).map(|b| (b.weapon as i32, b.count as i32)).collect();
+            let bays: Vec<(i32, i32)> = m
+                .loadout
+                .bays
+                .iter()
+                .take(m.loadout.usable_bays)
+                .map(|b| (b.weapon as i32, b.count as i32))
+                .collect();
             assert_eq!(lo.stations(), bays);
             assert_eq!(lo.first_choice(&m), 0);
         }

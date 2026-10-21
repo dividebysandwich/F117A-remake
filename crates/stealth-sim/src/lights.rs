@@ -60,7 +60,10 @@ mod tests {
         assert!(near_home_airfield(&objects, 0x3000, 0x1100, false));
         assert!(!near_home_airfield(&objects, 0x3000, 0x1100, true));
         // Neutral airfield: both; friendly carrier: friendly aircraft.
-        assert!(near_home_airfield(&objects, 0x5000, 0x1000, true) && near_home_airfield(&objects, 0x5000, 0x1000, false));
+        assert!(
+            near_home_airfield(&objects, 0x5000, 0x1000, true)
+                && near_home_airfield(&objects, 0x5000, 0x1000, false)
+        );
         assert!(near_home_airfield(&objects, 0x7000, 0x1000, true));
         // The first three objects are not airfields.
         let first = vec![base(0x1000, 0x1000, oflags::AIRFIELD | oflags::FRIENDLY); 3];

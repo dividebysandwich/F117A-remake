@@ -122,7 +122,8 @@ impl Geom {
         let along = (b - a).normalize_or_zero();
         let inset = ((d - a).length() * 0.5).min((b - a).length() * 0.45);
         let ridge = Vec3::Y * (y + h);
-        let (r0, r1) = ((a + d) * 0.5 + along * inset + ridge, (b + c) * 0.5 - along * inset + ridge);
+        let (r0, r1) =
+            ((a + d) * 0.5 + along * inset + ridge, (b + c) * 0.5 - along * inset + ridge);
         let centre = (a + b + c + d) * 0.25 + up;
         let o = |p: Vec3, q: Vec3| (p + q) * 0.5 + up - centre + Vec3::Y * 0.01;
         self.face(roof, &[a + up, b + up, r1, r0], o(a, b));
@@ -164,8 +165,10 @@ pub fn rect(c: Vec3, dir: Vec2, l: f32, w: f32) -> [Vec3; 4] {
 
 /// Regular polygon of `n` corners around `c`.
 pub fn ring(c: Vec3, r: f32, n: usize, phase: f32) -> Vec<Vec3> {
-    (0..n).map(|i| {
-        let a = phase + i as f32 / n as f32 * TAU;
-        c + Vec3::new(a.cos() * r, 0.0, a.sin() * r)
-    }).collect()
+    (0..n)
+        .map(|i| {
+            let a = phase + i as f32 / n as f32 * TAU;
+            c + Vec3::new(a.cos() * r, 0.0, a.sin() * r)
+        })
+        .collect()
 }

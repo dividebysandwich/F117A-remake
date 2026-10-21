@@ -9,7 +9,11 @@ pub fn emv(view_z: i32, velocity: i32, roll: i32, flags: i32, diff: i32, lockhee
     if r >= 0x40 {
         r = 0x80 - r;
     }
-    let b = if lockheed { bearing((diff + 1) << 7, 0x800) } else { bearing(u16v(((view_z & 0xFFFF) / 3) * (diff + 1)), 0x800) };
+    let b = if lockheed {
+        bearing((diff + 1) << 7, 0x800)
+    } else {
+        bearing(u16v(((view_z & 0xFFFF) / 3) * (diff + 1)), 0x800)
+    };
     let mut e = hi8s(b) + ((velocity & 0xFFFF) >> 10) + (r >> 1);
     if lockheed && flags & 0xFFFF == 0 {
         e += 20;
@@ -40,7 +44,14 @@ pub struct DetectCtx<'a> {
 
 /// Pure radar signal, bit-exact with the original game.
 /// `threat` = (lethality, tier, flags) of the radar type. Returns (score, bearing, range).
-pub fn detect(sx: i32, sy: i32, salt: i32, typ: i32, threat: Option<(i32, i32, i32)>, c: &DetectCtx) -> (i32, i32, i32) {
+pub fn detect(
+    sx: i32,
+    sy: i32,
+    salt: i32,
+    typ: i32,
+    threat: Option<(i32, i32, i32)>,
+    c: &DetectCtx,
+) -> (i32, i32, i32) {
     if typ == 0 || s16(typ) == -1 {
         return (0, 0, 0);
     }
@@ -58,7 +69,11 @@ pub fn detect(sx: i32, sy: i32, salt: i32, typ: i32, threat: Option<(i32, i32, i
     if a > 0x40 {
         a = 0x80 - a;
     }
-    let mut f = if fl & 1 != 0 { ((((0x60 - a) & 0xFFFF) * ((c.velocity & 0xFFFF) >> 5)) & 0xFFFF) >> 9 } else { a };
+    let mut f = if fl & 1 != 0 {
+        ((((0x60 - a) & 0xFFFF) * ((c.velocity & 0xFFFF) >> 5)) & 0xFFFF) >> 9
+    } else {
+        a
+    };
     f = s16(f + 0x20) >> 1;
     score = s16(f * (score >> 1)) >> 4;
     if (s16(salt - c.view_z).abs() >> 10) > rng {
@@ -106,7 +121,8 @@ impl Sim {
     }
 
     pub(crate) fn compute_emv(&mut self) {
-        self.emv = emv(self.p.view_z, self.p.velocity, self.p.roll, self.pflags, self.diff, self.lockheed);
+        self.emv =
+            emv(self.p.view_z, self.p.velocity, self.p.roll, self.pflags, self.diff, self.lockheed);
     }
 
     /// Raise the theater alarm: note where the player (or decoy) is and put the sites on alert.
@@ -132,8 +148,19 @@ impl Sim {
 
     /// TRAK count rebuild every 4*fs frames.
     pub(crate) fn rebuild_tracking(&mut self) {
-        let sites = self.objects.iter().take(self.ground_units).filter(|o| o.unit_type != 0 && o.flags & oflags::DESTROYED == 0 && o.alert > 0xC0).count();
-        let air = self.flights.iter().filter(|u| u.flags & fflags::AIRBORNE != 0 && u.flags & fflags::EXISTS != 0 && u.heat > 0xC0).count();
+        let sites = self
+            .objects
+            .iter()
+            .take(self.ground_units)
+            .filter(|o| o.unit_type != 0 && o.flags & oflags::DESTROYED == 0 && o.alert > 0xC0)
+            .count();
+        let air = self
+            .flights
+            .iter()
+            .filter(|u| {
+                u.flags & fflags::AIRBORNE != 0 && u.flags & fflags::EXISTS != 0 && u.heat > 0xC0
+            })
+            .count();
         self.tracking = (sites + air) as i32;
     }
 
@@ -218,7 +245,11 @@ impl Sim {
                 self.alarm();
             }
             let alert = self.objects[i].alert;
-            if self.threat_count_last <= self.diff && alert > 0xC0 && o.unit_type != 21 && self.nearest_base_dist > 0x500 {
+            if self.threat_count_last <= self.diff
+                && alert > 0xC0
+                && o.unit_type != 21
+                && self.nearest_base_dist > 0x500
+            {
                 self.tracking += 1;
                 if self.objects[i].flags & oflags::RADAR_ID == 0 && alert >= 0xFA {
                     self.objects[i].flags |= oflags::RADAR_ID;
@@ -388,7 +419,11 @@ impl Sim {
         let ty = self.ac_type(u.spec).name.clone();
         self.msg(format!("{} fired by {ty}", t.name));
         self.launches += 1;
-        self.emit(SimEvent::MissileLaunched { slot: k, spec: u.missile, launcher: Launcher::Aircraft(i) });
+        self.emit(SimEvent::MissileLaunched {
+            slot: k,
+            spec: u.missile,
+            launcher: Launcher::Aircraft(i),
+        });
     }
 
     /// Nearest friendly / neutral base (every 8 frames).
@@ -443,7 +478,14 @@ impl Sim {
             })
         };
         let mut out = Vec::new();
-        let mut push = |source, x: i32, y: i32, alt: i32, radar_type: i32, missile: i32, painted: bool, tracking: bool| {
+        let mut push = |source,
+                        x: i32,
+                        y: i32,
+                        alt: i32,
+                        radar_type: i32,
+                        missile: i32,
+                        painted: bool,
+                        tracking: bool| {
             let Some(t) = self.threat_type(radar_type) else { return };
             let (dx, dy) = (s16(px - x), s16(py - y));
             let range = approx(dx, dy) >> 6;
@@ -460,22 +502,58 @@ impl Sim {
                 + if painted { 30 } else { 0 }
                 + if range < lock_range { 60 } else { 0 }
                 + (t.lethality as i32 - range) / 4;
-            out.push(Emitter { source, x, y, alt, radar_type, range, bearing, lock_range, painted, tracking, launch, priority });
+            out.push(Emitter {
+                source,
+                x,
+                y,
+                alt,
+                radar_type,
+                range,
+                bearing,
+                lock_range,
+                painted,
+                tracking,
+                launch,
+                priority,
+            });
         };
         for (i, o) in self.objects.iter().enumerate().take(self.ground_units) {
-            if o.unit_type == 0 || o.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) != 0 {
+            if o.unit_type == 0
+                || o.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) != 0
+            {
                 continue;
             }
             let tracking = o.flags & oflags::TRACKING != 0 || o.alert > 0xC0;
             let missile = self.site_missile(o.unit_type);
-            push(EmitterSource::Site(i), o.x, o.y, 0, o.unit_type, missile, o.flags & oflags::PAINTED != 0, tracking);
+            push(
+                EmitterSource::Site(i),
+                o.x,
+                o.y,
+                0,
+                o.unit_type,
+                missile,
+                o.flags & oflags::PAINTED != 0,
+                tracking,
+            );
         }
         for (i, u) in self.flights.iter().enumerate() {
             let radar = self.ac_type(u.spec).radar as i32;
-            if u.flags & (fflags::EXISTS | fflags::AIRBORNE) != fflags::EXISTS | fflags::AIRBORNE || u.flags & fflags::DESTROYED != 0 || radar <= 0 {
+            if u.flags & (fflags::EXISTS | fflags::AIRBORNE) != fflags::EXISTS | fflags::AIRBORNE
+                || u.flags & fflags::DESTROYED != 0
+                || radar <= 0
+            {
                 continue;
             }
-            push(EmitterSource::Aircraft(i), u.x, u.y, u.alt, radar, u.missile, u.flags & fflags::CONTACT != 0, u.heat > 0xC0);
+            push(
+                EmitterSource::Aircraft(i),
+                u.x,
+                u.y,
+                u.alt,
+                radar,
+                u.missile,
+                u.flags & fflags::CONTACT != 0,
+                u.heat > 0xC0,
+            );
         }
         out.sort_by_key(|e| std::cmp::Reverse(e.priority));
         out
@@ -518,7 +596,16 @@ mod tests {
     }
 
     fn ctx(grid: &[u8], heading: i32, vel: i32) -> DetectCtx<'_> {
-        DetectCtx { px: 0x4000, py: 0x4000, view_z: 0, heading, velocity: vel, diff: 1, lockheed: false, grid }
+        DetectCtx {
+            px: 0x4000,
+            py: 0x4000,
+            view_z: 0,
+            heading,
+            velocity: vel,
+            diff: 1,
+            lockheed: false,
+            grid,
+        }
     }
 
     /// Regular, flat (t=8), SA-2 at 0 km beam: score ~72.
@@ -587,7 +674,16 @@ mod tests {
         ];
         for ((sx, sy, salt, typ, px, py, vz, h, v, d, l, t, th), want) in cases {
             let grid = vec![t; 256];
-            let c = DetectCtx { px, py, view_z: vz, heading: h, velocity: v, diff: d, lockheed: l, grid: &grid };
+            let c = DetectCtx {
+                px,
+                py,
+                view_z: vz,
+                heading: h,
+                velocity: v,
+                diff: d,
+                lockheed: l,
+                grid: &grid,
+            };
             assert_eq!(detect(sx, sy, salt, typ, Some(th), &c), want);
         }
     }

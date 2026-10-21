@@ -5,9 +5,9 @@ use bevy::math::DVec3;
 use bevy::prelude::*;
 
 use crate::camera::{View, ViewState};
-use crate::settings::{AppState, MissionSetup, SetupSet};
 use crate::flight::{Aircraft, FlightConstants, Player};
 use crate::models::{ModelAssets, ModelLibrary};
+use crate::settings::{AppState, MissionSetup, SetupSet};
 use crate::world::{Theater, WorldPos, bevy_to_wu, map_to_wu, wu_to_bevy};
 
 pub struct PlayerPlugin;
@@ -18,7 +18,10 @@ impl Plugin for PlayerPlugin {
             OnEnter(AppState::Flight),
             spawn_player.in_set(SetupSet::Spawn).run_if(|s: Res<MissionSetup>| !s.freecam),
         )
-        .add_systems(Update, (readout, attach_own_model, own_model_visibility).run_if(in_state(AppState::Flight)))
+        .add_systems(
+            Update,
+            (readout, attach_own_model, own_model_visibility).run_if(in_state(AppState::Flight)),
+        )
         .add_systems(OnExit(AppState::Flight), despawn_readout);
     }
 }
@@ -42,12 +45,18 @@ fn spawn_player(
         .start_base
         .clone()
         .and_then(|name| {
-            theater.world.objects.iter().find(|o| theater.world.name(o.name).eq_ignore_ascii_case(&name))
+            theater
+                .world
+                .objects
+                .iter()
+                .find(|o| theater.world.name(o.name).eq_ignore_ascii_case(&name))
         })
         .or_else(|| theater.world.objects.iter().find(|o| o.target_flags & 0x100 != 0));
     let (pos, heading) = match setup.start {
         // Carrier take-offs start on the deck (altitude 0x80).
-        Some(s) => (wu_to_bevy(s.east_wu, s.north_wu, if s.carrier { 128.0 } else { 0.0 }), s.heading),
+        Some(s) => {
+            (wu_to_bevy(s.east_wu, s.north_wu, if s.carrier { 128.0 } else { 0.0 }), s.heading)
+        }
         None => {
             let (east, north) = base.map(|o| map_to_wu(o.x, o.y)).unwrap_or((524_288.0, 524_288.0));
             (wu_to_bevy(east + 2.0, north - RUNWAY_OFFSET_WU, 0.0), 0.0)
@@ -73,7 +82,9 @@ fn spawn_player(
         a.set_thrust = 50.0;
         a.thrust = 50.0;
     }
-    if let Some((p, heading, alt, kts)) = mission.as_ref().and_then(|m| crate::stage::chase_start(&m.0)) {
+    if let Some((p, heading, alt, kts)) =
+        mission.as_ref().and_then(|m| crate::stage::chase_start(&m.0))
+    {
         // Test aid (`--start-chase`): in the air behind a drone, gear up.
         pos = p;
         let a = &mut aircraft_state;
@@ -87,15 +98,16 @@ fn spawn_player(
         a.thrust = 60.0;
     }
     let aircraft = commands
-        .spawn((
-            Player,
-            aircraft_state,
-            WorldPos(pos),
-            Transform::default(),
-            Visibility::default(),
-        ))
+        .spawn((Player, aircraft_state, WorldPos(pos), Transform::default(), Visibility::default()))
         .id();
-    crate::camera::spawn_rig(&mut commands, aircraft, &mut meshes, &palette, xr_root.0, settings.cockpit_eye());
+    crate::camera::spawn_rig(
+        &mut commands,
+        aircraft,
+        &mut meshes,
+        &palette,
+        xr_root.0,
+        settings.cockpit_eye(),
+    );
     // Debug text readout of the flight state (opt-in, overlaps the panel).
     if !std::env::args().any(|a| a == "--readout") {
         return;
@@ -192,32 +204,62 @@ fn attach_own_model(
     let Ok(player) = player.single() else { return };
     let spec = settings.aircraft.spec();
     let file = library.load(&server, "stflt");
-    let transform = Transform::from_xyz(0.0, spec.model_lift, 0.0).with_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32));
-    let Some(model) = assets.spawn(&mut commands, &file, spec.model, crate::palette_material::LEVEL_AIRCRAFT, true) else { return };
+    let transform = Transform::from_xyz(0.0, spec.model_lift, 0.0)
+        .with_scale(Vec3::splat(AIRCRAFT_MODEL_SCALE as f32));
+    let Some(model) = assets.spawn(
+        &mut commands,
+        &file,
+        spec.model,
+        crate::palette_material::LEVEL_AIRCRAFT,
+        true,
+    ) else {
+        return;
+    };
     commands.entity(model).insert((OwnModel, transform, Visibility::Hidden));
     commands.entity(player).add_child(model);
     let Some(view) = &spec.cockpit_view else { return };
     // The cut box in model units.
-    let to_model = |p: Vec3| (spec.eye + p - Vec3::Y * spec.model_lift) / AIRCRAFT_MODEL_SCALE as f32;
+    let to_model =
+        |p: Vec3| (spec.eye + p - Vec3::Y * spec.model_lift) / AIRCRAFT_MODEL_SCALE as f32;
     let (lo, hi) = (to_model(view.cut.0), to_model(view.cut.1));
     let inside = |v: Vec3| v.cmpge(lo).all() && v.cmple(hi).all();
     let interior = commands.spawn((OwnModelInterior, transform, Visibility::Hidden)).id();
     commands.entity(player).add_child(interior);
-    if let Some(lights) = assets.spawn_lights(&mut commands, &file, spec.model, crate::palette_material::LEVEL_AIRCRAFT, true) {
+    if let Some(lights) = assets.spawn_lights(
+        &mut commands,
+        &file,
+        spec.model,
+        crate::palette_material::LEVEL_AIRCRAFT,
+        true,
+    ) {
         commands.entity(lights).insert((OwnLights, Transform::default(), Visibility::Inherited));
         commands.entity(interior).add_child(lights);
     }
-    let tag = bevy::mesh::MeshTag(crate::palette_material::mesh_tag(crate::palette_material::LEVEL_AIRCRAFT, 0, true));
+    let tag = bevy::mesh::MeshTag(crate::palette_material::mesh_tag(
+        crate::palette_material::LEVEL_AIRCRAFT,
+        0,
+        true,
+    ));
     for (colour, tris) in assets.node_triangles(&file, &format!("{}_lod0", spec.model)) {
         if view.canopy_colours.contains(&colour) {
             continue;
         }
-        let kept: Vec<[Vec3; 3]> = tris.into_iter().filter(|t| !t.iter().any(|&v| inside(v)) && !inside((t[0] + t[1] + t[2]) / 3.0)).collect();
+        let kept: Vec<[Vec3; 3]> = tris
+            .into_iter()
+            .filter(|t| !t.iter().any(|&v| inside(v)) && !inside((t[0] + t[1] + t[2]) / 3.0))
+            .collect();
         if kept.is_empty() {
             continue;
         }
         let mesh = crate::models::triangle_mesh(&kept);
-        let child = commands.spawn((MeshMaterial3d(assets.palette.material(colour)), tag.clone(), Transform::default(), Visibility::Inherited)).id();
+        let child = commands
+            .spawn((
+                MeshMaterial3d(assets.palette.material(colour)),
+                tag.clone(),
+                Transform::default(),
+                Visibility::Inherited,
+            ))
+            .id();
         commands.entity(interior).add_child(child);
         commands.queue(move |world: &mut World| {
             let h = world.resource_mut::<Assets<Mesh>>().add(mesh);
@@ -235,7 +277,8 @@ fn own_model_visibility(
     mut q: Query<&mut Visibility, (With<OwnModel>, Without<OwnModelInterior>)>,
     mut interior: Query<&mut Visibility, (With<OwnModelInterior>, Without<OwnModel>)>,
 ) {
-    let external = !matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
+    let external =
+        !matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
     let vis = |on: bool| if on { Visibility::Inherited } else { Visibility::Hidden };
     for mut v in &mut q {
         v.set_if_neq(vis(external));

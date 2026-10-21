@@ -53,7 +53,9 @@ impl Sim {
                 tz = approx(u.x - tx, u.y - ty) + 2000;
             }
             mode = 2;
-        } else if self.alarm_timer != 0 && (u.flags & 0x140 == 0 || self.alarm_timer > self.alarm_recent()) {
+        } else if self.alarm_timer != 0
+            && (u.flags & 0x140 == 0 || self.alarm_timer > self.alarm_recent())
+        {
             mode = 1;
             if self.decoy_active() {
                 tx = self.cms[0].x;
@@ -67,14 +69,20 @@ impl Sim {
         } else {
             mode = 3;
             let (mut x, mut y, mut z);
-            if u.flags & fflags::ESCORT != 0 && self.escort_leader >= 0 && (self.escort_leader as usize) < nf {
+            if u.flags & fflags::ESCORT != 0
+                && self.escort_leader >= 0
+                && (self.escort_leader as usize) < nf
+            {
                 let l = self.flights[self.escort_leader as usize];
                 let a = s16((i as i32 & 7) * 0x800 + l.heading - 0x1800);
                 x = s16(l.x + self.trig.sin_mul(a, l.speed));
                 y = s16(l.y - self.trig.cos_mul(a, l.speed));
                 z = l.alt + (i as i32 & 7) * 0x40;
             } else {
-                if ((i as i32 * 8 + self.mission_tick) & 0xBF) == 0 && u.flags & fflags::ALERTED_PATROL == 0 && n > 1 {
+                if ((i as i32 * 8 + self.mission_tick) & 0xBF) == 0
+                    && u.flags & fflags::ALERTED_PATROL == 0
+                    && n > 1
+                {
                     let pb = bearing(px - u.x, u.y - py);
                     let mut best = 0x7FFF;
                     for _ in 0..8 {
@@ -136,9 +144,12 @@ impl Sim {
             let ag = if i == 0 { 1 } else { clamp_q((i as i32 & 3) + self.diff, 0, 2) };
             let h = s16(u.heading + if abs16(u.bank) < 0x4000 { u.bank >> 2 } else { 0 });
             let rel = (s16(brg - h) >> 13) & 7;
-            let ph = s16(self.p.heading + if abs16(self.p.roll) < 0x4000 { self.p.roll >> 1 } else { 0 });
+            let ph = s16(
+                self.p.heading + if abs16(self.p.roll) < 0x4000 { self.p.roll >> 1 } else { 0 }
+            );
             let asp = ((s16(u.heading - ph) >> 13) + 4) & 7;
-            let v = self.maneuver.get((ag * 64 + asp * 8 + rel) as usize).copied().unwrap_or(0) as i32;
+            let v =
+                self.maneuver.get((ag * 64 + asp * 8 + rel) as usize).copied().unwrap_or(0) as i32;
             roll_cmd = v << 12;
             if v == 0x100 {
                 pitch_cmd = 0x6000;
@@ -161,7 +172,10 @@ impl Sim {
                 roll_cmd = 0x3000;
             }
         }
-        if mode == 1 && self.obj(self.nearest_base).flags & oflags::FRIENDLY != 0 && self.nearest_base_dist < 0x780 {
+        if mode == 1
+            && self.obj(self.nearest_base).flags & oflags::FRIENDLY != 0
+            && self.nearest_base_dist < 0x780
+        {
             roll_cmd = 0x3000;
         }
         roll_cmd = clamp_q(roll_cmd, -agil << 12, agil << 12);
@@ -286,7 +300,10 @@ impl Sim {
         self.flights[i] = u;
         let per = (fs << 4).max(1);
         let phase = ((((i as i32) & 8) >> 3) + (i as i32 & 7) * 2) * fs;
-        if self.frame % per == phase && u.flags & fflags::DESTROYED == 0 && u.flags & fflags::AIRBORNE != 0 {
+        if self.frame % per == phase
+            && u.flags & fflags::DESTROYED == 0
+            && u.flags & fflags::AIRBORNE != 0
+        {
             self.radar_sweep(i);
         }
     }
@@ -302,13 +319,24 @@ impl Sim {
         // The original's map units, in a round's fine units.
         let (f, m) = (ROUND_FINE, 32 * ROUND_FINE);
         if let Some(b) = self.bullets.get_mut(slot) {
-            *b = Bullet { x: u.x * m, y: u.y * m, alt: u.alt * f, vx: vx * m, vy: vy * m, vz: vz * f };
+            *b = Bullet {
+                x: u.x * m,
+                y: u.y * m,
+                alt: u.alt * f,
+                vx: vx * m,
+                vy: vy * m,
+                vz: vz * f,
+            };
         }
     }
 
     /// Scramble check for an inactive unit: may launch it from a random alert base.
     fn scramble(&mut self, i: usize) {
-        if (((self.mission_tick >> (self.roe + 4)) ^ i as i32) & 7) != 0 || self.is_traffic(i) || i >= self.mission_flights || i == 0 {
+        if (((self.mission_tick >> (self.roe + 4)) ^ i as i32) & 7) != 0
+            || self.is_traffic(i)
+            || i >= self.mission_flights
+            || i == 0
+        {
             return;
         }
         if self.woc == 0 {

@@ -317,7 +317,8 @@ impl<'a> Gen<'a> {
 
     /// ONC grid reference of a map point.
     fn grid_ref(&self, x: i32, y: i32) -> [u8; 4] {
-        let pre = [b"TD", b"JZ", b"WX", b"CC", b"XV", b"ES", b"KU", b"CU", b"KO"][self.theater as usize];
+        let pre =
+            [b"TD", b"JZ", b"WX", b"CC", b"XV", b"ES", b"KU", b"CU", b"KO"][self.theater as usize];
         let (offx, offy) = match self.theater {
             0 => (6, 4),
             3 => (3, 5),
@@ -570,7 +571,9 @@ impl<'a> Gen<'a> {
                     let mut cnt = 0;
                     let cat = self.ott(self.o(t[slot].idx).shape());
                     for (row, m) in self.x.missions.iter().enumerate() {
-                        if m.theater_mask as i32 & (1 << self.theater) == 0 || m.roe_mask as i32 & (1 << self.roe) == 0 {
+                        if m.theater_mask as i32 & (1 << self.theater) == 0
+                            || m.roe_mask as i32 & (1 << self.roe) == 0
+                        {
                             continue;
                         }
                         if cat != m.category as i32 {
@@ -582,7 +585,8 @@ impl<'a> Gen<'a> {
                         if rep == 1 && choice == cnt {
                             t[slot].ty = m.mission_type as i32;
                             t[slot].num = row as i32;
-                            t[slot].code = m.code as i32 + if m.special > 0 { (m.special as i32) << 8 } else { 0 };
+                            t[slot].code = m.code as i32
+                                + if m.special > 0 { (m.special as i32) << 8 } else { 0 };
                         }
                         cnt += 1;
                     }
@@ -727,10 +731,14 @@ impl<'a> Gen<'a> {
         let b0 = *self.o(t[0].base);
         let b1 = *self.o(t[1].base);
         let base_xp = (b0.x as u16 as i32) << 5;
-        let base_yp = s32(((0x8000 - b0.y as i64) << 5) - if b0.flags & F::CARRIER != 0 { 0 } else { 0x708 });
+        let base_yp =
+            s32(((0x8000 - b0.y as i64) << 5) - if b0.flags & F::CARRIER != 0 { 0 } else { 0x708 });
         let p0 = *self.o(t[0].idx);
         let (mut tx, mut ty) = (p0.x as i32, p0.y as i32);
-        let mid = (((b0.x as u16 as i32) >> 1) + ((tx & 0xFFFF) >> 1), ((b0.y as u16 as i32) >> 1) + ((ty & 0xFFFF) >> 1));
+        let mid = (
+            ((b0.x as u16 as i32) >> 1) + ((tx & 0xFFFF) >> 1),
+            ((b0.y as u16 as i32) >> 1) + ((ty & 0xFFFF) >> 1),
+        );
         if t[0].code & 0x10 != 0 {
             tx = (tx & 0xFC00) + 0x200;
             ty = (ty & 0xFC00) + 0x200;
@@ -742,7 +750,11 @@ impl<'a> Gen<'a> {
         let nf = self.w.flights.len();
         for i in 0..nf.saturating_sub(4) {
             if self.w.flights[i].flags & 0x80 != 0 {
-                let mut rng = if self.w.flights[i].flags & 0x40 != 0 { bd[0] << 1 } else { cdiv(bd[0], 4) * (4 - self.diff) };
+                let mut rng = if self.w.flights[i].flags & 0x40 != 0 {
+                    bd[0] << 1
+                } else {
+                    cdiv(bd[0], 4) * (4 - self.diff)
+                };
                 rng = s16(rng);
                 let r = loop {
                     let r = self.r.r(self.woc() - 3) + 3;
@@ -881,7 +893,12 @@ impl<'a> Gen<'a> {
         while k != 0 {
             let r = self.r.r(self.n());
             let o = *self.o(r);
-            if r != t[0].idx && r != t[1].idx && o.unit_type != 0 && o.flags & F::FRIENDLY == 0 && o.flags & F::NEUTRAL == 0 {
+            if r != t[0].idx
+                && r != t[1].idx
+                && o.unit_type != 0
+                && o.flags & F::FRIENDLY == 0
+                && o.flags & F::NEUTRAL == 0
+            {
                 self.om(r).flags |= F::OFF_THE_AIR;
                 k -= 1;
             }

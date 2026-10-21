@@ -21,7 +21,9 @@ impl Sim {
             self.waypoint = 2;
         }
         self.pflags |= bit;
-        if self.pflags & (pflags::PRIMARY_DONE | pflags::SECONDARY_DONE) == pflags::PRIMARY_DONE | pflags::SECONDARY_DONE {
+        if self.pflags & (pflags::PRIMARY_DONE | pflags::SECONDARY_DONE)
+            == pflags::PRIMARY_DONE | pflags::SECONDARY_DONE
+        {
             self.waypoint = 3;
         }
         self.emit(SimEvent::ObjectiveDone { primary: k == 0 });
@@ -37,7 +39,14 @@ impl Sim {
         if outcome == 0 && self.eject == 0 {
             self.landing_type = 3;
         }
-        let e = MissionEnd { outcome, landing_type: self.landing_type, map_x: self.p.mx, map_y: self.p.my, damage: self.damage, hits: self.hits };
+        let e = MissionEnd {
+            outcome,
+            landing_type: self.landing_type,
+            map_x: self.p.mx,
+            map_y: self.p.my,
+            damage: self.damage,
+            hits: self.hits,
+        };
         self.log_event(8, 0);
         self.ended = Some(e);
         self.emit(SimEvent::MissionEnd(e));
@@ -46,7 +55,14 @@ impl Sim {
     /// End the mission from outside (Alt-Q = 7: nothing written, like the original).
     pub fn quit(&mut self) {
         if self.ended.is_none() {
-            let e = MissionEnd { outcome: 7, landing_type: self.landing_type, map_x: self.p.mx, map_y: self.p.my, damage: self.damage, hits: self.hits };
+            let e = MissionEnd {
+                outcome: 7,
+                landing_type: self.landing_type,
+                map_x: self.p.mx,
+                map_y: self.p.my,
+                damage: self.damage,
+                hits: self.hits,
+            };
             self.ended = Some(e);
         }
     }
@@ -90,7 +106,12 @@ impl Sim {
                     self.time_expired_shown = true;
                     self.msg("Time expired");
                 }
-                if !self.on_ground && t.code & 0x20 != 0 && !self.deadline_done[k] && t.object >= 0 && (t.object as usize) < self.objects.len() {
+                if !self.on_ground
+                    && t.code & 0x20 != 0
+                    && !self.deadline_done[k]
+                    && t.object >= 0
+                    && (t.object as usize) < self.objects.len()
+                {
                     self.deadline_done[k] = true;
                     let i = t.object as usize;
                     if self.objects[i].flags & oflags::DESTROYED == 0 {
@@ -100,7 +121,13 @@ impl Sim {
                         self.display_shape[i] = shape;
                         self.emit(SimEvent::GroundDestroyed { object: i, shape });
                         if let Some(th) = self.find_nearest_tile(o.x << 5, (0x8000 - o.y) << 5) {
-                            let rec = TileDamage { level: th.level, index: th.index, col: th.col, row: th.row, shape };
+                            let rec = TileDamage {
+                                level: th.level,
+                                index: th.index,
+                                col: th.col,
+                                row: th.row,
+                                shape,
+                            };
                             self.tile_damage.push(rec);
                             self.emit(SimEvent::TileDestroyed(rec));
                         }
@@ -131,7 +158,11 @@ impl Sim {
         let mut ground_alt = 0;
         if self.nearest_base >= 0 && (self.nearest_base_dist < 0x200 || self.on_ground) {
             let carrier = b.flags & oflags::CARRIER != 0;
-            let (mut hw, mut hl) = if carrier { (0x100, 0x3C0) } else { (0xA0, if b.flags & oflags::DISABLED != 0 { 0x400 } else { 0x800 }) };
+            let (mut hw, mut hl) = if carrier {
+                (0x100, 0x3C0)
+            } else {
+                (0xA0, if b.flags & oflags::DISABLED != 0 { 0x400 } else { 0x800 })
+            };
             if carrier {
                 ground_alt = 0x80;
             }
@@ -139,7 +170,8 @@ impl Sim {
                 hw += 0x80;
                 hl += 0x100;
             }
-            self.corridor = s16(self.p.mx - b.x).abs() <= hw >> 5 && s16(self.p.my - b.y).abs() <= hl >> 5;
+            self.corridor =
+                s16(self.p.mx - b.x).abs() <= hw >> 5 && s16(self.p.my - b.y).abs() <= hl >> 5;
             if !self.corridor {
                 ground_alt = 0;
             }
@@ -150,7 +182,8 @@ impl Sim {
         if touchdown && self.corridor {
             let lim = if b.flags & oflags::CARRIER != 0 { 0x100 } else { 0x80 };
             let sink = (-(lm * ps.climb_rate)) & 0xFFFF;
-            let bad = sink > lim || (lm != 0 && (ps.gear_up || abs16(self.p.roll) > ((24 / lm) << 8)));
+            let bad =
+                sink > lim || (lm != 0 && (ps.gear_up || abs16(self.p.roll) > ((24 / lm) << 8)));
             if bad {
                 self.sound(4, 2);
                 self.finalize(5);
@@ -162,16 +195,25 @@ impl Sim {
             if self.p.knots <= 1 && self.on_ground && self.frame & 15 == 0 {
                 for k in 0..2 {
                     let t = self.targets[k];
-                    if t.object == self.nearest_base && t.mission_type == 4 && self.mission_tick < self.deadline && self.mark_target_reached(k) {
+                    if t.object == self.nearest_base
+                        && t.mission_type == 4
+                        && self.mission_tick < self.deadline
+                        && self.mark_target_reached(k)
+                    {
                         self.msg("Cargo delivered");
                         // The original empties bay k (the generator loads the target's
                         // equipment there).
-                        if let Some(b) = self.bays.iter_mut().find(|b| b.0 == SPECIAL_EQUIPMENT && b.1 != 0) {
+                        if let Some(b) =
+                            self.bays.iter_mut().find(|b| b.0 == SPECIAL_EQUIPMENT && b.1 != 0)
+                        {
                             b.1 = 0;
                         }
                     }
                 }
-                if b.flags & 0x500 != 0 && self.armed_landing != 0 && b.flags & oflags::DISABLED == 0 {
+                if b.flags & 0x500 != 0
+                    && self.armed_landing != 0
+                    && b.flags & oflags::DISABLED == 0
+                {
                     let old = self.armed_landing;
                     self.armed_landing += 1;
                     if old == 1 {

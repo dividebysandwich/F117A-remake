@@ -22,14 +22,16 @@ use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_openxr::spaces::OxrSpaceLocationFlags;
 use bevy_mod_openxr::{add_xr_plugins, openxr_session_running};
 use bevy_mod_xr::camera::XrCamera;
-use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated, XrState, XrTrackingRoot, session_available};
+use bevy_mod_xr::session::{
+    XrPreDestroySession, XrSessionCreated, XrState, XrTrackingRoot, session_available,
+};
 use bevy_mod_xr::spaces::XrSpaceSyncSet;
 use openxr::{Haptic, Posef};
 
 use crate::camera::{EyeCamera, MAIN_BACKGROUND_LAYER, RigOffset, View, ViewState, XrRoot};
 use crate::cockpit3d::{
-    BUTTON_MENU, BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT, BUTTON_STICK_UP, BUTTON_THUMB, Hands,
-    HandsUpdate,
+    BUTTON_MENU, BUTTON_PRIMARY, BUTTON_SECONDARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT,
+    BUTTON_STICK_RIGHT, BUTTON_STICK_UP, BUTTON_THUMB, Hands, HandsUpdate,
 };
 use crate::settings::AppState;
 
@@ -105,10 +107,16 @@ impl Plugin for XrPlugin {
                     .run_if(resource_exists::<XrActions>),
             )
             .add_systems(Update, (setup_cameras, recenter).run_if(session_available))
-            .add_systems(PostUpdate, haptics.run_if(openxr_session_running).run_if(resource_exists::<XrActions>))
+            .add_systems(
+                PostUpdate,
+                haptics.run_if(openxr_session_running).run_if(resource_exists::<XrActions>),
+            )
             .add_systems(OnEnter(AppState::Flight), |mut r: ResMut<Recenter>| r.request(0))
             .add_oxr_event_handler(runtime_recentred)
-            .add_systems(OnExit(AppState::Flight), detach_root.before(crate::combat::FlightTeardown))
+            .add_systems(
+                OnExit(AppState::Flight),
+                detach_root.before(crate::combat::FlightTeardown),
+            )
             .init_resource::<Recenter>();
     }
 
@@ -177,7 +185,10 @@ fn runtime_recentred(event: OxrEventIn, mut pending: ResMut<Recenter>) {
 
 fn create_actions(instance: Res<OxrInstance>, mut commands: Commands) {
     let result = (|| -> openxr::Result<XrActions> {
-        let hands = [instance.string_to_path("/user/hand/left")?, instance.string_to_path("/user/hand/right")?];
+        let hands = [
+            instance.string_to_path("/user/hand/left")?,
+            instance.string_to_path("/user/hand/right")?,
+        ];
         let set = instance.create_action_set("cockpit", "Cockpit", 0)?;
         Ok(XrActions {
             grip: set.create_action("grip_pose", "Grip pose", &hands)?,
@@ -200,10 +211,17 @@ fn create_actions(instance: Res<OxrInstance>, mut commands: Commands) {
     }
 }
 
-fn suggest_bindings(actions: Option<Res<XrActions>>, mut out: MessageWriter<OxrSuggestActionBinding>) {
+fn suggest_bindings(
+    actions: Option<Res<XrActions>>,
+    mut out: MessageWriter<OxrSuggestActionBinding>,
+) {
     let Some(a) = actions else { return };
-    let both = |s: &str| vec![format!("/user/hand/left/{s}").into(), format!("/user/hand/right/{s}").into()];
-    let per_hand = |l: &str, r: &str| vec![format!("/user/hand/left/{l}").into(), format!("/user/hand/right/{r}").into()];
+    let both = |s: &str| {
+        vec![format!("/user/hand/left/{s}").into(), format!("/user/hand/right/{s}").into()]
+    };
+    let per_hand = |l: &str, r: &str| {
+        vec![format!("/user/hand/left/{l}").into(), format!("/user/hand/right/{r}").into()]
+    };
     let left = |s: &str| vec![format!("/user/hand/left/{s}").into()];
     // (profile, squeeze, trigger, primary, secondary, thumb, menu)
     type B = Vec<std::borrow::Cow<'static, str>>;
@@ -244,12 +262,24 @@ fn suggest_bindings(actions: Option<Res<XrActions>>, mut out: MessageWriter<OxrS
             both("input/thumbstick/click"),
             both("input/menu/click"),
         ),
-        ("/interaction_profiles/khr/simple_controller", vec![], both("input/select/click"), vec![], vec![], vec![], both("input/menu/click")),
+        (
+            "/interaction_profiles/khr/simple_controller",
+            vec![],
+            both("input/select/click"),
+            vec![],
+            vec![],
+            vec![],
+            both("input/menu/click"),
+        ),
     ];
     for (profile, squeeze, trigger, primary, secondary, thumb, menu) in profiles {
         let mut add = |action: openxr::sys::Action, bindings: B| {
             if !bindings.is_empty() {
-                out.write(OxrSuggestActionBinding { action, interaction_profile: profile.into(), bindings });
+                out.write(OxrSuggestActionBinding {
+                    action,
+                    interaction_profile: profile.into(),
+                    bindings,
+                });
             }
         };
         add(a.grip.as_raw(), both("input/grip/pose"));
@@ -278,7 +308,11 @@ fn sync_actions(actions: Res<XrActions>, mut sync: MessageWriter<OxrSyncActionSe
     sync.write(OxrSyncActionSet(actions.set.clone()));
 }
 
-fn spawn_hand_spaces(actions: Option<Res<XrActions>>, session: Res<OxrSession>, mut commands: Commands) {
+fn spawn_hand_spaces(
+    actions: Option<Res<XrActions>>,
+    session: Res<OxrSession>,
+    mut commands: Commands,
+) {
     let Some(a) = actions else { return };
     for hand in 0..2 {
         for aim in [false, true] {
@@ -313,7 +347,9 @@ fn read_hands(
     let offset = offset.scaled(settings.vr_rig_scale());
     for (i, hand) in hands.hands.iter_mut().enumerate() {
         let path = actions.hands[i];
-        let f = |a: &openxr::Action<f32>| a.state(&session, path).map(|s| s.current_state).unwrap_or(0.0);
+        let f = |a: &openxr::Action<f32>| {
+            a.state(&session, path).map(|s| s.current_state).unwrap_or(0.0)
+        };
         let b = |a: &openxr::Action<bool>| a.state(&session, path).is_ok_and(|s| s.current_state);
         hand.prev_buttons = hand.buttons;
         hand.prev_trigger = hand.trigger;
@@ -324,9 +360,17 @@ fn read_hands(
             | (b(&actions.thumb) as u8 * BUTTON_THUMB)
             | (b(&actions.menu) as u8 * BUTTON_MENU);
         // Stick directions engage at 70 % and release below 50 % (no chatter at the edge).
-        let v = actions.thumbstick.state(&session, path).map_or(Vec2::ZERO, |s| Vec2::new(s.current_state.x, s.current_state.y));
+        let v = actions
+            .thumbstick
+            .state(&session, path)
+            .map_or(Vec2::ZERO, |s| Vec2::new(s.current_state.x, s.current_state.y));
         hand.thumb = v;
-        for (bit, amount) in [(BUTTON_STICK_UP, v.y), (BUTTON_STICK_DOWN, -v.y), (BUTTON_STICK_RIGHT, v.x), (BUTTON_STICK_LEFT, -v.x)] {
+        for (bit, amount) in [
+            (BUTTON_STICK_UP, v.y),
+            (BUTTON_STICK_DOWN, -v.y),
+            (BUTTON_STICK_RIGHT, v.x),
+            (BUTTON_STICK_LEFT, -v.x),
+        ] {
             let edge = if hand.prev_buttons & bit != 0 { 0.5 } else { 0.7 };
             if amount > edge {
                 hand.buttons |= bit;
@@ -348,7 +392,9 @@ fn read_hands(
         if let Some(g) = grip {
             hand.grip = g;
             // Fingertip: a little ahead of the aim pose (the controller's pointing end).
-            hand.finger = aim.map_or(g.transform_point(Vec3::new(0.0, -0.02, -0.09)), |a| a.transform_point(Vec3::new(0.0, 0.0, -0.02)));
+            hand.finger = aim.map_or(g.transform_point(Vec3::new(0.0, -0.02, -0.09)), |a| {
+                a.transform_point(Vec3::new(0.0, 0.0, -0.02))
+            });
         }
     }
 }
@@ -373,7 +419,11 @@ fn haptics(actions: Res<XrActions>, session: Res<OxrSession>, mut hands: ResMut<
 /// made children of the tracking root: otherwise they sit at the raw tracking-space pose in the
 /// world (the aircraft's origin, metres behind the cockpit) for everything that uses the
 /// camera's GlobalTransform.
-fn setup_cameras(mut commands: Commands, cams: Query<Entity, Added<XrCamera>>, root: Query<Entity, With<XrTrackingRoot>>) {
+fn setup_cameras(
+    mut commands: Commands,
+    cams: Query<Entity, Added<XrCamera>>,
+    root: Query<Entity, With<XrTrackingRoot>>,
+) {
     let root = root.single().ok();
     for e in &cams {
         commands.entity(e).insert((
@@ -439,4 +489,3 @@ fn detach_root(
     }
     commands.entity(r).remove::<(ChildOf, EyeCamera)>().insert(Transform::IDENTITY);
 }
-

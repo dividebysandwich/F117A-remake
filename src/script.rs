@@ -24,7 +24,12 @@ impl Plugin for ScriptPlugin {
         let get = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
         let (steps, conditional) = get("--script").map(|s| parse(&s)).unwrap_or_default();
         app.insert_resource(Script { steps, conditional, next: 0, axes: Axes::default() })
-            .add_systems(Update, run_script.before(FlightSystems).run_if(in_state(crate::settings::AppState::Flight)));
+            .add_systems(
+                Update,
+                run_script
+                    .before(FlightSystems)
+                    .run_if(in_state(crate::settings::AppState::Flight)),
+            );
         if args.iter().any(|a| a == "--log-flight") {
             app.add_systems(Update, log_flight.after(FlightSystems));
         }
@@ -230,7 +235,9 @@ fn run_script(
             Cond::AircraftBelow(km) => combat.as_ref().is_some_and(|c| {
                 c.sim.active_aircraft().iter().any(|(_, u, _)| {
                     u.flags & stealth_sim::fflags::AIRBORNE != 0
-                        && (u.wx as f64 - e).hypot((0x100000 - u.wy) as f64 - n) * crate::world::WU / 1000.0 < km
+                        && (u.wx as f64 - e).hypot((0x100000 - u.wy) as f64 - n) * crate::world::WU
+                            / 1000.0
+                            < km
                 })
             }),
         };

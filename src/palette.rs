@@ -11,8 +11,10 @@ use bevy::prelude::*;
 use bevy::render::storage::ShaderBuffer;
 use serde::Deserialize;
 
-use crate::palette_material::{FLAG_BACKGROUND, FLAG_LINE, Globals, PaletteMaterial, PaletteParams, pack16};
-use crate::settings::{AppState, MissionSetup, SetupSet, Settings};
+use crate::palette_material::{
+    FLAG_BACKGROUND, FLAG_LINE, Globals, PaletteMaterial, PaletteParams, pack16,
+};
+use crate::settings::{AppState, MissionSetup, Settings, SetupSet};
 
 pub struct PalettePlugin;
 
@@ -24,10 +26,14 @@ impl Plugin for PalettePlugin {
             .add_systems(OnEnter(AppState::Flight), setup_palette.in_set(SetupSet::Palette))
             .add_systems(OnEnter(AppState::Viewer), setup_palette.in_set(SetupSet::Palette))
             .init_resource::<DetailLevel>()
-            .add_systems(Update, (step_time_of_day, cycle_detail).run_if(resource_exists::<Palette>))
+            .add_systems(
+                Update,
+                (step_time_of_day, cycle_detail).run_if(resource_exists::<Palette>),
+            )
             .add_systems(
                 PostUpdate,
-                (apply_remap_changes, update_globals.after(crate::lighting::LightingSystems)).run_if(resource_exists::<Palette>),
+                (apply_remap_changes, update_globals.after(crate::lighting::LightingSystems))
+                    .run_if(resource_exists::<Palette>),
             )
             .add_systems(PostUpdate, (apply_msaa, crate::palette_material::sync_lighting));
     }
@@ -191,7 +197,8 @@ fn setup_palette(
     *tod = TimeOfDay { night_mission: setup.night, seed: setup.tod_seed, ..default() };
     let theater = load_theater_palettes(&setup.theater);
     let remap = crate::asset_path::asset("palettes/remap.ron");
-    let text = std::fs::read_to_string(&remap).unwrap_or_else(|e| panic!("{}: {e}", remap.display()));
+    let text =
+        std::fs::read_to_string(&remap).unwrap_or_else(|e| panic!("{}: {e}", remap.display()));
     let remaps: Vec<RemapTable> = ron::from_str(&text).expect("remap.ron");
     let globals = buffers.add(ShaderBuffer::from(Globals::default()));
     let active = tod.initial(&theater);
@@ -211,9 +218,12 @@ fn setup_palette(
         globals: globals.clone(),
     };
     palette.materials = (0..=255u8).map(|c| materials.add(mk(palette.word(c), 0))).collect();
-    palette.line_materials = (0..=255u8).map(|c| materials.add(mk(0xFF00 | (palette.word(c) & 0xFF), FLAG_LINE))).collect();
+    palette.line_materials = (0..=255u8)
+        .map(|c| materials.add(mk(0xFF00 | (palette.word(c) & 0xFF), FLAG_LINE)))
+        .collect();
     palette.background = materials.add(mk(0, FLAG_BACKGROUND));
-    palette.background_flir = materials.add(mk(0, FLAG_BACKGROUND | crate::palette_material::FLAG_FLIR));
+    palette.background_flir =
+        materials.add(mk(0, FLAG_BACKGROUND | crate::palette_material::FLAG_FLIR));
     commands.insert_resource(palette);
 }
 
@@ -229,7 +239,11 @@ fn step_time_of_day(time: Res<Time>, mut tod: ResMut<TimeOfDay>, mut palette: Re
         if t & 15 != 0 {
             continue;
         }
-        let target = if tod.night_mission { palette.theater.night.clone() } else { palette.theater.day.clone() };
+        let target = if tod.night_mission {
+            palette.theater.night.clone()
+        } else {
+            palette.theater.day.clone()
+        };
         let p = &mut palette.active;
         match t & 0x30 {
             0x00 => {
@@ -304,7 +318,8 @@ fn apply_msaa(
 }
 
 /// Sky band boundaries, original screen units at f = 256.
-const SKY_RING: [f32; 16] = [0., 2., 3., 4., 6., 8., 11., 15., 20., 27., 36., 48., 64., 87., 119., 164.];
+const SKY_RING: [f32; 16] =
+    [0., 2., 3., 4., 6., 8., 11., 15., 20., 27., 36., 48., 64., 87., 119., 164.];
 
 #[allow(clippy::too_many_arguments)]
 fn update_globals(
@@ -336,7 +351,12 @@ fn update_globals(
     }
     g.ground_g = pack16(ground);
     let flir = mfd.is_some_and(|m| m.flir);
-    g.params = Vec4::new(1.0, crate::world::WU as f32, flir as u32 as f32, settings.modern_shading as u32 as f32);
+    g.params = Vec4::new(
+        1.0,
+        crate::world::WU as f32,
+        flir as u32 as f32,
+        settings.modern_shading as u32 as f32,
+    );
     g.sun = lighting.sun;
     g.ambient = lighting.ambient;
     g.light_info.x = lighting.lights.len() as f32;
@@ -344,7 +364,9 @@ fn update_globals(
     g.light_info.z = hud.is_some_and(|h| h.nvg) as u32 as f32;
     // `SM89_FLAT_SHADER=<bits>`: flat colours (measuring the fragment shader's cost): 1 all,
     // 2 the background sphere, 4 objects, 8 clouds and smoke.
-    g.light_info.w = std::env::var("SM89_FLAT_SHADER").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0) as f32;
+    g.light_info.w =
+        std::env::var("SM89_FLAT_SHADER").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0)
+            as f32;
     g.dots.x = if settings.vr { crate::dots::XR_ANGLE } else { 0.0 };
     g.dots.y = time.elapsed_secs_wrapped() % 3600.0;
     if let Some(img) = trackcam.and_then(|t| images.get(&t.0)) {

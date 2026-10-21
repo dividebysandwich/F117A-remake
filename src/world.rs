@@ -16,9 +16,9 @@ use std::collections::HashMap;
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
+use serde::Deserialize;
 use stealth_formats::terrain::{GRID_DIM, Grid, LEVEL_UNIT, TileSets};
 use stealth_formats::wld::World;
-use serde::Deserialize;
 
 use crate::models::{ModelAssets, ModelLibrary};
 use crate::settings::{AppState, MissionSetup, SetupSet};
@@ -48,9 +48,14 @@ pub struct ShapeHandles {
 }
 
 impl ShapeHandles {
-    fn new(theater: &Theater, mission: Option<&stealth_mission::Mission>, overrides: &mut TileOverrides) -> Self {
+    fn new(
+        theater: &Theater,
+        mission: Option<&stealth_mission::Mission>,
+        overrides: &mut TileOverrides,
+    ) -> Self {
         let count = theater.model_count();
-        let mut models: Vec<(String, u16)> = (0..count as u16).map(|i| (theater.id.clone(), i)).collect();
+        let mut models: Vec<(String, u16)> =
+            (0..count as u16).map(|i| (theater.id.clone(), i)).collect();
         if theater.index == 6 {
             // Desert Storm draws shapes 0x59 and 5 with PHOTO models 13 and 10.
             for (shape, photo) in [(0x59usize, 13u16), (5, 10)] {
@@ -65,7 +70,9 @@ impl ShapeHandles {
                 let shape = models.len();
                 models.push(("photo".into(), special as u16));
                 // The target's tile object is replaced by the special model.
-                if let Some((lod, col, row, idx)) = theater.find_tile_object(t.position.x, t.position.y) {
+                if let Some((lod, col, row, idx)) =
+                    theater.find_tile_object(t.position.x, t.position.y)
+                {
                     overrides.set(lod, col, row, idx, shape as i32);
                 }
             }
@@ -233,9 +240,19 @@ impl Theater {
     /// Tile data for the simulation (`findNearestTile`), for theaters not in the exported sim data.
     pub fn sim_tiles(&self) -> stealth_sim::TheaterTiles {
         let level = |l: usize| -> Vec<Vec<(i16, i16, u8)>> {
-            self.tiles.tiles.get(l).map(|v| v.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect()).unwrap_or_default()
+            self.tiles
+                .tiles
+                .get(l)
+                .map(|v| {
+                    v.iter().map(|t| t.iter().map(|o| (o.x, o.y, o.shape)).collect()).collect()
+                })
+                .unwrap_or_default()
         };
-        stealth_sim::TheaterTiles { grid: self.grid.clone(), objects: [level(1), level(2)], model_attr: self.model_attr.clone() }
+        stealth_sim::TheaterTiles {
+            grid: self.grid.clone(),
+            objects: [level(1), level(2)],
+            model_attr: self.model_attr.clone(),
+        }
     }
 
     /// The ships among the tile objects of the finer levels (where the theaters place them).
@@ -246,8 +263,12 @@ impl Theater {
             for row in 0..GRID_DIM[lod] {
                 for col in 0..GRID_DIM[lod] {
                     let t = self.grid.tile(lod, col, row) as usize;
-                    let Some(objs) = self.tiles.tiles.get(lod).and_then(|l| l.get(t)) else { continue };
-                    for (k, o) in objs.iter().enumerate().filter(|(_, o)| self.is_ship_shape(o.shape)) {
+                    let Some(objs) = self.tiles.tiles.get(lod).and_then(|l| l.get(t)) else {
+                        continue;
+                    };
+                    for (k, o) in
+                        objs.iter().enumerate().filter(|(_, o)| self.is_ship_shape(o.shape))
+                    {
                         let centre = |c: i32| (c as f64 * 4096.0 + 2048.0) * unit;
                         out.push(ShipSite {
                             key: (lod, col, row, k as u16),
@@ -280,7 +301,9 @@ impl Theater {
             for row in 0..GRID_DIM[lod] {
                 for col in 0..GRID_DIM[lod] {
                     let t = self.grid.tile(lod, col, row) as usize;
-                    let Some(objs) = self.tiles.tiles.get(lod).and_then(|l| l.get(t)) else { continue };
+                    let Some(objs) = self.tiles.tiles.get(lod).and_then(|l| l.get(t)) else {
+                        continue;
+                    };
                     for (k, o) in objs.iter().enumerate() {
                         let east = (col as i64 * 4096 + 2048 + o.x as i64) * unit;
                         let north = (row as i64 * 4096 + 2048 + o.y as i64) * unit;
@@ -296,7 +319,11 @@ impl Theater {
 
     /// Position of a named WLD object in Bevy metres (ground level).
     pub fn object_position(&self, name: &str) -> Option<DVec3> {
-        let o = self.world.objects.iter().find(|o| self.world.name(o.name).eq_ignore_ascii_case(name))?;
+        let o = self
+            .world
+            .objects
+            .iter()
+            .find(|o| self.world.name(o.name).eq_ignore_ascii_case(name))?;
         let (e, n) = map_to_wu(o.x, o.y);
         Some(wu_to_bevy(e, n, 0.0))
     }
@@ -309,7 +336,10 @@ struct StreamedCells {
     pending: bool,
 }
 
-fn recenter_origin(mut origin: ResMut<FloatingOrigin>, anchor: Query<&WorldPos, With<WorldAnchor>>) {
+fn recenter_origin(
+    mut origin: ResMut<FloatingOrigin>,
+    anchor: Query<&WorldPos, With<WorldAnchor>>,
+) {
     let Ok(p) = anchor.single() else { return };
     // Re-centre when the anchor is more than 2 km away from the origin.
     if (p.0 - origin.origin).length() > 2000.0 {
@@ -379,7 +409,13 @@ fn stream_tiles(
             continue;
         }
         let tile_type = theater.grid.tile(lod, col, row) as usize;
-        let objects = theater.tiles.tiles.get(lod).and_then(|t| t.get(tile_type)).cloned().unwrap_or_default();
+        let objects = theater
+            .tiles
+            .tiles
+            .get(lod)
+            .and_then(|t| t.get(tile_type))
+            .cloned()
+            .unwrap_or_default();
         let unit = LEVEL_UNIT[lod];
         let centre = |c: i32| (c as f64 * 4096.0 + 2048.0) * unit;
         let mut entities = Vec::new();
@@ -396,7 +432,9 @@ fn stream_tiles(
             };
             let Some((model_file, name)) = handles.model(shape as usize) else { continue };
             let gltf = if model_file == "photo" { &photo } else { &file };
-            let Some(e) = assets.spawn(&mut commands, gltf, &name, lod as u32, false) else { continue };
+            let Some(e) = assets.spawn(&mut commands, gltf, &name, lod as u32, false) else {
+                continue;
+            };
             if wrecked {
                 let mut state = crate::models::ModelState::default();
                 state.0[1] = 1;
@@ -415,7 +453,11 @@ fn stream_tiles(
             commands.entity(e).insert((
                 WorldPos(pos),
                 Transform::from_scale(Vec3::splat(crate::models::tile_model_scale(&name, unit))),
-                TileObject { lod: lod as u8, order: k as u16, destroyed: shape != o.shape || wrecked },
+                TileObject {
+                    lod: lod as u8,
+                    order: k as u16,
+                    destroyed: shape != o.shape || wrecked,
+                },
             ));
             if ship {
                 commands.entity(e).insert(crate::models::LodBias(SHIP_LOD_BIAS));

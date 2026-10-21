@@ -1,6 +1,6 @@
-use crate::{Sim, ballistics};
 use crate::math::{abs16, approx, bearing, cdiv, s16};
 use crate::types::*;
+use crate::{Sim, ballistics};
 
 impl Sim {
     fn cam_off(&self, b: i32) -> i32 {
@@ -61,8 +61,10 @@ impl Sim {
         self.radio_beacon();
         self.prev_fire = ps.cmd.fire;
         let t = &mut self.targeting;
-        t.ground = (self.gnd_lock >= 0 && (self.gnd_lock as usize) < self.objects.len()).then_some(self.gnd_lock as usize);
-        t.air = (self.air_lock >= 0 && (self.air_lock as usize) < self.flights.len()).then_some(self.air_lock as usize);
+        t.ground = (self.gnd_lock >= 0 && (self.gnd_lock as usize) < self.objects.len())
+            .then_some(self.gnd_lock as usize);
+        t.air = (self.air_lock >= 0 && (self.air_lock as usize) < self.flights.len())
+            .then_some(self.air_lock as usize);
         if let Some(g) = t.ground {
             let o = self.objects[g];
             let (r, b) = {
@@ -80,7 +82,13 @@ impl Sim {
         if self.gnd_cooldown > 0 {
             self.gnd_cooldown -= 1;
         }
-        if self.target_hold || !(self.gnd_lock & 0x80 != 0 && self.camera_mfd && self.gnd_cooldown == 0 && self.hud_mode != HudMode::Air && !self.external_view) {
+        if self.target_hold
+            || !(self.gnd_lock & 0x80 != 0
+                && self.camera_mfd
+                && self.gnd_cooldown == 0
+                && self.hud_mode != HudMode::Air
+                && !self.external_view)
+        {
             return;
         }
         let mut best = -1;
@@ -135,7 +143,11 @@ impl Sim {
         let reselect = self.air_lock & 0x80 != 0;
         let mut prev_r = 0;
         if reselect && self.air_lock != -1 {
-            let u = self.flights.get((self.air_lock - 0x80).max(0) as usize).copied().unwrap_or_default();
+            let u = self
+                .flights
+                .get((self.air_lock - 0x80).max(0) as usize)
+                .copied()
+                .unwrap_or_default();
             let (r, b) = self.range_bearing(u.x, u.y);
             prev_r = if self.cam_off(b) > 0x2000 { 0 } else { r };
         }
@@ -233,11 +245,16 @@ impl Sim {
 
     /// 'N' designation.
     fn designate(&mut self) {
-        if self.pflags & pflags::DESIGNATE == 0 || !self.camera_mfd || self.hud_mode == HudMode::Air {
+        if self.pflags & pflags::DESIGNATE == 0 || !self.camera_mfd || self.hud_mode == HudMode::Air
+        {
             return;
         }
         let pitch = self.p.pitch;
-        let d = if pitch < 0 { cdiv(self.trig.cos_mul(pitch, self.p.view_z), self.trig.sin_mul(s16(-pitch), 32) + 1) } else { 0x280 };
+        let d = if pitch < 0 {
+            cdiv(self.trig.cos_mul(pitch, self.p.view_z), self.trig.sin_mul(s16(-pitch), 32) + 1)
+        } else {
+            0x280
+        };
         let x = self.p.mx + self.trig.sin_mul(self.p.heading, d);
         let y = self.p.my - self.trig.cos_mul(self.p.heading, d);
         let o = self.find_object_at(x, y);
@@ -283,7 +300,11 @@ impl Sim {
                 let (scr, de92) = self.project(o.x, o.y, 0);
                 let mut colour = 0u8;
                 let k = self.compat(w, g as i32);
-                if k == 0 || count == 0 || (cls == 4 && o.unit_type == 0) || (cls == 5 && !self.is_ship(g as i32)) {
+                if k == 0
+                    || count == 0
+                    || (cls == 4 && o.unit_type == 0)
+                    || (cls == 5 && !self.is_ship(g as i32))
+                {
                     if spec != -1 {
                         colour = 6;
                     }
@@ -314,7 +335,11 @@ impl Sim {
                 t.box_colour = colour;
                 t.box_size = if k != 0 { k + 5 } else { 9 };
             }
-        } else if self.hud_mode == HudMode::Air && !self.external_view && self.air_lock >= 0 && (self.air_lock as usize) < self.flights.len() {
+        } else if self.hud_mode == HudMode::Air
+            && !self.external_view
+            && self.air_lock >= 0
+            && (self.air_lock as usize) < self.flights.len()
+        {
             let u = self.flights[self.air_lock as usize];
             let (scr, de92) = self.project(u.x, u.y, u.alt);
             let mut colour = 6;
@@ -345,7 +370,12 @@ impl Sim {
     pub(crate) fn bomb_impact(&self) -> Option<(f64, f64)> {
         let k = ballistics::drag(self.selected_spec(), self.opts.fix_original_bugs)?;
         let v = ballistics::release_velocity(self.p.heading, self.p.velocity, self.p.climb);
-        let (d, _) = ballistics::impact(v, k, self.p.alt as f64 - ballistics::RELEASE_DROP, 1.0 / self.fs as f64)?;
+        let (d, _) = ballistics::impact(
+            v,
+            k,
+            self.p.alt as f64 - ballistics::RELEASE_DROP,
+            1.0 / self.fs as f64,
+        )?;
         Some(((self.p.wx as f64 + d[0]) / 32.0, ((0x100000 - self.p.wy) as f64 + d[1]) / 32.0))
     }
 
@@ -366,7 +396,8 @@ impl Sim {
             if let Some((_, secs)) = self.ccrp_solution() {
                 let frames = (secs * self.fs as f64).round() as i32;
                 self.targeting.ccrp_release = Some(frames);
-                self.targeting.ranging_bar = Some(((frames / 4).clamp(0, 0x40), frames < 3 * self.fs));
+                self.targeting.ranging_bar =
+                    Some(((frames / 4).clamp(0, 0x40), frames < 3 * self.fs));
             }
             return;
         }
@@ -387,7 +418,11 @@ impl Sim {
             self.photo_timer -= 1;
         }
         let spec = self.selected_spec();
-        if !(spec == -1 && self.pflags & pflags::BAY_OPEN != 0 && self.camera_mfd && self.gnd_lock != -1) {
+        if !(spec == -1
+            && self.pflags & pflags::BAY_OPEN != 0
+            && self.camera_mfd
+            && self.gnd_lock != -1)
+        {
             self.pflags &= !pflags::CAMERA_VIEW;
             return;
         }
@@ -396,7 +431,8 @@ impl Sim {
         let mut in_view = 0;
         for k in 0..2 {
             let ts = self.targets[k];
-            if ts.mission_type == 1 && ts.object == t && self.obj(t).flags & oflags::DESTROYED == 0 {
+            if ts.mission_type == 1 && ts.object == t && self.obj(t).flags & oflags::DESTROYED == 0
+            {
                 let o = self.obj(t);
                 let (r, b) = self.range_bearing(o.x, o.y);
                 let a = abs16(s16(b - self.p.heading)) >> 4;

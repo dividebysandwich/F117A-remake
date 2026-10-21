@@ -14,7 +14,9 @@ use stealth_sim::{N_PROJ, fflags};
 use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player, bam};
 use crate::models::{ModelAssets, ModelGlobals, ModelLibrary, ModelState};
-use crate::palette_material::{FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, mesh_tag};
+use crate::palette_material::{
+    FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, mesh_tag,
+};
 use crate::player::{AIRCRAFT_MODEL_SCALE, OwnLights, OwnModel};
 use crate::settings::AppState;
 use crate::world::{TileObject, WorldPos, wu_to_bevy};
@@ -102,12 +104,21 @@ struct SimVisuals {
 }
 
 impl SimVisuals {
-    fn material(&mut self, materials: &mut Assets<PaletteMaterial>, globals: &Handle<bevy::render::storage::ShaderBuffer>, idx: u8) -> Handle<PaletteMaterial> {
+    fn material(
+        &mut self,
+        materials: &mut Assets<PaletteMaterial>,
+        globals: &Handle<bevy::render::storage::ShaderBuffer>,
+        idx: u8,
+    ) -> Handle<PaletteMaterial> {
         self.materials
             .entry(idx)
             .or_insert_with(|| {
                 materials.add(PaletteMaterial {
-                    params: PaletteParams { word: 0xFF00 | idx as u32, flags: FLAG_LINE, ..default() },
+                    params: PaletteParams {
+                        word: 0xFF00 | idx as u32,
+                        flags: FLAG_LINE,
+                        ..default()
+                    },
                     globals: globals.clone(),
                 })
             })
@@ -148,7 +159,11 @@ pub fn projectile_pose(combat: &Combat, s: usize) -> Option<(bevy::math::DVec3, 
 }
 
 pub fn attitude(heading: i32, pitch: i32, roll: i32) -> Quat {
-    Aircraft::from_euler(bam(heading as u16 as f32), bam(pitch as i16 as f32), bam(roll as i16 as f32))
+    Aircraft::from_euler(
+        bam(heading as u16 as f32),
+        bam(pitch as i16 as f32),
+        bam(roll as i16 as f32),
+    )
 }
 
 /// Anti-collision lights (tools/models/anticollision.py), each a flash pattern on a state slot:
@@ -174,8 +189,20 @@ pub fn anticollision(t: f32, phase: f32, on: bool) -> [(usize, i16); 3] {
 const FRIENDLY_LOD_RANGE: f32 = 40.0;
 
 /// `no_fog`: no distance haze (friendly aircraft stay visible from far away).
-fn spawn_model(commands: &mut Commands, assets: &ModelAssets, file: &Handle<bevy::gltf::Gltf>, model: i32, no_fog: bool) -> Option<Entity> {
-    let e = assets.spawn(commands, file, &format!("{}_{:03}", model_file(model), model.clamp(0, 999)), LEVEL_AIRCRAFT, no_fog)?;
+fn spawn_model(
+    commands: &mut Commands,
+    assets: &ModelAssets,
+    file: &Handle<bevy::gltf::Gltf>,
+    model: i32,
+    no_fog: bool,
+) -> Option<Entity> {
+    let e = assets.spawn(
+        commands,
+        file,
+        &format!("{}_{:03}", model_file(model), model.clamp(0, 999)),
+        LEVEL_AIRCRAFT,
+        no_fog,
+    )?;
     commands.entity(e).insert((
         SimObject,
         WorldPos::default(),
@@ -186,8 +213,15 @@ fn spawn_model(commands: &mut Commands, assets: &ModelAssets, file: &Handle<bevy
 }
 
 /// A camera-facing dot of constant screen size (a parent carrying the position).
-fn spawn_dot(commands: &mut Commands, assets: &ModelAssets, material: Handle<PaletteMaterial>, offsets: &[Vec3]) -> Entity {
-    let parent = commands.spawn((SimObject, WorldPos::default(), Transform::default(), Visibility::Hidden)).id();
+fn spawn_dot(
+    commands: &mut Commands,
+    assets: &ModelAssets,
+    material: Handle<PaletteMaterial>,
+    offsets: &[Vec3],
+) -> Entity {
+    let parent = commands
+        .spawn((SimObject, WorldPos::default(), Transform::default(), Visibility::Hidden))
+        .id();
     for &o in offsets {
         let dot = commands
             .spawn((
@@ -215,7 +249,10 @@ fn spawn_tracer(commands: &mut Commands, material: Handle<PaletteMaterial>) -> E
         ))
         .id();
     commands.queue(move |world: &mut World| {
-        let mut mesh = Mesh::new(bevy::mesh::PrimitiveTopology::LineList, bevy::asset::RenderAssetUsages::RENDER_WORLD);
+        let mut mesh = Mesh::new(
+            bevy::mesh::PrimitiveTopology::LineList,
+            bevy::asset::RenderAssetUsages::RENDER_WORLD,
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![Vec3::ZERO, Vec3::Z]);
         let h = world.resource_mut::<Assets<Mesh>>().add(mesh);
         if let Ok(mut ent) = world.get_entity_mut(e) {
@@ -246,23 +283,44 @@ fn spawn_canopy(commands: &mut Commands, assets: &ModelAssets) -> Entity {
     for k in 0..GORES {
         let tris = &mut gores[k % 2];
         for w in rings.windows(2) {
-            let (a, b, c, d) = (point(w[0], k), point(w[0], k + 1), point(w[1], k + 1), point(w[1], k));
+            let (a, b, c, d) =
+                (point(w[0], k), point(w[0], k + 1), point(w[1], k + 1), point(w[1], k));
             // Both sides: it is seen from below as much as from outside.
             for q in [[a, c, b, a, d, c], [a, b, c, a, c, d]] {
                 tris.extend_from_slice(&q);
             }
         }
     }
-    let lines: Vec<Vec3> = (0..GORES).flat_map(|k| [Vec3::Y * RISERS, point(rings[0], k)]).collect();
-    let root = commands.spawn((SimObject, WorldPos::default(), Transform::default(), Visibility::Hidden)).id();
+    let lines: Vec<Vec3> =
+        (0..GORES).flat_map(|k| [Vec3::Y * RISERS, point(rings[0], k)]).collect();
+    let root = commands
+        .spawn((SimObject, WorldPos::default(), Transform::default(), Visibility::Hidden))
+        .id();
     let parts = [
-        (bevy::mesh::PrimitiveTopology::TriangleList, std::mem::take(&mut gores[0]), assets.palette.material(CANOPY_COLOURS[0])),
-        (bevy::mesh::PrimitiveTopology::TriangleList, std::mem::take(&mut gores[1]), assets.palette.material(CANOPY_COLOURS[1])),
-        (bevy::mesh::PrimitiveTopology::LineList, lines, assets.palette.line_material(CANOPY_LINES)),
+        (
+            bevy::mesh::PrimitiveTopology::TriangleList,
+            std::mem::take(&mut gores[0]),
+            assets.palette.material(CANOPY_COLOURS[0]),
+        ),
+        (
+            bevy::mesh::PrimitiveTopology::TriangleList,
+            std::mem::take(&mut gores[1]),
+            assets.palette.material(CANOPY_COLOURS[1]),
+        ),
+        (
+            bevy::mesh::PrimitiveTopology::LineList,
+            lines,
+            assets.palette.line_material(CANOPY_LINES),
+        ),
     ];
     for (topology, positions, material) in parts {
         let part = commands
-            .spawn((Transform::default(), MeshMaterial3d(material), bevy::mesh::MeshTag(mesh_tag(LEVEL_AIRCRAFT, 0, false)), bevy::light::NotShadowCaster))
+            .spawn((
+                Transform::default(),
+                MeshMaterial3d(material),
+                bevy::mesh::MeshTag(mesh_tag(LEVEL_AIRCRAFT, 0, false)),
+                bevy::light::NotShadowCaster,
+            ))
             .id();
         commands.entity(root).add_child(part);
         commands.queue(move |world: &mut World| {
@@ -287,7 +345,10 @@ fn sync_objects(
     assets: ModelAssets,
     mut materials: ResMut<Assets<PaletteMaterial>>,
     time: Res<Time>,
-    mut q: Query<(&mut WorldPos, &mut Transform, Option<&mut ModelState>, &mut Visibility), With<SimObject>>,
+    mut q: Query<
+        (&mut WorldPos, &mut Transform, Option<&mut ModelState>, &mut Visibility),
+        With<SimObject>,
+    >,
     mut explosions: ResMut<crate::explosions::Explosions>,
 ) {
     let vis = &mut *vis;
@@ -314,7 +375,9 @@ fn sync_objects(
         }
         if !vis.aircraft.contains_key(&i) {
             let file = library.load(&server, model_file(model));
-            let Some(e) = spawn_model(&mut commands, &assets, &file, model, friendly) else { continue };
+            let Some(e) = spawn_model(&mut commands, &assets, &file, model, friendly) else {
+                continue;
+            };
             if friendly {
                 commands.entity(e).insert(crate::models::LodRange(FRIENDLY_LOD_RANGE));
             }
@@ -334,7 +397,8 @@ fn sync_objects(
                 // 18-20 (anti-collision lights, with the nav lights near home airfields).
                 let special = matches!(model, 1 | 10 | 15);
                 let nav = sim.aircraft_lights(i);
-                let [s18, s19, s20] = anticollision(time.elapsed_secs(), (i as f32 * 0.618).fract(), nav);
+                let [s18, s19, s20] =
+                    anticollision(time.elapsed_secs(), (i as f32 * 0.618).fract(), nav);
                 let v = [
                     (10, lights as i16),
                     (11, lights as i16),
@@ -375,15 +439,24 @@ fn sync_objects(
             continue;
         }
         if vis.proj[s].is_none() {
-            let Some(e) = spawn_model(&mut commands, &assets, &file, model, false) else { continue };
+            let Some(e) = spawn_model(&mut commands, &assets, &file, model, false) else {
+                continue;
+            };
             // Rocket motor glow on missiles (not on bombs / equipment), so they can be followed.
             if crate::trails::is_missile(m.spec) {
                 let material = vis.material(&mut materials, &globals, TRACER);
                 let dot = commands
                     .spawn((
-                        crate::dots::DotLight::bundle(Vec3::ZERO, &assets.dots, mesh_tag(LEVEL_AIRCRAFT, 0, true)),
+                        crate::dots::DotLight::bundle(
+                            Vec3::ZERO,
+                            &assets.dots,
+                            mesh_tag(LEVEL_AIRCRAFT, 0, true),
+                        ),
                         MeshMaterial3d(material),
-                        crate::lighting::LightEmitter { color: Vec3::new(1.6, 0.9, 0.4), range: 60.0 },
+                        crate::lighting::LightEmitter {
+                            color: Vec3::new(1.6, 0.9, 0.4),
+                            range: 60.0,
+                        },
                     ))
                     .id();
                 commands.entity(e).add_child(dot);
@@ -391,7 +464,9 @@ fn sync_objects(
             vis.proj[s] = Some((e, m.spec));
         }
         let Some((e, _)) = vis.proj[s] else { continue };
-        if let (Ok((mut pos, mut tf, _, _)), Some((p, rot))) = (q.get_mut(e), projectile_pose(&combat, s)) {
+        if let (Ok((mut pos, mut tf, _, _)), Some((p, rot))) =
+            (q.get_mut(e), projectile_pose(&combat, s))
+        {
             pos.0 = p;
             tf.rotation = rot;
         }
@@ -413,12 +488,24 @@ fn sync_objects(
         let cart = vis.cms[k].get_or_insert_with(|| {
             let (colour, offsets): (u8, Vec<Vec3>) = match c.kind {
                 1 => (FLARE, vec![Vec3::ZERO]),
-                2 => (CHAFF, vec![Vec3::ZERO, Vec3::new(6.0, 2.0, 3.0), Vec3::new(-5.0, -3.0, 4.0), Vec3::new(2.0, 4.0, -6.0)]),
+                2 => (
+                    CHAFF,
+                    vec![
+                        Vec3::ZERO,
+                        Vec3::new(6.0, 2.0, 3.0),
+                        Vec3::new(-5.0, -3.0, 4.0),
+                        Vec3::new(2.0, 4.0, -6.0),
+                    ],
+                ),
                 _ => (DECOY, vec![Vec3::ZERO]),
             };
             let material = vis.materials.get(&colour).cloned().unwrap_or_else(|| {
                 let h = materials.add(PaletteMaterial {
-                    params: PaletteParams { word: 0xFF00 | colour as u32, flags: FLAG_LINE, ..default() },
+                    params: PaletteParams {
+                        word: 0xFF00 | colour as u32,
+                        flags: FLAG_LINE,
+                        ..default()
+                    },
                     globals: globals.clone(),
                 });
                 vis.materials.insert(colour, h.clone());
@@ -426,7 +513,10 @@ fn sync_objects(
             });
             let entity = spawn_dot(&mut commands, &assets, material, &offsets);
             if c.kind == 1 {
-                commands.entity(entity).insert(crate::lighting::LightEmitter { color: Vec3::new(2.0, 1.8, 1.4), range: 150.0 });
+                commands.entity(entity).insert(crate::lighting::LightEmitter {
+                    color: Vec3::new(2.0, 1.8, 1.4),
+                    range: 150.0,
+                });
             }
             Cartridge { entity, key, alt: view_z }
         });
@@ -465,14 +555,19 @@ fn sync_objects(
         let step = (b.vx as f64 / (32.0 * fine), b.vy as f64 / (32.0 * fine), b.vz as f64 / fine);
         let back = 1.0 - alpha as f64;
         let head = map_point(x - step.0 * back, y - step.1 * back, alt - step.2 * back);
-        let tail = map_point(x - step.0 * (back + TRACER_FRAMES), y - step.1 * (back + TRACER_FRAMES), alt - step.2 * (back + TRACER_FRAMES));
+        let tail = map_point(
+            x - step.0 * (back + TRACER_FRAMES),
+            y - step.1 * (back + TRACER_FRAMES),
+            alt - step.2 * (back + TRACER_FRAMES),
+        );
         let streak = (tail - head).as_vec3();
         for e in [dot, line] {
             if let Ok((mut pos, mut tf, _, mut v)) = q.get_mut(e) {
                 if b.x != 0 {
                     pos.0 = head;
                     if e == line {
-                        tf.rotation = Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
+                        tf.rotation =
+                            Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
                         tf.scale = Vec3::new(1.0, 1.0, streak.length().max(0.01));
                     }
                     v.set_if_neq(Visibility::Inherited);
@@ -493,11 +588,14 @@ fn sync_objects(
             && let Ok((mut pos, mut tf, _, _)) = q.get_mut(e)
         {
             pos.0 = map_point(w.x as f64 + 0.5, w.y as f64 + 0.5, w.alt as f64);
-            tf.rotation = Quat::from_rotation_y(time.elapsed_secs() * 3.0) * Quat::from_rotation_x(-0.6);
+            tf.rotation =
+                Quat::from_rotation_y(time.elapsed_secs() * 3.0) * Quat::from_rotation_x(-0.6);
         }
     } else if let Some(e) = vis.wreck.take() {
         commands.entity(e).try_despawn();
-        explosions.pending.push((map_point(w.x as f64, w.y as f64, 0.0), crate::explosions::Blast::Crash));
+        explosions
+            .pending
+            .push((map_point(w.x as f64, w.y as f64, 0.0), crate::explosions::Blast::Crash));
     }
 
     // --- parachute: the pilot as a dot, the canopy over them until they land
@@ -547,10 +645,12 @@ fn sync_objects(
             pos.0 = map_point(*x as f64 + 0.5, *y as f64 + 0.5, alt as f64);
             v.set_if_neq(Visibility::Inherited);
         }
-        commands.entity(*e).insert(crate::lighting::LightEmitter { color: Vec3::new(2.0, 0.2, 0.1), range: 400.0 });
+        commands.entity(*e).insert(crate::lighting::LightEmitter {
+            color: Vec3::new(2.0, 0.2, 0.1),
+            range: 400.0,
+        });
         true
     });
-
 }
 
 fn sim_missile_model(combat: &Combat, spec: i32) -> i32 {
@@ -569,7 +669,10 @@ fn world_model_state(
     mut last_lights: Local<Option<bool>>,
     mut angles: Local<[f32; 2]>,
     mut gear: Local<f32>,
-    mut tiles: ParamSet<(Query<(&TileObject, &mut ModelState)>, Query<(&TileObject, &mut ModelState), Added<TileObject>>)>,
+    mut tiles: ParamSet<(
+        Query<(&TileObject, &mut ModelState)>,
+        Query<(&TileObject, &mut ModelState), Added<TileObject>>,
+    )>,
     mut own: Query<&mut ModelState, (Or<(With<OwnModel>, With<OwnLights>)>, Without<TileObject>)>,
     player: Query<&Aircraft, With<Player>>,
 ) {
@@ -636,7 +739,6 @@ fn world_model_state(
 #[derive(Component)]
 struct OwnShadow;
 
-
 /// Colour of the original's shadow model (STFLT 17).
 const SHADOW_COLOUR: u8 = 239;
 
@@ -663,7 +765,9 @@ fn own_shadow(
             }
             crate::aircraft::Shadow::Flattened => {
                 // The exterior model's outline in the shadow model's colour.
-                let Some(mesh) = assets.flattened(&file, &format!("{}_lod0", spec.model)) else { return };
+                let Some(mesh) = assets.flattened(&file, &format!("{}_lod0", spec.model)) else {
+                    return;
+                };
                 let material = assets.palette.material(SHADOW_COLOUR);
                 let e = commands
                     .spawn((
@@ -688,8 +792,15 @@ fn own_shadow(
         return;
     };
     // With real shadows the visible own model casts its own (external views).
-    let external = matches!(view.view, crate::camera::View::Chase | crate::camera::View::Side | crate::camera::View::Tactical | crate::camera::View::Weapon);
-    let show = a.altitude < 1000.0 && !assets.palette.lights_on() && !(settings.shadows && external);
+    let external = matches!(
+        view.view,
+        crate::camera::View::Chase
+            | crate::camera::View::Side
+            | crate::camera::View::Tactical
+            | crate::camera::View::Weapon
+    );
+    let show =
+        a.altitude < 1000.0 && !assets.palette.lights_on() && !(settings.shadows && external);
     vis.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     if show {
         let (e, n, _) = crate::world::bevy_to_wu(pos.0);

@@ -10,8 +10,8 @@ use std::collections::VecDeque;
 use bevy::prelude::*;
 
 use crate::flight::{Aircraft, Player};
-use crate::trackcam::TrackCamera;
 use crate::settings::AppState;
+use crate::trackcam::TrackCamera;
 
 /// Seconds between status lines.
 const INTERVAL: f64 = 5.0;
@@ -36,7 +36,11 @@ fn install() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let thread = std::thread::current();
-        error!("fatal: panic in thread {:?}: {info}\n{}", thread.name().unwrap_or("?"), std::backtrace::Backtrace::force_capture());
+        error!(
+            "fatal: panic in thread {:?}: {info}\n{}",
+            thread.name().unwrap_or("?"),
+            std::backtrace::Backtrace::force_capture()
+        );
         default(info);
     }));
     #[cfg(unix)]
@@ -67,7 +71,9 @@ struct Frame {
 
 impl Frame {
     fn line(&self, prev: Option<&Frame>) -> String {
-        let delta = |a: usize, b: Option<usize>| b.map_or(String::new(), |b| format!("{:+}", a as i64 - b as i64));
+        let delta = |a: usize, b: Option<usize>| {
+            b.map_or(String::new(), |b| format!("{:+}", a as i64 - b as i64))
+        };
         format!(
             "#{} {:.0} ms look {} | entities {}{} meshes {}{} | alt {:.0} ft {:.0} kt",
             self.n,
@@ -84,7 +90,10 @@ impl Frame {
 }
 
 /// Direction of the first active view camera relative to the aircraft's nose.
-fn look(a: &Aircraft, cameras: &Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<TrackCamera>)>) -> Option<(f32, f32)> {
+fn look(
+    a: &Aircraft,
+    cameras: &Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<TrackCamera>)>,
+) -> Option<(f32, f32)> {
     let (_, tf) = cameras.iter().filter(|(c, _)| c.is_active).max_by_key(|(c, _)| c.order)?;
     let d = a.orientation.inverse() * tf.forward().as_vec3();
     Some((d.x.atan2(-d.z).to_degrees(), d.y.clamp(-1.0, 1.0).asin().to_degrees()))
@@ -142,10 +151,18 @@ fn status(
     let fps = stats.frames as f64 / (now - stats.last);
     let flight = a.map_or(String::new(), |a| {
         let look = look(a, &cameras).map_or("?".into(), |(r, u)| format!("right {r:.0} up {u:.0}"));
-        format!(" | alt {:.0} ft speed {:.0} kt ground {} look {look}", a.altitude, a.velocity / 27.0, a.on_ground)
+        format!(
+            " | alt {:.0} ft speed {:.0} kt ground {} look {look}",
+            a.altitude,
+            a.velocity / 27.0,
+            a.on_ground
+        )
     });
     // Night: every lit scenery lamp is a quad (two triangles) in every view.
-    let (batches, dots) = lamps.iter().filter(|(_, v)| v.get()).fold((0, 0), |(b, d), (l, _)| (b + 1, d + l.points.len()));
+    let (batches, dots) = lamps
+        .iter()
+        .filter(|(_, v)| v.get())
+        .fold((0, 0), |(b, d), (l, _)| (b + 1, d + l.points.len()));
     info!(
         "diag: {:.0} fps worst {:.0} ms | rss {} MB avail {} MB swap free {} MB | temp {} | entities {} meshes {} images {} materials {} | lit lamps {dots} in {batches} batches{}",
         fps,
@@ -185,7 +202,9 @@ fn max_temp() -> Option<f64> {
         .ok()?
         .flatten()
         .filter(|e| e.file_name().to_string_lossy().starts_with("thermal_zone"))
-        .filter_map(|e| std::fs::read_to_string(e.path().join("temp")).ok()?.trim().parse::<f64>().ok())
+        .filter_map(|e| {
+            std::fs::read_to_string(e.path().join("temp")).ok()?.trim().parse::<f64>().ok()
+        })
         .map(|m| m / 1000.0)
         .reduce(f64::max)
 }
@@ -212,10 +231,15 @@ mod signals {
         }
         let mut thread = [0 as libc::c_char; 32];
         // SAFETY: the buffer is valid for its length; pthread_getname_np only reads the kernel's comm.
-        if unsafe { libc::pthread_getname_np(libc::pthread_self(), thread.as_mut_ptr(), thread.len()) } == 0 {
+        if unsafe {
+            libc::pthread_getname_np(libc::pthread_self(), thread.as_mut_ptr(), thread.len())
+        } == 0
+        {
             let len = thread.iter().position(|&c| c == 0).unwrap_or(thread.len());
             // SAFETY: c_char and u8 have the same layout.
-            n += copy(&mut buf[n..], unsafe { std::slice::from_raw_parts(thread.as_ptr().cast(), len) });
+            n += copy(&mut buf[n..], unsafe {
+                std::slice::from_raw_parts(thread.as_ptr().cast(), len)
+            });
         }
         if matches!(sig, libc::SIGSEGV | libc::SIGBUS) && !info.is_null() {
             n += copy(&mut buf[n..], b" at 0x");
@@ -254,7 +278,15 @@ mod signals {
     }
 
     pub fn install() {
-        for sig in [libc::SIGSEGV, libc::SIGBUS, libc::SIGABRT, libc::SIGILL, libc::SIGFPE, libc::SIGTERM, libc::SIGHUP] {
+        for sig in [
+            libc::SIGSEGV,
+            libc::SIGBUS,
+            libc::SIGABRT,
+            libc::SIGILL,
+            libc::SIGFPE,
+            libc::SIGTERM,
+            libc::SIGHUP,
+        ] {
             // SAFETY: a zeroed sigaction with our handler; SA_ONSTACK uses the alternate stacks
             // std sets up for its threads, so stack overflows still get their line.
             unsafe {

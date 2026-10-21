@@ -7,7 +7,10 @@ use std::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use crate::hotas::{AxisControl, ButtonTarget, Hotas, InputConfig, Source, VrHand, VrInput, action_name, default_vr_buttons};
+use crate::hotas::{
+    AxisControl, ButtonTarget, Hotas, InputConfig, Source, VrHand, VrInput, action_name,
+    default_vr_buttons,
+};
 use crate::input::{Mods, all_actions, default_key_mappings};
 use crate::menu::{AMBER, BRIGHT, DIM, GREEN};
 
@@ -31,8 +34,12 @@ impl Binding {
     fn name(self) -> String {
         match self {
             Binding::Axis(a) => a.name().to_string(),
-            Binding::Button(ButtonTarget::Gun) | Binding::Key(ButtonTarget::Gun) => "Gun".to_string(),
-            Binding::Button(ButtonTarget::Action(a)) | Binding::Key(ButtonTarget::Action(a)) => action_name(a),
+            Binding::Button(ButtonTarget::Gun) | Binding::Key(ButtonTarget::Gun) => {
+                "Gun".to_string()
+            }
+            Binding::Button(ButtonTarget::Action(a)) | Binding::Key(ButtonTarget::Action(a)) => {
+                action_name(a)
+            }
         }
     }
 }
@@ -68,7 +75,9 @@ impl Capture {
             // Buttons held at the start count again once released.
             self.buttons.retain(|(n, c)| *n != d.name || d.buttons.contains(c));
             for &code in &d.buttons {
-                if matches!(self.what, Binding::Button(_)) && !self.buttons.contains(&(d.name.clone(), code)) {
+                if matches!(self.what, Binding::Button(_))
+                    && !self.buttons.contains(&(d.name.clone(), code))
+                {
                     found = found.or(Some((d.name.clone(), Found::Button(Source::Button(code)))));
                 }
             }
@@ -110,7 +119,10 @@ const MODIFIERS: [KeyCode; 8] = [
 
 /// The first key pressed this frame (other than a modifier or Esc), with the modifier held.
 fn pressed_key(keys: &ButtonInput<KeyCode>) -> Option<(Mods, KeyCode)> {
-    let key = keys.get_just_pressed().copied().find(|k| !MODIFIERS.contains(k) && *k != KeyCode::Escape)?;
+    let key = keys
+        .get_just_pressed()
+        .copied()
+        .find(|k| !MODIFIERS.contains(k) && *k != KeyCode::Escape)?;
     let mods = if keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]) {
         Mods::Alt
     } else if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
@@ -122,7 +134,13 @@ fn pressed_key(keys: &ButtonInput<KeyCode>) -> Option<(Mods, KeyCode)> {
 }
 
 /// Draws the dialog when open (called from the menu's egui pass).
-pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputConfig, hotas: &Hotas, keys: &ButtonInput<KeyCode>) {
+pub fn show(
+    ctx: &egui::Context,
+    dialog: &mut InputDialog,
+    config: &mut InputConfig,
+    hotas: &Hotas,
+    keys: &ButtonInput<KeyCode>,
+) {
     if !dialog.open {
         return;
     }
@@ -136,7 +154,11 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
         } else if let Binding::Key(target) = cap.what {
             if let Some((mods, key)) = pressed_key(keys) {
                 config.bind_key(target, mods, key);
-                dialog.status = Some(format!("{} -> {}", cap.what.name().to_ascii_uppercase(), crate::input::key_label(mods, key)));
+                dialog.status = Some(format!(
+                    "{} -> {}",
+                    cap.what.name().to_ascii_uppercase(),
+                    crate::input::key_label(mods, key)
+                ));
                 dialog.capture = None;
             }
         } else if let Some((device, input)) = cap.poll(hotas) {
@@ -152,14 +174,24 @@ pub fn show(ctx: &egui::Context, dialog: &mut InputDialog, config: &mut InputCon
                 }
                 _ => unreachable!("capture only reports inputs of its binding's kind"),
             };
-            dialog.status = Some(format!("{} -> {}", what.name().to_ascii_uppercase(), binding_label(&device, &label)));
+            dialog.status = Some(format!(
+                "{} -> {}",
+                what.name().to_ascii_uppercase(),
+                binding_label(&device, &label)
+            ));
             dialog.capture = None;
         }
         // Keep polling while nothing else redraws the window.
         ctx.request_repaint();
     }
 
-    let value = |control| config.axes.iter().find(|m| m.control == control).and_then(|m| hotas.axis(&m.device, m.code).map(|raw| m.output(raw)));
+    let value = |control| {
+        config
+            .axes
+            .iter()
+            .find(|m| m.control == control)
+            .and_then(|m| hotas.axis(&m.device, m.code).map(|raw| m.output(raw)))
+    };
     let stick = Stick {
         roll: value(AxisControl::Roll).unwrap_or(0.0),
         pitch: value(AxisControl::Pitch).unwrap_or(0.0),
@@ -348,37 +380,55 @@ fn vr_buttons(ui: &mut egui::Ui, config: &mut InputConfig) {
     );
     // The stick keys are for the keyboard and joystick buttons: VR has the real stick.
     let targets: Vec<ButtonTarget> = std::iter::once(ButtonTarget::Gun)
-        .chain(all_actions().into_iter().filter(|a| a.stick_direction().is_none()).map(ButtonTarget::Action))
+        .chain(
+            all_actions()
+                .into_iter()
+                .filter(|a| a.stick_direction().is_none())
+                .map(ButtonTarget::Action),
+        )
         .collect();
-    egui::Grid::new("vr_buttons").num_columns(3).spacing([14.0, 4.0]).striped(true).show(ui, |ui| {
-        ui.label("");
-        ui.label(egui::RichText::new("LEFT HAND").color(GREEN));
-        ui.label(egui::RichText::new("RIGHT HAND").color(GREEN));
-        ui.end_row();
-        for input in VrInput::ALL {
-            let (l, r) = (input.name(VrHand::Left), input.name(VrHand::Right));
-            ui.label(if l == r { l.to_string() } else { format!("{l} / {r}") });
-            for hand in [VrHand::Left, VrHand::Right] {
-                let current = config.vr_button(hand, input);
-                let mut picked = current;
-                egui::ComboBox::from_id_salt(("vr", hand, input)).width(190.0).selected_text(target_name(current)).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut picked, None, "-");
-                    for &t in &targets {
-                        ui.selectable_value(&mut picked, Some(t), target_name(Some(t)));
-                    }
-                });
-                if picked != current {
-                    config.bind_vr(hand, input, picked);
-                }
-            }
+    egui::Grid::new("vr_buttons").num_columns(3).spacing([14.0, 4.0]).striped(true).show(
+        ui,
+        |ui| {
+            ui.label("");
+            ui.label(egui::RichText::new("LEFT HAND").color(GREEN));
+            ui.label(egui::RichText::new("RIGHT HAND").color(GREEN));
             ui.end_row();
-        }
-    });
+            for input in VrInput::ALL {
+                let (l, r) = (input.name(VrHand::Left), input.name(VrHand::Right));
+                ui.label(if l == r { l.to_string() } else { format!("{l} / {r}") });
+                for hand in [VrHand::Left, VrHand::Right] {
+                    let current = config.vr_button(hand, input);
+                    let mut picked = current;
+                    egui::ComboBox::from_id_salt(("vr", hand, input))
+                        .width(190.0)
+                        .selected_text(target_name(current))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut picked, None, "-");
+                            for &t in &targets {
+                                ui.selectable_value(&mut picked, Some(t), target_name(Some(t)));
+                            }
+                        });
+                    if picked != current {
+                        config.bind_vr(hand, input, picked);
+                    }
+                }
+                ui.end_row();
+            }
+        },
+    );
 }
 
-fn row_buttons(ui: &mut egui::Ui, what: Binding, capturing: bool, start: &mut Option<Binding>, clear: impl FnOnce()) {
+fn row_buttons(
+    ui: &mut egui::Ui,
+    what: Binding,
+    capturing: bool,
+    start: &mut Option<Binding>,
+    clear: impl FnOnce(),
+) {
     ui.horizontal(|ui| {
-        let bind = egui::Button::new(if capturing { "WAITING" } else { "BIND" }).selected(capturing);
+        let bind =
+            egui::Button::new(if capturing { "WAITING" } else { "BIND" }).selected(capturing);
         if ui.add(bind).clicked() && !capturing {
             *start = Some(what);
         }
@@ -401,7 +451,16 @@ struct Stick {
 const PREVIEW: egui::Vec2 = egui::vec2(300.0, 190.0);
 
 /// Planform outline (x right, z forward), clockwise from the nose, and the faceted ridge above it.
-const OUTLINE: [(f32, f32); 8] = [(0.0, 3.0), (2.6, -1.6), (1.0, -1.0), (0.55, -2.1), (0.0, -1.7), (-0.55, -2.1), (-1.0, -1.0), (-2.6, -1.6)];
+const OUTLINE: [(f32, f32); 8] = [
+    (0.0, 3.0),
+    (2.6, -1.6),
+    (1.0, -1.0),
+    (0.55, -2.1),
+    (0.0, -1.7),
+    (-0.55, -2.1),
+    (-1.0, -1.0),
+    (-2.6, -1.6),
+];
 const RIDGE: Vec3 = Vec3::new(0.0, 0.4, -0.4);
 /// V tails (root front, root rear, tip).
 const TAILS: [[Vec3; 3]; 2] = [
@@ -413,7 +472,12 @@ const SLOTS: [Vec3; 2] = [Vec3::new(0.32, 0.12, -1.8), Vec3::new(-0.32, 0.12, -1
 
 /// Exhaust colour: dull red at idle through orange and yellow to blue-white at full thrust.
 fn exhaust_color(t: f32) -> egui::Color32 {
-    const STOPS: [(f32, [f32; 3]); 4] = [(0.0, [110.0, 25.0, 10.0]), (0.4, [235.0, 95.0, 20.0]), (0.75, [255.0, 205.0, 80.0]), (1.0, [200.0, 225.0, 255.0])];
+    const STOPS: [(f32, [f32; 3]); 4] = [
+        (0.0, [110.0, 25.0, 10.0]),
+        (0.4, [235.0, 95.0, 20.0]),
+        (0.75, [255.0, 205.0, 80.0]),
+        (1.0, [200.0, 225.0, 255.0]),
+    ];
     let t = t.clamp(0.0, 1.0);
     let i = STOPS.iter().rposition(|s| s.0 <= t).unwrap_or(0).min(STOPS.len() - 2);
     let (a, b) = (STOPS[i], STOPS[i + 1]);
@@ -428,7 +492,9 @@ fn preview(ui: &mut egui::Ui, s: Stick) {
     let painter = ui.painter_at(rect);
     painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, DIM), egui::StrokeKind::Inside);
     // Stick right banks right, pull pitches up, right rudder yaws right.
-    let attitude = Quat::from_rotation_y(s.yaw * 0.35) * Quat::from_rotation_x(-s.pitch * 0.35) * Quat::from_rotation_z(-s.roll * 0.6);
+    let attitude = Quat::from_rotation_y(s.yaw * 0.35)
+        * Quat::from_rotation_x(-s.pitch * 0.35)
+        * Quat::from_rotation_z(-s.roll * 0.6);
     let view = Quat::from_rotation_x(-0.32);
     let centre = rect.center() + egui::vec2(0.0, 6.0);
     let project = |p: Vec3| {
@@ -442,16 +508,23 @@ fn preview(ui: &mut egui::Ui, s: Stick) {
     let grid = egui::Stroke::new(1.0, egui::Color32::from_rgb(14, 50, 24));
     for i in -4..=4 {
         let x = i as f32 * 1.5;
-        painter.line_segment([project(Vec3::new(x, -2.0, -4.0)), project(Vec3::new(x, -2.0, 8.0))], grid);
+        painter.line_segment(
+            [project(Vec3::new(x, -2.0, -4.0)), project(Vec3::new(x, -2.0, 8.0))],
+            grid,
+        );
     }
     for i in -2..=5 {
         let z = i as f32 * 1.5;
-        painter.line_segment([project(Vec3::new(-6.0, -2.0, z)), project(Vec3::new(6.0, -2.0, z))], grid);
+        painter.line_segment(
+            [project(Vec3::new(-6.0, -2.0, z)), project(Vec3::new(6.0, -2.0, z))],
+            grid,
+        );
     }
 
     // Facets: the ridge fan over the outline, the tails; far ones first.
     let outline: Vec<Vec3> = OUTLINE.iter().map(|&(x, z)| Vec3::new(x, 0.0, z)).collect();
-    let mut faces: Vec<[Vec3; 3]> = (0..outline.len()).map(|i| [RIDGE, outline[i], outline[(i + 1) % outline.len()]]).collect();
+    let mut faces: Vec<[Vec3; 3]> =
+        (0..outline.len()).map(|i| [RIDGE, outline[i], outline[(i + 1) % outline.len()]]).collect();
     faces.extend(TAILS);
     let mut faces: Vec<[Vec3; 3]> = faces.into_iter().map(|f| f.map(|p| attitude * p)).collect();
     faces.sort_by(|a, b| {
@@ -464,7 +537,11 @@ fn preview(ui: &mut egui::Ui, s: Stick) {
         let lit = n.dot(light).abs();
         let g = (20.0 + 70.0 * lit) as u8;
         let fill = egui::Color32::from_rgb(g / 4, g, g / 3);
-        painter.add(egui::Shape::convex_polygon(f.iter().map(|p| project(*p)).collect(), fill, egui::Stroke::new(1.0, GREEN)));
+        painter.add(egui::Shape::convex_polygon(
+            f.iter().map(|p| project(*p)).collect(),
+            fill,
+            egui::Stroke::new(1.0, GREEN),
+        ));
     }
 
     // Exhaust flames behind the slots: colour and length from the throttle.
@@ -473,11 +550,27 @@ fn preview(ui: &mut egui::Ui, s: Stick) {
     let len = 0.6 + 2.2 * t;
     let glow = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 70);
     for slot in SLOTS {
-        let wide = [slot + Vec3::new(-0.38, 0.0, 0.05), slot + Vec3::new(0.38, 0.0, 0.05), slot + Vec3::new(0.0, 0.0, -len * 1.3)];
-        let flame = [slot + Vec3::new(-0.25, 0.0, 0.0), slot + Vec3::new(0.25, 0.0, 0.0), slot + Vec3::new(0.0, 0.0, -len)];
+        let wide = [
+            slot + Vec3::new(-0.38, 0.0, 0.05),
+            slot + Vec3::new(0.38, 0.0, 0.05),
+            slot + Vec3::new(0.0, 0.0, -len * 1.3),
+        ];
+        let flame = [
+            slot + Vec3::new(-0.25, 0.0, 0.0),
+            slot + Vec3::new(0.25, 0.0, 0.0),
+            slot + Vec3::new(0.0, 0.0, -len),
+        ];
         painter.circle_filled(project(attitude * slot), 4.0 + 8.0 * t, glow);
-        painter.add(egui::Shape::convex_polygon(wide.iter().map(|p| project(attitude * *p)).collect(), glow, egui::Stroke::NONE));
-        painter.add(egui::Shape::convex_polygon(flame.iter().map(|p| project(attitude * *p)).collect(), color, egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(
+            wide.iter().map(|p| project(attitude * *p)).collect(),
+            glow,
+            egui::Stroke::NONE,
+        ));
+        painter.add(egui::Shape::convex_polygon(
+            flame.iter().map(|p| project(attitude * *p)).collect(),
+            color,
+            egui::Stroke::NONE,
+        ));
     }
 
     // Readouts.
@@ -493,8 +586,21 @@ fn preview(ui: &mut egui::Ui, s: Stick) {
         format!("RUDDER {}", dir(s.yaw, "LEFT", "RIGHT")),
     ];
     for (i, l) in lines.iter().enumerate() {
-        painter.text(rect.left_top() + egui::vec2(6.0, 5.0 + i as f32 * 13.0), egui::Align2::LEFT_TOP, l, font.clone(), GREEN);
+        painter.text(
+            rect.left_top() + egui::vec2(6.0, 5.0 + i as f32 * 13.0),
+            egui::Align2::LEFT_TOP,
+            l,
+            font.clone(),
+            GREEN,
+        );
     }
-    let thr = s.throttle.map_or("THROTTLE -".to_string(), |t| format!("THROTTLE {:.0}%", t * 100.0));
-    painter.text(rect.right_bottom() + egui::vec2(-6.0, -5.0), egui::Align2::RIGHT_BOTTOM, thr, font, if s.throttle.is_some() { color } else { DIM });
+    let thr =
+        s.throttle.map_or("THROTTLE -".to_string(), |t| format!("THROTTLE {:.0}%", t * 100.0));
+    painter.text(
+        rect.right_bottom() + egui::vec2(-6.0, -5.0),
+        egui::Align2::RIGHT_BOTTOM,
+        thr,
+        font,
+        if s.throttle.is_some() { color } else { DIM },
+    );
 }

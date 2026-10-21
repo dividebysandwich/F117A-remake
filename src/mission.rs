@@ -52,7 +52,15 @@ impl PlannedRoute {
     /// The mission's own route: midpoint, primary, secondary, landing base.
     pub fn of(m: &Mission) -> Self {
         let kinds = [RouteKind::Nav, RouteKind::Primary, RouteKind::Secondary, RouteKind::Land];
-        Self { mission: Self::key(m), points: m.waypoints.iter().zip(kinds).map(|(p, kind)| RoutePoint { x: p.x, y: p.y, kind }).collect() }
+        Self {
+            mission: Self::key(m),
+            points: m
+                .waypoints
+                .iter()
+                .zip(kinds)
+                .map(|(p, kind)| RoutePoint { x: p.x, y: p.y, kind })
+                .collect(),
+        }
     }
 
     pub fn key(m: &Mission) -> (String, u8, u32) {
@@ -72,7 +80,12 @@ impl PlannedRoute {
 
     /// Route length in map units.
     pub fn length(&self) -> f64 {
-        self.points.windows(2).map(|w| (((w[1].x - w[0].x) as f64).powi(2) + ((w[1].y - w[0].y) as f64).powi(2)).sqrt()).sum()
+        self.points
+            .windows(2)
+            .map(|w| {
+                (((w[1].x - w[0].x) as f64).powi(2) + ((w[1].y - w[0].y) as f64).powi(2)).sqrt()
+            })
+            .sum()
     }
 }
 
@@ -80,7 +93,15 @@ impl PlannedRoute {
 pub const ROUTE_FILE: &str = "route.json";
 
 /// Menu choices -> generator settings.
-pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockheed: bool, weather: Option<Sky>, cloud_cover: Option<u8>) -> MissionSettings {
+pub fn settings(
+    theater: usize,
+    roe: u8,
+    kind: MissionKind,
+    opponents: u8,
+    lockheed: bool,
+    weather: Option<Sky>,
+    cloud_cover: Option<u8>,
+) -> MissionSettings {
     MissionSettings {
         theater,
         roe,
@@ -93,7 +114,11 @@ pub fn settings(theater: usize, roe: u8, kind: MissionKind, opponents: u8, lockh
     }
 }
 
-pub fn generate(data: &MissionData, settings: &MissionSettings, seed: u16) -> anyhow::Result<Mission> {
+pub fn generate(
+    data: &MissionData,
+    settings: &MissionSettings,
+    seed: u16,
+) -> anyhow::Result<Mission> {
     stealth_mission::generate(&data.0, settings, Seed::Srand(seed))
 }
 
@@ -161,16 +186,25 @@ pub fn from_args(app: &mut App) {
         .unwrap_or(MissionKind::Strike);
     let opponents = get("--opponents").and_then(|s| s.parse().ok()).unwrap_or(1);
     // Realistic weapons are the F-117A's limits.
-    let f16 = get("--aircraft").and_then(|s| crate::aircraft::AircraftKind::parse(&s)) == Some(crate::aircraft::AircraftKind::F16);
+    let f16 = get("--aircraft").and_then(|s| crate::aircraft::AircraftKind::parse(&s))
+        == Some(crate::aircraft::AircraftKind::F16);
     let lockheed = args.iter().any(|a| a == "--lockheed") && !f16;
     let weather = crate::settings::weather_arg(&args);
     let cloud_cover = crate::settings::cover_arg(&args);
     let data = MissionData::load().expect("mission data");
-    let mut m = generate(&data, &settings(theater, roe, kind, opponents, lockheed, weather, cloud_cover), seed).expect("mission");
+    let mut m = generate(
+        &data,
+        &settings(theater, roe, kind, opponents, lockheed, weather, cloud_cover),
+        seed,
+    )
+    .expect("mission");
     // `--start-base <name>`: take off from another airfield (also an enemy one; for tests).
     if let Some(name) = get("--start-base") {
         let w = &m.world;
-        match (0..w.objects.len()).find(|&i| w.objects[i].flags & stealth_mission::world::flags::AIRFIELD != 0 && w.name(w.objects[i].name as i32).eq_ignore_ascii_case(&name)) {
+        match (0..w.objects.len()).find(|&i| {
+            w.objects[i].flags & stealth_mission::world::flags::AIRFIELD != 0
+                && w.name(w.objects[i].name as i32).eq_ignore_ascii_case(&name)
+        }) {
             Some(i) => {
                 let o = w.objects[i];
                 // The simulation starts at the primary target's base.
@@ -178,7 +212,10 @@ pub fn from_args(app: &mut App) {
                 m.takeoff = stealth_mission::Base {
                     object_index: i as i16,
                     name: w.name(o.name as i32).into(),
-                    position: stealth_mission::MapPoint { x: o.x as u16 as i32, y: o.y as u16 as i32 },
+                    position: stealth_mission::MapPoint {
+                        x: o.x as u16 as i32,
+                        y: o.y as u16 as i32,
+                    },
                     carrier: o.flags & stealth_mission::world::flags::CARRIER != 0,
                     neutral: false,
                     distance: 0,
@@ -260,7 +297,11 @@ pub fn ensure_mission(
     let theater = theater_index(&setup.theater).unwrap_or(3);
     for _ in 0..16 {
         let seed: u16 = rand::random();
-        match generate(&data, &settings(theater, 1, MissionKind::Strike, 1, false, setup.weather, setup.cloud_cover), seed) {
+        match generate(
+            &data,
+            &settings(theater, 1, MissionKind::Strike, 1, false, setup.weather, setup.cloud_cover),
+            seed,
+        ) {
             Ok(m) => {
                 info!("generated mission {seed} for {}: {}", m.theater_code, m.orders.primary);
                 let freecam = setup.freecam;

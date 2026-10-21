@@ -9,8 +9,8 @@ pub mod world;
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use stealth_formats::ALL_THEATERS;
 use serde::{Deserialize, Serialize};
+use stealth_formats::ALL_THEATERS;
 
 pub use drones::DroneWave;
 pub use rng::MscRand;
@@ -19,8 +19,18 @@ pub use text::{Briefing, Orders, OrdersLine};
 pub use weather::{CloudKind, Layer, Sky, Weather};
 pub use world::{FlightUnit, MissionWorld, NAMES_BYTES, TheaterData, WorldObject};
 
-pub const THEATER_NAMES: [&str; 10] =
-    ["Libya", "Persian Gulf", "North Cape", "Central Europe", "Vietnam", "Middle East", "Desert Storm", "Cuba", "Korea", "Ukraine"];
+pub const THEATER_NAMES: [&str; 10] = [
+    "Libya",
+    "Persian Gulf",
+    "North Cape",
+    "Central Europe",
+    "Vietnam",
+    "Middle East",
+    "Desert Storm",
+    "Cuba",
+    "Korea",
+    "Ukraine",
+];
 pub const ROE_NAMES: [&str; 3] = ["Cold War", "Limited War", "Conventional War"];
 pub const OPPONENT_NAMES: [&str; 4] = ["Green", "Regular", "Veteran", "Elite"];
 
@@ -39,7 +49,8 @@ pub enum MissionKind {
 
 impl MissionKind {
     /// The original game's kinds.
-    pub const ALL: [MissionKind; 4] = [Self::Air, Self::Strike, Self::AirTraining, Self::StrikeTraining];
+    pub const ALL: [MissionKind; 4] =
+        [Self::Air, Self::Strike, Self::AirTraining, Self::StrikeTraining];
     /// Generator kind (bit 0 strike, bit 1 training).
     pub fn index(self) -> u8 {
         match self {
@@ -105,7 +116,17 @@ fn clear_sky() -> Option<Sky> {
 
 impl Default for MissionSettings {
     fn default() -> Self {
-        Self { theater: 3, roe: 2, kind: MissionKind::Strike, opponents: 1, plane: Plane::MicroProse, sorties: 0, pilot: "Pilot".into(), weather: clear_sky(), cloud_cover: None }
+        Self {
+            theater: 3,
+            roe: 2,
+            kind: MissionKind::Strike,
+            opponents: 1,
+            plane: Plane::MicroProse,
+            sorties: 0,
+            pilot: "Pilot".into(),
+            weather: clear_sky(),
+            cloud_cover: None,
+        }
     }
 }
 
@@ -141,10 +162,11 @@ pub struct GameData {
 }
 
 impl GameData {
-
     /// Read the JSON export written by [`GameData::write_json`].
     pub fn load_json(dir: &Path) -> Result<Self> {
-        let read = |name: String| std::fs::read(dir.join(&name)).with_context(|| format!("{}", dir.join(&name).display()));
+        let read = |name: String| {
+            std::fs::read(dir.join(&name)).with_context(|| format!("{}", dir.join(&name).display()))
+        };
         let tables = serde_json::from_slice(&read("tables.json".into())?).context("tables.json")?;
         let theaters = ALL_THEATERS
             .iter()
@@ -153,7 +175,8 @@ impl GameData {
                 TheaterData::from_json(&read(name.clone())?).context(name)
             })
             .collect::<Result<_>>()?;
-        let briefings = serde_json::from_slice(&read("briefings.json".into())?).context("briefings.json")?;
+        let briefings =
+            serde_json::from_slice(&read("briefings.json".into())?).context("briefings.json")?;
         Ok(Self { tables, theaters, briefings })
     }
 
@@ -163,7 +186,10 @@ impl GameData {
         std::fs::write(dir.join("tables.json"), serde_json::to_string_pretty(&self.tables)?)?;
         std::fs::write(dir.join("briefings.json"), serde_json::to_string_pretty(&self.briefings)?)?;
         for (t, code) in self.theaters.iter().zip(ALL_THEATERS) {
-            std::fs::write(dir.join(format!("theaters/{}.json", code.to_ascii_lowercase())), serde_json::to_string(t)?)?;
+            std::fs::write(
+                dir.join(format!("theaters/{}.json", code.to_ascii_lowercase())),
+                serde_json::to_string(t)?,
+            )?;
         }
         Ok(())
     }
@@ -349,7 +375,9 @@ pub fn weapon_availability(rng: &mut MscRand, tables: &StartTables, plane: Plane
 /// Generate a mission.
 pub fn generate(data: &GameData, settings: &MissionSettings, seed: Seed) -> Result<Mission> {
     let input = match seed {
-        Seed::Holdrand(h) => GenInput { holdrand: h, weapon_unavailable: [0; 20], stale_special_start: 0 },
+        Seed::Holdrand(h) => {
+            GenInput { holdrand: h, weapon_unavailable: [0; 20], stale_special_start: 0 }
+        }
         Seed::Srand(s) => {
             let mut r = MscRand::srand(s);
             let avail = weapon_availability(&mut r, &data.tables, settings.plane);
@@ -367,12 +395,32 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
     let x = &data.tables;
     let th = &data.theaters[s.theater];
     let lockheed = s.plane == Plane::Lockheed;
-    let g = generator::Gen::new(x, th, input.holdrand, s.roe, s.kind.index(), s.opponents, lockheed, input.weapon_unavailable, input.stale_special_start)
-        .run();
+    let g = generator::Gen::new(
+        x,
+        th,
+        input.holdrand,
+        s.roe,
+        s.kind.index(),
+        s.opponents,
+        lockheed,
+        input.weapon_unavailable,
+        input.stale_special_start,
+    )
+    .run();
     let mut avail = input.weapon_unavailable;
     avail[0] = lockheed as u8;
     avail[1] = lockheed as u8;
-    let ctx = text::TextCtx { x, texts: &data.briefings, seed: input.holdrand, g: &g, theater: th.index, date: th.date, kind: s.kind.index() as usize, roe: s.roe as usize, lockheed };
+    let ctx = text::TextCtx {
+        x,
+        texts: &data.briefings,
+        seed: input.holdrand,
+        g: &g,
+        theater: th.index,
+        date: th.date,
+        kind: s.kind.index() as usize,
+        roe: s.roe as usize,
+        lockheed,
+    };
     let w = &g.world;
     let obj = |i: i32| w.objects[i.rem_euclid(w.objects.len() as i32) as usize];
 
@@ -444,7 +492,11 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
         settings: s.clone(),
         theater_code: ALL_THEATERS[s.theater].into(),
         theater_name: THEATER_NAMES[s.theater].into(),
-        rng: RngInfo { holdrand_entry: input.holdrand, holdrand_exit: g.rng.state, rand_calls: g.rng.calls },
+        rng: RngInfo {
+            holdrand_entry: input.holdrand,
+            holdrand_exit: g.rng.state,
+            rand_calls: g.rng.calls,
+        },
         weapon_unavailable: avail.to_vec(),
         time: MissionTime {
             tod_ticks: g.tod,
@@ -453,7 +505,9 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
             deadline: g.deadline.clone(),
             deadline_plus_15: g.deadline2.clone(),
             deadline_ticks: g.mtime as i16,
-            has_deadline: primary.has_deadline || secondary.has_deadline || (5..=7).contains(&primary.mission_type),
+            has_deadline: primary.has_deadline
+                || secondary.has_deadline
+                || (5..=7).contains(&primary.mission_type),
         },
         primary,
         secondary,
@@ -470,7 +524,11 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
         fuel_lbs: g.fuel as i16,
         loadout: Loadout {
             bays: (0..4)
-                .map(|k| Bay { weapon: g.weapons[k] as i16, name: x.weapon_name(g.weapons[k] as i16).into(), count: g.weapon_qty[k] as u8 })
+                .map(|k| Bay {
+                    weapon: g.weapons[k] as i16,
+                    name: x.weapon_name(g.weapons[k] as i16).into(),
+                    count: g.weapon_qty[k] as u8,
+                })
                 .collect(),
             usable_bays,
         },
@@ -513,7 +571,9 @@ pub fn handoff_block(m: &Mission) -> Vec<u8> {
     w16(&mut out, w.ground_unit_count as i32);
     w16(&mut out, w.world_object_count as i32);
     for o in &w.objects {
-        for v in [o.name, o.x, o.y, o.unit_type, o.flags, o.occupant_type, o.patrol_count, o.object_idx] {
+        for v in
+            [o.name, o.x, o.y, o.unit_type, o.flags, o.occupant_type, o.patrol_count, o.object_idx]
+        {
             w16(&mut out, v as i32);
         }
     }
@@ -524,7 +584,18 @@ pub fn handoff_block(m: &Mission) -> Vec<u8> {
         }
         out.extend_from_slice(&f.xp.to_le_bytes());
         out.extend_from_slice(&f.yp.to_le_bytes());
-        for v in [f.heading, f.pitch, f.roll, f.plane_type, f.flags, f.speed, f.fuel, f.reserved[0], f.reserved[1], f.reserved[2]] {
+        for v in [
+            f.heading,
+            f.pitch,
+            f.roll,
+            f.plane_type,
+            f.flags,
+            f.speed,
+            f.fuel,
+            f.reserved[0],
+            f.reserved[1],
+            f.reserved[2],
+        ] {
             w16(&mut out, v as i32);
         }
     }

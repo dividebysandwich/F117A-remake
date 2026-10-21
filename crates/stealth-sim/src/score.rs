@@ -118,7 +118,8 @@ impl Sim {
         let o = self.objectives();
         let outcome = Outcome::from_end(self.mission_end());
         let training = self.invulnerable();
-        let (mut air, mut ground, mut unseen, mut fired, mut hits, mut radar_ids, mut visual_ids) = (0, 0, 0, 0, 0, 0, 0);
+        let (mut air, mut ground, mut unseen, mut fired, mut hits, mut radar_ids, mut visual_ids) =
+            (0, 0, 0, 0, 0, 0, 0);
         let mut drones_killed = 0;
         let mut timeline = Vec::new();
         for e in self.event_log() {
@@ -235,7 +236,9 @@ impl Sim {
     }
 
     pub fn aircraft_name(&self, spec: i32) -> String {
-        self.aircraft_types.get(spec.max(0) as usize).map_or_else(|| "aircraft".into(), |t| t.name.clone())
+        self.aircraft_types
+            .get(spec.max(0) as usize)
+            .map_or_else(|| "aircraft".into(), |t| t.name.clone())
     }
 }
 
@@ -262,7 +265,9 @@ mod tests {
 
     #[test]
     fn outcomes_from_mission_end() {
-        let end = |outcome, landing_type| Some(MissionEnd { outcome, landing_type, map_x: 0, map_y: 0, damage: 0, hits: 0 });
+        let end = |outcome, landing_type| {
+            Some(MissionEnd { outcome, landing_type, map_x: 0, map_y: 0, damage: 0, hits: 0 })
+        };
         assert_eq!(Outcome::from_end(end(0, 3)), Outcome::Landed);
         assert_eq!(Outcome::from_end(end(0, 2)), Outcome::Ejected);
         assert_eq!(Outcome::from_end(end(1, 1)), Outcome::Crashed);

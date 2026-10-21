@@ -23,7 +23,10 @@
 
 use bevy::prelude::*;
 
-use super::{Aircraft, FlightConstants, FlightControls, Theater, WorldPos, bam, bam_diff, bevy_to_wu, engine, ground_contact, to_bam, wu_to_bevy};
+use super::{
+    Aircraft, FlightConstants, FlightControls, Theater, WorldPos, bam, bam_diff, bevy_to_wu,
+    engine, ground_contact, to_bam, wu_to_bevy,
+};
 
 const G: f32 = 32.174;
 /// Sea level air density (slug/ft^3).
@@ -168,7 +171,12 @@ impl Aero {
         cd_bay: 0.0,
         cd_idle: 0.022,
         cy_beta: 0.8,
-        drag_rise: DragRise::Supersonic { start: 0.85, peak_mach: 1.1, peak: 0.036, supersonic: 0.0245 },
+        drag_rise: DragRise::Supersonic {
+            start: 0.85,
+            peak_mach: 1.1,
+            peak: 0.036,
+            supersonic: 0.0245,
+        },
         n_max: 9.0,
         n_min: -3.0,
         roll_rate: 4.2,
@@ -285,7 +293,15 @@ fn neutral_load(gamma: f32, roll: f32) -> f32 {
     gamma.cos() * f
 }
 
-pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt: f32, controls: &FlightControls, k: &FlightConstants, theater: Option<&Theater>) {
+pub(super) fn step(
+    a: &mut Aircraft,
+    pos: &mut WorldPos,
+    tf: &mut Transform,
+    dt: f32,
+    controls: &FlightControls,
+    k: &FlightConstants,
+    theater: Option<&Theater>,
+) {
     let ae = &k.aero;
     a.time += dt;
     if a.ended.is_some() {
@@ -302,11 +318,15 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
             // Airborne start: trimmed, the nose raised above the flight path by the 1 g angle of
             // attack, and the path held.
             let (sigma, _) = atmosphere(a.altitude);
-            let per_cl = 0.5 * RHO0 * sigma * speed * speed / (ae.wing_loading * (ae.dry_weight + a.fuel) / ae.ref_weight);
+            let per_cl = 0.5 * RHO0 * sigma * speed * speed
+                / (ae.wing_loading * (ae.dry_weight + a.fuel) / ae.ref_weight);
             if per_cl > 1e-3 {
                 let (_, _, roll) = a.euler();
-                let n0 = neutral_load(a.modern.vel.normalize_or_zero().y.clamp(-1.0, 1.0).asin(), roll).max(0.0);
-                let alpha = ((n0 / per_cl - cl_zero(ae, a)) / ae.cl_alpha).clamp(0.0, alpha_limit(ae, a));
+                let n0 =
+                    neutral_load(a.modern.vel.normalize_or_zero().y.clamp(-1.0, 1.0).asin(), roll)
+                        .max(0.0);
+                let alpha =
+                    ((n0 / per_cl - cl_zero(ae, a)) / ae.cl_alpha).clamp(0.0, alpha_limit(ae, a));
                 a.orientation = (a.orientation * Quat::from_rotation_x(alpha)).normalize();
             }
             a.modern.hold = Some(a.modern.vel.normalize_or_zero().y.clamp(-1.0, 1.0).asin());
@@ -317,7 +337,11 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
     let air = !a.on_ground;
     let flaps = if a.flaps { 1.0 } else { 0.0 };
     let f = &mut a.modern.flap_pos;
-    *f = if *f < flaps { (*f + dt / FLAP_TIME).min(flaps) } else { (*f - dt / FLAP_TIME).max(flaps) };
+    *f = if *f < flaps {
+        (*f + dt / FLAP_TIME).min(flaps)
+    } else {
+        (*f - dt / FLAP_TIME).max(flaps)
+    };
 
     // --- controls
     let roll_stick = controls.roll.clamp(-1.0, 1.0);
@@ -332,7 +356,8 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
 
     // Turbulence (the classic model's strength, in stick units): low level, gear down, damage.
     let vz = a.view_z();
-    let mut turb = if k.landing > 0 { ((500.0 - vz) * a.knots() / 8192.0).floor().max(0.0) } else { 0.0 };
+    let mut turb =
+        if k.landing > 0 { ((500.0 - vz) * a.knots() / 8192.0).floor().max(0.0) } else { 0.0 };
     if a.gear_down {
         turb += ((a.knots() - 200.0) / 16.0).clamp(0.0, 32.0);
     }
@@ -359,7 +384,8 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
     let up = a.orientation * Vec3::Y;
     let right = a.orientation * Vec3::X;
     let vb = a.orientation.inverse() * vel;
-    let (alpha, beta) = if speed > 1.0 { ((-vb.y).atan2(-vb.z), vb.x.atan2(-vb.z)) } else { (pitch, 0.0) };
+    let (alpha, beta) =
+        if speed > 1.0 { ((-vb.y).atan2(-vb.z), vb.x.atan2(-vb.z)) } else { (pitch, 0.0) };
     let gamma = vhat.y.clamp(-1.0, 1.0).asin();
     let mach = speed / sound;
 
@@ -382,11 +408,16 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
     }
     cd += ae.drag_rise.cd(mach);
     cd += ae.cd_idle * (1.0 - a.thrust / 100.0).clamp(0.0, 1.0).powi(2);
-    let thrust = ae.thrust_ratio * (1.0 + ae.thrust_mach * mach.min(2.0)) * a.thrust / 100.0 * sigma.powf(0.6) / mass;
+    let thrust = ae.thrust_ratio * (1.0 + ae.thrust_mach * mach.min(2.0)) * a.thrust / 100.0
+        * sigma.powf(0.6)
+        / mass;
     let lift_dir = (up - vhat * up.dot(vhat)).normalize_or(up);
     let side_dir = (right - vhat * right.dot(vhat)).normalize_or(right);
     let n_lift = per_cl * cl;
-    let mut accel = (fwd * thrust + lift_dir * n_lift - vhat * per_cl * cd - side_dir * per_cl * ae.cy_beta * beta) * G;
+    let mut accel = (fwd * thrust + lift_dir * n_lift
+        - vhat * per_cl * cd
+        - side_dir * per_cl * ae.cy_beta * beta)
+        * G;
     accel.y -= G;
 
     // Stall speed at the current load (velocity units) for the warnings.
@@ -419,10 +450,14 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
         let gamma_rate = path_rate.dot(right) * roll.cos();
         if !free || roll.cos() < 0.5 {
             st.hold = None;
-        } else if st.hold.is_none() && st.released > HOLD_AFTER && (gamma_rate.abs() < HOLD_SETTLED || st.released > HOLD_LATEST) {
+        } else if st.hold.is_none()
+            && st.released > HOLD_AFTER
+            && (gamma_rate.abs() < HOLD_SETTLED || st.released > HOLD_LATEST)
+        {
             st.hold = Some(gamma);
         }
-        let mut q_cmd = q_turn + q_stick + st.hold.map_or(0.0, |g0| (g0 - gamma) * HOLD_GAIN * roll.cos());
+        let mut q_cmd =
+            q_turn + q_stick + st.hold.map_or(0.0, |g0| (g0 - gamma) * HOLD_GAIN * roll.cos());
         let mut p_cmd = roll_stick * ae.roll_rate * (qbar / ROLL_Q_FULL).clamp(0.25, 1.0);
         if a.autopilot() {
             // Bank toward the waypoint bearing (at most 30 degrees), hold the altitude.
@@ -433,15 +468,28 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
             q_cmd = q_turn + ((gamma_cmd - gamma) * 0.8).clamp(-0.5 * G / v, 2.0 * G / v);
         }
         // Crash protection: wings level and pull when the ground is less than 3 s away.
-        if k.landing == 0 && !a.gear_down && vel.y < 0.0 && a.altitude - a.ground_altitude + vel.y * 3.0 < 150.0 && roll_b.abs() < 24576.0 {
+        if k.landing == 0
+            && !a.gear_down
+            && vel.y < 0.0
+            && a.altitude - a.ground_altitude + vel.y * 3.0 < 150.0
+            && roll_b.abs() < 24576.0
+        {
             p_cmd = (-roll * 3.0).clamp(-ae.roll_rate, ae.roll_rate);
             q_cmd = q_cmd.max(q_path + (4.0 - n0).max(0.0) * G / v);
             a.modern.hold = None;
         }
         // Limiters: the angle of attack stays within the limiter angles and the angles that give
         // the load factor limits (corrected towards them near the limits only).
-        let lo_n = if per_cl > 1e-3 { (ae.n_min / per_cl - cl_zero(ae, a)) / ae.cl_alpha } else { ae.alpha_limit_neg };
-        let hi_n = if per_cl > 1e-3 { (ae.n_max / per_cl - cl_zero(ae, a)) / ae.cl_alpha } else { alpha_limit(ae, a) };
+        let lo_n = if per_cl > 1e-3 {
+            (ae.n_min / per_cl - cl_zero(ae, a)) / ae.cl_alpha
+        } else {
+            ae.alpha_limit_neg
+        };
+        let hi_n = if per_cl > 1e-3 {
+            (ae.n_max / per_cl - cl_zero(ae, a)) / ae.cl_alpha
+        } else {
+            alpha_limit(ae, a)
+        };
         let hi = alpha_limit(ae, a).min(hi_n);
         let lo = ae.alpha_limit_neg.max(lo_n).min(hi);
         q_cmd = q_cmd.min(q_path + (hi - alpha) / TAU_LIMIT).max(q_path + (lo - alpha) / TAU_LIMIT);
@@ -449,10 +497,13 @@ pub(super) fn step(a: &mut Aircraft, pos: &mut WorldPos, tf: &mut Transform, dt:
         if alpha > alpha_stall(ae, a) {
             q_cmd -= (alpha - alpha_stall(ae, a)) * 4.0;
         }
-        let r_cmd = (-path_rate.dot(up) + (beta + rudder * BETA_RUDDER) / TAU_BETA).clamp(-ae.yaw_rate_max, ae.yaw_rate_max);
+        let r_cmd = (-path_rate.dot(up) + (beta + rudder * BETA_RUDDER) / TAU_BETA)
+            .clamp(-ae.yaw_rate_max, ae.yaw_rate_max);
         // Pitch rate: second-order response to its command.
         let st = &mut a.modern;
-        st.q_dot += (PITCH_OMEGA * PITCH_OMEGA * (q_cmd - rates.y) - 2.0 * PITCH_ZETA * PITCH_OMEGA * st.q_dot) * dt;
+        st.q_dot += (PITCH_OMEGA * PITCH_OMEGA * (q_cmd - rates.y)
+            - 2.0 * PITCH_ZETA * PITCH_OMEGA * st.q_dot)
+            * dt;
         rates.y += st.q_dot * dt;
         let r = &mut rates;
         r.x += (p_cmd - r.x) * (dt / TAU_ROLL).min(1.0);

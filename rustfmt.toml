@@ -1,0 +1,7 @@
+# The codebase is written more compactly than stock rustfmt allows: short
+# if/else expressions, small struct literals and call arguments stay on one
+# line as long as they fit the 100-column limit. "Max" raises every
+# small-item width heuristic to max_width instead of the narrow defaults
+# (e.g. single_line_if_else_max_width 50, struct_lit_width 18), so
+# formatting preserves that style rather than exploding one-liners.
+use_small_heuristics = "Max"

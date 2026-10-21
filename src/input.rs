@@ -13,7 +13,13 @@ impl Plugin for InputPlugin {
             .init_resource::<InputBlock>()
             .add_message::<ActionEvent>()
             .add_plugins(crate::hotas::build)
-            .add_systems(PreUpdate, (read_keyboard, read_gamepad, crate::hotas::read_hotas).chain().in_set(InputSystemsSet).after(bevy::input::InputSystems));
+            .add_systems(
+                PreUpdate,
+                (read_keyboard, read_gamepad, crate::hotas::read_hotas)
+                    .chain()
+                    .in_set(InputSystemsSet)
+                    .after(bevy::input::InputSystems),
+            );
     }
 }
 
@@ -188,9 +194,17 @@ pub fn all_actions() -> Vec<Action> {
 /// Default keyboard bindings: the manual's key summary, plus Backspace for the gun.
 pub fn default_key_mappings() -> Vec<crate::hotas::KeyMapping> {
     use crate::hotas::{ButtonTarget, KeyMapping};
-    std::iter::once(KeyMapping { target: ButtonTarget::Gun, mods: Mods::None, key: KeyCode::Backspace })
-        .chain(BINDINGS.iter().map(|&(mods, key, action)| KeyMapping { target: ButtonTarget::Action(action), mods, key }))
-        .collect()
+    std::iter::once(KeyMapping {
+        target: ButtonTarget::Gun,
+        mods: Mods::None,
+        key: KeyCode::Backspace,
+    })
+    .chain(BINDINGS.iter().map(|&(mods, key, action)| KeyMapping {
+        target: ButtonTarget::Action(action),
+        mods,
+        key,
+    }))
+    .collect()
 }
 
 /// Continuous controls, in the original's stick units.
@@ -226,7 +240,8 @@ pub enum Mods {
 
 /// Actions without a default key, still listed in the input mapping right after the given one
 /// (the rudder keys after the roll keys).
-const UNBOUND_BY_DEFAULT: (Action, [Action; 2]) = (Action::RollRight, [Action::YawLeft, Action::YawRight]);
+const UNBOUND_BY_DEFAULT: (Action, [Action; 2]) =
+    (Action::RollRight, [Action::YawLeft, Action::YawRight]);
 
 /// Default bindings, from the manual's key summary (IBM version); the input mapping can change
 /// them.
@@ -359,7 +374,13 @@ fn read_keyboard(
 ) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
-    let mods = if alt { Mods::Alt } else if shift { Mods::Shift } else { Mods::None };
+    let mods = if alt {
+        Mods::Alt
+    } else if shift {
+        Mods::Shift
+    } else {
+        Mods::None
+    };
     for m in &config.keys {
         let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
         // The stick keys are held, read below.
@@ -398,7 +419,8 @@ fn read_keyboard(
             continue;
         }
         if keys.just_pressed(m.key) {
-            stick.full = matches!(stick.last_key, Some((k, t)) if k == m.key && now - t < DOUBLE_TAP_S);
+            stick.full =
+                matches!(stick.last_key, Some((k, t)) if k == m.key && now - t < DOUBLE_TAP_S);
             stick.last_key = Some((m.key, now));
         }
         if keys.pressed(m.key) {
@@ -417,12 +439,17 @@ fn read_keyboard(
         stick.full = false;
     }
     // The gun fires with any modifier unless its key needs one.
-    controls.gun = config
-        .keys
-        .iter()
-        .any(|m| m.target == crate::hotas::ButtonTarget::Gun && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods));
+    controls.gun = config.keys.iter().any(|m| {
+        m.target == crate::hotas::ButtonTarget::Gun
+            && keys.pressed(m.key)
+            && (m.mods == Mods::None || m.mods == mods)
+    });
     let held = |a: Action| {
-        config.keys.iter().any(|m| m.target == crate::hotas::ButtonTarget::Action(a) && keys.pressed(m.key) && (m.mods == Mods::None || m.mods == mods))
+        config.keys.iter().any(|m| {
+            m.target == crate::hotas::ButtonTarget::Action(a)
+                && keys.pressed(m.key)
+                && (m.mods == Mods::None || m.mods == mods)
+        })
     };
     controls.fire = held(Action::FireWeapon);
     controls.mark = held(Action::LockCursor);
@@ -506,7 +533,12 @@ mod tests {
             .insert_resource(crate::hotas::InputConfig::default())
             .add_message::<ActionEvent>()
             .add_systems(Update, read_keyboard);
-        for (key, roll, pitch) in [(KeyCode::ArrowLeft, -1.0, 0.0), (KeyCode::ArrowRight, 1.0, 0.0), (KeyCode::ArrowUp, 0.0, -1.0), (KeyCode::ArrowDown, 0.0, 1.0)] {
+        for (key, roll, pitch) in [
+            (KeyCode::ArrowLeft, -1.0, 0.0),
+            (KeyCode::ArrowRight, 1.0, 0.0),
+            (KeyCode::ArrowUp, 0.0, -1.0),
+            (KeyCode::ArrowDown, 0.0, 1.0),
+        ] {
             app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
             app.update();
             let c = app.world().resource::<FlightControls>().clone();
@@ -567,7 +599,11 @@ mod tests {
             app.update();
             let c = app.world().resource::<FlightControls>().clone();
             let sign = |v: f32| if v == 0.0 { 0.0 } else { v.signum() };
-            assert_eq!((sign(c.roll), sign(c.pitch), sign(c.yaw)), (roll, pitch, yaw), "{key:?}: {c:?}");
+            assert_eq!(
+                (sign(c.roll), sign(c.pitch), sign(c.yaw)),
+                (roll, pitch, yaw),
+                "{key:?}: {c:?}"
+            );
             app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(key);
             app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
         }

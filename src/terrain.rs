@@ -28,8 +28,10 @@ pub struct TerrainPlugin;
 
 impl Plugin for TerrainPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<RefinedTerrain>()
-            .add_systems(Update, refine.run_if(resource_exists::<Theater>).run_if(resource_exists::<Palette>));
+        app.init_resource::<RefinedTerrain>().add_systems(
+            Update,
+            refine.run_if(resource_exists::<Theater>).run_if(resource_exists::<Palette>),
+        );
     }
 }
 
@@ -81,12 +83,20 @@ fn refine(
     let handle = library.load(&server, &theater.id);
     let Some(gltf) = gltfs.get(&handle) else { return };
     let start = std::time::Instant::now();
-    let colours: HashMap<AssetId<GltfMaterial>, u8> =
-        gltf.named_materials.iter().filter_map(|(n, h)| Some((h.id(), index_from_name(n)?))).collect();
-    let materials: HashMap<u8, Handle<GltfMaterial>> =
-        gltf.named_materials.iter().filter_map(|(n, h)| Some((index_from_name(n)?, h.clone()))).collect();
+    let colours: HashMap<AssetId<GltfMaterial>, u8> = gltf
+        .named_materials
+        .iter()
+        .filter_map(|(n, h)| Some((h.id(), index_from_name(n)?)))
+        .collect();
+    let materials: HashMap<u8, Handle<GltfMaterial>> = gltf
+        .named_materials
+        .iter()
+        .filter_map(|(n, h)| Some((index_from_name(n)?, h.clone())))
+        .collect();
     let remap = &palette.remaps[REMAP_DETAIL_HIGH].entries;
-    let class = |c: u8| classify(remap.get(c as usize).copied().unwrap_or(0xFF00 | c as u16), &palette.theater.day);
+    let class = |c: u8| {
+        classify(remap.get(c as usize).copied().unwrap_or(0xFF00 | c as u16), &palette.theater.day)
+    };
 
     // Finest detail level each shape is placed on (its model unit in metres).
     let mut level: HashMap<usize, usize> = HashMap::new();
@@ -101,14 +111,19 @@ fn refine(
     let (mut coasts, mut mountains) = (0, 0);
     for shape in 0..theater.model_count() {
         let Some(&lod) = level.get(&shape) else { continue };
-        let Some(root) = gltf.named_nodes.get(format!("{}_{:03}", theater.id, shape).as_str()) else { continue };
+        let Some(root) = gltf.named_nodes.get(format!("{}_{:03}", theater.id, shape).as_str())
+        else {
+            continue;
+        };
         let Some(root) = nodes.get(root) else { continue };
         for lod_node in &root.children {
             let Some(node) = nodes.get(lod_node) else { continue };
             let mut parts = Vec::new();
             collect(&nodes, lod_node, Mat4::IDENTITY, &mut parts);
             // Destructible or animated models (conditional geometry) are buildings, not terrain.
-            if parts.iter().any(|p| p.cond) || parts.iter().any(|p| p.mesh.as_ref().is_some_and(|m| done.contains(&m.id()))) {
+            if parts.iter().any(|p| p.cond)
+                || parts.iter().any(|p| p.mesh.as_ref().is_some_and(|m| done.contains(&m.id())))
+            {
                 continue;
             }
             let mut geo = Geometry::read(&parts, &gltf_meshes, &meshes, &colours);
@@ -135,7 +150,10 @@ fn refine(
             done.extend(parts.iter().filter_map(|p| p.mesh.as_ref().map(|m| m.id())));
         }
     }
-    info!("terrain: refined {coasts} coastline and {mountains} mountain models in {:.2?}", start.elapsed());
+    info!(
+        "terrain: refined {coasts} coastline and {mountains} mountain models in {:.2?}",
+        start.elapsed()
+    );
     refined.files.insert(theater.id.clone());
 }
 
@@ -175,7 +193,10 @@ fn collect(nodes: &Assets<GltfNode>, handle: &Handle<GltfNode>, parent: Mat4, ou
     let Some(node) = nodes.get(handle) else { return };
     let m = parent * node.transform.to_matrix();
     let name = node.name.as_str();
-    let cond = name.split("_s").skip(1).any(|s| s.split_once('v').is_some_and(|(slot, _)| !slot.is_empty() && slot.bytes().all(|b| b.is_ascii_digit())));
+    let cond = name.split("_s").skip(1).any(|s| {
+        s.split_once('v')
+            .is_some_and(|(slot, _)| !slot.is_empty() && slot.bytes().all(|b| b.is_ascii_digit()))
+    });
     out.push(Part { mesh: node.mesh.clone(), to_model: m, cond, dots: name.contains("_dots_") });
     for c in &node.children {
         collect(nodes, c, m, out);
@@ -198,20 +219,53 @@ struct Prim {
 }
 
 impl Geometry {
-    fn read(parts: &[Part], gltf_meshes: &Assets<GltfMesh>, meshes: &Assets<Mesh>, colours: &HashMap<AssetId<GltfMaterial>, u8>) -> Self {
+    fn read(
+        parts: &[Part],
+        gltf_meshes: &Assets<GltfMesh>,
+        meshes: &Assets<Mesh>,
+        colours: &HashMap<AssetId<GltfMaterial>, u8>,
+    ) -> Self {
         let mut prims = Vec::new();
         for (k, part) in parts.iter().enumerate() {
             let Some(gm) = part.mesh.as_ref().and_then(|h| gltf_meshes.get(h)) else { continue };
             for (index, prim) in gm.primitives.iter().enumerate() {
                 let Some(mesh) = meshes.get(&prim.mesh) else { continue };
-                let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else { continue };
-                let pos: Vec<Vec3> = pos.iter().map(|&p| part.to_model.transform_point3(Vec3::from(p))).collect();
-                let idx: Vec<usize> = mesh.indices().map_or_else(|| (0..pos.len()).collect(), |i| i.iter().collect());
-                let colour = prim.material.as_ref().and_then(|m| colours.get(&m.id()).copied()).unwrap_or(15);
-                let mut p = Prim { part: k, index, colour, tris: vec![], lines: vec![], lists: true, changed: false };
+                let Some(VertexAttributeValues::Float32x3(pos)) =
+                    mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+                else {
+                    continue;
+                };
+                let pos: Vec<Vec3> =
+                    pos.iter().map(|&p| part.to_model.transform_point3(Vec3::from(p))).collect();
+                let idx: Vec<usize> =
+                    mesh.indices().map_or_else(|| (0..pos.len()).collect(), |i| i.iter().collect());
+                let colour = prim
+                    .material
+                    .as_ref()
+                    .and_then(|m| colours.get(&m.id()).copied())
+                    .unwrap_or(15);
+                let mut p = Prim {
+                    part: k,
+                    index,
+                    colour,
+                    tris: vec![],
+                    lines: vec![],
+                    lists: true,
+                    changed: false,
+                };
                 match mesh.primitive_topology() {
-                    PrimitiveTopology::TriangleList => p.tris = idx.as_chunks::<3>().0.iter().map(|t| [pos[t[0]], pos[t[1]], pos[t[2]]]).collect(),
-                    PrimitiveTopology::LineList => p.lines = idx.as_chunks::<2>().0.iter().map(|l| [pos[l[0]], pos[l[1]]]).collect(),
+                    PrimitiveTopology::TriangleList => {
+                        p.tris = idx
+                            .as_chunks::<3>()
+                            .0
+                            .iter()
+                            .map(|t| [pos[t[0]], pos[t[1]], pos[t[2]]])
+                            .collect()
+                    }
+                    PrimitiveTopology::LineList => {
+                        p.lines =
+                            idx.as_chunks::<2>().0.iter().map(|l| [pos[l[0]], pos[l[1]]]).collect()
+                    }
                     _ => p.lists = false,
                 }
                 prims.push(p);
@@ -222,7 +276,13 @@ impl Geometry {
 
     /// Writes the changed primitives back (node space, positions only, unindexed), adding
     /// primitives for new triangle colours and dropping emptied ones.
-    fn write(&self, parts: &[Part], gltf_meshes: &mut Assets<GltfMesh>, meshes: &mut Assets<Mesh>, materials: &HashMap<u8, Handle<GltfMaterial>>) {
+    fn write(
+        &self,
+        parts: &[Part],
+        gltf_meshes: &mut Assets<GltfMesh>,
+        meshes: &mut Assets<Mesh>,
+        materials: &HashMap<u8, Handle<GltfMaterial>>,
+    ) {
         for (k, part) in parts.iter().enumerate() {
             let Some(handle) = &part.mesh else { continue };
             let prims: Vec<&Prim> = self.prims.iter().filter(|p| p.part == k).collect();
@@ -235,11 +295,20 @@ impl Geometry {
             let mut keep = vec![true; gm.primitives.len()];
             for p in prims.iter().filter(|p| p.changed) {
                 let (topology, pos): (_, Vec<Vec3>) = if p.lines.is_empty() {
-                    (PrimitiveTopology::TriangleList, p.tris.iter().flatten().map(|&v| inv.transform_point3(v)).collect())
+                    (
+                        PrimitiveTopology::TriangleList,
+                        p.tris.iter().flatten().map(|&v| inv.transform_point3(v)).collect(),
+                    )
                 } else {
-                    (PrimitiveTopology::LineList, p.lines.iter().flatten().map(|&v| inv.transform_point3(v)).collect())
+                    (
+                        PrimitiveTopology::LineList,
+                        p.lines.iter().flatten().map(|&v| inv.transform_point3(v)).collect(),
+                    )
                 };
-                let mesh = |usage| Mesh::new(topology, usage).with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos.clone());
+                let mesh = |usage| {
+                    Mesh::new(topology, usage)
+                        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos.clone())
+                };
                 if p.index < gm.primitives.len() {
                     if pos.is_empty() {
                         keep[p.index] = false;
@@ -340,7 +409,9 @@ fn coast(geo: &mut Geometry, class: &dyn Fn(u8) -> Class) -> bool {
     for (pi, prim) in geo.prims.iter().enumerate() {
         let c = class(prim.colour);
         for (ti, t) in prim.tris.iter().enumerate() {
-            if t.iter().all(|v| v.y.abs() < 1.0) && (q(t[1]) - q(t[0])).perp_dot(q(t[2]) - q(t[0])).abs() > 1e-6 {
+            if t.iter().all(|v| v.y.abs() < 1.0)
+                && (q(t[1]) - q(t[0])).perp_dot(q(t[2]) - q(t[0])).abs() > 1e-6
+            {
                 flats.push(Flat { prim: pi, tri: ti, p: *t, class: c, lines: [None; 3] });
             }
         }
@@ -366,10 +437,22 @@ fn coast(geo: &mut Geometry, class: &dyn Fn(u8) -> Class) -> bool {
             }
             let n = d.perp();
             let off = n.dot(a);
-            let id = match lines.iter().position(|l| l.d.perp_dot(d).abs() < 1e-5 && (l.off - off).abs() < 0.05) {
+            let id = match lines
+                .iter()
+                .position(|l| l.d.perp_dot(d).abs() < 1e-5 && (l.off - off).abs() < 0.05)
+            {
                 Some(i) => i,
                 None => {
-                    lines.push(Line { d, n, off, edges: vec![], breaks: vec![], active: false, scale: 1.0, samples: vec![] });
+                    lines.push(Line {
+                        d,
+                        n,
+                        off,
+                        edges: vec![],
+                        breaks: vec![],
+                        active: false,
+                        scale: 1.0,
+                        samples: vec![],
+                    });
                     lines.len() - 1
                 }
             };
@@ -391,7 +474,8 @@ fn coast(geo: &mut Geometry, class: &dyn Fn(u8) -> Class) -> bool {
         line.breaks.dedup_by(|a, b| (*a - *b).abs() < 1e-3);
         // Boundaries of a class: its polygons lie on one side only.
         let one_sided = |c: Class| {
-            let sides: Vec<f64> = line.edges.iter().filter(|(fi, _)| flats[*fi].class == c).map(|e| e.1).collect();
+            let sides: Vec<f64> =
+                line.edges.iter().filter(|(fi, _)| flats[*fi].class == c).map(|e| e.1).collect();
             !sides.is_empty() && sides.iter().all(|&s| s == sides[0])
         };
         let outline = line.edges.iter().any(|&(fi, _)| {
@@ -412,10 +496,18 @@ fn coast(geo: &mut Geometry, class: &dyn Fn(u8) -> Class) -> bool {
 
     // Offsets along the active lines.
     for line in lines.iter_mut().filter(|l| l.active) {
-        let seed = mix((line.off * 4.0).round() as i64 as u64 ^ mix((line.d.y.atan2(line.d.x) * 1e4).round() as i64 as u64));
-        let ts = || line.edges.iter().flat_map(|&(fi, _)| flats[fi].p).filter(|v| (line.n.dot(q(*v)) - line.off).abs() < 0.05).map(|v| line.d.dot(q(v)));
+        let seed = mix((line.off * 4.0).round() as i64 as u64
+            ^ mix((line.d.y.atan2(line.d.x) * 1e4).round() as i64 as u64));
+        let ts = || {
+            line.edges
+                .iter()
+                .flat_map(|&(fi, _)| flats[fi].p)
+                .filter(|v| (line.n.dot(q(*v)) - line.off).abs() < 0.05)
+                .map(|v| line.d.dot(q(v)))
+        };
         let (t0, t1) = (ts().fold(f64::MAX, f64::min), ts().fold(f64::MIN, f64::max));
-        let mut points: Vec<f64> = line.breaks.iter().copied().filter(|&t| t > t0 - 1e-3 && t < t1 + 1e-3).collect();
+        let mut points: Vec<f64> =
+            line.breaks.iter().copied().filter(|&t| t > t0 - 1e-3 && t < t1 + 1e-3).collect();
         let mut k = (t0 / spacing).ceil();
         while k * spacing < t1 {
             let t = k * spacing;
@@ -439,16 +531,24 @@ fn coast(geo: &mut Geometry, class: &dyn Fn(u8) -> Class) -> bool {
                 // the model's outline.
                 let p = line.at(t);
                 let dir = line.n * off.signum();
-                let mut room = [(lo.x - p.x) / dir.x, (hi.x - p.x) / dir.x, (lo.y - p.y) / dir.y, (hi.y - p.y) / dir.y]
-                    .into_iter()
-                    .filter(|r| r.is_finite() && *r > 0.0)
-                    .fold(f64::MAX, f64::min);
+                let mut room = [
+                    (lo.x - p.x) / dir.x,
+                    (hi.x - p.x) / dir.x,
+                    (lo.y - p.y) / dir.y,
+                    (hi.y - p.y) / dir.y,
+                ]
+                .into_iter()
+                .filter(|r| r.is_finite() && *r > 0.0)
+                .fold(f64::MAX, f64::min);
                 for &(fi, side) in &line.edges {
                     if side != off.signum() {
                         continue;
                     }
                     let f = &flats[fi];
-                    let span = f.p.iter().filter(|v| (line.n.dot(q(**v)) - line.off).abs() < 0.05).map(|v| line.d.dot(q(*v)));
+                    let span =
+                        f.p.iter()
+                            .filter(|v| (line.n.dot(q(**v)) - line.off).abs() < 0.05)
+                            .map(|v| line.d.dot(q(*v)));
                     let (a, b) = span.fold((f64::MAX, f64::MIN), |(a, b), t| (a.min(t), b.max(t)));
                     if t <= a || t >= b {
                         continue;
@@ -479,7 +579,13 @@ fn coast(geo: &mut Geometry, class: &dyn Fn(u8) -> Class) -> bool {
             match triangulate(&poly, f.p) {
                 Some(t) => out.push(Some(t)),
                 None => {
-                    bad.extend(f.lines.iter().flatten().copied().filter(|&l| lines[l].active && lines[l].scale > 0.0));
+                    bad.extend(
+                        f.lines
+                            .iter()
+                            .flatten()
+                            .copied()
+                            .filter(|&l| lines[l].active && lines[l].scale > 0.0),
+                    );
                     out.push(None);
                 }
             }
@@ -535,8 +641,10 @@ fn outline_points(f: &Flat, lines: &[Line]) -> Vec<(DVec2, f32)> {
         pts.push((q(a), a.y));
         let Some(l) = f.lines[e].map(|l| &lines[l]).filter(|l| l.active) else { continue };
         let (ta, tb) = (l.d.dot(q(a)), l.d.dot(q(b)));
-        let inside = |t: f64| (t - ta) * (t - tb) < 0.0 && (t - ta).abs() > 1e-3 && (t - tb).abs() > 1e-3;
-        let mut add: Vec<(f64, f64)> = l.samples.iter().copied().filter(|&(t, _)| inside(t)).collect();
+        let inside =
+            |t: f64| (t - ta) * (t - tb) < 0.0 && (t - ta).abs() > 1e-3 && (t - tb).abs() > 1e-3;
+        let mut add: Vec<(f64, f64)> =
+            l.samples.iter().copied().filter(|&(t, _)| inside(t)).collect();
         if tb < ta {
             add.reverse();
         }
@@ -587,7 +695,9 @@ fn triangulate(poly: &[(DVec2, f32)], orig: [Vec3; 3]) -> Option<Vec<[Vec3; 3]>>
             let blocked = idx.iter().any(|&o| {
                 o != a && o != b && o != c && {
                     let p = poly[o].0;
-                    cross(poly[a].0, poly[b].0, p) > 0.0 && cross(poly[b].0, poly[c].0, p) > 0.0 && cross(poly[c].0, poly[a].0, p) > 0.0
+                    cross(poly[a].0, poly[b].0, p) > 0.0
+                        && cross(poly[b].0, poly[c].0, p) > 0.0
+                        && cross(poly[c].0, poly[a].0, p) > 0.0
                 }
             });
             (!blocked).then_some((k, Some([a, b, c])))
@@ -619,10 +729,18 @@ fn orient(t: [Vec3; 3], orig: [Vec3; 3]) -> [Vec3; 3] {
 fn segments_touch(a: DVec2, b: DVec2, c: DVec2, d: DVec2) -> bool {
     let o = |p: DVec2, q0: DVec2, q1: DVec2| (q0 - p).perp_dot(q1 - p);
     let (d1, d2, d3, d4) = (o(a, b, c), o(a, b, d), o(c, d, a), o(c, d, b));
-    if ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0)) && ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0)) {
+    if ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0))
+        && ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0))
+    {
         return true;
     }
-    let on = |p: DVec2, q0: DVec2, q1: DVec2, o: f64| o.abs() < 1e-9 && p.x >= q0.x.min(q1.x) && p.x <= q0.x.max(q1.x) && p.y >= q0.y.min(q1.y) && p.y <= q0.y.max(q1.y);
+    let on = |p: DVec2, q0: DVec2, q1: DVec2, o: f64| {
+        o.abs() < 1e-9
+            && p.x >= q0.x.min(q1.x)
+            && p.x <= q0.x.max(q1.x)
+            && p.y >= q0.y.min(q1.y)
+            && p.y <= q0.y.max(q1.y)
+    };
     on(c, a, b, d1) || on(d, a, b, d2) || on(a, c, d, d3) || on(b, c, d, d4)
 }
 
@@ -649,7 +767,9 @@ fn mountain_levels(geo: &Geometry, unit_m: f64) -> Option<u32> {
 type EdgeKey = [i64; 6];
 
 fn edge_key(a: Vec3, b: Vec3) -> EdgeKey {
-    let k = |v: Vec3| [(v.x * 64.0).round() as i64, (v.y * 64.0).round() as i64, (v.z * 64.0).round() as i64];
+    let k = |v: Vec3| {
+        [(v.x * 64.0).round() as i64, (v.y * 64.0).round() as i64, (v.z * 64.0).round() as i64]
+    };
     let (ka, kb) = (k(a), k(b));
     let (x, y) = if ka <= kb { (ka, kb) } else { (kb, ka) };
     [x[0], x[1], x[2], y[0], y[1], y[2]]
@@ -666,7 +786,8 @@ fn mountain(geo: &mut Geometry, levels: u32, available: &dyn Fn(u8) -> bool) -> 
     // New colours go to the mesh holding the raised faces.
     let mut part = 0;
     for p in geo.prims.iter_mut().filter(|p| !p.tris.is_empty()) {
-        let (raised, flat): (Vec<[Vec3; 3]>, Vec<[Vec3; 3]>) = p.tris.drain(..).partition(|t| t.iter().any(|v| v.y > 1.0));
+        let (raised, flat): (Vec<[Vec3; 3]>, Vec<[Vec3; 3]>) =
+            p.tris.drain(..).partition(|t| t.iter().any(|v| v.y > 1.0));
         if !raised.is_empty() {
             part = p.part;
         }
@@ -684,10 +805,14 @@ fn mountain(geo: &mut Geometry, levels: u32, available: &dyn Fn(u8) -> bool) -> 
             .iter()
             .enumerate()
             .filter(|&(j, (f, _))| {
-                j != i && normal(f).dot(n) > 0.999 && normal(f).dot(c - f[0]).abs() < 0.5 && area(f) > area(t) && {
-                    let w = barycentric(c, f);
-                    w.min_element() > -1e-3
-                }
+                j != i
+                    && normal(f).dot(n) > 0.999
+                    && normal(f).dot(c - f[0]).abs() < 0.5
+                    && area(f) > area(t)
+                    && {
+                        let w = barycentric(c, f);
+                        w.min_element() > -1e-3
+                    }
             })
             .max_by(|a, b| area(&a.1.0).total_cmp(&area(&b.1.0)))
             .map(|(j, _)| j);
@@ -699,7 +824,10 @@ fn mountain(geo: &mut Geometry, levels: u32, available: &dyn Fn(u8) -> bool) -> 
         }
         base_of[i] = b;
     }
-    let mut subs: Vec<Sub> = (0..faces.len()).filter(|&i| base_of[i].is_none()).map(|i| Sub { t: faces[i].0, rest: faces[i].0, base: i }).collect();
+    let mut subs: Vec<Sub> = (0..faces.len())
+        .filter(|&i| base_of[i].is_none())
+        .map(|i| Sub { t: faces[i].0, rest: faces[i].0, base: i })
+        .collect();
     let mut mids: Vec<HashMap<EdgeKey, Vec3>> = Vec::new();
     for amplitude in MOUNTAIN_AMPLITUDE.iter().take(levels as usize) {
         let mut adjacent: HashMap<EdgeKey, Vec3> = HashMap::new();
@@ -718,7 +846,8 @@ fn mountain(geo: &mut Geometry, levels: u32, available: &dyn Fn(u8) -> bool) -> 
                     return m; // the ground outline stays
                 }
                 let n = adjacent.get(&key).copied().unwrap_or(Vec3::Y).normalize_or_zero();
-                let h = (mix(key.iter().fold(0x5EED_u64, |h, &k| mix(h ^ k as u64))) >> 11) as f32 / (1u64 << 53) as f32;
+                let h = (mix(key.iter().fold(0x5EED_u64, |h, &k| mix(h ^ k as u64))) >> 11) as f32
+                    / (1u64 << 53) as f32;
                 let off = (h * 1.35 - 0.35) * amplitude * a.distance(b);
                 let lift = if a.y < 1.0 || b.y < 1.0 { 0.5 } else { 1.0 };
                 let mut m = m + n * off * lift;
@@ -754,7 +883,10 @@ fn mountain(geo: &mut Geometry, levels: u32, available: &dyn Fn(u8) -> bool) -> 
         }
         colour
     };
-    let step = |s: &Sub| ((normal(&faces[s.base].0).dot(sun) - normal(&s.t).dot(sun)) * 5.0).round().clamp(-2.0, 2.0) as i32;
+    let step = |s: &Sub| {
+        ((normal(&faces[s.base].0).dot(sun) - normal(&s.t).dot(sun)) * 5.0).round().clamp(-2.0, 2.0)
+            as i32
+    };
     let mut by_colour: HashMap<u8, Vec<[Vec3; 3]>> = HashMap::new();
     for s in &subs {
         by_colour.entry(shade(faces[s.base].1, step(s))).or_default().push(s.t);
@@ -785,14 +917,32 @@ fn mountain(geo: &mut Geometry, levels: u32, available: &dyn Fn(u8) -> bool) -> 
     }
     let surface: Vec<[Vec3; 3]> = subs.iter().map(|s| s.t).collect();
     for (colour, t) in by_colour {
-        match geo.prims.iter_mut().find(|p| p.colour == colour && p.part == part && p.lines.is_empty()) {
+        match geo
+            .prims
+            .iter_mut()
+            .find(|p| p.colour == colour && p.part == part && p.lines.is_empty())
+        {
             Some(p) => p.tris.extend(t),
             // Appended to the mesh by `Geometry::write`.
-            None => geo.prims.push(Prim { part, index: usize::MAX, colour, tris: t, lines: vec![], lists: true, changed: true }),
+            None => geo.prims.push(Prim {
+                part,
+                index: usize::MAX,
+                colour,
+                tris: t,
+                lines: vec![],
+                lists: true,
+                changed: true,
+            }),
         }
     }
     // Lines along subdivided edges follow the new points.
-    fn path(a: Vec3, b: Vec3, level: usize, mids: &[HashMap<EdgeKey, Vec3>], out: &mut Vec<[Vec3; 2]>) {
+    fn path(
+        a: Vec3,
+        b: Vec3,
+        level: usize,
+        mids: &[HashMap<EdgeKey, Vec3>],
+        out: &mut Vec<[Vec3; 2]>,
+    ) {
         match mids.get(level).and_then(|m| m.get(&edge_key(a, b))) {
             Some(&m) => {
                 path(a, m, level + 1, mids, out);
@@ -838,7 +988,8 @@ fn barycentric(p: Vec3, t: &[Vec3; 3]) -> Vec3 {
 /// The part of triangle `t` inside triangle `by` (both on the same plane; `t` is projected).
 fn clip(t: &[Vec3; 3], by: &[Vec3; 3]) -> Vec<Vec3> {
     let n = (by[1] - by[0]).cross(by[2] - by[0]);
-    let mut poly: Vec<Vec3> = t.iter().map(|&p| p - n * n.dot(p - by[0]) / n.length_squared()).collect();
+    let mut poly: Vec<Vec3> =
+        t.iter().map(|&p| p - n * n.dot(p - by[0]) / n.length_squared()).collect();
     for e in 0..3 {
         let (a, b) = (by[e], by[(e + 1) % 3]);
         // Inside: on the same side of edge a-b as the triangle (its normal side).

@@ -83,7 +83,16 @@ impl Sim {
     fn spawn_helicopter(&mut self, spec: i32, b: usize) -> usize {
         let o = self.objects[b];
         let i = self.flights.len();
-        let mut u = FlightUnit { spec, wp: b as i32, x: o.x + 6, y: o.y, alt: 0, speed: 1, timer: 0x7FFF, ..Default::default() };
+        let mut u = FlightUnit {
+            spec,
+            wp: b as i32,
+            x: o.x + 6,
+            y: o.y,
+            alt: 0,
+            speed: 1,
+            timer: 0x7FFF,
+            ..Default::default()
+        };
         u.wx = u.x << 5;
         u.wy = u.y << 5;
         u.flags = fflags::EXISTS | fflags::AIRBORNE | fflags::TAKEOFF;
@@ -141,7 +150,16 @@ impl Sim {
         let capture_frames = (15 - 2 * self.diff) * 60 * self.fs;
         let search = hunters.iter().map(|_| (x, y)).collect();
         let spotted = vec![false; hunters.len()];
-        self.csar = Some(Csar { pilot: (x, y), rescue, hunters, capture_frames, flares: SIGNAL_FLARES, search, spotted, ..Default::default() });
+        self.csar = Some(Csar {
+            pilot: (x, y),
+            rescue,
+            hunters,
+            capture_frames,
+            flares: SIGNAL_FLARES,
+            search,
+            spotted,
+            ..Default::default()
+        });
         let base_name = self.place_name(base);
         self.msg(format!("Down in enemy territory - CSAR from {base_name}"));
         self.emit(SimEvent::CancelTimeAccel);
@@ -180,7 +198,9 @@ impl Sim {
             // spot more; at night half as often).
             if !c.spotted[k] {
                 let flare = c.since_flare.is_some_and(|f| f < 30 * fs) && near < FLARE_SEEN_RANGE;
-                let chance = near < SPOT_RANGE && (self.frame + k as i32) % (2 * fs) == 0 && self.rng.random(20 << self.night as i32) <= self.diff;
+                let chance = near < SPOT_RANGE
+                    && (self.frame + k as i32) % (2 * fs) == 0
+                    && self.rng.random(20 << self.night as i32) <= self.diff;
                 if flare || chance {
                     c.spotted[k] = true;
                     self.msg("A Hind has spotted you");
@@ -190,7 +210,10 @@ impl Sim {
                 c.search[k] = c.pilot;
             } else if (self.frame + k as i32 * 97) % (20 * fs) == 0 {
                 let spread = (0x180 - c.frames / (4 * fs)).max(0x30);
-                c.search[k] = (c.pilot.0 + self.rng.random(2 * spread) - spread, c.pilot.1 + self.rng.random(2 * spread) - spread);
+                c.search[k] = (
+                    c.pilot.0 + self.rng.random(2 * spread) - spread,
+                    c.pilot.1 + self.rng.random(2 * spread) - spread,
+                );
             }
             if c.spotted[k] && near < CAPTURE_RANGE && u.alt < 100 {
                 c.state = CsarState::Captured;
@@ -210,7 +233,9 @@ impl Sim {
             c.state = CsarState::Captured;
         }
         match c.state {
-            CsarState::Inbound if d < 0x10 && r.alt <= HOVER_ALT + 10 => c.state = CsarState::Pickup(0),
+            CsarState::Inbound if d < 0x10 && r.alt <= HOVER_ALT + 10 => {
+                c.state = CsarState::Pickup(0)
+            }
             CsarState::Pickup(n) if n >= PICKUP_SECONDS * fs => c.state = CsarState::Rescued,
             CsarState::Pickup(n) => c.state = CsarState::Pickup(n + 1),
             _ => {}
@@ -240,14 +265,26 @@ impl Sim {
                 // anyway in the last minute).
                 if d < SEARCH_RANGE && !c.located && c.frames < c.capture_frames - 60 * self.fs {
                     let a = s16(self.frame * 40 + 0x4000);
-                    let (ox, oy) = (self.trig.sin_mul(a, SEARCH_RANGE / 2), self.trig.cos_mul(a, SEARCH_RANGE / 2));
+                    let (ox, oy) = (
+                        self.trig.sin_mul(a, SEARCH_RANGE / 2),
+                        self.trig.cos_mul(a, SEARCH_RANGE / 2),
+                    );
                     return (c.pilot.0 + ox, c.pilot.1 + oy, CRUISE_ALT / 2, false);
                 }
-                return (c.pilot.0, c.pilot.1, if d < 0x20 { HOVER_ALT } else { CRUISE_ALT / 2 }, true);
+                return (
+                    c.pilot.0,
+                    c.pilot.1,
+                    if d < 0x20 { HOVER_ALT } else { CRUISE_ALT / 2 },
+                    true,
+                );
             }
             if let Some(k) = c.hunters.iter().position(|&h| h == i) {
                 let (x, y) = c.search[k];
-                return if c.spotted[k] { (x, y, HOVER_ALT, true) } else { (x, y, CRUISE_ALT, false) };
+                return if c.spotted[k] {
+                    (x, y, HOVER_ALT, true)
+                } else {
+                    (x, y, CRUISE_ALT, false)
+                };
             }
         }
         // Other helicopters (Hinds of the mission): patrol low between objects, or hunt the
@@ -305,7 +342,8 @@ impl Sim {
         }
         // Nose down with speed, banked into turns (attitude only).
         u.pitch = -(u.speed * 0x600 / max.max(1));
-        u.bank = clamp_q(s16(bearing(dx, s16(-dy)) - u.heading) * 2, -0x1800, 0x1800) * (u.speed > 20) as i32;
+        u.bank = clamp_q(s16(bearing(dx, s16(-dy)) - u.heading) * 2, -0x1800, 0x1800)
+            * (u.speed > 20) as i32;
         let mv = cdiv(u.speed, fs);
         u.wx = u.wx.wrapping_add(self.trig.sin_mul(u.heading, mv));
         u.wy = u.wy.wrapping_sub(self.trig.cos_mul(u.heading, mv));
@@ -322,19 +360,29 @@ impl Sim {
         // Hinds use their gun on a low, close player.
         let (px, py, pz) = (self.p.mx, self.p.my, self.p.view_z);
         let prange = approx(px - u.x, py - u.y);
-        if u.spec == HIND && prange < 0x40 && (pz - u.alt).abs() < 600 && self.eject == 0 && self.frame & 3 == 0 {
+        if u.spec == HIND
+            && prange < 0x40
+            && (pz - u.alt).abs() < 600
+            && self.eject == 0
+            && self.frame & 3 == 0
+        {
             let to_player = bearing(px - u.x, s16(u.y - py));
             if s16(to_player - u.heading).abs() < 0x1000 {
                 self.fire_gun(&u);
             }
         }
         u.timer = s16(u.timer - 1);
-        if u.timer == 0 && self.csar.as_ref().is_none_or(|c| c.rescue != i && !c.hunters.contains(&i)) {
+        if u.timer == 0
+            && self.csar.as_ref().is_none_or(|c| c.rescue != i && !c.hunters.contains(&i))
+        {
             u.flags |= fflags::RTB;
         }
         self.flights[i] = u;
         let per = (fs << 4).max(1);
-        if t.radar > 0 && self.frame % per == (i as i32 & 7) * 2 * fs && u.flags & fflags::DESTROYED == 0 {
+        if t.radar > 0
+            && self.frame % per == (i as i32 & 7) * 2 * fs
+            && u.flags & fflags::DESTROYED == 0
+        {
             self.radar_sweep(i);
         }
     }

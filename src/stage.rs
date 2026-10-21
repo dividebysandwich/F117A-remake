@@ -23,7 +23,10 @@ pub struct StagePlugin;
 impl Plugin for StagePlugin {
     fn build(&self, app: &mut App) {
         if cam_arg().is_some() {
-            app.add_systems(Update, stage_camera.after(RigSystems).run_if(in_state(AppState::Flight)));
+            app.add_systems(
+                Update,
+                stage_camera.after(RigSystems).run_if(in_state(AppState::Flight)),
+            );
         }
     }
 }
@@ -65,7 +68,10 @@ pub fn chase_start(m: &Mission) -> Option<(DVec3, f32, f32, f32)> {
     let u = m.world.flights.get(chased_unit(m)?)?;
     let h = u.heading as u16 as f64 / 65536.0 * std::f64::consts::TAU;
     let d = metres / WU;
-    let (east, north) = ((u.x as u16 as f64) * 32.0 - h.sin() * d, (0x8000 as f64 - u.y as u16 as f64) * 32.0 - h.cos() * d);
+    let (east, north) = (
+        (u.x as u16 as f64) * 32.0 - h.sin() * d,
+        (0x8000 as f64 - u.y as u16 as f64) * 32.0 - h.cos() * d,
+    );
     let alt = u.alt as f64;
     Some((wu_to_bevy(east, north, alt), h as f32, alt as f32, kts))
 }
@@ -79,8 +85,15 @@ fn stage_camera(
     mut head: Query<&mut Transform, (With<HeadAnchor>, Without<EyeCamera>)>,
     mut cam: Query<&mut Transform, With<EyeCamera>>,
 ) {
-    let (Some(combat), Some(mission), Some((mode, dist, height))) = (combat, mission, cam_arg()) else { return };
-    let (Ok((a, pos)), Ok(mut head), Ok(mut cam)) = (aircraft.single(), head.single_mut(), cam.single_mut()) else { return };
+    let (Some(combat), Some(mission), Some((mode, dist, height))) = (combat, mission, cam_arg())
+    else {
+        return;
+    };
+    let (Ok((a, pos)), Ok(mut head), Ok(mut cam)) =
+        (aircraft.single(), head.single_mut(), cam.single_mut())
+    else {
+        return;
+    };
     if view.view != View::Chase {
         // External view: own model shown, cockpit hidden.
         view.view = View::Chase;
@@ -98,11 +111,10 @@ fn stage_camera(
     let side = ax.cross(up);
     let (d, h) = (dist as f64, height as f64);
     let mid = (drone + me) / 2.0;
-    let missile = sim
-        .active_projectiles()
-        .into_iter()
-        .find(|(s, _, _, _)| *s >= 8)
-        .map(|(_, m, _, _)| crate::sim_render::map_point(m.x as f64 + 0.5, m.y as f64 + 0.5, m.alt as f64));
+    let missile =
+        sim.active_projectiles().into_iter().find(|(s, _, _, _)| *s >= 8).map(|(_, m, _, _)| {
+            crate::sim_render::map_point(m.x as f64 + 0.5, m.y as f64 + 0.5, m.alt as f64)
+        });
     let (eye, target) = match mode.as_str() {
         "front" => (drone + ax * d + up * h + side * (d * 0.15), drone.lerp(me, 0.45)),
         "side" => (mid + side * d + up * h, mid),
@@ -117,8 +129,10 @@ fn stage_camera(
         },
         _ => (me - ax * d + up * h + side * (d * 0.1), me.lerp(drone, 0.6)),
     };
-    let world_rot = Transform::from_translation(eye.as_vec3()).looking_at(target.as_vec3(), Vec3::Y).rotation;
+    let world_rot =
+        Transform::from_translation(eye.as_vec3()).looking_at(target.as_vec3(), Vec3::Y).rotation;
     let local = a.orientation.inverse();
-    *head = Transform::from_translation(local * (eye - me).as_vec3()).with_rotation(local * world_rot);
+    *head =
+        Transform::from_translation(local * (eye - me).as_vec3()).with_rotation(local * world_rot);
     *cam = Transform::IDENTITY;
 }

@@ -105,7 +105,9 @@ pub fn prepare_map(
         return;
     }
     if planner.sim.is_none() {
-        planner.sim = SimData::load_json(&crate::asset_path::asset("sim")).map_err(|e| warn!("planner: {e:#}")).ok();
+        planner.sim = SimData::load_json(&crate::asset_path::asset("sim"))
+            .map_err(|e| warn!("planner: {e:#}"))
+            .ok();
     }
     if planner.theater.as_ref().is_none_or(|t| t.id != id) {
         planner.theater = Some(Theater::load(&id));
@@ -125,21 +127,24 @@ fn render_theater(theater: &Theater, models: &HashMap<u8, MapModel>) -> egui::Co
     let mut c = Canvas::new(MAP_PX, MAP_PX);
     let px = 0x8000 as f64 / MAP_PX as f64;
     let half = 0x4000 as f64 * 32.0;
-    let to_px = |east: f64, north: f64| Vec2::new((east / 32.0 / px) as f32, ((0x8000 as f64 - north / 32.0) / px) as f32);
-    let text = std::fs::read_to_string(crate::asset_path::asset("palettes/remap.ron")).unwrap_or_default();
+    let to_px = |east: f64, north: f64| {
+        Vec2::new((east / 32.0 / px) as f32, ((0x8000 as f64 - north / 32.0) / px) as f32)
+    };
+    let text =
+        std::fs::read_to_string(crate::asset_path::asset("palettes/remap.ron")).unwrap_or_default();
     let remaps: Vec<RemapTable> = ron::from_str(&text).unwrap_or_default();
-    let map16 = remaps.iter().find(|t| t.name == "map16").map(|t| t.entries.clone()).unwrap_or_default();
+    let map16 =
+        remaps.iter().find(|t| t.name == "map16").map(|t| t.entries.clone()).unwrap_or_default();
     let remap = |col: u8| map16.get(col as usize).map_or(col, |w| (*w & 0xFF) as u8);
     rasterise_map(&mut c, models, theater, &to_px, (half, half, half, half), 5, &remap);
     let pal: VgaPalette = load_theater_palettes(&theater.id).day;
-    let rgba: Vec<u8> = c
-        .px
-        .iter()
-        .flat_map(|&i| {
-            let [r, g, b] = pal.colors.get(i as usize).copied().unwrap_or([0, 0, 0]);
-            [r * 4 + r / 16, g * 4 + g / 16, b * 4 + b / 16, 255]
-        })
-        .collect();
+    let rgba: Vec<u8> =
+        c.px.iter()
+            .flat_map(|&i| {
+                let [r, g, b] = pal.colors.get(i as usize).copied().unwrap_or([0, 0, 0]);
+                [r * 4 + r / 16, g * 4 + g / 16, b * 4 + b / 16, 255]
+            })
+            .collect();
     egui::ColorImage::from_rgba_unmultiplied([MAP_PX, MAP_PX], &rgba)
 }
 
@@ -161,7 +166,14 @@ fn threat_rings(m: &Mission, sim: &SimData, profile: Profile) -> Vec<Ring> {
     let w = &m.world;
     let diff = m.settings.opponents as i32;
     let lockheed = m.settings.plane == stealth_mission::Plane::Lockheed;
-    let emv = stealth_sim::emv(stealth_sim::math::view_z(profile.feet()), (CRUISE_KTS * 27.0) as i32, 0, 0, diff, lockheed) as f32;
+    let emv = stealth_sim::emv(
+        stealth_sim::math::view_z(profile.feet()),
+        (CRUISE_KTS * 27.0) as i32,
+        0,
+        0,
+        diff,
+        lockheed,
+    ) as f32;
     (3..(w.ground_unit_count as usize).min(w.objects.len()))
         .filter_map(|i| {
             let o = w.objects[i];
@@ -171,9 +183,15 @@ fn threat_rings(m: &Mission, sim: &SimData, profile: Profile) -> Vec<Ring> {
             let t = sim.threat(o.unit_type as i32)?;
             let missile = sim.missile(t.missile.map_or(o.unit_type as i32, i32::from));
             let (x, y) = (o.x as u16 as i32, o.y as u16 as i32);
-            let terrain = (w.grid[((y >> 11).clamp(0, 15) * 16 + (x >> 11).clamp(0, 15)) as usize] & 0xC) as f32;
-            let peak = terrain * (2 * diff + t.tier as i32 + 1) as f32 / if lockheed { 2.0 } else { 1.0 };
-            let detect = if peak > 0.0 { (t.lethality as f32 * (1.0 - (100.0 - emv) / peak)).max(0.0) } else { 0.0 };
+            let terrain = (w.grid[((y >> 11).clamp(0, 15) * 16 + (x >> 11).clamp(0, 15)) as usize]
+                & 0xC) as f32;
+            let peak =
+                terrain * (2 * diff + t.tier as i32 + 1) as f32 / if lockheed { 2.0 } else { 1.0 };
+            let detect = if peak > 0.0 {
+                (t.lethality as f32 * (1.0 - (100.0 - emv) / peak)).max(0.0)
+            } else {
+                0.0
+            };
             Some(Ring {
                 x: x as f32,
                 y: y as f32,
@@ -190,7 +208,8 @@ fn threat_rings(m: &Mission, sim: &SimData, profile: Profile) -> Vec<Ring> {
 fn exposure(route: &[RoutePoint], rings: &[Ring], radius: impl Fn(&Ring) -> f32) -> f64 {
     let mut km = 0.0;
     for w in route.windows(2) {
-        let (a, b) = (egui::vec2(w[0].x as f32, w[0].y as f32), egui::vec2(w[1].x as f32, w[1].y as f32));
+        let (a, b) =
+            (egui::vec2(w[0].x as f32, w[0].y as f32), egui::vec2(w[1].x as f32, w[1].y as f32));
         let len = (b - a).length() as f64 / PER_KM;
         let n = len.ceil().max(1.0) as usize;
         for k in 0..n {
@@ -210,7 +229,8 @@ fn leg_time(km: f64) -> String {
 
 /// The route from the takeoff base (the base is not one of the INS waypoints).
 fn with_base(m: &Mission, route: &[RoutePoint]) -> Vec<RoutePoint> {
-    let base = RoutePoint { x: m.takeoff.position.x, y: m.takeoff.position.y, kind: RouteKind::Nav };
+    let base =
+        RoutePoint { x: m.takeoff.position.x, y: m.takeoff.position.y, kind: RouteKind::Nav };
     std::iter::once(base).chain(route.iter().copied()).collect()
 }
 
@@ -219,7 +239,9 @@ fn point_label(route: &[RoutePoint], i: usize) -> String {
         RouteKind::Primary => "PRI".into(),
         RouteKind::Secondary => "SEC".into(),
         RouteKind::Land => "LAND".into(),
-        RouteKind::Nav => format!("N{}", route[..=i].iter().filter(|p| p.kind == RouteKind::Nav).count()),
+        RouteKind::Nav => {
+            format!("N{}", route[..=i].iter().filter(|p| p.kind == RouteKind::Nav).count())
+        }
     }
 }
 
@@ -236,9 +258,13 @@ pub fn planner_ui(ctx: &egui::Context, planner: &mut Planner, state: &mut MenuSt
     if !route.fits(&m) {
         *route = PlannedRoute::of(&m);
     }
-    let rings = planner.sim.as_ref().map(|s| threat_rings(&m, s, planner.profile)).unwrap_or_default();
+    let rings =
+        planner.sim.as_ref().map(|s| threat_rings(&m, s, planner.profile)).unwrap_or_default();
     let screen = ctx.content_rect();
-    let size = egui::vec2((screen.width() - 32.0).clamp(600.0, 1600.0), (screen.height() - 32.0).clamp(400.0, 1000.0));
+    let size = egui::vec2(
+        (screen.width() - 32.0).clamp(600.0, 1600.0),
+        (screen.height() - 32.0).clamp(400.0, 1000.0),
+    );
     let mut open = true;
     egui::Window::new("Mission planner")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
@@ -306,7 +332,14 @@ pub fn planner_ui(ctx: &egui::Context, planner: &mut Planner, state: &mut MenuSt
     }
 }
 
-fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut PlannedRoute, rings: &[Ring], size: egui::Vec2) {
+fn map_view(
+    ui: &mut egui::Ui,
+    planner: &mut Planner,
+    m: &Mission,
+    route: &mut PlannedRoute,
+    rings: &[Ring],
+    size: egui::Vec2,
+) {
     let (resp, painter) = ui.allocate_painter(size, egui::Sense::click_and_drag());
     let rect = resp.rect;
     painter.rect_filled(rect, 0.0, egui::Color32::BLACK);
@@ -318,7 +351,8 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
             hi = hi.max(egui::vec2(p.x as f32, p.y as f32));
         }
         planner.centre = (lo + hi) / 2.0;
-        planner.scale = ((hi.x - lo.x) / rect.width()).max((hi.y - lo.y) / rect.height()).max(4.0) * 1.4;
+        planner.scale =
+            ((hi.x - lo.x) / rect.width()).max((hi.y - lo.y) / rect.height()).max(4.0) * 1.4;
         planner.fitted = Some(route.mission.clone());
     }
     let (centre, scale) = (planner.centre, planner.scale);
@@ -329,11 +363,25 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
     // Map picture.
     match &planner.texture {
         Some((_, tex)) => {
-            let r = egui::Rect::from_min_max(to_screen(0.0, 0.0), to_screen(0x8000 as f32, 0x8000 as f32));
-            painter.image(tex.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+            let r = egui::Rect::from_min_max(
+                to_screen(0.0, 0.0),
+                to_screen(0x8000 as f32, 0x8000 as f32),
+            );
+            painter.image(
+                tex.id(),
+                r,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
         }
         None => {
-            painter.text(rect.center(), egui::Align2::CENTER_CENTER, "LOADING MAP...", egui::FontId::monospace(18.0), DIM);
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "LOADING MAP...",
+                egui::FontId::monospace(18.0),
+                DIM,
+            );
         }
     }
     let red = MISSILE_RED;
@@ -344,18 +392,40 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
         let alpha = if ring.active { 1.0 } else { 0.35 };
         painter.extend(missile_circle(c, ring.launch / scale, alpha));
         if ring.detect > 0.0 {
-            painter.circle(c, ring.detect / scale, AMBER.gamma_multiply(alpha * 0.18), egui::Stroke::new(1.5, AMBER.gamma_multiply(alpha)));
+            painter.circle(
+                c,
+                ring.detect / scale,
+                AMBER.gamma_multiply(alpha * 0.18),
+                egui::Stroke::new(1.5, AMBER.gamma_multiply(alpha)),
+            );
         }
         painter.circle_filled(c, 3.0, red.gamma_multiply(alpha));
         if 1.0 / scale > 0.02 {
-            painter.text(c + egui::vec2(5.0, -5.0), egui::Align2::LEFT_BOTTOM, &ring.name, egui::FontId::monospace(11.0), red.gamma_multiply(alpha));
+            painter.text(
+                c + egui::vec2(5.0, -5.0),
+                egui::Align2::LEFT_BOTTOM,
+                &ring.name,
+                egui::FontId::monospace(11.0),
+                red.gamma_multiply(alpha),
+            );
         }
     }
     // Airfields.
     for o in m.world.objects.iter().filter(|o| o.flags & F::AIRFIELD != 0) {
         let p = to_screen(o.x as u16 as f32, o.y as u16 as f32);
-        let colour = if o.flags & F::FRIENDLY != 0 { egui::Color32::from_rgb(90, 160, 255) } else if o.flags & F::NEUTRAL != 0 { DIM } else { red };
-        painter.rect_stroke(egui::Rect::from_center_size(p, egui::vec2(8.0, 8.0)), 0.0, egui::Stroke::new(1.5, colour), egui::StrokeKind::Middle);
+        let colour = if o.flags & F::FRIENDLY != 0 {
+            egui::Color32::from_rgb(90, 160, 255)
+        } else if o.flags & F::NEUTRAL != 0 {
+            DIM
+        } else {
+            red
+        };
+        painter.rect_stroke(
+            egui::Rect::from_center_size(p, egui::vec2(8.0, 8.0)),
+            0.0,
+            egui::Stroke::new(1.5, colour),
+            egui::StrokeKind::Middle,
+        );
     }
     // Drones on their way (drone defense).
     if let Some(d) = &m.drones {
@@ -363,11 +433,17 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
         for f in m.world.flights.iter().skip(d.first_unit).take(d.count) {
             let p = to_screen(f.x as u16 as f32, f.y as u16 as f32);
             drone_cross(&painter, p);
-            painter.extend(egui::Shape::dashed_line(&[p, to_screen(t.x as u16 as f32, t.y as u16 as f32)], egui::Stroke::new(0.8, UAV_PINK.gamma_multiply(0.5)), 3.0, 4.0));
+            painter.extend(egui::Shape::dashed_line(
+                &[p, to_screen(t.x as u16 as f32, t.y as u16 as f32)],
+                egui::Stroke::new(0.8, UAV_PINK.gamma_multiply(0.5)),
+                3.0,
+                4.0,
+            ));
         }
     }
     // The route, from the takeoff base.
-    let pts: Vec<egui::Pos2> = route.points.iter().map(|p| to_screen(p.x as f32, p.y as f32)).collect();
+    let pts: Vec<egui::Pos2> =
+        route.points.iter().map(|p| to_screen(p.x as f32, p.y as f32)).collect();
     let base = to_screen(m.takeoff.position.x as f32, m.takeoff.position.y as f32);
     let legs: Vec<egui::Pos2> = std::iter::once(base).chain(pts.iter().copied()).collect();
     painter.add(egui::Shape::line(legs.clone(), egui::Stroke::new(2.0, BRIGHT)));
@@ -378,8 +454,19 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
             RouteKind::Secondary => (AMBER, 7.0),
             RouteKind::Land => (egui::Color32::from_rgb(90, 160, 255), 7.0),
         };
-        painter.circle(p, r, egui::Color32::BLACK.gamma_multiply(0.5), egui::Stroke::new(2.0, colour));
-        painter.text(p + egui::vec2(9.0, -9.0), egui::Align2::LEFT_BOTTOM, point_label(&route.points, i), egui::FontId::monospace(13.0), colour);
+        painter.circle(
+            p,
+            r,
+            egui::Color32::BLACK.gamma_multiply(0.5),
+            egui::Stroke::new(2.0, colour),
+        );
+        painter.text(
+            p + egui::vec2(9.0, -9.0),
+            egui::Align2::LEFT_BOTTOM,
+            point_label(&route.points, i),
+            egui::FontId::monospace(13.0),
+            colour,
+        );
     }
 
     // Input.
@@ -412,7 +499,9 @@ fn map_view(ui: &mut egui::Ui, planner: &mut Planner, m: &Mission, route: &mut P
     if resp.drag_started()
         && let Some(pos) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos())
     {
-        planner.drag = hit_point(pos).filter(|&i| route.points[i].kind == RouteKind::Nav).map(|i| (i, pts[i] - pos));
+        planner.drag = hit_point(pos)
+            .filter(|&i| route.points[i].kind == RouteKind::Nav)
+            .map(|i| (i, pts[i] - pos));
     }
     if resp.dragged() {
         match planner.drag {
@@ -453,8 +542,15 @@ const UAV_PINK: egui::Color32 = egui::Color32::from_rgb(255, 120, 200);
 /// A SAM site's missile range: a dotted red circle.
 fn missile_circle(c: egui::Pos2, r: f32, alpha: f32) -> Vec<egui::Shape> {
     let n = ((r * std::f32::consts::TAU / 2.0) as usize).clamp(24, 720);
-    let pts: Vec<egui::Pos2> = (0..=n).map(|k| c + egui::Vec2::angled(k as f32 / n as f32 * std::f32::consts::TAU) * r).collect();
-    egui::Shape::dashed_line(&pts, egui::Stroke::new(1.4, MISSILE_RED.gamma_multiply(alpha * 0.8)), 3.0, 4.0)
+    let pts: Vec<egui::Pos2> = (0..=n)
+        .map(|k| c + egui::Vec2::angled(k as f32 / n as f32 * std::f32::consts::TAU) * r)
+        .collect();
+    egui::Shape::dashed_line(
+        &pts,
+        egui::Stroke::new(1.4, MISSILE_RED.gamma_multiply(alpha * 0.8)),
+        3.0,
+        4.0,
+    )
 }
 
 /// A drone on the map: a pink cross.

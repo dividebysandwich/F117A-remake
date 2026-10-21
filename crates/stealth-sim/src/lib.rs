@@ -17,14 +17,16 @@ mod tiles;
 mod weapons;
 mod weather;
 
-pub use data::{AircraftKind, AircraftType, MissileType, SimData, TheaterTiles, ThreatType, WeaponType};
+pub use data::{
+    AircraftKind, AircraftType, MissileType, SimData, TheaterTiles, ThreatType, WeaponType,
+};
 pub use radar::emv;
 pub use rng::Rng;
 pub use types::*;
 
-use stealth_mission::Mission;
 use math::{s16, view_z};
 use serde::{Deserialize, Serialize};
+use stealth_mission::Mission;
 
 /// Number of projectile slots (0..7 enemy, 8..11 player).
 pub const N_PROJ: usize = 12;
@@ -294,7 +296,8 @@ impl Sim {
             .collect();
         let lockheed = s.plane == stealth_mission::Plane::Lockheed;
         let n_bays = if lockheed { 2 } else { 4 };
-        let bays = m.loadout.bays.iter().take(n_bays).map(|b| (b.weapon as i32, b.count as i32)).collect();
+        let bays =
+            m.loadout.bays.iter().take(n_bays).map(|b| (b.weapon as i32, b.count as i32)).collect();
         let display_shape = objects.iter().map(|o| o.shape).collect();
         let theater = s.theater;
         let seed = opts.seed.unwrap_or(m.rng.holdrand_exit);
@@ -332,7 +335,12 @@ impl Sim {
             bays,
             cur_bay: 0,
             gun_selected: false,
-            stores: [data.stores_init[0] as i32, data.stores_init[1] as i32, data.stores_init[2] as i32, data.stores_init[3] as i32],
+            stores: [
+                data.stores_init[0] as i32,
+                data.stores_init[1] as i32,
+                data.stores_init[2] as i32,
+                data.stores_init[3] as i32,
+            ],
             gun_ammo: data.gun_ammo_init as i32,
             gun_firing: false,
             fire_cooldown: 0,
@@ -383,7 +391,8 @@ impl Sim {
             nearest_base_dist: 0x7FFF,
             traffic_base: -1,
             traffic_toggle: false,
-            mission_flights: w.flights.len() - m.drones.as_ref().map_or(0, |d| d.count.min(w.flights.len())),
+            mission_flights: w.flights.len()
+                - m.drones.as_ref().map_or(0, |d| d.count.min(w.flights.len())),
             csar: None,
             destroyed_at: Vec::new(),
             drones: m.drones.as_ref().map(|d| drones::Drones {
@@ -548,12 +557,17 @@ impl Sim {
             Some(o) => *o,
             None => return String::new(),
         };
-        let idx = if i == 0 || o.shape & 0x100 != 0 && o.name == 0 { o.shape & 0x7F } else { o.name };
+        let idx =
+            if i == 0 || o.shape & 0x100 != 0 && o.name == 0 { o.shape & 0x7F } else { o.name };
         self.names.get(idx.max(0) as usize).cloned().unwrap_or_default()
     }
 
     pub(crate) fn obj(&self, i: i32) -> GroundObject {
-        if i >= 0 { self.objects.get(i as usize).copied().unwrap_or_default() } else { GroundObject::default() }
+        if i >= 0 {
+            self.objects.get(i as usize).copied().unwrap_or_default()
+        } else {
+            GroundObject::default()
+        }
     }
 
     /// Weapon category of an object (`buf7[shape & 0x7F] & 0xF`).
@@ -632,7 +646,14 @@ impl Sim {
             knots: ps.velocity as i32 / 27,
             climb: ps.climb_rate,
         };
-        let keep = pflags::BAY_OPEN | pflags::ECM | pflags::IRJ | pflags::DESIGNATE | pflags::CAMERA_VIEW | pflags::TRAINING | pflags::PRIMARY_DONE | pflags::SECONDARY_DONE;
+        let keep = pflags::BAY_OPEN
+            | pflags::ECM
+            | pflags::IRJ
+            | pflags::DESIGNATE
+            | pflags::CAMERA_VIEW
+            | pflags::TRAINING
+            | pflags::PRIMARY_DONE
+            | pflags::SECONDARY_DONE;
         let mut f = self.pflags & keep;
         if ps.gear_up {
             f |= pflags::GEAR_UP;
@@ -776,7 +797,9 @@ impl Sim {
         self.flights
             .iter()
             .enumerate()
-            .filter(|(_, u)| u.flags & fflags::EXISTS != 0 && (u.flags & fflags::AIRBORNE != 0 || u.speed == 0))
+            .filter(|(_, u)| {
+                u.flags & fflags::EXISTS != 0 && (u.flags & fflags::AIRBORNE != 0 || u.speed == 0)
+            })
             .map(|(i, u)| (i, *u, self.ac_type(u.spec).model as i32))
             .collect()
     }
@@ -860,7 +883,8 @@ impl Sim {
     /// Replaces the mission's bays with these stations (weapon index, count; -1 empty), e.g.
     /// the player's loadout or an aircraft's pylons.
     pub fn set_loadout(&mut self, stations: &[(i32, i32)]) {
-        self.bays = stations.iter().map(|&(w, n)| if w < 0 { (-1, 0) } else { (w, n.max(0)) }).collect();
+        self.bays =
+            stations.iter().map(|&(w, n)| if w < 0 { (-1, 0) } else { (w, n.max(0)) }).collect();
         self.cur_bay = self.bays.iter().position(|b| b.0 >= 0).unwrap_or(0);
         self.gun_selected = self.has_gun() && !self.bays.iter().any(|b| b.0 >= 0);
     }
@@ -905,7 +929,12 @@ impl Sim {
     /// The right MFD should show the Maverick seeker of this slot.
     pub fn maverick_view_slot(&self) -> Option<usize> {
         let s = self.last_missile_slot;
-        (self.maverick_view && s > 8 && (s as usize) < N_PROJ && self.proj[s as usize].ttl != 0 && self.proj[s as usize].spec == 27).then_some(s as usize)
+        (self.maverick_view
+            && s > 8
+            && (s as usize) < N_PROJ
+            && self.proj[s as usize].ttl != 0
+            && self.proj[s as usize].spec == 27)
+            .then_some(s as usize)
     }
 
     pub fn objectives(&self) -> Objectives {
@@ -939,7 +968,10 @@ impl Sim {
     pub fn world_damage(&self) -> WorldDamage {
         WorldDamage {
             tiles: self.tile_damage.clone(),
-            objects: (3..self.objects.len()).filter(|&i| self.objects[i].flags & oflags::DESTROYED != 0).map(|i| i as u16).collect(),
+            objects: (3..self.objects.len())
+                .filter(|&i| self.objects[i].flags & oflags::DESTROYED != 0)
+                .map(|i| i as u16)
+                .collect(),
             positions: self.destroyed_at.clone(),
         }
     }

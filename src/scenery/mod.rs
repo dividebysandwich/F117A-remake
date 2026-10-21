@@ -36,7 +36,7 @@ use crate::models::{ModelAssets, ModelLibrary};
 use crate::palette::{DetailLevel, Palette, REMAP_DETAIL_HIGH};
 use crate::palette_material::{TAG_DOT, TAG_WARM, dot_scale, mesh_tag};
 use crate::settings::AppState;
-use crate::world::{ShapeHandles, Theater, WorldAnchor, WorldPos, bevy_to_wu, WU};
+use crate::world::{ShapeHandles, Theater, WU, WorldAnchor, WorldPos, bevy_to_wu};
 use content::Tier;
 use geom::Geom;
 
@@ -44,15 +44,22 @@ pub struct SceneryPlugin;
 
 impl Plugin for SceneryPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Blocks>().init_resource::<Airfields>().init_resource::<PapiSites>().add_systems(OnExit(AppState::Flight), cleanup).add_systems(
-            Update,
-            (
-                build_scenery.run_if(resource_exists::<Theater>).run_if(not(resource_exists::<Scenery>)),
-                (stream_blocks, airfields, lamps_at_night, papi_lights, share_parking).run_if(resource_exists::<Scenery>),
-            )
-                .chain()
-                .run_if(in_state(AppState::Flight)),
-        );
+        app.init_resource::<Blocks>()
+            .init_resource::<Airfields>()
+            .init_resource::<PapiSites>()
+            .add_systems(OnExit(AppState::Flight), cleanup)
+            .add_systems(
+                Update,
+                (
+                    build_scenery
+                        .run_if(resource_exists::<Theater>)
+                        .run_if(not(resource_exists::<Scenery>)),
+                    (stream_blocks, airfields, lamps_at_night, papi_lights, share_parking)
+                        .run_if(resource_exists::<Scenery>),
+                )
+                    .chain()
+                    .run_if(in_state(AppState::Flight)),
+            );
     }
 }
 
@@ -124,7 +131,12 @@ impl Scenery {
             }
         }
         // Burning vehicles along the roads, about one per 150 km.
-        let roads = self.net.roads.iter().filter(|r| r.kind != network::RoadKind::Street).map(|r| r.pts.as_slice());
+        let roads = self
+            .net
+            .roads
+            .iter()
+            .filter(|r| r.kind != network::RoadKind::Street)
+            .map(|r| r.pts.as_slice());
         for pts in roads.chain(self.ground.highways.iter().map(|h| h.as_slice())) {
             for w in pts.windows(2) {
                 let len = w[0].distance(w[1]);
@@ -197,24 +209,37 @@ fn build_scenery(
 ) {
     let style = style::Style::for_theater(&theater.id, theater.index);
     // Wait until the tile streaming has loaded the theater's models.
-    let loaded = assets.terrain.ready(&theater.id) && library.files.get("photo").is_some_and(|h| assets.gltfs.get(h).is_some());
+    let loaded = assets.terrain.ready(&theater.id)
+        && library.files.get("photo").is_some_and(|h| assets.gltfs.get(h).is_some());
     if !loaded {
         return;
     }
     let start = std::time::Instant::now();
     let remap = &assets.palette.remaps[REMAP_DETAIL_HIGH].entries;
-    let mut ground = ground::Ground::build(&theater, &handles, &assets, &library.files, remap, &assets.palette.theater.day);
+    let mut ground = ground::Ground::build(
+        &theater,
+        &handles,
+        &assets,
+        &library.files,
+        remap,
+        &assets.palette.theater.day,
+    );
     let fields: Vec<airfield::Airfield> = ground
         .runways
         .clone()
         .iter()
         .enumerate()
-        .map(|(i, rw)| airfield::plan(rw, &ground, network::hash(0xA1F1E1D, theater.index as i64, i as i64, 0)))
+        .map(|(i, rw)| {
+            airfield::plan(rw, &ground, network::hash(0xA1F1E1D, theater.index as i64, i as i64, 0))
+        })
         .collect();
     for r in fields.iter().flat_map(airfield::footprint) {
         ground.claim(r);
     }
-    let net = style.as_ref().map(|s| network::Network::build(&ground, s, &theater.towns)).unwrap_or_default();
+    let net = style
+        .as_ref()
+        .map(|s| network::Network::build(&ground, s, &theater.towns))
+        .unwrap_or_default();
     info!(
         "scenery: {} airfields, {} towns, {} roads, {} buildings, {} power lines in {:.2?}",
         fields.len(),
@@ -262,7 +287,8 @@ fn stream_blocks(
     for &tier in tiers {
         let r = radius(tier);
         let size = tier.block_size();
-        let (lo, hi) = (((eye - r) / size).floor().as_ivec2(), ((eye + r) / size).floor().as_ivec2());
+        let (lo, hi) =
+            (((eye - r) / size).floor().as_ivec2(), ((eye + r) / size).floor().as_ivec2());
         for by in lo.y..=hi.y {
             for bx in lo.x..=hi.x {
                 let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * size;
@@ -293,16 +319,31 @@ fn stream_blocks(
     for &(_, key @ (tier, bx, by)) in wanted.iter().take(BUILDS_PER_FRAME) {
         let geom = content::build(&scenery, bx, by, tier);
         let c = (bevy::math::DVec2::new(bx as f64, by as f64) + 0.5) * tier.block_size();
-        let e = spawn_block(&mut commands, &mut meshes, &palette, geom, DVec3::new(c.x, 0.0, -c.y), tier);
+        let e = spawn_block(
+            &mut commands,
+            &mut meshes,
+            &palette,
+            geom,
+            DVec3::new(c.x, 0.0, -c.y),
+            tier,
+        );
         blocks.0.insert(key, e);
     }
 }
 
 fn mesh(topology: PrimitiveTopology, pos: Vec<Vec3>) -> Mesh {
-    Mesh::new(topology, RenderAssetUsages::default()).with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    Mesh::new(topology, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
 }
 
-fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Palette, geom: Geom, origin: DVec3, tier: Tier) -> Entity {
+fn spawn_block(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    palette: &Palette,
+    geom: Geom,
+    origin: DVec3,
+    tier: Tier,
+) -> Entity {
     // Haze like the original's LOD1 objects, starting a little further out (whole blocks share
     // their centre's haze level); farmland is ground and hazes like the coarse terrain levels.
     let tag = MeshTag(match tier {
@@ -310,12 +351,20 @@ fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Pal
         Tier::Main => mesh_tag(1, 6, false),
         _ => mesh_tag(1, 5, false),
     });
-    let root = commands.spawn((SceneryBlock, WorldPos(origin), Transform::default(), Visibility::default())).id();
+    let root = commands
+        .spawn((SceneryBlock, WorldPos(origin), Transform::default(), Visibility::default()))
+        .id();
     let mut children = Vec::new();
     // Buildings and structures (main tier) are warm in the FLIR picture, trees are not.
     let solid_tag = if tier == Tier::Main { MeshTag(tag.0 | TAG_WARM) } else { tag.clone() };
     for (c, tris) in geom.solid {
-        let e = commands.spawn((Mesh3d(meshes.add(mesh(PrimitiveTopology::TriangleList, tris))), MeshMaterial3d(palette.material(c)), solid_tag.clone())).id();
+        let e = commands
+            .spawn((
+                Mesh3d(meshes.add(mesh(PrimitiveTopology::TriangleList, tris))),
+                MeshMaterial3d(palette.material(c)),
+                solid_tag.clone(),
+            ))
+            .id();
         // Distant trees stay out of the shadow maps.
         if tier == Tier::Far {
             commands.entity(e).insert(bevy::light::NotShadowCaster);
@@ -325,14 +374,24 @@ fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Pal
     for (c, tris) in geom.flat {
         children.push(
             commands
-                .spawn((Mesh3d(meshes.add(mesh(PrimitiveTopology::TriangleList, tris))), MeshMaterial3d(palette.material(c)), tag.clone(), bevy::light::NotShadowCaster))
+                .spawn((
+                    Mesh3d(meshes.add(mesh(PrimitiveTopology::TriangleList, tris))),
+                    MeshMaterial3d(palette.material(c)),
+                    tag.clone(),
+                    bevy::light::NotShadowCaster,
+                ))
                 .id(),
         );
     }
     for (c, lines) in geom.lines {
         children.push(
             commands
-                .spawn((Mesh3d(meshes.add(mesh(PrimitiveTopology::LineList, lines))), MeshMaterial3d(palette.line_material(c)), tag.clone(), bevy::light::NotShadowCaster))
+                .spawn((
+                    Mesh3d(meshes.add(mesh(PrimitiveTopology::LineList, lines))),
+                    MeshMaterial3d(palette.line_material(c)),
+                    tag.clone(),
+                    bevy::light::NotShadowCaster,
+                ))
                 .id(),
         );
     }
@@ -344,11 +403,29 @@ fn spawn_block(commands: &mut Commands, meshes: &mut Assets<Mesh>, palette: &Pal
         let (colours, points): (Vec<u8>, Vec<Vec3>) = geom.lamps.into_iter().unzip();
         let m = meshes.add(dot_batch_coloured(&points, &colours));
         let radius = points.iter().map(|p| p.length()).fold(0.0, f32::max);
-        children.push(commands.spawn((Mesh3d(m), MeshMaterial3d(palette.line_material(first)), dots.clone(), LampBatch { points, colours, radius })).id());
+        children.push(
+            commands
+                .spawn((
+                    Mesh3d(m),
+                    MeshMaterial3d(palette.line_material(first)),
+                    dots.clone(),
+                    LampBatch { points, colours, radius },
+                ))
+                .id(),
+        );
     }
     for (phase, points) in geom.strobes {
         let m = meshes.add(dot_batch(&points));
-        children.push(commands.spawn((Mesh3d(m), MeshMaterial3d(palette.line_material(airfield::STROBE)), dots.clone(), Strobe(phase))).id());
+        children.push(
+            commands
+                .spawn((
+                    Mesh3d(m),
+                    MeshMaterial3d(palette.line_material(airfield::STROBE)),
+                    dots.clone(),
+                    Strobe(phase),
+                ))
+                .id(),
+        );
     }
     commands.entity(root).add_children(&children);
     root
@@ -367,7 +444,8 @@ fn lamps_at_night(
     for mut vis in &mut lamps {
         vis.set_if_neq(v);
     }
-    let step = (time.elapsed_secs() * 2.0 * airfield::STROBE_PHASES as f32) as usize % airfield::STROBE_PHASES;
+    let step = (time.elapsed_secs() * 2.0 * airfield::STROBE_PHASES as f32) as usize
+        % airfield::STROBE_PHASES;
     for (s, mut vis) in &mut strobes {
         vis.set_if_neq(if on && s.0 == step { Visibility::Inherited } else { Visibility::Hidden });
     }
@@ -385,7 +463,8 @@ fn share_parking(scenery: Res<Scenery>, combat: Option<ResMut<crate::combat::Com
         .iter()
         .flat_map(|a| &a.parking)
         .map(|&(p, d)| {
-            let heading = (d.x.atan2(d.y) / std::f64::consts::TAU * 65536.0).round() as i32 & 0xFFFF;
+            let heading =
+                (d.x.atan2(d.y) / std::f64::consts::TAU * 65536.0).round() as i32 & 0xFFFF;
             ((p.x / wu).round() as i32, 0x100000 - (p.y / wu).round() as i32, heading)
         })
         .collect();
@@ -412,7 +491,14 @@ fn airfields(
             let c = a.runway.c;
             let mut geom = airfield::build(a);
             let papi = std::mem::take(&mut geom.papi);
-            let e = spawn_block(&mut commands, &mut meshes, &palette, geom, DVec3::new(c.x, 0.0, -c.y), Tier::Main);
+            let e = spawn_block(
+                &mut commands,
+                &mut meshes,
+                &palette,
+                geom,
+                DVec3::new(c.x, 0.0, -c.y),
+                Tier::Main,
+            );
             for l in papi {
                 let light = commands
                     .spawn((
@@ -442,18 +528,28 @@ fn airfields(
 #[allow(clippy::type_complexity)]
 fn papi_lights(
     palette: Res<Palette>,
-    cameras: Query<(&Camera, &GlobalTransform), (With<Camera3d>, Without<crate::trackcam::TrackCamera>)>,
-    mut lights: Query<(&Papi, &GlobalTransform, &mut MeshMaterial3d<crate::palette_material::PaletteMaterial>, &mut Visibility)>,
+    cameras: Query<
+        (&Camera, &GlobalTransform),
+        (With<Camera3d>, Without<crate::trackcam::TrackCamera>),
+    >,
+    mut lights: Query<(
+        &Papi,
+        &GlobalTransform,
+        &mut MeshMaterial3d<crate::palette_material::PaletteMaterial>,
+        &mut Visibility,
+    )>,
 ) {
     // The main view (cockpit, external or free camera).
     let Some((_, eye)) = cameras.iter().find(|(c, _)| c.is_active) else { return };
     let eye = eye.translation();
-    let (low, high) = (palette.line_material(airfield::PAPI_LOW), palette.line_material(airfield::PAPI_HIGH));
+    let (low, high) =
+        (palette.line_material(airfield::PAPI_LOW), palette.line_material(airfield::PAPI_HIGH));
     for (papi, tf, mut material, mut vis) in &mut lights {
         let d = eye - tf.translation();
         let flat = Vec3::new(d.x, 0.0, d.z);
         let dist = flat.length();
-        let seen = dist > 1.0 && dist < PAPI_RANGE && flat.dot(papi.toward) > dist * PAPI_COS_SPREAD;
+        let seen =
+            dist > 1.0 && dist < PAPI_RANGE && flat.dot(papi.toward) > dist * PAPI_COS_SPREAD;
         vis.set_if_neq(if seen { Visibility::Inherited } else { Visibility::Hidden });
         if seen {
             let want = if d.y.atan2(dist) > papi.angle { &high } else { &low };

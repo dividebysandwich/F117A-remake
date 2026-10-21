@@ -13,8 +13,8 @@ use std::collections::HashMap;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, MeshTag, MeshVertexAttribute, PrimitiveTopology};
-use bevy::render::render_resource::VertexFormat;
 use bevy::prelude::*;
+use bevy::render::render_resource::VertexFormat;
 
 use crate::palette_material::{FLAG_DOT, PaletteMaterial, TAG_DOT};
 
@@ -22,7 +22,9 @@ pub struct DotsPlugin;
 
 impl Plugin for DotsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<DotMaterials>().add_systems(Startup, setup_dot_assets).add_systems(PostUpdate, dot_materials);
+        app.init_resource::<DotMaterials>()
+            .add_systems(Startup, setup_dot_assets)
+            .add_systems(PostUpdate, dot_materials);
     }
 }
 
@@ -53,7 +55,8 @@ impl DotLight {
 
 /// Per-vertex palette colour of a dot batch with lamps of several colours (otherwise the
 /// material's colour).
-pub const ATTRIBUTE_DOT_COLOUR: MeshVertexAttribute = MeshVertexAttribute::new("DotColour", 0x7D07_0001, VertexFormat::Uint32);
+pub const ATTRIBUTE_DOT_COLOUR: MeshVertexAttribute =
+    MeshVertexAttribute::new("DotColour", 0x7D07_0001, VertexFormat::Uint32);
 
 /// A dot batch whose dots have their own palette colours, drawn in the given order.
 pub fn dot_batch_coloured(points: &[Vec3], colours: &[u8]) -> Mesh {
@@ -70,8 +73,10 @@ fn setup_dot_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
 /// centre, so a real quad would keep its world size and grow up close.
 pub fn dot_batch(points: &[Vec3]) -> Mesh {
     let pos: Vec<Vec3> = points.iter().flat_map(|&p| [p; 4]).collect();
-    let corners: Vec<[f32; 2]> = points.iter().flat_map(|_| [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]).collect();
-    let idx: Vec<u32> = (0..points.len() as u32).flat_map(|i| [0, 1, 3, 0, 3, 2].map(|k| 4 * i + k)).collect();
+    let corners: Vec<[f32; 2]> =
+        points.iter().flat_map(|_| [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]).collect();
+    let idx: Vec<u32> =
+        (0..points.len() as u32).flat_map(|i| [0, 1, 3, 0, 3, 2].map(|k| 4 * i + k)).collect();
     Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, corners)
@@ -91,7 +96,10 @@ struct DotMaterials {
 fn dot_materials(
     mut dots: ResMut<DotMaterials>,
     mut materials: ResMut<Assets<PaletteMaterial>>,
-    mut q: Query<(&MeshTag, &mut MeshMaterial3d<PaletteMaterial>), Changed<MeshMaterial3d<PaletteMaterial>>>,
+    mut q: Query<
+        (&MeshTag, &mut MeshMaterial3d<PaletteMaterial>),
+        Changed<MeshMaterial3d<PaletteMaterial>>,
+    >,
 ) {
     for (tag, mut material) in &mut q {
         let source = material.0.id();

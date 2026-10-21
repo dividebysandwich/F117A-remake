@@ -14,10 +14,15 @@ pub struct CanvasPlugin;
 impl Plugin for CanvasPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CanvasMips>()
-            .add_plugins(bevy::render::extract_resource::ExtractResourcePlugin::<CanvasMips>::default())
+            .add_plugins(
+                bevy::render::extract_resource::ExtractResourcePlugin::<CanvasMips>::default(),
+            )
             .add_systems(PostUpdate, upload_canvases.run_if(resource_exists::<Palette>));
         if let Some(render) = app.get_sub_app_mut(bevy::render::RenderApp) {
-            render.add_systems(bevy::render::Render, write_canvas_mips.in_set(bevy::render::RenderSystems::PrepareResources));
+            render.add_systems(
+                bevy::render::Render,
+                write_canvas_mips.in_set(bevy::render::RenderSystems::PrepareResources),
+            );
         }
     }
 }
@@ -42,7 +47,11 @@ fn write_canvas_mips(
             queue.write_texture(
                 TexelCopyTextureInfo { mip_level: level as u32, ..gpu.texture.as_image_copy() },
                 bytes,
-                TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(mw as u32 * 4), rows_per_image: Some(mh as u32) },
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(mw as u32 * 4),
+                    rows_per_image: Some(mh as u32),
+                },
                 Extent3d { width: mw as u32, height: mh as u32, depth_or_array_layers: 1 },
             );
             offset += len;
@@ -76,7 +85,13 @@ impl Canvas {
     /// A canvas of `w` x `h` drawing units with `scale` x `scale` texels each.
     pub fn scaled(w: usize, h: usize, scale: usize) -> Self {
         let scale = scale.max(1);
-        Self { w, h, px: vec![0; w * h * scale * scale], clip: [0, 0, w as i32 - 1, h as i32 - 1], scale }
+        Self {
+            w,
+            h,
+            px: vec![0; w * h * scale * scale],
+            clip: [0, 0, w as i32 - 1, h as i32 - 1],
+            scale,
+        }
     }
 
     pub fn from_pixels(w: usize, h: usize, px: Vec<u8>) -> Self {
@@ -194,7 +209,18 @@ impl Canvas {
     /// Copies a rectangle from another canvas (e.g. the 256PIT sprite atlas). Pixels equal to
     /// `key` are skipped; `recolor` replaces every drawn pixel's colour if set.
     #[allow(clippy::too_many_arguments)]
-    pub fn blit(&mut self, src: &Canvas, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32, key: Option<u8>, recolor: Option<u8>) {
+    pub fn blit(
+        &mut self,
+        src: &Canvas,
+        sx: i32,
+        sy: i32,
+        w: i32,
+        h: i32,
+        dx: i32,
+        dy: i32,
+        key: Option<u8>,
+        recolor: Option<u8>,
+    ) {
         if src.scale == self.scale && self.scale > 1 {
             // Texel by texel between canvases of the same resolution (pages drawn apart).
             let s = self.scale as i32;
@@ -228,7 +254,19 @@ impl Canvas {
 impl Canvas {
     /// `blit` with every source pixel drawn as a `scale` x `scale` block.
     #[allow(clippy::too_many_arguments)]
-    pub fn blit_scaled(&mut self, src: &Canvas, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32, scale: i32, key: Option<u8>, recolor: Option<u8>) {
+    pub fn blit_scaled(
+        &mut self,
+        src: &Canvas,
+        sx: i32,
+        sy: i32,
+        w: i32,
+        h: i32,
+        dx: i32,
+        dy: i32,
+        scale: i32,
+        key: Option<u8>,
+        recolor: Option<u8>,
+    ) {
         for y in 0..h {
             for x in 0..w {
                 let c = src.get(sx + x, sy + y);
@@ -298,13 +336,19 @@ impl Canvas {
     pub fn stroke(&mut self, a: Vec2, b: Vec2, w: f32, c: u8) {
         let [x0, y0, x1, y1] = self.clip;
         let (lo, hi) = (a.min(b) - w, a.max(b) + w);
-        if hi.x < x0 as f32 || hi.y < y0 as f32 || lo.x > x1 as f32 + 1.0 || lo.y > y1 as f32 + 1.0 {
+        if hi.x < x0 as f32 || hi.y < y0 as f32 || lo.x > x1 as f32 + 1.0 || lo.y > y1 as f32 + 1.0
+        {
             return;
         }
         let len = a.distance(b);
         // Far off-canvas endpoints (projected cues): clip the segment to a padded canvas first.
         let (a, b) = if len > 4.0 * (self.w + self.h) as f32 {
-            match clip_segment(a, b, Vec2::new(x0 as f32 - w, y0 as f32 - w), Vec2::new(x1 as f32 + w, y1 as f32 + w)) {
+            match clip_segment(
+                a,
+                b,
+                Vec2::new(x0 as f32 - w, y0 as f32 - w),
+                Vec2::new(x1 as f32 + w, y1 as f32 + w),
+            ) {
                 Some(s) => s,
                 None => return,
             }
@@ -406,14 +450,26 @@ pub struct CanvasTexture {
 impl CanvasTexture {
     pub fn new(canvas: Canvas, images: &mut Assets<Image>, transparent: bool) -> Self {
         let mut image = Image::new_fill(
-            Extent3d { width: canvas.pw() as u32, height: canvas.ph() as u32, depth_or_array_layers: 1 },
+            Extent3d {
+                width: canvas.pw() as u32,
+                height: canvas.ph() as u32,
+                depth_or_array_layers: 1,
+            },
             TextureDimension::D2,
             &[0, 0, 0, 0],
             TextureFormat::Rgba8UnormSrgb,
             RenderAssetUsages::default(),
         );
         image.sampler = ImageSampler::nearest();
-        Self { canvas, image: images.add(image), transparent, mask: None, dirty: true, mips: 1, shown: None }
+        Self {
+            canvas,
+            image: images.add(image),
+            transparent,
+            mask: None,
+            dirty: true,
+            mips: 1,
+            shown: None,
+        }
     }
 
     /// A texture with mipmaps and trilinear, anisotropic filtering: thin lines stay readable
@@ -424,7 +480,12 @@ impl CanvasTexture {
 
     /// `mipmapped` with at most `max_levels` levels (an atlas: the coarser ones would blend
     /// neighbouring faces).
-    pub fn mipmapped_levels(canvas: Canvas, images: &mut Assets<Image>, transparent: bool, max_levels: usize) -> Self {
+    pub fn mipmapped_levels(
+        canvas: Canvas,
+        images: &mut Assets<Image>,
+        transparent: bool,
+        max_levels: usize,
+    ) -> Self {
         let (w, h) = (canvas.pw(), canvas.ph());
         let levels = mip_sizes(w, h, max_levels);
         let mut image = Image::new_fill(
@@ -436,8 +497,19 @@ impl CanvasTexture {
         );
         image.texture_descriptor.mip_level_count = levels.len() as u32;
         image.data = Some(vec![0; levels.iter().map(|(w, h)| w * h * 4).sum()]);
-        image.sampler = ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor { anisotropy_clamp: 16, ..bevy::image::ImageSamplerDescriptor::linear() });
-        Self { canvas, image: images.add(image), transparent, mask: None, dirty: true, mips: levels.len(), shown: None }
+        image.sampler = ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
+            anisotropy_clamp: 16,
+            ..bevy::image::ImageSamplerDescriptor::linear()
+        });
+        Self {
+            canvas,
+            image: images.add(image),
+            transparent,
+            mask: None,
+            dirty: true,
+            mips: levels.len(),
+            shown: None,
+        }
     }
 }
 
@@ -477,7 +549,12 @@ fn build_mips(data: &mut [u8], w: usize, h: usize, levels: usize) {
     }
 }
 
-fn upload_canvases(palette: Res<Palette>, mut images: ResMut<Assets<Image>>, mut q: Query<&mut CanvasTexture>, mut mips: ResMut<CanvasMips>) {
+fn upload_canvases(
+    palette: Res<Palette>,
+    mut images: ResMut<Assets<Image>>,
+    mut q: Query<&mut CanvasTexture>,
+    mut mips: ResMut<CanvasMips>,
+) {
     if !mips.0.is_empty() {
         mips.0.clear();
     }
@@ -486,7 +563,12 @@ fn upload_canvases(palette: Res<Palette>, mut images: ResMut<Assets<Image>>, mut
     let mut lut = [0u32; 256];
     for (i, v) in lut.iter_mut().enumerate() {
         let c = palette.color(i as u8).to_srgba();
-        *v = u32::from_le_bytes([(c.red * 255.0) as u8, (c.green * 255.0) as u8, (c.blue * 255.0) as u8, 255]);
+        *v = u32::from_le_bytes([
+            (c.red * 255.0) as u8,
+            (c.green * 255.0) as u8,
+            (c.blue * 255.0) as u8,
+            255,
+        ]);
     }
     let mut see_lut = lut;
     see_lut[TRANSPARENT as usize] = 0;
@@ -496,7 +578,8 @@ fn upload_canvases(palette: Res<Palette>, mut images: ResMut<Assets<Image>>, mut
         }
         let ct = ct.bypass_change_detection();
         ct.dirty = false;
-        let unchanged = ct.shown.as_ref().is_some_and(|(px, t)| *t == ct.transparent && *px == ct.canvas.px);
+        let unchanged =
+            ct.shown.as_ref().is_some_and(|(px, t)| *t == ct.transparent && *px == ct.canvas.px);
         if !all && ct.mask.is_none() && unchanged {
             continue;
         }
@@ -520,7 +603,13 @@ fn upload_canvases(palette: Res<Palette>, mut images: ResMut<Assets<Image>>, mut
         }
         if ct.mips > 1 {
             build_mips(data, ct.canvas.pw(), ct.canvas.ph(), ct.mips);
-            mips.0.push((ct.image.id(), ct.canvas.pw(), ct.canvas.ph(), ct.mips, data[base..].to_vec()));
+            mips.0.push((
+                ct.image.id(),
+                ct.canvas.pw(),
+                ct.canvas.ph(),
+                ct.mips,
+                data[base..].to_vec(),
+            ));
         }
         match &mut ct.shown {
             Some((px, t)) => {

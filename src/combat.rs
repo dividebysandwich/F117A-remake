@@ -20,15 +20,21 @@ use bevy::ecs::system::SystemParam;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use stealth_sim::{
-    Commands as SimCommands, FlightUnit, HudMode as SimHud, LandingMode, MissionEnd, N_PROJ, PlayerState, Projectile, Sim,
-    SimData, SimEvent, SimOptions, dmg, fflags, oflags,
+    Commands as SimCommands, FlightUnit, HudMode as SimHud, LandingMode, MissionEnd, N_PROJ,
+    PlayerState, Projectile, Sim, SimData, SimEvent, SimOptions, dmg, fflags, oflags,
 };
 
 use crate::camera::{View, ViewState};
-use crate::flight::{Aircraft, FlightConstants, FlightDamage, FlightEnd, FlightSystems, Player, bam, to_bam};
-use crate::hud::{Bay, HudCues, HudMessages, HudMode, HudState, Stores, TargetBox, Waypoint, Waypoints};
+use crate::flight::{
+    Aircraft, FlightConstants, FlightDamage, FlightEnd, FlightSystems, Player, bam, to_bam,
+};
+use crate::hud::{
+    Bay, HudCues, HudMessages, HudMode, HudState, Stores, TargetBox, Waypoint, Waypoints,
+};
 use crate::input::{Action, ActionEvent, FlightControls};
-use crate::mfd::{Contact, ContactKind, ContactRef, Contacts, MfdState, MissionClock, MissionOrders, TrackCam};
+use crate::mfd::{
+    Contact, ContactKind, ContactRef, Contacts, MfdState, MissionClock, MissionOrders, TrackCam,
+};
 use crate::mission::{ActiveMission, PlannedRoute, clean_text};
 use crate::panel::{Countermeasures, Emv, Warnings};
 use crate::settings::{AppState, MissionSetup, SetupSet, StartPose};
@@ -43,7 +49,10 @@ impl Plugin for CombatPlugin {
             .init_resource::<crate::hud::DamageFlash>()
             .add_systems(
                 OnEnter(AppState::Flight),
-                (crate::mission::ensure_mission.in_set(SetupSet::Mission), start_combat.in_set(SetupSet::World)),
+                (
+                    crate::mission::ensure_mission.in_set(SetupSet::Mission),
+                    start_combat.in_set(SetupSet::World),
+                ),
             )
             .add_systems(OnExit(AppState::Flight), stop_combat.in_set(FlightTeardown))
             .add_systems(Update, apply_time_accel)
@@ -55,7 +64,10 @@ impl Plugin for CombatPlugin {
                     .after(FlightSystems)
                     .run_if(in_state(AppState::Flight).and_then(resource_exists::<Combat>)),
             )
-            .add_systems(Update, end_overlay.after(CombatSystems).run_if(in_state(AppState::Flight)));
+            .add_systems(
+                Update,
+                end_overlay.after(CombatSystems).run_if(in_state(AppState::Flight)),
+            );
     }
 }
 
@@ -125,7 +137,9 @@ pub struct Kill {
 /// Object type names of vehicles (small fires); everything else burns like a building.
 fn is_vehicle(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    ["mobile", "tanks", "boat", "airplane", "ss missile", "scud", "trawler", "trail"].iter().any(|k| n.contains(k))
+    ["mobile", "tanks", "boat", "airplane", "ss missile", "scud", "trawler", "trail"]
+        .iter()
+        .any(|k| n.contains(k))
         || n == "tank"
         || n == "missile"
 }
@@ -156,7 +170,11 @@ impl Default for TimeAccel {
     }
 }
 
-fn apply_time_accel(accel: Res<TimeAccel>, mut time: ResMut<Time<Virtual>>, combat: Option<Res<Combat>>) {
+fn apply_time_accel(
+    accel: Res<TimeAccel>,
+    mut time: ResMut<Time<Virtual>>,
+    combat: Option<Res<Combat>>,
+) {
     // Waiting on the ground for the rescue goes faster.
     let fast = if combat.is_some_and(|c| c.sim.csar().is_some()) { 4.0 } else { 2.0 };
     let want = accel.base * if accel.on { fast } else { 1.0 };
@@ -218,12 +236,22 @@ fn start_combat(
         _ => LandingMode::Easy,
     };
     // A tour sortie starts with what the pilot destroyed earlier in the tour.
-    let prior_damage = career.and_then(|c| crate::career::Pilot::load(&c.0)).and_then(|p| p.tour).map(|t| t.damage);
+    let prior_damage = career
+        .and_then(|c| crate::career::Pilot::load(&c.0))
+        .and_then(|p| p.tour)
+        .map(|t| t.damage);
     let prior_tiles = prior_damage.as_ref().map(|d| d.tiles.clone()).unwrap_or_default();
     let external_stores = !settings.aircraft.spec().bomb_bay;
-    let mut sim = Sim::with_options(&data, m, SimOptions { landing, prior_damage, external_stores, ..default() });
+    let mut sim = Sim::with_options(
+        &data,
+        m,
+        SimOptions { landing, prior_damage, external_stores, ..default() },
+    );
     // The stores chosen in the menu, else the briefed ones on this aircraft.
-    let loadout = loadout.filter(|l| l.fits(m, settings.aircraft)).map(|l| l.clone()).unwrap_or_else(|| crate::loadout::PlannedLoadout::of(m, settings.aircraft));
+    let loadout = loadout
+        .filter(|l| l.fits(m, settings.aircraft))
+        .map(|l| l.clone())
+        .unwrap_or_else(|| crate::loadout::PlannedLoadout::of(m, settings.aircraft));
     sim.set_loadout(&loadout.stations());
     sim.select_bay(loadout.first_choice(m));
     // The player starts at the sim's start state (the same formula as `mission::start_pose`).
@@ -236,11 +264,19 @@ fn start_combat(
     });
     orders.lines = m.orders.lines.iter().map(|l| (l.color, clean_text(&l.text))).collect();
     // 1 clock tick = 2 s after 06:00 / 18:00.
-    *clock = MissionClock { start_seconds: m.time.base_hour as f32 * 3600.0 + m.time.tod_ticks as f32 * 2.0, elapsed: Some(0.0) };
+    *clock = MissionClock {
+        start_seconds: m.time.base_hour as f32 * 3600.0 + m.time.tod_ticks as f32 * 2.0,
+        elapsed: Some(0.0),
+    };
     // The route from the mission planner, else the mission's own waypoints.
-    let route = route.filter(|r| r.fits(m)).map(|r| r.clone()).unwrap_or_else(|| PlannedRoute::of(m));
+    let route =
+        route.filter(|r| r.fits(m)).map(|r| r.clone()).unwrap_or_else(|| PlannedRoute::of(m));
     *wps = Waypoints {
-        points: route.points.iter().map(|p| Waypoint { east: p.x as f64 * 32.0, north: (0x8000 - p.y) as f64 * 32.0 }).collect(),
+        points: route
+            .points
+            .iter()
+            .map(|p| Waypoint { east: p.x as f64 * 32.0, north: (0x8000 - p.y) as f64 * 32.0 })
+            .collect(),
         current: 0,
         mission_current: 0,
         anchors: route.anchors(),
@@ -417,7 +453,13 @@ pub struct PlayerCollision(pub bool);
 fn detect_collision(
     mut collision: ResMut<PlayerCollision>,
     player: Query<&GlobalTransform, With<crate::camera::HeadAnchor>>,
-    hulls: Query<(&crate::models::CollisionHull, &crate::models::LodLevel, &crate::models::LodShown, &GlobalTransform, &InheritedVisibility)>,
+    hulls: Query<(
+        &crate::models::CollisionHull,
+        &crate::models::LodLevel,
+        &crate::models::LodShown,
+        &GlobalTransform,
+        &InheritedVisibility,
+    )>,
     tile_roots: Query<(), With<crate::world::TileObject>>,
 ) {
     collision.0 = false;
@@ -441,7 +483,20 @@ fn detect_collision(
 }
 
 fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
-    let StepParams { time, mut player, controls, hud, mfd, view, mut msgs, mut accel, mut tiles, collision, mut flash, mut sounds } = p;
+    let StepParams {
+        time,
+        mut player,
+        controls,
+        hud,
+        mfd,
+        view,
+        mut msgs,
+        mut accel,
+        mut tiles,
+        collision,
+        mut flash,
+        mut sounds,
+    } = p;
     let combat = &mut *combat;
     combat.explosions.clear();
     combat.round_impacts.clear();
@@ -466,7 +521,8 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         combat.accum -= dt;
         combat.steps += 1;
         let cmd = std::mem::take(&mut combat.pending);
-        let ps = player_state(&a, pos, controls.gun, controls.fire, collision.0, &hud, &mfd, &view, cmd);
+        let ps =
+            player_state(&a, pos, controls.gun, controls.fire, collision.0, &hud, &mfd, &view, cmd);
         combat.prev_flights.clear();
         combat.prev_flights.extend_from_slice(combat.sim.flights());
         combat.prev_proj = *combat.sim.projectiles();
@@ -483,7 +539,10 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                     sounds.write(crate::sound::PlaySound { id, priority });
                 }
                 SimEvent::Rwr(tone) => {
-                    sounds.write(crate::sound::PlaySound { id: crate::sound::rwr_id(tone), priority: 1 });
+                    sounds.write(crate::sound::PlaySound {
+                        id: crate::sound::rwr_id(tone),
+                        priority: 1,
+                    });
                 }
                 SimEvent::FuelTransfer { lbs } => a.fuel += lbs as f32,
                 SimEvent::Resupplied => a.fuel = 5000.0,
@@ -504,17 +563,28 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                 }
                 SimEvent::SignalFlare { x, y } => combat.signal_flares.push((x, y)),
                 // A drone that got through sets its target area on fire.
-                SimEvent::DroneImpact { x, y, .. } => combat.kills.push(Kill { x, y, vehicle: false }),
-                SimEvent::TileDestroyed(t) => tiles.set(t.level as usize, t.col, t.row, t.index, t.shape),
+                SimEvent::DroneImpact { x, y, .. } => {
+                    combat.kills.push(Kill { x, y, vehicle: false })
+                }
+                SimEvent::TileDestroyed(t) => {
+                    tiles.set(t.level as usize, t.col, t.row, t.index, t.shape)
+                }
                 SimEvent::GroundDestroyed { object, .. } => {
                     if let Some(o) = combat.sim.objects().get(object) {
-                        let name = combat.names.get((o.shape & 0x7F) as usize).map_or("", |n| n.as_str());
-                        combat.kills.push(Kill { x: o.x, y: o.y, vehicle: object != 0 && is_vehicle(name) });
+                        let name =
+                            combat.names.get((o.shape & 0x7F) as usize).map_or("", |n| n.as_str());
+                        combat.kills.push(Kill {
+                            x: o.x,
+                            y: o.y,
+                            vehicle: object != 0 && is_vehicle(name),
+                        });
                     }
                 }
                 // Aircraft on the ground burn at once, airborne ones where the wreck lands.
                 SimEvent::AircraftDestroyed { unit, .. } => {
-                    if let Some(u) = combat.sim.flights().get(unit).filter(|u| u.alt <= 8 && u.x != 0) {
+                    if let Some(u) =
+                        combat.sim.flights().get(unit).filter(|u| u.alt <= 8 && u.x != 0)
+                    {
                         combat.kills.push(Kill { x: u.x, y: u.y, vehicle: true });
                     }
                 }
@@ -557,7 +627,11 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
 /// `--log-flight` / `--log-sim`: simulation events on stdout (test automation).
 fn log_event(data: &SimData, e: &SimEvent, t: f32) {
     match e {
-        SimEvent::Sound { .. } | SimEvent::Rwr(_) | SimEvent::Log(_) | SimEvent::CancelTimeAccel | SimEvent::RoundImpact { .. } => {}
+        SimEvent::Sound { .. }
+        | SimEvent::Rwr(_)
+        | SimEvent::Log(_)
+        | SimEvent::CancelTimeAccel
+        | SimEvent::RoundImpact { .. } => {}
         SimEvent::MissileLaunched { slot, spec, launcher } => {
             println!("sim t={t:.1} launch slot {slot} {} by {launcher:?}", data.missile(*spec).name)
         }
@@ -658,7 +732,10 @@ pub fn map_wu(x: i32, y: i32) -> (f64, f64) {
 /// Interpolated world position (wu east, wu north, viewZ) of a flight unit.
 pub fn unit_position(prev: Option<&FlightUnit>, u: &FlightUnit, alpha: f32) -> (f64, f64, f64) {
     let cur = (u.wx as f64, (0x100000 - u.wy) as f64, u.alt as f64);
-    let Some(p) = prev.filter(|p| (p.wx - u.wx).abs() < 0x4000 && (p.wy - u.wy).abs() < 0x4000) else { return cur };
+    let Some(p) = prev.filter(|p| (p.wx - u.wx).abs() < 0x4000 && (p.wy - u.wy).abs() < 0x4000)
+    else {
+        return cur;
+    };
     let old = (p.wx as f64, (0x100000 - p.wy) as f64, p.alt as f64);
     let t = alpha as f64;
     (old.0 + (cur.0 - old.0) * t, old.1 + (cur.1 - old.1) * t, old.2 + (cur.2 - old.2) * t)
@@ -666,7 +743,14 @@ pub fn unit_position(prev: Option<&FlightUnit>, u: &FlightUnit, alpha: f32) -> (
 
 /// Projects a world point (wu east, north, viewZ) seen from the eye point (aircraft frame) into
 /// the 320x200 cockpit screen (f = 256, vertical 0.75 f, centre (159, 52)); None behind the eye.
-pub fn project_cockpit(a: &Aircraft, pos: &WorldPos, eye: Vec3, east: f64, north: f64, alt: f64) -> Option<(i32, i32)> {
+pub fn project_cockpit(
+    a: &Aircraft,
+    pos: &WorldPos,
+    eye: Vec3,
+    east: f64,
+    north: f64,
+    alt: f64,
+) -> Option<(i32, i32)> {
     let eye = pos.0 + (a.orientation * eye).as_dvec3();
     let d: DVec3 = wu_to_bevy(east, north, alt) - eye;
     let l = a.orientation.inverse() * d.as_vec3();
@@ -681,7 +765,14 @@ pub fn project_cockpit(a: &Aircraft, pos: &WorldPos, eye: Vec3, east: f64, north
 
 /// Direction from the cockpit eye to a world point (wu east, north, viewZ) in the aircraft
 /// frame (x right, y up, -z forward), normalised.
-pub fn direction_cockpit(a: &Aircraft, pos: &WorldPos, eye: Vec3, east: f64, north: f64, alt: f64) -> Option<Vec3> {
+pub fn direction_cockpit(
+    a: &Aircraft,
+    pos: &WorldPos,
+    eye: Vec3,
+    east: f64,
+    north: f64,
+    alt: f64,
+) -> Option<Vec3> {
     let eye = pos.0 + (a.orientation * eye).as_dvec3();
     let d: DVec3 = wu_to_bevy(east, north, alt) - eye;
     (a.orientation.inverse() * d.as_vec3()).try_normalize()
@@ -708,7 +799,26 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     let waypoint_changed = o.waypoint != combat.sim_waypoint;
     combat.sim_waypoint = o.waypoint;
     let combat = &*combat;
-    let Outputs { mut player, mut stores, mut wps, mut msgs, mut clock, mut emv, mut warnings, mut cm, mut contacts, mut cam, mut cues, hud, view, accel, settings, mut emitters, ships, tiles } = out;
+    let Outputs {
+        mut player,
+        mut stores,
+        mut wps,
+        mut msgs,
+        mut clock,
+        mut emv,
+        mut warnings,
+        mut cm,
+        mut contacts,
+        mut cam,
+        mut cues,
+        hud,
+        view,
+        accel,
+        settings,
+        mut emitters,
+        ships,
+        tiles,
+    } = out;
     let eye = settings.cockpit_eye();
     let sim = &combat.sim;
     let data = &combat.data;
@@ -741,7 +851,11 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                 count: count.max(0) as u32,
                 picture: wt.picture.max(0) as usize,
                 air_to_air: wt.spec > 0 && data.missile(wt.spec as i32).class == 7,
-                range_km: if wt.spec > 0 { data.missile(wt.spec as i32).lock_range.max(0) as f32 } else { 0.0 },
+                range_km: if wt.spec > 0 {
+                    data.missile(wt.spec as i32).lock_range.max(0) as f32
+                } else {
+                    0.0
+                },
             }
         })
         .collect();
@@ -806,29 +920,56 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
 
     // MFD contacts: aircraft, missiles, ground radars and the mission targets.
     contacts.list.clear();
-    contacts.radar_arc = sim.radar_arc().filter(|a| a.frames_left > 0).map(|a| crate::mfd::MapArc {
-        x: a.x as f64,
-        y: a.y as f64,
-        radius: a.radius_km as f64 * 64.0,
-        arc: a.arc.map(|(s, e)| (s as u8, e as u8)),
-        colour: a.colour,
-    });
+    contacts.radar_arc =
+        sim.radar_arc().filter(|a| a.frames_left > 0).map(|a| crate::mfd::MapArc {
+            x: a.x as f64,
+            y: a.y as f64,
+            radius: a.radius_km as f64 * 64.0,
+            arc: a.arc.map(|(s, e)| (s as u8, e as u8)),
+            colour: a.colour,
+        });
     for (i, u, _) in sim.active_aircraft() {
         if u.flags & fflags::AIRBORNE == 0 || u.flags & fflags::DESTROYED != 0 {
             continue;
         }
         let (east, north, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
-        let kind = if sim.drones().is_some_and(|d| d.contains(i)) { ContactKind::Drone } else { ContactKind::Aircraft };
+        let kind = if sim.drones().is_some_and(|d| d.contains(i)) {
+            ContactKind::Drone
+        } else {
+            ContactKind::Aircraft
+        };
         let friendly = sim.friendly_aircraft(u.spec);
-        contacts.list.push(Contact { kind, east, north, alt: alt as f32, heading: u.heading as u16, friendly, target: Some(ContactRef::Unit(i)), threat: None });
+        contacts.list.push(Contact {
+            kind,
+            east,
+            north,
+            alt: alt as f32,
+            heading: u.heading as u16,
+            friendly,
+            target: Some(ContactRef::Unit(i)),
+            threat: None,
+        });
     }
     for (_, m, _, _) in sim.active_projectiles() {
         let (east, north) = map_wu(m.x, m.y);
-        contacts.list.push(Contact { kind: ContactKind::Missile, east, north, alt: m.alt as f32, heading: m.heading as u16, friendly: false, target: None, threat: None });
+        contacts.list.push(Contact {
+            kind: ContactKind::Missile,
+            east,
+            north,
+            alt: m.alt as f32,
+            heading: m.heading as u16,
+            friendly: false,
+            target: None,
+            threat: None,
+        });
     }
     let objects = sim.objects();
     for (i, ob) in objects.iter().enumerate().take(sim.ground_unit_count()).skip(3) {
-        if ob.unit_type > 0 && ob.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) == 0 && i < objects.len() && !sim.object_is_ship(i) {
+        if ob.unit_type > 0
+            && ob.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) == 0
+            && i < objects.len()
+            && !sim.object_is_ship(i)
+        {
             let (east, north) = map_wu(ob.x, ob.y);
             let label = crate::rwr::rwr_label(sim.threat_name(ob.unit_type), false);
             let mut sym = [0u8; 3];
@@ -837,7 +978,16 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             }
             let ring_km = crate::rwr::km(sim.site_lock_range(ob.unit_type));
             let threat = Some((ring_km, sym));
-            contacts.list.push(Contact { kind: ContactKind::GroundRadar, east, north, alt: 0.0, heading: 0, friendly: false, target: Some(ContactRef::Object(i)), threat });
+            contacts.list.push(Contact {
+                kind: ContactKind::GroundRadar,
+                east,
+                north,
+                alt: 0.0,
+                heading: 0,
+                friendly: false,
+                target: Some(ContactRef::Object(i)),
+                threat,
+            });
         }
     }
     // Ships (on the datalink): the world's ship objects (armed ones with their threat ring)
@@ -852,18 +1002,42 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         let armed = ob.unit_type > 0 && i < sim.ground_unit_count() && !friendly;
         let threat = armed.then(|| (crate::rwr::km(sim.site_lock_range(ob.unit_type)), [0u8; 3]));
         let target = (!friendly).then_some(ContactRef::Object(i));
-        contacts.list.push(Contact { kind: ContactKind::Ship, east, north, alt: 0.0, heading: 0, friendly, target, threat });
+        contacts.list.push(Contact {
+            kind: ContactKind::Ship,
+            east,
+            north,
+            alt: 0.0,
+            heading: 0,
+            friendly,
+            target,
+            threat,
+        });
         ship_at.push((ob.x, ob.y));
     }
     for s in ships.iter().flat_map(|s| s.0.iter()) {
         let (x, y) = s.map_xy();
-        if ship_at.iter().any(|&(ox, oy)| (ox - x).abs() < 2 && (oy - y).abs() < 2) || tiles.shapes.get(&s.key).is_some_and(|&sh| sh != s.shape as i32) {
+        if ship_at.iter().any(|&(ox, oy)| (ox - x).abs() < 2 && (oy - y).abs() < 2)
+            || tiles.shapes.get(&s.key).is_some_and(|&sh| sh != s.shape as i32)
+        {
             continue;
         }
         // Friendly where the world has a friendly or neutral object (a carrier).
-        let friendly = objects.iter().any(|o| (o.x - x).abs() < 2 && (o.y - y).abs() < 2 && o.flags & (oflags::FRIENDLY | oflags::NEUTRAL) != 0);
+        let friendly = objects.iter().any(|o| {
+            (o.x - x).abs() < 2
+                && (o.y - y).abs() < 2
+                && o.flags & (oflags::FRIENDLY | oflags::NEUTRAL) != 0
+        });
         let target = (!friendly).then_some(ContactRef::Point(x, y));
-        contacts.list.push(Contact { kind: ContactKind::Ship, east: s.east, north: s.north, alt: 0.0, heading: 0, friendly, target, threat: None });
+        contacts.list.push(Contact {
+            kind: ContactKind::Ship,
+            east: s.east,
+            north: s.north,
+            alt: 0.0,
+            heading: 0,
+            friendly,
+            target,
+            threat: None,
+        });
     }
     let heading_bam = to_bam(a.euler().0);
     emitters.list = sim
@@ -882,12 +1056,22 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         if done[k] || !(1..=3).contains(&t.mission_type) {
             continue;
         }
-        if let Some((i, ob)) = usize::try_from(t.object).ok().and_then(|i| Some((i, objects.get(i)?)))
+        if let Some((i, ob)) =
+            usize::try_from(t.object).ok().and_then(|i| Some((i, objects.get(i)?)))
             && ob.flags & oflags::DESTROYED == 0
             && (ob.x, ob.y) != (0, 0)
         {
             let (east, north) = map_wu(ob.x, ob.y);
-            contacts.list.push(Contact { kind: ContactKind::Target, east, north, alt: 0.0, heading: 0, friendly: false, target: Some(ContactRef::Object(i)), threat: None });
+            contacts.list.push(Contact {
+                kind: ContactKind::Target,
+                east,
+                north,
+                alt: 0.0,
+                heading: 0,
+                friendly: false,
+                target: Some(ContactRef::Object(i)),
+                threat: None,
+            });
         }
     }
     let locks = sim.targeting();
@@ -906,34 +1090,55 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     let mut info = TrackCam { live: cam.live, ..default() };
     let mut new_cues = HudCues::default();
     let cockpit = view.view == View::Cockpit;
-    let spec = groups.get(cur).map_or(0, |&(w, _)| data.weapons[(w.max(0) as usize).min(data.weapons.len() - 1)].spec as i32);
+    let spec = groups.get(cur).map_or(0, |&(w, _)| {
+        data.weapons[(w.max(0) as usize).min(data.weapons.len() - 1)].spec as i32
+    });
     if let Some(g) = t.ground.filter(|&g| g < objects.len()) {
         let ob = objects[g];
         let place = sim.place_name(g);
         let kind = combat.names.get((ob.shape & 0x7F) as usize).cloned().unwrap_or_default();
-        info.name = if place.eq_ignore_ascii_case(&kind) || place.is_empty() { [kind, String::new()] } else { [place, kind] };
+        info.name = if place.eq_ignore_ascii_case(&kind) || place.is_empty() {
+            [kind, String::new()]
+        } else {
+            [place, kind]
+        };
         info.range_km = Some(t.range as f32 * 32.0 * WU as f32 / 1000.0);
         info.bearing = Some(((t.bearing as u16) as u32 * 360 / 65536) as i32);
         info.zoom = camera_zoom(t.range) + 1;
         let (east, north) = map_wu(ob.x, ob.y);
         if cockpit && hud.mode == HudMode::Gnd && t.box_size > 0 {
             new_cues.target_dir = direction_cockpit(&a, pos, eye, east, north, 0.0);
-            new_cues.target_box = on_hud(project_cockpit(&a, pos, eye, east, north, 0.0)).map(|(x, y)| TargetBox {
-                x,
-                y,
-                size: t.box_size,
-                colour: t.box_colour,
-                oval: t.lock_valid,
-                red: t.in_range,
-            });
+            new_cues.target_box =
+                on_hud(project_cockpit(&a, pos, eye, east, north, 0.0)).map(|(x, y)| TargetBox {
+                    x,
+                    y,
+                    size: t.box_size,
+                    colour: t.box_colour,
+                    oval: t.lock_valid,
+                    red: t.in_range,
+                });
         }
         if cockpit && hud.mode == HudMode::Gnd && spec == 28 {
             // Flight-path guide: 128 map units beyond the target along the heading, own altitude.
             let hr = bam(heading as f32);
-            let (qx, qy) = (ob.x as f64 + hr.sin() as f64 * 128.0, ob.y as f64 - hr.cos() as f64 * 128.0);
-            new_cues.diamond_dir = direction_cockpit(&a, pos, eye, qx * 32.0, (0x8000 as f64 - qy) * 32.0, player_view.view_z as f64);
-            new_cues.diamond =
-                on_hud(project_cockpit(&a, pos, eye, qx * 32.0, (0x8000 as f64 - qy) * 32.0, player_view.view_z as f64));
+            let (qx, qy) =
+                (ob.x as f64 + hr.sin() as f64 * 128.0, ob.y as f64 - hr.cos() as f64 * 128.0);
+            new_cues.diamond_dir = direction_cockpit(
+                &a,
+                pos,
+                eye,
+                qx * 32.0,
+                (0x8000 as f64 - qy) * 32.0,
+                player_view.view_z as f64,
+            );
+            new_cues.diamond = on_hud(project_cockpit(
+                &a,
+                pos,
+                eye,
+                qx * 32.0,
+                (0x8000 as f64 - qy) * 32.0,
+                player_view.view_z as f64,
+            ));
         }
     } else if let Some(u) = t.air.and_then(|i| sim.flights().get(i).map(|u| (i, *u))) {
         let (i, u) = u;
@@ -948,20 +1153,30 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         info.zoom = camera_zoom(range_mu) + 1;
         if cockpit && hud.mode == HudMode::Air {
             new_cues.target_dir = direction_cockpit(&a, pos, eye, east, north, alt);
-            new_cues.target_box = on_hud(project_cockpit(&a, pos, eye, east, north, alt)).map(|(x, y)| TargetBox {
-                x,
-                y,
-                size: 9,
-                colour: t.box_colour,
-                oval: t.lock_valid,
-                red: t.in_range,
-            });
+            new_cues.target_box =
+                on_hud(project_cockpit(&a, pos, eye, east, north, alt)).map(|(x, y)| TargetBox {
+                    x,
+                    y,
+                    size: 9,
+                    colour: t.box_colour,
+                    oval: t.lock_valid,
+                    red: t.in_range,
+                });
         }
     }
     if cockpit {
         if hud.mode == HudMode::Gnd
             && !sim.gun_selected()
-            && let Some(cue) = bomb_cue(&a, pos, eye, spec, sim.opts.fix_original_bugs, hud.ccrp, t.ground.and_then(|g| objects.get(g)), &mut new_cues)
+            && let Some(cue) = bomb_cue(
+                &a,
+                pos,
+                eye,
+                spec,
+                sim.opts.fix_original_bugs,
+                hud.ccrp,
+                t.ground.and_then(|g| objects.get(g)),
+                &mut new_cues,
+            )
         {
             new_cues.bomb = Some(cue);
         }
@@ -1002,7 +1217,14 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
 ///
 /// Unless an aircraft is locked (`air`), when the rounds reach the ground (at height `ground_y`)
 /// within `GROUND_RANGE` the pipper is where they hit it, with the range to that point.
-fn gun_cue(a: &Aircraft, pos: &WorldPos, eye: Vec3, target: Option<(DVec3, DVec3)>, air: bool, ground_y: f64) -> crate::hud::GunCue {
+fn gun_cue(
+    a: &Aircraft,
+    pos: &WorldPos,
+    eye: Vec3,
+    target: Option<(DVec3, DVec3)>,
+    air: bool,
+    ground_y: f64,
+) -> crate::hud::GunCue {
     const DEFAULT_RANGE: f64 = 1000.0;
     /// Range the rounds are effective to (m).
     const GUN_RANGE: f64 = 2000.0;
@@ -1016,9 +1238,15 @@ fn gun_cue(a: &Aircraft, pos: &WorldPos, eye: Vec3, target: Option<(DVec3, DVec3
     let cue = |d: DVec3, range: f64, range_m: Option<f32>, in_range: bool| {
         let dir = d.normalize_or_zero();
         let (e, n, alt) = bevy_to_wu(from + dir * range);
-        crate::hud::GunCue { dir: a.orientation.inverse() * dir.as_vec3(), screen: project_cockpit(a, pos, eye, e, n, alt), range_m, in_range }
+        crate::hud::GunCue {
+            dir: a.orientation.inverse() * dir.as_vec3(),
+            screen: project_cockpit(a, pos, eye, e, n, alt),
+            range_m,
+            in_range,
+        }
     };
-    if !air && let Some(d) = ground_impact(from, u, ground_y).filter(|d| d.length() <= GROUND_RANGE) {
+    if !air && let Some(d) = ground_impact(from, u, ground_y).filter(|d| d.length() <= GROUND_RANGE)
+    {
         let range = d.length();
         return cue(d, range, Some(range as f32), target.is_some() && range < GUN_RANGE);
     }
@@ -1054,22 +1282,26 @@ fn bomb_cue(
     let k = ballistics::drag(spec, fix_original_bugs)?;
     let heading = to_bam(a.euler().0) as i32;
     let v = ballistics::release_velocity(heading, a.velocity as i32, a.climb_rate as i32);
-    let (d, fall) = ballistics::impact(v, k, a.altitude as f64 - ballistics::RELEASE_DROP, 1.0 / FS as f64)?;
+    let (d, fall) =
+        ballistics::impact(v, k, a.altitude as f64 - ballistics::RELEASE_DROP, 1.0 / FS as f64)?;
     let (east, north, _) = bevy_to_wu(pos.0);
     // The offset is east and south.
     let (ie, inn) = (east + d[0], north - d[1]);
-    let mut cue = crate::hud::BombCue { ccrp, fall_secs: fall as f32, range_m: None, release_secs: None };
+    let mut cue =
+        crate::hud::BombCue { ccrp, fall_secs: fall as f32, range_m: None, release_secs: None };
     if ccrp {
         let vh = v[0].hypot(v[1]);
         if let Some(o) = target.filter(|_| vh > 1.0) {
             let (te, tn) = ((o.x as f64 + 0.5) * 32.0, (0x8000 as f64 - o.y as f64 - 0.5) * 32.0);
             let along = ((te - ie) * v[0] - (tn - inn) * v[1]) / vh;
             cue.release_secs = Some((along / vh) as f32);
-            cue.range_m = Some(((te - east).hypot(tn - north).hypot(a.altitude as f64) * WU) as f32);
+            cue.range_m =
+                Some(((te - east).hypot(tn - north).hypot(a.altitude as f64) * WU) as f32);
         }
     } else {
         cues.ccip_dir = direction_cockpit(a, pos, eye, ie, inn, 0.0);
-        cues.ccip = Some(on_hud(project_cockpit(a, pos, eye, ie, inn, 0.0)).unwrap_or((0xA0, 0x5A)));
+        cues.ccip =
+            Some(on_hud(project_cockpit(a, pos, eye, ie, inn, 0.0)).unwrap_or((0xA0, 0x5A)));
         cue.range_m = Some(((ie - east).hypot(inn - north).hypot(a.altitude as f64) * WU) as f32);
     }
     Some(cue)
@@ -1109,7 +1341,8 @@ fn end_overlay(
     match overlay.single_mut() {
         Ok(mut o) => {
             o.timer += real.delta_secs();
-            if o.timer > END_SECONDS || (o.timer > 1.0 && keys.get_just_pressed().next().is_some()) {
+            if o.timer > END_SECONDS || (o.timer > 1.0 && keys.get_just_pressed().next().is_some())
+            {
                 if let Some(c) = &combat {
                     commands.insert_resource(crate::debrief::Debrief {
                         title: end.title.clone(),
@@ -1182,7 +1415,9 @@ mod tests {
     fn pipper_drops_with_range() {
         let (a, pos) = level(400.0);
         let v = DVec3::new(0.0, 0.0, -400.0 * 0.514_444);
-        let at = |m: f64| gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -m), v)), true, 0.0);
+        let at = |m: f64| {
+            gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -m), v)), true, 0.0)
+        };
         let (near, far) = (mils(at(500.0).dir), mils(at(1500.0).dir));
         // A target flying along: the rounds' drop only (g t / 2 v at 1050 m/s).
         let want = |m: f32| 0.5 * 9.81 * (m / 1050.0) / 1050.0 * 1000.0;
@@ -1197,7 +1432,14 @@ mod tests {
         let (a, pos) = level(400.0);
         // 1000 m ahead crossing left to right at 200 m/s: the target has to be left of where
         // the rounds go, by its travel during their flight.
-        let cue = gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -1000.0), DVec3::new(200.0, 0.0, 0.0))), true, 0.0);
+        let cue = gun_cue(
+            &a,
+            &pos,
+            Vec3::ZERO,
+            Some((pos.0 + DVec3::new(0.0, 0.0, -1000.0), DVec3::new(200.0, 0.0, 0.0))),
+            true,
+            0.0,
+        );
         let (right, _) = mils(cue.dir);
         let t = 1000.0 / (1050.0 + 400.0 * 0.514_444);
         let want = -(200.0f32 * t / 1000.0).atan() * 1000.0;

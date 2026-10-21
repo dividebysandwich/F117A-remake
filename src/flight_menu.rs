@@ -14,7 +14,10 @@ use bevy::ui::RelativeCursorPosition;
 
 use crate::camera::{EyeCamera, View, ViewState};
 use crate::canvas::{Canvas, CanvasTexture};
-use crate::cockpit3d::{BUTTON_PRIMARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT, BUTTON_STICK_UP, CockpitRoot, Hands};
+use crate::cockpit3d::{
+    BUTTON_PRIMARY, BUTTON_STICK_DOWN, BUTTON_STICK_LEFT, BUTTON_STICK_RIGHT, BUTTON_STICK_UP,
+    CockpitRoot, Hands,
+};
 use crate::font::{Align, stroke_text_at};
 use crate::input::{Action, ActionEvent, InputBlock};
 use crate::settings::{AppState, Settings, VR_COCKPIT_SCALE_RANGE};
@@ -55,7 +58,17 @@ enum Item {
     EndMission,
 }
 
-const ITEMS: [Item; 9] = [Item::Shaders, Item::Shadows, Item::Lighting, Item::Cockpit, Item::Hud, Item::Avionics, Item::CockpitSize, Item::Resume, Item::EndMission];
+const ITEMS: [Item; 9] = [
+    Item::Shaders,
+    Item::Shadows,
+    Item::Lighting,
+    Item::Cockpit,
+    Item::Hud,
+    Item::Avionics,
+    Item::CockpitSize,
+    Item::Resume,
+    Item::EndMission,
+];
 
 impl Item {
     fn label(self) -> &'static str {
@@ -118,7 +131,11 @@ const TOUCH: f32 = 0.025;
 #[derive(Component)]
 struct MenuScreen;
 
-fn close_on_exit(mut menu: ResMut<FlightMenu>, mut time: ResMut<Time<Virtual>>, mut block: ResMut<InputBlock>) {
+fn close_on_exit(
+    mut menu: ResMut<FlightMenu>,
+    mut time: ResMut<Time<Virtual>>,
+    mut block: ResMut<InputBlock>,
+) {
     menu.open = false;
     menu.opened_with = None;
     time.unpause();
@@ -146,7 +163,14 @@ fn toggle(
     }
 }
 
-fn set_open(menu: &mut FlightMenu, open: bool, settings: &Settings, time: &mut Time<Virtual>, block: &mut InputBlock, sinks: &Query<&AudioSink>) {
+fn set_open(
+    menu: &mut FlightMenu,
+    open: bool,
+    settings: &Settings,
+    time: &mut Time<Virtual>,
+    block: &mut InputBlock,
+    sinks: &Query<&AudioSink>,
+) {
     if menu.open == open {
         return;
     }
@@ -170,7 +194,15 @@ fn set_open(menu: &mut FlightMenu, open: bool, settings: &Settings, time: &mut T
 }
 
 fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, u32) {
-    (s.modern_shading, s.shadows, s.local_lights, s.classic_cockpit, s.classic_hud, s.classic_avionics, (s.vr_cockpit_scale * 100.0).round() as u32)
+    (
+        s.modern_shading,
+        s.shadows,
+        s.local_lights,
+        s.classic_cockpit,
+        s.classic_hud,
+        s.classic_avionics,
+        (s.vr_cockpit_scale * 100.0).round() as u32,
+    )
 }
 
 /// The menu screen: in VR in front of the pilot in the cockpit (spawned again when the cockpit
@@ -248,7 +280,8 @@ fn spawn_screen(
 fn to_canvas(local: Vec3) -> Option<Vec2> {
     let u = local.x / SIZE.x + 0.5;
     let v = 0.5 - local.y / SIZE.y;
-    ((0.0..1.0).contains(&u) && (0.0..1.0).contains(&v)).then(|| Vec2::new(u * W as f32, v * H as f32))
+    ((0.0..1.0).contains(&u) && (0.0..1.0).contains(&v))
+        .then(|| Vec2::new(u * W as f32, v * H as f32))
 }
 
 /// Entry under a canvas pixel, and whether the pixel is on the right half (size: larger).
@@ -295,7 +328,9 @@ fn navigate(
     if keys.just_pressed(KeyCode::ArrowRight) || pad(GamepadButton::DPadRight) {
         adjust += 1;
     }
-    if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter, KeyCode::Space]) || pad(GamepadButton::South) {
+    if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter, KeyCode::Space])
+        || pad(GamepadButton::South)
+    {
         select = true;
     }
     let mut close = pad(GamepadButton::East);
@@ -344,7 +379,9 @@ fn navigate(
             let d = inv.transform_vector3(*ray.direction);
             if d.z.abs() > 1e-6 {
                 let t = -o.z / d.z;
-                if let Some(hit) = (t > 0.0).then(|| to_canvas(o + d * t)).flatten().and_then(item_at) {
+                if let Some(hit) =
+                    (t > 0.0).then(|| to_canvas(o + d * t)).flatten().and_then(item_at)
+                {
                     menu.cursor = hit.0;
                     if mouse.just_pressed(MouseButton::Left) {
                         clicked = Some(hit);
@@ -384,7 +421,11 @@ fn navigate(
         return;
     }
     // Left / right only change values; they don't press Resume or End mission.
-    if adjust != 0 && clicked.is_none() && !select && matches!(item, Item::Resume | Item::EndMission) {
+    if adjust != 0
+        && clicked.is_none()
+        && !select
+        && matches!(item, Item::Resume | Item::EndMission)
+    {
         return;
     }
     let s = &mut *settings;
@@ -396,8 +437,15 @@ fn navigate(
         Item::Hud => s.classic_hud = !s.classic_hud,
         Item::Avionics => s.classic_avionics = !s.classic_avionics,
         Item::CockpitSize => {
-            let dir = if adjust != 0 { adjust.signum() } else if right == Some(false) { -1 } else { 1 };
-            s.vr_cockpit_scale = (s.vr_cockpit_scale + 0.05 * dir as f32).clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
+            let dir = if adjust != 0 {
+                adjust.signum()
+            } else if right == Some(false) {
+                -1
+            } else {
+                1
+            };
+            s.vr_cockpit_scale = (s.vr_cockpit_scale + 0.05 * dir as f32)
+                .clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
         }
         Item::Resume => close = true,
         Item::EndMission => {
@@ -410,7 +458,11 @@ fn navigate(
     }
 }
 
-fn draw(menu: Res<FlightMenu>, settings: Res<Settings>, mut q: Query<(&mut CanvasTexture, &mut Visibility), With<MenuScreen>>) {
+fn draw(
+    menu: Res<FlightMenu>,
+    settings: Res<Settings>,
+    mut q: Query<(&mut CanvasTexture, &mut Visibility), With<MenuScreen>>,
+) {
     let Ok((mut tex, mut vis)) = q.single_mut() else { return };
     vis.set_if_neq(if menu.open { Visibility::Inherited } else { Visibility::Hidden });
     if !menu.open {
@@ -419,7 +471,16 @@ fn draw(menu: Res<FlightMenu>, settings: Res<Settings>, mut q: Query<(&mut Canva
     let c = &mut tex.canvas;
     c.clear(BG);
     c.frame(Vec2::new(6.0, 6.0), Vec2::new(W as f32 - 7.0, H as f32 - 7.0), 3.0, DIM);
-    stroke_text_at(c, W as f32 / 2.0, 52.0, "SETTINGS  -  PAUSED", 26.0, 3.2, BRIGHT, Align::Centre);
+    stroke_text_at(
+        c,
+        W as f32 / 2.0,
+        52.0,
+        "SETTINGS  -  PAUSED",
+        26.0,
+        3.2,
+        BRIGHT,
+        Align::Centre,
+    );
     for (i, item) in ITEMS.iter().enumerate() {
         let y = TOP + ROW * i as f32;
         let mid = y + ROW / 2.0;

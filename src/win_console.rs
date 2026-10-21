@@ -28,8 +28,14 @@ pub fn leave_explorer_console() {
     let Some(dir) = dirs::data_dir().map(|d| d.join("stealth-mission-89")) else {
         return;
     };
-    let name = if std::env::args().any(|a| a == "--vr") { "stealth-mission-89-vr.log" } else { "stealth-mission-89.log" };
-    let Ok(file) = std::fs::create_dir_all(&dir).and_then(|_| std::fs::File::create(dir.join(name))) else {
+    let name = if std::env::args().any(|a| a == "--vr") {
+        "stealth-mission-89-vr.log"
+    } else {
+        "stealth-mission-89.log"
+    };
+    let Ok(file) =
+        std::fs::create_dir_all(&dir).and_then(|_| std::fs::File::create(dir.join(name)))
+    else {
         return;
     };
     // Rust's stdout and stderr look the handles up on every write, so the log and panic

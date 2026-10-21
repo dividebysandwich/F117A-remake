@@ -6,10 +6,10 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::canvas::Canvas;
+use crate::cockpit3d::layout::Dial;
 use crate::flight::{Aircraft, Player};
 use crate::font::{Fonts, upper};
 use crate::hud::{HudMode, HudState};
-use crate::cockpit3d::layout::Dial;
 use crate::mfd::{CamDir, LeftMfd, MfdState, MissionClock, RightMfd};
 
 pub struct PanelPlugin;
@@ -203,7 +203,15 @@ pub enum LedId {
 /// Draws a lamp face into the rectangle (x, y, w, h) of a canvas at `k` canvas pixels per
 /// panel pixel: fill, a one-pixel border and the centred label in the text colour at up to
 /// `text` canvas pixels per font pixel.
-pub fn draw_lamp(c: &mut Canvas, fonts: &Fonts, r: [i32; 4], label: &str, colours: (u8, u8), k: i32, text: i32) {
+pub fn draw_lamp(
+    c: &mut Canvas,
+    fonts: &Fonts,
+    r: [i32; 4],
+    label: &str,
+    colours: (u8, u8),
+    k: i32,
+    text: i32,
+) {
     let (fg, bg) = colours;
     let [x, y, w, h] = r;
     c.fill_rect(x, y, w, h, bg);
@@ -268,14 +276,22 @@ pub fn draw_gauge(c: &mut Canvas, r: [i32; 4], emv: i32, egr: i32, ear: i32) {
     // still fills the rightmost column).
     let mut bar = |value: i32, colour: u8, y0: i32, y1: i32| {
         let (a, b) = if value > 0 { (0, value / 2 + 1) } else { (50 + value / 2, 51) };
-        let (px0, px1) = (r[0] + (a as f32 * sx).round() as i32, r[0] + (b as f32 * sx).round() as i32);
-        let (py0, py1) = (r[1] + (y0 as f32 * sy).round() as i32, r[1] + ((y1 + 1) as f32 * sy).round() as i32);
+        let (px0, px1) =
+            (r[0] + (a as f32 * sx).round() as i32, r[0] + (b as f32 * sx).round() as i32);
+        let (py0, py1) =
+            (r[1] + (y0 as f32 * sy).round() as i32, r[1] + ((y1 + 1) as f32 * sy).round() as i32);
         c.fill_rect(px0, py0, px1 - px0, py1 - py0, colour);
     };
     bar(100 - emv, 1, 0, 10);
     bar(-emv, 42, 0, 10);
     if egr > 0 {
-        let colour = if emv + egr > 100 { 17 } else if emv + egr > 50 { 41 } else { 42 };
+        let colour = if emv + egr > 100 {
+            17
+        } else if emv + egr > 50 {
+            41
+        } else {
+            42
+        };
         bar(egr, colour, 1, 4);
     }
     if ear > 0 {
@@ -309,7 +325,13 @@ pub fn draw_led_bars(c: &mut Canvas, glow: &mut Canvas, r: [i32; 4], emv: i32, e
         let sy = y + gap + row as i32 * (strip_h + gap);
         for m in 0..LED_MODULES {
             let mx = x as f32 + (gap + m * gap) as f32 + m as f32 * module_w;
-            c.fill_rect(mx.round() as i32, sy, (mx + module_w).round() as i32 - mx.round() as i32, strip_h, 0);
+            c.fill_rect(
+                mx.round() as i32,
+                sy,
+                (mx + module_w).round() as i32 - mx.round() as i32,
+                strip_h,
+                0,
+            );
             for s in 0..LED_SEGMENTS {
                 let i = m * LED_SEGMENTS + s;
                 let colour = match (i < left, i >= n - right) {
@@ -365,7 +387,13 @@ pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
 /// HSI on a square canvas: the compass card turning with the heading (radians), a lubber line
 /// and aircraft symbol, the bearing pointer to the waypoint (radians, true) and its distance
 /// (km) and number.
-pub fn hsi(c: &mut Canvas, heading: f32, bearing: Option<f32>, dist_km: Option<f32>, waypoint: usize) {
+pub fn hsi(
+    c: &mut Canvas,
+    heading: f32,
+    bearing: Option<f32>,
+    dist_km: Option<f32>,
+    waypoint: usize,
+) {
     use crate::font::{Align, stroke_text_at};
     c.px.fill(0);
     let n = c.w.min(c.h) as f32;
@@ -384,7 +412,13 @@ pub fn hsi(c: &mut Canvas, heading: f32, bearing: Option<f32>, dist_km: Option<f
     let card = r * 0.78;
     for k in 0..72 {
         let a = (k as f32 * 5.0).to_radians();
-        let len = if k % 6 == 0 { 0.12 } else if k % 2 == 0 { 0.08 } else { 0.05 };
+        let len = if k % 6 == 0 {
+            0.12
+        } else if k % 2 == 0 {
+            0.08
+        } else {
+            0.05
+        };
         c.stroke(centre + dir(a) * card, centre + dir(a) * card * (1.0 - len), w, 15);
         if k % 6 == 0 {
             let deg = k * 5;
@@ -419,9 +453,27 @@ pub fn hsi(c: &mut Canvas, heading: f32, bearing: Option<f32>, dist_km: Option<f
     let th = r * 0.12;
     if let Some(km) = dist_km {
         let text = if km < 100.0 { format!("{km:.1}") } else { format!("{km:.0}") };
-        stroke_text_at(c, centre.x - r * 0.62, centre.y - r * 0.62, &text, th, w, 15, Align::Centre);
+        stroke_text_at(
+            c,
+            centre.x - r * 0.62,
+            centre.y - r * 0.62,
+            &text,
+            th,
+            w,
+            15,
+            Align::Centre,
+        );
     }
-    stroke_text_at(c, centre.x + r * 0.62, centre.y - r * 0.62, &format!("WP{waypoint}"), th, w, 15, Align::Centre);
+    stroke_text_at(
+        c,
+        centre.x + r * 0.62,
+        centre.y - r * 0.62,
+        &format!("WP{waypoint}"),
+        th,
+        w,
+        15,
+        Align::Centre,
+    );
 }
 
 #[derive(SystemParam)]
@@ -515,8 +567,12 @@ impl PanelParams<'_, '_> {
             LedId::Chaff => format!("{:02}", self.cm.chaff.min(99)),
             LedId::Flares => format!("{:02}", self.cm.flares.min(99)),
             LedId::Decoys => format!("{:02}", self.cm.decoys.min(99)),
-            LedId::Fuel => format!("{:03}", a.map_or(0, |a| ((a.fuel / 10.0) as i32).clamp(0, 999))),
-            LedId::Thrust => format!("{:03}", a.map_or(0, |a| (a.thrust.round() as i32).clamp(0, 999))),
+            LedId::Fuel => {
+                format!("{:03}", a.map_or(0, |a| ((a.fuel / 10.0) as i32).clamp(0, 999)))
+            }
+            LedId::Thrust => {
+                format!("{:03}", a.map_or(0, |a| (a.thrust.round() as i32).clamp(0, 999)))
+            }
         }
     }
 
@@ -593,14 +649,25 @@ impl PanelParams<'_, '_> {
         const AMBER: u8 = 18;
         c.clear(5);
         let a = self.aircraft.single().ok();
-        let t = self.clock.start_seconds + self.clock.elapsed.unwrap_or_else(|| a.map_or(0.0, |a| a.time));
+        let t = self.clock.start_seconds
+            + self.clock.elapsed.unwrap_or_else(|| a.map_or(0.0, |a| a.time));
         let (hh, mm, ss) = crate::mfd::hms(t);
         let mission = self.mission.as_ref().map(|m| &m.0);
-        let target = mission.map(|m| (crate::mission::clean_text(&m.primary.type_name).to_uppercase(), crate::mission::clean_text(&m.primary.place_name).to_uppercase()));
+        let target = mission.map(|m| {
+            (
+                crate::mission::clean_text(&m.primary.type_name).to_uppercase(),
+                crate::mission::clean_text(&m.primary.place_name).to_uppercase(),
+            )
+        });
         let (kind, place) = target.unwrap_or_default();
         let leg = a.and_then(|a| self.leg(a, t));
-        let bearing = a.filter(|_| leg.is_some()).map_or(0, |a| crate::flight::bam(a.waypoint_bearing).to_degrees().rem_euclid(360.0).round() as i32 % 360);
-        let dist = leg.map_or("---".to_string(), |(km, _)| if km < 100.0 { format!("{km:.1}KM") } else { format!("{km:.0}KM") });
+        let bearing = a.filter(|_| leg.is_some()).map_or(0, |a| {
+            crate::flight::bam(a.waypoint_bearing).to_degrees().rem_euclid(360.0).round() as i32
+                % 360
+        });
+        let dist = leg.map_or("---".to_string(), |(km, _)| {
+            if km < 100.0 { format!("{km:.1}KM") } else { format!("{km:.0}KM") }
+        });
         let eta = leg.map_or("--:--".to_string(), |(_, eta)| {
             let (eh, em, _) = crate::mfd::hms(eta);
             format!("{eh:02}:{em:02}")
@@ -609,7 +676,11 @@ impl PanelParams<'_, '_> {
             Some(m) => format!("TOT {}", m.time.deadline),
             None => format!("FUEL {:>5.0}", a.map_or(0.0, |a| a.fuel)),
         };
-        let steer = if self.waypoints.points.is_empty() { "STPT -".to_string() } else { format!("STPT {}", self.waypoints.current + 1) };
+        let steer = if self.waypoints.points.is_empty() {
+            "STPT -".to_string()
+        } else {
+            format!("STPT {}", self.waypoints.current + 1)
+        };
         let cut = |s: &str, n: usize| s.chars().take(n).collect::<String>();
         let lines = [
             format!("{:<12}{:>12}", "UHF 305.00", steer),
@@ -619,7 +690,14 @@ impl PanelParams<'_, '_> {
             format!("{:<12}{:>12}", "M3 1234", right),
         ];
         for (i, line) in lines.iter().enumerate() {
-            fonts.text_scaled(c, 4, 2 + i as i32 * 8 * DED_SCALE, cut(line, DED_COLS as usize).as_bytes(), AMBER, DED_SCALE);
+            fonts.text_scaled(
+                c,
+                4,
+                2 + i as i32 * 8 * DED_SCALE,
+                cut(line, DED_COLS as usize).as_bytes(),
+                AMBER,
+                DED_SCALE,
+            );
         }
     }
 
@@ -636,7 +714,13 @@ impl PanelParams<'_, '_> {
             Dial::Rpm => 60.0 + thrust * 0.4,
             Dial::Ftit => 350.0 + thrust * 6.0,
             Dial::Oil => 25.0 + thrust * 0.4,
-            Dial::Nozzle => if thrust > 100.0 { (thrust - 100.0) * 5.0 } else { 100.0 - thrust },
+            Dial::Nozzle => {
+                if thrust > 100.0 {
+                    (thrust - 100.0) * 5.0
+                } else {
+                    100.0 - thrust
+                }
+            }
             Dial::Fuel => a.fuel,
             // Seconds of the day.
             Dial::Clock => self.clock.start_seconds + self.clock.elapsed.unwrap_or(a.time),
@@ -658,16 +742,42 @@ pub fn draw_dial(c: &mut Canvas, r: [i32; 4], dial: Dial, value: f32) {
     // Name, scale labels (evenly over the sweep), the needle's fraction of the sweep, and the
     // sweep: start angle (degrees clockwise from up) and extent.
     let (name, labels, t, start, sweep): (&str, &[&str], f32, f32, f32) = match dial {
-        Dial::Airspeed => ("KNOTS", &["0", "1", "2", "3", "4", "5", "6", "7", "8"], value / 800.0, -150.0, 300.0),
-        Dial::Altimeter => ("ALT", &["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"], (value % 1000.0) / 1000.0, 0.0, 360.0),
-        Dial::Aoa => ("AOA", &["-5", "0", "5", "10", "15", "20", "25", "30"], (value + 5.0) / 35.0, -150.0, 300.0),
-        Dial::Vvi => ("VVI", &["6", "4", "2", "0", "2", "4", "6"], (value + 6000.0) / 12000.0, -240.0, 300.0),
+        Dial::Airspeed => {
+            ("KNOTS", &["0", "1", "2", "3", "4", "5", "6", "7", "8"], value / 800.0, -150.0, 300.0)
+        }
+        Dial::Altimeter => (
+            "ALT",
+            &["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            (value % 1000.0) / 1000.0,
+            0.0,
+            360.0,
+        ),
+        Dial::Aoa => (
+            "AOA",
+            &["-5", "0", "5", "10", "15", "20", "25", "30"],
+            (value + 5.0) / 35.0,
+            -150.0,
+            300.0,
+        ),
+        Dial::Vvi => {
+            ("VVI", &["6", "4", "2", "0", "2", "4", "6"], (value + 6000.0) / 12000.0, -240.0, 300.0)
+        }
         Dial::Rpm => ("RPM", &["0", "2", "4", "6", "8", "10"], value / 100.0, -150.0, 300.0),
-        Dial::Ftit => ("FTIT", &["2", "4", "6", "8", "10", "12"], (value - 200.0) / 1000.0, -150.0, 300.0),
+        Dial::Ftit => {
+            ("FTIT", &["2", "4", "6", "8", "10", "12"], (value - 200.0) / 1000.0, -150.0, 300.0)
+        }
         Dial::Oil => ("OIL", &["0", "25", "50", "75", "100"], value / 100.0, -150.0, 300.0),
         Dial::Nozzle => ("NOZ", &["0", "2", "4", "6", "8", "10"], value / 100.0, -150.0, 300.0),
-        Dial::Fuel => ("FUEL", &["0", "2", "4", "6", "8", "10"], value / crate::mfd::FULL_FUEL, -150.0, 300.0),
-        Dial::Clock => ("", &["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"], (value % 3600.0) / 3600.0, 0.0, 360.0),
+        Dial::Fuel => {
+            ("FUEL", &["0", "2", "4", "6", "8", "10"], value / crate::mfd::FULL_FUEL, -150.0, 300.0)
+        }
+        Dial::Clock => (
+            "",
+            &["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"],
+            (value % 3600.0) / 3600.0,
+            0.0,
+            360.0,
+        ),
     };
     let dir = |deg: f32| {
         let a = deg.to_radians();
@@ -689,13 +799,31 @@ pub fn draw_dial(c: &mut Canvas, r: [i32; 4], dial: Dial, value: f32) {
     }
     let name_y = if dial == Dial::Altimeter { -0.3 } else { -0.38 };
     if !name.is_empty() {
-        stroke_text_at(c, centre.x, centre.y + rad * name_y, name, rad * 0.15, pen, 7, Align::Centre);
+        stroke_text_at(
+            c,
+            centre.x,
+            centre.y + rad * name_y,
+            name,
+            rad * 0.15,
+            pen,
+            7,
+            Align::Centre,
+        );
     }
     match dial {
         Dial::Altimeter => {
             let d = dir(start + sweep * (value % 10000.0) / 10000.0);
             c.stroke(centre, centre + d * rad * 0.5, pen * 2.2, 15);
-            stroke_text_at(c, centre.x, centre.y + rad * 0.38, &format!("{:05}", value.round() as i32), rad * 0.17, pen, 15, Align::Centre);
+            stroke_text_at(
+                c,
+                centre.x,
+                centre.y + rad * 0.38,
+                &format!("{:05}", value.round() as i32),
+                rad * 0.17,
+                pen,
+                15,
+                Align::Centre,
+            );
         }
         Dial::Clock => {
             let d = dir(360.0 * (value % 43200.0) / 43200.0);
@@ -722,9 +850,25 @@ pub fn approach_indexer(c: &mut Canvas, lit: (bool, bool, bool)) {
     let colour = |on: bool, lit_colour: u8| if on { lit_colour } else { 30 };
     // Top chevron: a V with its apex down.
     let y = h * 0.18;
-    c.polyline(&[Vec2::new(cx - half, y - half * 0.6), Vec2::new(cx, y + half * 0.6), Vec2::new(cx + half, y - half * 0.6)], pen, colour(lit.0, 41));
+    c.polyline(
+        &[
+            Vec2::new(cx - half, y - half * 0.6),
+            Vec2::new(cx, y + half * 0.6),
+            Vec2::new(cx + half, y - half * 0.6),
+        ],
+        pen,
+        colour(lit.0, 41),
+    );
     c.ring(Vec2::new(cx, h / 2.0), half * 0.9, pen, colour(lit.1, 47));
     // Bottom chevron: apex up.
     let y = h * 0.82;
-    c.polyline(&[Vec2::new(cx - half, y + half * 0.6), Vec2::new(cx, y - half * 0.6), Vec2::new(cx + half, y + half * 0.6)], pen, colour(lit.2, 18));
+    c.polyline(
+        &[
+            Vec2::new(cx - half, y + half * 0.6),
+            Vec2::new(cx, y - half * 0.6),
+            Vec2::new(cx + half, y + half * 0.6),
+        ],
+        pen,
+        colour(lit.2, 18),
+    );
 }

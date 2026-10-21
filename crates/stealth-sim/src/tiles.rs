@@ -59,7 +59,12 @@ impl Sim {
                     continue;
                 }
                 for (idx, &(ox, oy, sh)) in tiles.objects_of(lv, cell).iter().enumerate() {
-                    let dmg = self.tile_damage.iter().find(|t| t.level as usize == lv && t.index as usize == idx && t.col == gx && t.row == gy);
+                    let dmg = self.tile_damage.iter().find(|t| {
+                        t.level as usize == lv
+                            && t.index as usize == idx
+                            && t.col == gx
+                            && t.row == gy
+                    });
                     let shape = dmg.map_or(sh as i32, |t| t.shape);
                     if self.buf7.get((shape & 0x7F) as usize).copied().unwrap_or(0) == 0 {
                         continue;
@@ -164,13 +169,20 @@ impl Sim {
     }
 
     fn model_has_wreck(&self, shape: i32) -> bool {
-        self.tiles.as_ref().and_then(|t| t.model_attr.get((shape & 0x7F) as usize)).is_some_and(|a| a & 0x20 != 0)
+        self.tiles
+            .as_ref()
+            .and_then(|t| t.model_attr.get((shape & 0x7F) as usize))
+            .is_some_and(|a| a & 0x20 != 0)
     }
 
     /// Shape of object `i` once destroyed: the model's own wreck state, else land / water rubble.
     pub(crate) fn wreck_shape(&self, i: i32) -> i32 {
         let o = self.obj(i);
-        if self.model_has_wreck(o.shape) { (o.shape & 0xFF) | 0x100 } else { self.rubble_for(self.is_water(i)) | 0x100 }
+        if self.model_has_wreck(o.shape) {
+            (o.shape & 0xFF) | 0x100
+        } else {
+            self.rubble_for(self.is_water(i)) | 0x100
+        }
     }
 
     /// Record a new shape for a tile object in the damage list.
@@ -179,7 +191,11 @@ impl Sim {
             return;
         }
         let rec = TileDamage { level: t.level, index: t.index, col: t.col, row: t.row, shape };
-        if let Some(e) = self.tile_damage.iter_mut().find(|e| e.level == t.level && e.index == t.index && e.col == t.col && e.row == t.row) {
+        if let Some(e) = self
+            .tile_damage
+            .iter_mut()
+            .find(|e| e.level == t.level && e.index == t.index && e.col == t.col && e.row == t.row)
+        {
             e.shape = shape;
         } else {
             self.tile_damage.push(rec);
@@ -200,7 +216,11 @@ impl Sim {
             }
             let o = self.objects[iu];
             self.destroyed_at.push((o.x, o.y));
-            let res = if self.tiles.is_some() { self.find_nearest_tile(o.x << 5, (0x8000 - o.y) << 5) } else { None };
+            let res = if self.tiles.is_some() {
+                self.find_nearest_tile(o.x << 5, (0x8000 - o.y) << 5)
+            } else {
+                None
+            };
             let shape;
             if i != 0 {
                 if o.unit_type == 0 {
@@ -231,7 +251,11 @@ impl Sim {
                     *b = b.wrapping_add(1);
                 }
                 self.log_event(2, base);
-                let s = if self.model_has_wreck(o.shape) { o.shape & 0xFF } else { self.rubble_for(self.is_water(0)) };
+                let s = if self.model_has_wreck(o.shape) {
+                    o.shape & 0xFF
+                } else {
+                    self.rubble_for(self.is_water(0))
+                };
                 shape = s | 0x100;
                 self.objects[0].shape = shape;
                 self.emit(SimEvent::GroundDestroyed { object: 0, shape });

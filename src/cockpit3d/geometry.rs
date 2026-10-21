@@ -41,7 +41,9 @@ pub fn panel_point(px: f32, py: f32, offset: f32) -> Vec3 {
 pub fn panel_rect(x: f32, y: f32, w: f32, h: f32, offset: f32) -> (Vec3, Vec2) {
     let (x0, y0, x1, y1) = (x, y, x + w, y + h);
     let c = panel_point((x0 + x1) / 2.0, (y0 + y1) / 2.0, offset);
-    let width = panel_point(x0, (y0 + y1) / 2.0, offset).distance(panel_point(x1, (y0 + y1) / 2.0, offset));
-    let height = panel_point((x0 + x1) / 2.0, y0, offset).distance(panel_point((x0 + x1) / 2.0, y1, offset));
+    let width =
+        panel_point(x0, (y0 + y1) / 2.0, offset).distance(panel_point(x1, (y0 + y1) / 2.0, offset));
+    let height =
+        panel_point((x0 + x1) / 2.0, y0, offset).distance(panel_point((x0 + x1) / 2.0, y1, offset));
     (c, Vec2::new(width, height))
 }

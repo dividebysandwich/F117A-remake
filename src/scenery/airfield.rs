@@ -101,7 +101,9 @@ pub fn approach_to(sites: &[PapiSite], ac: DVec2, heading: f32) -> Option<(&Papi
             let along = rel.dot(s.toward);
             // Flying along -toward, its right is toward.perp() (perp turns left).
             let lateral = rel.dot(s.toward.perp());
-            let ok = (100.0..25_000.0).contains(&along) && lateral.abs() < along * 0.4 + 400.0 && forward.dot(-s.toward) > 0.5;
+            let ok = (100.0..25_000.0).contains(&along)
+                && lateral.abs() < along * 0.4 + 400.0
+                && forward.dot(-s.toward) > 0.5;
             ok.then_some((s, along, lateral))
         })
         .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -113,7 +115,8 @@ pub fn papi_sites(a: &Airfield) -> Vec<PapiSite> {
         .iter()
         .map(|p| {
             let aim = ax.at(p.end * (a.runway.half_len - PAPI_IN), 0.0);
-            let outer = p.units.iter().map(|u| (*u - a.runway.c).dot(ax.v).abs()).fold(0.0, f64::max);
+            let outer =
+                p.units.iter().map(|u| (*u - a.runway.c).dot(ax.v).abs()).fold(0.0, f64::max);
             PapiSite { aim, toward: ax.u * p.end, half_width: outer * 1.1 + 10.0 }
         })
         .collect()
@@ -142,21 +145,37 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
     let ax = Axes::new(rw);
     let (l, w) = (rw.half_len, rw.half_width);
     let half = if w > 50.0 { 12.0 } else { 9.0 };
-    let mut a = Airfield { runway: *rw, taxiways: vec![], pads: vec![], buildings: vec![], holds: vec![], helipad: None, floods: vec![], parking: vec![], papi: vec![] };
+    let mut a = Airfield {
+        runway: *rw,
+        taxiways: vec![],
+        pads: vec![],
+        buildings: vec![],
+        holds: vec![],
+        helipad: None,
+        floods: vec![],
+        parking: vec![],
+        papi: vec![],
+    };
     let free_line = |p: DVec2, q: DVec2, r: f64| {
         let n = (p.distance(q) / 20.0).ceil().max(1.0) as usize;
         (0..=n).all(|i| ground.is_dry_clear(p.lerp(q, i as f64 / n as f64), r))
     };
     let end = l - 30.0;
     // Parallel taxiway: the nearest offset and side with a clear corridor.
-    let Some((s, vt)) = [80.0, 110.0, 140.0, 180.0, 230.0].iter().flat_map(|&g| [(1.0, w + g), (-1.0, w + g)]).find(|&(s, vt)| {
-        free_line(ax.at(-end, s * vt), ax.at(end, s * vt), half + 6.0)
-            && free_line(ax.at(-end, s * w), ax.at(-end, s * vt), half)
-            && free_line(ax.at(end, s * w), ax.at(end, s * vt), half)
-    }) else {
+    let Some((s, vt)) = [80.0, 110.0, 140.0, 180.0, 230.0]
+        .iter()
+        .flat_map(|&g| [(1.0, w + g), (-1.0, w + g)])
+        .find(|&(s, vt)| {
+            free_line(ax.at(-end, s * vt), ax.at(end, s * vt), half + 6.0)
+                && free_line(ax.at(-end, s * w), ax.at(-end, s * vt), half)
+                && free_line(ax.at(end, s * w), ax.at(end, s * vt), half)
+        })
+    else {
         // No taxiway: the PAPI on the left of the landing direction, 25 m out.
         for end in [-1.0, 1.0] {
-            let units = std::array::from_fn(|i| ax.at(end * (l - PAPI_IN), -end * (w + 25.0 + i as f64 * 15.0)));
+            let units = std::array::from_fn(|i| {
+                ax.at(end * (l - PAPI_IN), -end * (w + 25.0 + i as f64 * 15.0))
+            });
             a.papi.push(Papi { end, units });
         }
         return a;
@@ -204,7 +223,12 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
     let apron = [0.0, -0.3, 0.3, -0.55, 0.55].iter().map(|f| f * l).find(|&uc| apron_ok(uc, len));
     if let Some(uc) = apron {
         let (u0, u1) = (uc - len * 0.5, uc + len * 0.5);
-        a.pads.push([ax.at(u0, s * v0), ax.at(u1, s * v0), ax.at(u1, s * (v0 + depth)), ax.at(u0, s * (v0 + depth))]);
+        a.pads.push([
+            ax.at(u0, s * v0),
+            ax.at(u1, s * v0),
+            ax.at(u1, s * (v0 + depth)),
+            ax.at(u0, s * (v0 + depth)),
+        ]);
         let hangars = rng.range(2.0, 3.99) as usize;
         let hw = 48.0;
         for i in 0..hangars {
@@ -235,9 +259,15 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
             seed: rng.u64(),
         });
         a.helipad = Some((ax.at(u1 - 30.0, s * (v0 + depth - 30.0)), ax.u));
-        a.floods = vec![ax.at(u0 + 5.0, s * (v0 + depth - 5.0)), ax.at(uc, s * (v0 + depth - 5.0)), ax.at(u1 - 70.0, s * (v0 + depth - 5.0))];
+        a.floods = vec![
+            ax.at(u0 + 5.0, s * (v0 + depth - 5.0)),
+            ax.at(uc, s * (v0 + depth - 5.0)),
+            ax.at(u1 - 70.0, s * (v0 + depth - 5.0)),
+        ];
         // A row across the middle of the apron, clear of the helipad, facing the runway.
-        a.parking = (0..4).map(|k| (ax.at(u0 + 50.0 + k as f64 * 45.0, s * (v0 + depth * 0.5)), -ax.v * s)).collect();
+        a.parking = (0..4)
+            .map(|k| (ax.at(u0 + 50.0 + k as f64 * 45.0, s * (v0 + depth * 0.5)), -ax.v * s))
+            .collect();
     }
 
     // Hardened aircraft shelters near both runway ends, doors towards the taxiway.
@@ -246,11 +276,19 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
             let u = dir * (end - 120.0 - i as f64 * 70.0);
             let door = ax.at(u, s * (vt + 65.0));
             let centre = ax.at(u, s * (vt + 65.0 + 18.0));
-            if apron.is_some_and(|uc| (u - uc).abs() < len * 0.5 + 60.0) || !ground.is_clear(centre, 26.0) || !free_line(ax.at(u, s * vt), door, half) {
+            if apron.is_some_and(|uc| (u - uc).abs() < len * 0.5 + 60.0)
+                || !ground.is_clear(centre, 26.0)
+                || !free_line(ax.at(u, s * vt), door, half)
+            {
                 continue;
             }
             a.taxiways.push(Taxiway { pts: vec![ax.at(u, s * vt), door], half: 8.0 });
-            a.pads.push([ax.at(u - 16.0, s * (vt + 48.0)), ax.at(u + 16.0, s * (vt + 48.0)), ax.at(u + 16.0, s * (vt + 66.0)), ax.at(u - 16.0, s * (vt + 66.0))]);
+            a.pads.push([
+                ax.at(u - 16.0, s * (vt + 48.0)),
+                ax.at(u + 16.0, s * (vt + 48.0)),
+                ax.at(u + 16.0, s * (vt + 66.0)),
+                ax.at(u - 16.0, s * (vt + 66.0)),
+            ]);
             a.buildings.push(Building {
                 p: centre,
                 dir: -ax.v * s,
@@ -287,14 +325,36 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
     for v in [-s * (w + 260.0), s * (vt + 300.0)] {
         let p = ax.at(l * 0.4, v);
         if ground.is_clear(p, 15.0) {
-            a.buildings.push(Building { p, dir: ax.u, kind: Kind::Radar, l: 12.0, w: 12.0, h: 26.0, roof: Roof::Flat, wall: 0xE4, roof_colour: 0xE1, seed: rng.u64() });
+            a.buildings.push(Building {
+                p,
+                dir: ax.u,
+                kind: Kind::Radar,
+                l: 12.0,
+                w: 12.0,
+                h: 26.0,
+                roof: Roof::Flat,
+                wall: 0xE4,
+                roof_colour: 0xE1,
+                seed: rng.u64(),
+            });
             break;
         }
     }
     for u in [-(l - 250.0), l - 250.0] {
         let p = ax.at(u, -s * (w + 45.0));
         if ground.is_dry_clear(p, 5.0) {
-            a.buildings.push(Building { p, dir: ax.v.rotate(DVec2::from_angle(rng.range(-0.8, 0.8))), kind: Kind::Windsock, l: 1.0, w: 1.0, h: 7.0, roof: Roof::Flat, wall: 0xCB, roof_colour: 0xCB, seed: rng.u64() });
+            a.buildings.push(Building {
+                p,
+                dir: ax.v.rotate(DVec2::from_angle(rng.range(-0.8, 0.8))),
+                kind: Kind::Windsock,
+                l: 1.0,
+                w: 1.0,
+                h: 7.0,
+                roof: Roof::Flat,
+                wall: 0xCB,
+                roof_colour: 0xCB,
+                seed: rng.u64(),
+            });
         }
     }
     // PAPI between the runway and the parallel taxiway, clear of the connectors: the units
@@ -303,10 +363,15 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
     let (inner, outer) = (w + 8.0, vt - half - 8.0);
     let spacing = ((outer - inner) / 3.0).min(15.0);
     for end in [-1.0, 1.0] {
-        let units_at = |u: f64| -> [DVec2; 4] { std::array::from_fn(|i| ax.at(u, s * (inner + i as f64 * spacing))) };
+        let units_at = |u: f64| -> [DVec2; 4] {
+            std::array::from_fn(|i| ax.at(u, s * (inner + i as f64 * spacing)))
+        };
         let clear = |units: &[DVec2; 4]| {
             units.iter().all(|&p| {
-                ground.is_dry_clear(p, 4.0) && !a.taxiways.iter().any(|t| t.pts.windows(2).any(|w| dist_to_segment(p, w[0], w[1]) < t.half + 10.0))
+                ground.is_dry_clear(p, 4.0)
+                    && !a.taxiways.iter().any(|t| {
+                        t.pts.windows(2).any(|w| dist_to_segment(p, w[0], w[1]) < t.half + 10.0)
+                    })
             })
         };
         let units = [0.0, 40.0, -40.0, 80.0, -80.0, 120.0, -120.0]
@@ -319,7 +384,18 @@ pub fn plan(rw: &Runway, ground: &Ground, seed: u64) -> Airfield {
 
     // Guidance signs beside the holding points.
     for &(p, d) in &a.holds.clone() {
-        a.buildings.push(Building { p: p + d.perp() * (half + 7.0), dir: d.perp(), kind: Kind::Sign, l: 3.2, w: 0.5, h: 1.6, roof: Roof::Flat, wall: 0xC8, roof_colour: 0xEF, seed: 0 });
+        a.buildings.push(Building {
+            p: p + d.perp() * (half + 7.0),
+            dir: d.perp(),
+            kind: Kind::Sign,
+            l: 3.2,
+            w: 0.5,
+            h: 1.6,
+            roof: Roof::Flat,
+            wall: 0xC8,
+            roof_colour: 0xEF,
+            seed: 0,
+        });
     }
     a
 }
@@ -336,8 +412,17 @@ pub fn footprint(a: &Airfield) -> Vec<Rect> {
         }
         Rect::from_corners((min - m).as_vec2(), (max + m).as_vec2())
     };
-    let mut out = vec![bounds(&[ax.at(-rw.half_len - APPROACH - 40.0, -60.0), ax.at(rw.half_len + APPROACH + 40.0, 60.0)], 0.0)];
-    out.push(bounds(&[ax.at(-rw.half_len - 60.0, -rw.half_width - 80.0), ax.at(rw.half_len + 60.0, rw.half_width + 80.0)], 0.0));
+    let mut out = vec![bounds(
+        &[ax.at(-rw.half_len - APPROACH - 40.0, -60.0), ax.at(rw.half_len + APPROACH + 40.0, 60.0)],
+        0.0,
+    )];
+    out.push(bounds(
+        &[
+            ax.at(-rw.half_len - 60.0, -rw.half_width - 80.0),
+            ax.at(rw.half_len + 60.0, rw.half_width + 80.0),
+        ],
+        0.0,
+    ));
     for t in &a.taxiways {
         for s in t.pts.windows(2) {
             out.push(bounds(s, t.half + 15.0));
@@ -375,9 +460,15 @@ pub fn build(a: &Airfield) -> Geom {
                 for side in [-1.0, 1.0] {
                     let lp = p + dir * k + dir.perp() * side * (t.half + 1.0);
                     let inside_other = a.taxiways.iter().enumerate().any(|(oi, o)| {
-                        oi != ti && o.pts.windows(2).any(|ow| dist_to_segment(lp, ow[0], ow[1]) < o.half - 0.5)
+                        oi != ti
+                            && o.pts
+                                .windows(2)
+                                .any(|ow| dist_to_segment(lp, ow[0], ow[1]) < o.half - 0.5)
                     });
-                    if !on_runway(lp) && !inside_other && !a.pads.iter().any(|pad| inside_quad(pad, lp)) {
+                    if !on_runway(lp)
+                        && !inside_other
+                        && !a.pads.iter().any(|pad| inside_quad(pad, lp))
+                    {
                         g.lamp(BLUE, f.at(lp, TAXI_Y + 0.4));
                     }
                 }
@@ -394,7 +485,11 @@ pub fn build(a: &Airfield) -> Geom {
         let n = d.perp();
         for (off, y) in [(0.0, 0.0), (2.0, 0.0)] {
             let c = p + d * off;
-            g.line(MARKING, f.at(c - n * 11.0, TAXI_Y + 0.06 + y), f.at(c + n * 11.0, TAXI_Y + 0.06 + y));
+            g.line(
+                MARKING,
+                f.at(c - n * 11.0, TAXI_Y + 0.06 + y),
+                f.at(c + n * 11.0, TAXI_Y + 0.06 + y),
+            );
         }
         for side in [-1.0, 1.0] {
             let base = p + n * side * 15.0;
@@ -425,8 +520,18 @@ pub fn build(a: &Airfield) -> Geom {
     for papi in &a.papi {
         let toward = dir3(ax.u) * papi.end as f32;
         for (p, minutes) in papi.units.iter().zip(PAPI_MINUTES) {
-            g.block(0xE6, 0xE8, &rect(f.at(*p, 0.0), Vec2::new(ax.u.x as f32, -ax.u.y as f32), 2.0, 3.0), 0.0, 1.4);
-            g.papi.push(PapiLight { pos: f.at(*p, 1.5) + toward * 1.1, toward, angle: (minutes / 60.0).to_radians() });
+            g.block(
+                0xE6,
+                0xE8,
+                &rect(f.at(*p, 0.0), Vec2::new(ax.u.x as f32, -ax.u.y as f32), 2.0, 3.0),
+                0.0,
+                1.4,
+            );
+            g.papi.push(PapiLight {
+                pos: f.at(*p, 1.5) + toward * 1.1,
+                toward,
+                angle: (minutes / 60.0).to_radians(),
+            });
         }
     }
 
@@ -434,14 +539,27 @@ pub fn build(a: &Airfield) -> Geom {
     if let Some((c, d)) = a.helipad {
         let (dx, dy) = (d, d.perp());
         let corner = |x: f64, y: f64| c + dx * x + dy * y;
-        g.ground(PAD, &[corner(-14.0, -14.0), corner(14.0, -14.0), corner(14.0, 14.0), corner(-14.0, 14.0)].map(|p| f.at(p, PAD_Y + 0.03)));
+        g.ground(
+            PAD,
+            &[corner(-14.0, -14.0), corner(14.0, -14.0), corner(14.0, 14.0), corner(-14.0, 14.0)]
+                .map(|p| f.at(p, PAD_Y + 0.03)),
+        );
         let y = PAD_Y + 0.08;
-        for (p, q) in [((-4.0, -5.0), (4.0, -5.0)), ((-4.0, 5.0), (4.0, 5.0)), ((0.0, -5.0), (0.0, 5.0))] {
+        for (p, q) in
+            [((-4.0, -5.0), (4.0, -5.0)), ((-4.0, 5.0), (4.0, 5.0)), ((0.0, -5.0), (0.0, 5.0))]
+        {
             g.line(WHITE, f.at(corner(p.0, p.1), y), f.at(corner(q.0, q.1), y));
         }
         for i in 0..16 {
-            let (a0, a1) = (i as f64 / 16.0 * std::f64::consts::TAU, (i + 1) as f64 / 16.0 * std::f64::consts::TAU);
-            g.line(WHITE, f.at(c + DVec2::from_angle(a0) * 10.0, y), f.at(c + DVec2::from_angle(a1) * 10.0, y));
+            let (a0, a1) = (
+                i as f64 / 16.0 * std::f64::consts::TAU,
+                (i + 1) as f64 / 16.0 * std::f64::consts::TAU,
+            );
+            g.line(
+                WHITE,
+                f.at(c + DVec2::from_angle(a0) * 10.0, y),
+                f.at(c + DVec2::from_angle(a1) * 10.0, y),
+            );
         }
         for i in 0..8 {
             let p = c + DVec2::from_angle(i as f64 / 8.0 * std::f64::consts::TAU) * 14.5;
@@ -460,7 +578,8 @@ pub fn build(a: &Airfield) -> Geom {
 }
 
 fn inside_quad(q: &[DVec2; 4], p: DVec2) -> bool {
-    (0..4).all(|i| (q[(i + 1) % 4] - q[i]).perp_dot(p - q[i]) >= 0.0) || (0..4).all(|i| (q[(i + 1) % 4] - q[i]).perp_dot(p - q[i]) <= 0.0)
+    (0..4).all(|i| (q[(i + 1) % 4] - q[i]).perp_dot(p - q[i]) >= 0.0)
+        || (0..4).all(|i| (q[(i + 1) % 4] - q[i]).perp_dot(p - q[i]) <= 0.0)
 }
 
 /// Approach lighting beyond one runway end: centreline barrettes every 30 m on stands, a
@@ -498,7 +617,10 @@ fn approach(g: &mut Geom, f: &Frame, ax: &Axes, end: f64, l: f64, w: f64) {
         }
         if d >= 300.0 {
             // Flashers run from the far end towards the runway, a group per phase.
-            let phase = STROBE_PHASES - 1 - (k * STROBE_PHASES / ((APPROACH - 300.0) / BARRETTE + 1.0) as usize).min(STROBE_PHASES - 1);
+            let phase = STROBE_PHASES
+                - 1
+                - (k * STROBE_PHASES / ((APPROACH - 300.0) / BARRETTE + 1.0) as usize)
+                    .min(STROBE_PHASES - 1);
             g.strobe(phase, f.at(c, y + 0.6));
             k += 1;
         }

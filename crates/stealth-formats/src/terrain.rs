@@ -32,7 +32,9 @@ impl Grid {
         if col < 0 || row < 0 || col >= GRID_DIM[lod] || row >= GRID_DIM[lod] {
             return 0;
         }
-        let block = |tab: &Vec<u8>, parent: u8| tab[(col & 3) as usize + ((row & 3) as usize) * 4 + parent as usize * 16];
+        let block = |tab: &Vec<u8>, parent: u8| {
+            tab[(col & 3) as usize + ((row & 3) as usize) * 4 + parent as usize * 16]
+        };
         match lod {
             4 => self.lod4[(col + row * 8) as usize],
             3 => self.lod3[(col + row * 16) as usize],

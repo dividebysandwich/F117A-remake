@@ -24,7 +24,10 @@ impl Plugin for LightingPlugin {
             .add_systems(OnEnter(AppState::Flight), spawn_sun)
             .add_systems(OnExit(AppState::Flight), despawn_lights)
             // Before the cascades are built (PostUpdate) so a shadow toggle applies at once.
-            .add_systems(Update, (update_sun, sync_mirror_lights).run_if(in_state(AppState::Flight)))
+            .add_systems(
+                Update,
+                (update_sun, sync_mirror_lights).run_if(in_state(AppState::Flight)),
+            )
             .add_systems(
                 PostUpdate,
                 (collect_local_lights, mirror_point_lights)
@@ -114,7 +117,11 @@ fn spawn_mirror_lights(commands: &mut Commands) {
 }
 
 /// Adds or removes the mirrored point lights when the local lights option changes in flight.
-fn sync_mirror_lights(mut commands: Commands, settings: Res<Settings>, lights: Query<Entity, With<MirrorLight>>) {
+fn sync_mirror_lights(
+    mut commands: Commands,
+    settings: Res<Settings>,
+    lights: Query<Entity, With<MirrorLight>>,
+) {
     if !settings.is_changed() || settings.local_lights != lights.is_empty() {
         return;
     }
@@ -156,8 +163,10 @@ fn update_sun(
     let overcast = weather.shaded || weather.whiteout > 0.5;
     let strength = 0.45 * daylight * if overcast { 0.15 } else { 1.0 };
     state.sun = sun_direction().extend(strength);
-    let flags = (settings.shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);
-    state.ambient = Vec4::new(1.0 - strength * 0.6, 1.0 - strength * 0.6, 1.0 - strength * 0.55, flags as f32);
+    let flags =
+        (settings.shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);
+    state.ambient =
+        Vec4::new(1.0 - strength * 0.6, 1.0 - strength * 0.6, 1.0 - strength * 0.55, flags as f32);
     if let Ok(mut light) = sun.single_mut() {
         light.illuminance = LUX_PER_UNIT * (0.15 + 0.85 * daylight) * daylight.max(0.05);
         light.shadow_maps_enabled = settings.shadows && !overcast;
@@ -176,7 +185,15 @@ fn collect_local_lights(
     mut state: ResMut<LightingState>,
     cams: Query<&GlobalTransform, With<crate::camera::EyeCamera>>,
     emitters: Query<(&LightEmitter, &GlobalTransform, &InheritedVisibility)>,
-    dots: Query<(&GlobalTransform, &InheritedVisibility, &MeshMaterial3d<PaletteMaterial>, Option<&bevy::camera::visibility::RenderLayers>), With<DotLight>>,
+    dots: Query<
+        (
+            &GlobalTransform,
+            &InheritedVisibility,
+            &MeshMaterial3d<PaletteMaterial>,
+            Option<&bevy::camera::visibility::RenderLayers>,
+        ),
+        With<DotLight>,
+    >,
     materials: Res<Assets<PaletteMaterial>>,
     lamps: Query<(&crate::scenery::LampBatch, &GlobalTransform, &InheritedVisibility)>,
 ) {
@@ -198,7 +215,8 @@ fn collect_local_lights(
     }
     // Dot lights (runway, approach, city lights) within 600 m, only when they are lit.
     if let Some(palette) = palette.filter(|p| p.lights_on()) {
-        let track_only = bevy::camera::visibility::RenderLayers::layer(crate::camera::TRACKCAM_LOD_LAYER);
+        let track_only =
+            bevy::camera::visibility::RenderLayers::layer(crate::camera::TRACKCAM_LOD_LAYER);
         for (tf, vis, mat, layers) in &dots {
             // Skip dots of a detail level only the tracking camera draws.
             if !vis.get() || layers == Some(&track_only) {
@@ -247,7 +265,11 @@ fn mirror_point_lights(
                 light.range = p.w;
                 light.color = Color::linear_rgb(c.x, c.y, c.z);
                 // Point light intensity in lumens for roughly the same effect as the shader.
-                light.intensity = LUX_PER_UNIT * 4.0 * std::f32::consts::PI * (p.w * 0.3).powi(2) * c.truncate().max_element();
+                light.intensity = LUX_PER_UNIT
+                    * 4.0
+                    * std::f32::consts::PI
+                    * (p.w * 0.3).powi(2)
+                    * c.truncate().max_element();
             }
             None => light.intensity = 0.0,
         }

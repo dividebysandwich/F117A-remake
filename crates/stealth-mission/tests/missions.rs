@@ -5,15 +5,25 @@ use stealth_mission::*;
 
 fn data() -> &'static GameData {
     static D: OnceLock<GameData> = OnceLock::new();
-    D.get_or_init(|| GameData::load_json(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/mission")).expect("assets/mission"))
+    D.get_or_init(|| {
+        GameData::load_json(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/mission"))
+            .expect("assets/mission")
+    })
 }
 
 /// A fixed Central Europe mission: bases, night and departure time stay stable.
 #[test]
 fn central_europe_reference_briefing() {
     let data = data();
-    let s = MissionSettings { theater: 3, roe: 2, kind: MissionKind::Strike, opponents: 1, ..Default::default() };
-    let input = GenInput { holdrand: 0x5A41C429, weapon_unavailable: [0; 20], stale_special_start: 0 };
+    let s = MissionSettings {
+        theater: 3,
+        roe: 2,
+        kind: MissionKind::Strike,
+        opponents: 1,
+        ..Default::default()
+    };
+    let input =
+        GenInput { holdrand: 0x5A41C429, weapon_unavailable: [0; 20], stale_special_start: 0 };
     let m = generate_exact(data, &s, &input).unwrap();
     eprintln!("{}", m.briefing.lines.join("\n"));
     eprintln!("orders: {:?}", m.orders);
@@ -52,8 +62,14 @@ fn random_missions_do_not_panic() {
             };
             let seed = if i % 2 == 0 { Seed::Srand(next() as u16) } else { Seed::Holdrand(next()) };
             let m = generate(data, &s, seed).unwrap_or_else(|e| panic!("{s:?} {seed:?}: {e}"));
-            assert_eq!(handoff_block(&m).len(), handoff_names_offset(&m) + NAMES_BYTES + 256 + 4 + 16 + 36);
-            assert!((1..=8).contains(&m.primary.mission_type) && (1..=8).contains(&m.secondary.mission_type));
+            assert_eq!(
+                handoff_block(&m).len(),
+                handoff_names_offset(&m) + NAMES_BYTES + 256 + 4 + 16 + 36
+            );
+            assert!(
+                (1..=8).contains(&m.primary.mission_type)
+                    && (1..=8).contains(&m.secondary.mission_type)
+            );
             assert!(!m.orders.primary.is_empty() && !m.briefing.lines.is_empty());
             types[m.primary.mission_type as usize] += 1;
             types[m.secondary.mission_type as usize] += 1;
@@ -66,7 +82,13 @@ fn random_missions_do_not_panic() {
 #[test]
 fn briefing_wording_varies_by_seed() {
     let data = data();
-    let s = MissionSettings { theater: 3, roe: 1, kind: MissionKind::Strike, opponents: 1, ..Default::default() };
+    let s = MissionSettings {
+        theater: 3,
+        roe: 1,
+        kind: MissionKind::Strike,
+        opponents: 1,
+        ..Default::default()
+    };
     let brief = |h: u32| generate(data, &s, Seed::Holdrand(h)).unwrap();
     let a = brief(0x1234_5678);
     assert_eq!(a.briefing, brief(0x1234_5678).briefing);
@@ -74,7 +96,11 @@ fn briefing_wording_varies_by_seed() {
     for h in 0..400u32 {
         let m = brief(h.wrapping_mul(0x0101_0F0F));
         assert!(!m.briefing.primary_summary.is_empty() && !m.briefing.primary_objective.is_empty());
-        assert!(!m.briefing.lines.iter().any(|l| l.contains('{')), "unfilled placeholder: {:?}", m.briefing.lines);
+        assert!(
+            !m.briefing.lines.iter().any(|l| l.contains('{')),
+            "unfilled placeholder: {:?}",
+            m.briefing.lines
+        );
         summaries.entry(m.primary.row).or_default().insert(m.briefing.primary_summary.clone());
     }
     assert!(summaries.values().any(|v| v.len() > 1), "no row showed more than one summary");

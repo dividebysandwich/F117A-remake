@@ -155,17 +155,29 @@ impl MfdState {
     /// The tracking camera page is up (classic: the right MFD's camera page; modern: the
     /// targeting pod on either MFD).
     pub fn camera_shown(&self) -> bool {
-        if self.modern { self.av.shown(crate::avionics::Format::Tgp).is_some() } else { self.right == RightMfd::Camera }
+        if self.modern {
+            self.av.shown(crate::avionics::Format::Tgp).is_some()
+        } else {
+            self.right == RightMfd::Camera
+        }
     }
 
     /// The moving map is up (classic: the left MFD's map; modern: the MAP format).
     pub fn map_shown(&self) -> bool {
-        if self.modern { self.av.shown(crate::avionics::Format::Map).is_some() && !self.av.map_way } else { self.left == LeftMfd::Map }
+        if self.modern {
+            self.av.shown(crate::avionics::Format::Map).is_some() && !self.av.map_way
+        } else {
+            self.left == LeftMfd::Map
+        }
     }
 
     /// The tracking camera page is on this MFD.
     pub fn camera_on(&self, side: MfdSide) -> bool {
-        if self.modern { self.av.shown(crate::avionics::Format::Tgp) == Some(side) } else { side == MfdSide::Right && self.right == RightMfd::Camera }
+        if self.modern {
+            self.av.shown(crate::avionics::Format::Tgp) == Some(side)
+        } else {
+            side == MfdSide::Right && self.right == RightMfd::Camera
+        }
     }
 }
 
@@ -226,24 +238,51 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
     Some(match (side, slot) {
         (MfdSide::Left, 0) => ("MAP", cmd(MfdCmd::LeftPage(LeftMfd::Map)), s.left == LeftMfd::Map),
         (MfdSide::Left, 1) => ("TAC", cmd(MfdCmd::LeftPage(LeftMfd::Tac)), s.left == LeftMfd::Tac),
-        (MfdSide::Left, 4) if s.left == LeftMfd::Map => (if s.map_heading_up { "HUP" } else { "NUP" }, cmd(MfdCmd::ToggleOrient), false),
+        (MfdSide::Left, 4) if s.left == LeftMfd::Map => {
+            (if s.map_heading_up { "HUP" } else { "NUP" }, cmd(MfdCmd::ToggleOrient), false)
+        }
         (MfdSide::Left, 5) => ("ZM-", cmd(MfdCmd::ZoomOut), false),
         (MfdSide::Left, 6) => ("ZM+", cmd(MfdCmd::ZoomIn), false),
-        (MfdSide::Right, 0) => ("TC", cmd(MfdCmd::RightPage(RightMfd::Camera)), s.right == RightMfd::Camera),
-        (MfdSide::Right, 1) => ("WAY", cmd(MfdCmd::RightPage(RightMfd::Way)), s.right == RightMfd::Way),
-        (MfdSide::Right, 2) => ("WPN", cmd(MfdCmd::RightPage(RightMfd::Wpn)), s.right == RightMfd::Wpn),
-        (MfdSide::Right, 3) => ("ORD", cmd(MfdCmd::RightPage(RightMfd::Ord)), s.right == RightMfd::Ord),
+        (MfdSide::Right, 0) => {
+            ("TC", cmd(MfdCmd::RightPage(RightMfd::Camera)), s.right == RightMfd::Camera)
+        }
+        (MfdSide::Right, 1) => {
+            ("WAY", cmd(MfdCmd::RightPage(RightMfd::Way)), s.right == RightMfd::Way)
+        }
+        (MfdSide::Right, 2) => {
+            ("WPN", cmd(MfdCmd::RightPage(RightMfd::Wpn)), s.right == RightMfd::Wpn)
+        }
+        (MfdSide::Right, 3) => {
+            ("ORD", cmd(MfdCmd::RightPage(RightMfd::Ord)), s.right == RightMfd::Ord)
+        }
         (MfdSide::Right, 4) => ("FLIR", cmd(MfdCmd::Flir), s.flir),
         (MfdSide::Right, 5..=8) if s.right == RightMfd::Camera => {
-            let (label, dir) = [("AHD", CamDir::Ahead), ("RGT", CamDir::Right), ("REAR", CamDir::Rear), ("LFT", CamDir::Left)][slot as usize - 5];
+            let (label, dir) = [
+                ("AHD", CamDir::Ahead),
+                ("RGT", CamDir::Right),
+                ("REAR", CamDir::Rear),
+                ("LFT", CamDir::Left),
+            ][slot as usize - 5];
             (label, cmd(MfdCmd::Cam(dir)), s.cam_dir == dir)
         }
-        (MfdSide::Right, 5) if s.right == RightMfd::Way => ("WP-", Action(crate::input::Action::LastWaypoint), false),
-        (MfdSide::Right, 6) if s.right == RightMfd::Way => ("WP+", Action(crate::input::Action::NextWaypoint), false),
-        (MfdSide::Right, 7) if s.right == RightMfd::Way => ("RST", Action(crate::input::Action::ResetWaypoint), false),
-        (MfdSide::Right, 5) if s.right == RightMfd::Wpn => ("SEL", Action(crate::input::Action::SelectWeapon), false),
-        (MfdSide::Right, 6) if s.right == RightMfd::Wpn => (bomb_mode_label(s.ccrp), Action(crate::input::Action::BombMode), false),
-        (MfdSide::Right, 9) if s.right == RightMfd::Camera => (cam_zoom_label(s.cam_zoom), cmd(MfdCmd::CamZoomCycle), s.cam_zoom.is_some()),
+        (MfdSide::Right, 5) if s.right == RightMfd::Way => {
+            ("WP-", Action(crate::input::Action::LastWaypoint), false)
+        }
+        (MfdSide::Right, 6) if s.right == RightMfd::Way => {
+            ("WP+", Action(crate::input::Action::NextWaypoint), false)
+        }
+        (MfdSide::Right, 7) if s.right == RightMfd::Way => {
+            ("RST", Action(crate::input::Action::ResetWaypoint), false)
+        }
+        (MfdSide::Right, 5) if s.right == RightMfd::Wpn => {
+            ("SEL", Action(crate::input::Action::SelectWeapon), false)
+        }
+        (MfdSide::Right, 6) if s.right == RightMfd::Wpn => {
+            (bomb_mode_label(s.ccrp), Action(crate::input::Action::BombMode), false)
+        }
+        (MfdSide::Right, 9) if s.right == RightMfd::Camera => {
+            (cam_zoom_label(s.cam_zoom), cmd(MfdCmd::CamZoomCycle), s.cam_zoom.is_some())
+        }
         _ => return None,
     })
 }
@@ -264,7 +303,10 @@ pub fn cam_zoom_label(z: Option<u8>) -> &'static str {
 /// Applies a camera zoom command (`auto`: the zoom step the range gives now).
 pub fn cam_zoom(state: &mut MfdState, cmd: MfdCmd, auto: u8) {
     state.cam_zoom = match cmd {
-        MfdCmd::CamZoom(d) => Some((state.cam_zoom.unwrap_or(auto) as i32 + d as i32).clamp(0, CAM_ZOOM_MAX as i32) as u8),
+        MfdCmd::CamZoom(d) => {
+            Some((state.cam_zoom.unwrap_or(auto) as i32 + d as i32).clamp(0, CAM_ZOOM_MAX as i32)
+                as u8)
+        }
         MfdCmd::CamZoomCycle => match state.cam_zoom {
             None => Some(0),
             Some(z) if z < CAM_ZOOM_MAX => Some(z + 1),
@@ -476,8 +518,16 @@ impl Default for MissionClock {
     }
 }
 
-fn reset_mfd(mut state: ResMut<MfdState>, mut raster: ResMut<MapRaster>, settings: Res<crate::settings::Settings>) {
-    *state = MfdState { hires: settings.hires_displays(), modern: !settings.classic_avionics, ..default() };
+fn reset_mfd(
+    mut state: ResMut<MfdState>,
+    mut raster: ResMut<MapRaster>,
+    settings: Res<crate::settings::Settings>,
+) {
+    *state = MfdState {
+        hires: settings.hires_displays(),
+        modern: !settings.classic_avionics,
+        ..default()
+    };
     raster.invalidate();
     raster.geometry_theater.clear();
 }
@@ -503,20 +553,38 @@ fn mfd_keys(
     }
     for ActionEvent(a) in actions.read() {
         let cmd = match a {
-            Action::Maps if state.modern => MfdCmd::Format(MfdSide::Left, crate::avionics::next_left_format(state.av.formats[0])),
+            Action::Maps if state.modern => MfdCmd::Format(
+                MfdSide::Left,
+                crate::avionics::next_left_format(state.av.formats[0]),
+            ),
             Action::SwapSoi => MfdCmd::SwapSoi,
             Action::CameraZoomIn => MfdCmd::CamZoom(1),
             Action::CameraZoomOut => MfdCmd::CamZoom(-1),
             // Z / X zoom the targeting pod while it is the sensor of interest.
-            Action::Zoom if state.modern && state.av.soi_format() == Some(crate::avionics::Format::Tgp) => MfdCmd::CamZoom(1),
-            Action::Unzoom if state.modern && state.av.soi_format() == Some(crate::avionics::Format::Tgp) => MfdCmd::CamZoom(-1),
-            Action::Maps => MfdCmd::LeftPage(if state.left == LeftMfd::Map { LeftMfd::Tac } else { LeftMfd::Map }),
+            Action::Zoom
+                if state.modern && state.av.soi_format() == Some(crate::avionics::Format::Tgp) =>
+            {
+                MfdCmd::CamZoom(1)
+            }
+            Action::Unzoom
+                if state.modern && state.av.soi_format() == Some(crate::avionics::Format::Tgp) =>
+            {
+                MfdCmd::CamZoom(-1)
+            }
+            Action::Maps => MfdCmd::LeftPage(if state.left == LeftMfd::Map {
+                LeftMfd::Tac
+            } else {
+                LeftMfd::Map
+            }),
             Action::Zoom | Action::MapZoomIn => MfdCmd::ZoomIn,
             Action::Unzoom | Action::MapZoomOut => MfdCmd::ZoomOut,
             Action::MapOrientation => MfdCmd::ToggleOrient,
             Action::Ordnance => MfdCmd::RightPage(RightMfd::Wpn),
             Action::MissionOrders => MfdCmd::RightPage(RightMfd::Ord),
-            Action::SelectWaypoint | Action::ChangeWaypoint | Action::LastWaypoint | Action::NextWaypoint => MfdCmd::RightPage(RightMfd::Way),
+            Action::SelectWaypoint
+            | Action::ChangeWaypoint
+            | Action::LastWaypoint
+            | Action::NextWaypoint => MfdCmd::RightPage(RightMfd::Way),
             Action::Flir => MfdCmd::Flir,
             Action::CamAhead | Action::NearestTarget => MfdCmd::Cam(CamDir::Ahead),
             Action::CamRear => MfdCmd::Cam(CamDir::Rear),
@@ -612,7 +680,10 @@ impl MapView {
     pub fn to_screen(self, x: f64, y: f64) -> Vec2 {
         let (dx, dy) = ((x - self.centre.x) / self.scale, (y - self.centre.y) / self.scale);
         let (s, c) = self.rot.sin_cos();
-        Vec2::new((dx * c + dy * s) as f32 + self.size.x / 2.0, (-dx * s + dy * c) as f32 + self.size.y / 2.0)
+        Vec2::new(
+            (dx * c + dy * s) as f32 + self.size.x / 2.0,
+            (-dx * s + dy * c) as f32 + self.size.y / 2.0,
+        )
     }
 
     pub fn to_map(self, p: Vec2) -> DVec2 {
@@ -675,7 +746,13 @@ struct GeometrySource<'a> {
 
 impl GeometrySource<'_> {
     /// Collects the most detailed level of a model (intact, lights off).
-    fn collect(&self, handle: &Handle<GltfNode>, parent: Mat4, out: &mut Vec<(Vec<Vec3>, u8)>, lines: &mut Vec<(Vec3, Vec3, u8)>) {
+    fn collect(
+        &self,
+        handle: &Handle<GltfNode>,
+        parent: Mat4,
+        out: &mut Vec<(Vec<Vec3>, u8)>,
+        lines: &mut Vec<(Vec3, Vec3, u8)>,
+    ) {
         let Some(node) = self.nodes.get(handle) else { return };
         let name = node.name.as_str();
         if name.contains("_dots_") || conditions(name).iter().any(|&(_, v)| v != 0) {
@@ -695,14 +772,20 @@ impl GeometrySource<'_> {
             for prim in &mesh.primitives {
                 let colour = node_colour
                     .or_else(|| {
-                        prim.material.as_ref().and_then(|h| self.material_names.get(&h.id())).and_then(|n| index_from_name(n))
+                        prim.material
+                            .as_ref()
+                            .and_then(|h| self.material_names.get(&h.id()))
+                            .and_then(|n| index_from_name(n))
                     })
                     .unwrap_or(15);
                 let Some(data) = self.mesh_data.get(&prim.mesh) else { continue };
-                let Some(VertexAttributeValues::Float32x3(pos)) = data.attribute(Mesh::ATTRIBUTE_POSITION) else {
+                let Some(VertexAttributeValues::Float32x3(pos)) =
+                    data.attribute(Mesh::ATTRIBUTE_POSITION)
+                else {
                     continue;
                 };
-                let pos: Vec<Vec3> = pos.iter().map(|&p| m.transform_point3(Vec3::from(p))).collect();
+                let pos: Vec<Vec3> =
+                    pos.iter().map(|&p| m.transform_point3(Vec3::from(p))).collect();
                 let idx: Vec<usize> = match data.indices() {
                     Some(Indices::U16(v)) => v.iter().map(|&i| i as usize).collect(),
                     Some(Indices::U32(v)) => v.iter().map(|&i| i as usize).collect(),
@@ -730,7 +813,13 @@ impl GeometrySource<'_> {
 }
 
 /// Flat map geometry of a theater's models (`<id>_NNN` nodes of its loaded glTF file).
-pub(crate) fn map_models(id: &str, g: &Gltf, nodes: &Assets<GltfNode>, meshes: &Assets<GltfMesh>, mesh_data: &Assets<Mesh>) -> HashMap<u8, MapModel> {
+pub(crate) fn map_models(
+    id: &str,
+    g: &Gltf,
+    nodes: &Assets<GltfNode>,
+    meshes: &Assets<GltfMesh>,
+    mesh_data: &Assets<Mesh>,
+) -> HashMap<u8, MapModel> {
     let src = GeometrySource {
         nodes,
         meshes,
@@ -759,7 +848,10 @@ pub(crate) fn map_models(id: &str, g: &Gltf, nodes: &Assets<GltfNode>, meshes: &
             shape,
             MapModel {
                 attr,
-                tris: tris.into_iter().map(|(p, c)| ([flat(p[0]), flat(p[1]), flat(p[2])], c)).collect(),
+                tris: tris
+                    .into_iter()
+                    .map(|(p, c)| ([flat(p[0]), flat(p[1]), flat(p[2])], c))
+                    .collect(),
                 lines: lines.into_iter().map(|(a, b, c)| (flat(a), flat(b), c)).collect(),
             },
         );
@@ -797,7 +889,10 @@ fn build_map_geometry(
 /// centre (112, 139) on the 320x200 screen is (38, 29) in the display).
 pub fn map_to_screen(centre: (i32, i32), zoom: i32, x: f64, y: f64) -> Vec2 {
     let s = (1i32 << (10 - zoom)) as f64;
-    Vec2::new((38.0 + (x - centre.0 as f64) / s) as f32, (29.0 + (y - centre.1 as f64) * 0.75 / s) as f32)
+    Vec2::new(
+        (38.0 + (x - centre.0 as f64) / s) as f32,
+        (29.0 + (y - centre.1 as f64) * 0.75 / s) as f32,
+    )
 }
 
 /// Map centre for an aircraft position: ahead along the heading, clamped to the theater.
@@ -826,16 +921,28 @@ fn render_map(
     let (x, y) = map_units(pos);
     let (h, _, _) = a.euler();
     let zoom = state.map_zoom;
-    let map16 = palette.remaps.iter().find(|t| t.name == "map16").map(|t| t.entries.clone()).unwrap_or_default();
+    let map16 = palette
+        .remaps
+        .iter()
+        .find(|t| t.name == "map16")
+        .map(|t| t.entries.clone())
+        .unwrap_or_default();
     let remap = |c: u8| map16.get(c as usize).map_or(c, |w| (*w & 0xFF) as u8);
     let raster = raster.as_mut();
 
     if state.hires {
         let (bx, by) = bevy_to_map(pos);
-        let view = hires_view(DVec2::new(bx, by), h as f64, zoom, state.map_heading_up, Vec2::new(HIRES.0 as f32, HIRES.1 as f32));
+        let view = hires_view(
+            DVec2::new(bx, by),
+            h as f64,
+            zoom,
+            state.map_heading_up,
+            Vec2::new(HIRES.0 as f32, HIRES.1 as f32),
+        );
         if raster.buf_valid && raster.buf_view.scale == view.scale {
             // Re-render when the display gets near the buffer's edge.
-            let corners = [Vec2::ZERO, Vec2::new(view.size.x, 0.0), view.size, Vec2::new(0.0, view.size.y)];
+            let corners =
+                [Vec2::ZERO, Vec2::new(view.size.x, 0.0), view.size, Vec2::new(0.0, view.size.y)];
             let lim = BUFFER as f32 - BUFFER_MARGIN;
             let inside = corners.iter().all(|&c| {
                 let m = view.to_map(c);
@@ -846,7 +953,12 @@ fn render_map(
                 return;
             }
         }
-        let bv = MapView { centre: view.centre, scale: view.scale, rot: 0.0, size: Vec2::splat(BUFFER as f32) };
+        let bv = MapView {
+            centre: view.centre,
+            scale: view.scale,
+            rot: 0.0,
+            size: Vec2::splat(BUFFER as f32),
+        };
         raster.buf_view = bv;
         raster.buf_valid = true;
         let half = bv.size.x as f64 / 2.0 * bv.scale * 32.0;
@@ -859,7 +971,11 @@ fn render_map(
     if raster.valid {
         // Re-render when the aircraft leaves the display.
         let p = map_to_screen(raster.centre, raster.zoom, x as f64, y as f64);
-        if p.x >= 0.0 && p.x <= (CLASSIC.0 - 1) as f32 && p.y >= 0.0 && p.y <= (CLASSIC.1 - 1) as f32 {
+        if p.x >= 0.0
+            && p.x <= (CLASSIC.0 - 1) as f32
+            && p.y >= 0.0
+            && p.y <= (CLASSIC.1 - 1) as f32
+        {
             return;
         }
     }
@@ -869,8 +985,11 @@ fn render_map(
     raster.valid = true;
     // Visible world rectangle (with margin).
     let s = (1i32 << (10 - zoom)) as f64 * 32.0;
-    let visible = (centre.0 as f64 * 32.0, (0x8000 - centre.1) as f64 * 32.0, 40.0 * s, 32.0 * s / 0.75);
-    let to_px = |east: f64, north: f64| map_to_screen(centre, zoom, east / 32.0, 0x8000 as f64 - north / 32.0);
+    let visible =
+        (centre.0 as f64 * 32.0, (0x8000 - centre.1) as f64 * 32.0, 40.0 * s, 32.0 * s / 0.75);
+    let to_px = |east: f64, north: f64| {
+        map_to_screen(centre, zoom, east / 32.0, 0x8000 as f64 - north / 32.0)
+    };
     rasterise_map(&mut raster.canvas, &raster.models, &theater, &to_px, visible, zoom, &remap);
 }
 
@@ -909,20 +1028,35 @@ pub(crate) fn rasterise_map(
         for row in r0.max(lo)..=r1.min(GRID_DIM[level] + lo - 1) {
             for col in c0.max(lo)..=c1.min(GRID_DIM[level] + lo - 1) {
                 let tile_type = theater.grid.tile(level, col, row) as usize;
-                let Some(objects) = theater.tiles.tiles.get(level).and_then(|t| t.get(tile_type)) else { continue };
-                let (tx, ty) = ((col as f64 * 4096.0 + 2048.0) * unit, (row as f64 * 4096.0 + 2048.0) * unit);
+                let Some(objects) = theater.tiles.tiles.get(level).and_then(|t| t.get(tile_type))
+                else {
+                    continue;
+                };
+                let (tx, ty) =
+                    ((col as f64 * 4096.0 + 2048.0) * unit, (row as f64 * 4096.0 + 2048.0) * unit);
                 for o in objects.iter().filter(|o| o.z == 0) {
                     let Some(m) = models.get(&o.shape) else { continue };
                     if level >= 3 && (m.attr & 0x80 != 0) != flagged {
                         continue;
                     }
-                    let place = |p: Vec2| to_px(tx + (o.x as f64 + p.x as f64) * unit, ty + (o.y as f64 + p.y as f64) * unit);
+                    let place = |p: Vec2| {
+                        to_px(
+                            tx + (o.x as f64 + p.x as f64) * unit,
+                            ty + (o.y as f64 + p.y as f64) * unit,
+                        )
+                    };
                     for (t, colour) in &m.tris {
                         fill_triangle(c, [place(t[0]), place(t[1]), place(t[2])], remap(*colour));
                     }
                     for (a, b, colour) in &m.lines {
                         let (a, b) = (place(*a), place(*b));
-                        c.line(a.x.floor() as i32, a.y.floor() as i32, b.x.floor() as i32, b.y.floor() as i32, remap(*colour));
+                        c.line(
+                            a.x.floor() as i32,
+                            a.y.floor() as i32,
+                            b.x.floor() as i32,
+                            b.y.floor() as i32,
+                            remap(*colour),
+                        );
                     }
                 }
             }
@@ -1127,21 +1261,45 @@ impl MfdParams<'_, '_> {
         }
         let s = if k == 1 { 1 } else { 2 };
         let icon = |c: &mut Canvas, kind: i32, x: i32, y: i32| {
-            c.blit_scaled(&art.sprites, kind * 8 + 1, 65, 7, 7, x - 3 * s - s / 2, y - 3 * s - s / 2, s, Some(0), None);
+            c.blit_scaled(
+                &art.sprites,
+                kind * 8 + 1,
+                65,
+                7,
+                7,
+                x - 3 * s - s / 2,
+                y - 3 * s - s / 2,
+                s,
+                Some(0),
+                None,
+            );
         };
         // Aircraft: a triangle pointing along `rel` (radians clockwise from display up).
         let plane = |c: &mut Canvas, rel: f32, x: i32, y: i32, colour: u8| {
-            let centre = Vec2::new(x as f32, y as f32) + if s == 1 { Vec2::splat(0.5) } else { Vec2::ZERO };
+            let centre =
+                Vec2::new(x as f32, y as f32) + if s == 1 { Vec2::splat(0.5) } else { Vec2::ZERO };
             let (sr, cr) = rel.sin_cos();
             let (fwd, side) = (Vec2::new(sr, -cr) * s as f32, Vec2::new(cr, sr) * s as f32);
-            c.triangle([centre + fwd * 4.0, centre - fwd * 3.0 - side * 2.3, centre - fwd * 3.0 + side * 2.3], colour);
+            c.triangle(
+                [
+                    centre + fwd * 4.0,
+                    centre - fwd * 3.0 - side * 2.3,
+                    centre - fwd * 3.0 + side * 2.3,
+                ],
+                colour,
+            );
         };
         // Attack drone: a small open delta.
         let drone = |c: &mut Canvas, rel: f32, x: i32, y: i32, colour: u8| {
-            let centre = Vec2::new(x as f32, y as f32) + if s == 1 { Vec2::splat(0.5) } else { Vec2::ZERO };
+            let centre =
+                Vec2::new(x as f32, y as f32) + if s == 1 { Vec2::splat(0.5) } else { Vec2::ZERO };
             let (sr, cr) = rel.sin_cos();
             let (fwd, side) = (Vec2::new(sr, -cr) * s as f32, Vec2::new(cr, sr) * s as f32);
-            let p = [centre + fwd * 3.0, centre - fwd * 2.0 - side * 2.5, centre - fwd * 2.0 + side * 2.5];
+            let p = [
+                centre + fwd * 3.0,
+                centre - fwd * 2.0 - side * 2.5,
+                centre - fwd * 2.0 + side * 2.5,
+            ];
             for (a, b) in [(p[0], p[1]), (p[1], p[2]), (p[2], p[0])] {
                 c.line(a.x as i32, a.y as i32, b.x as i32, b.y as i32, colour);
             }
@@ -1165,7 +1323,8 @@ impl MfdParams<'_, '_> {
             }
             match ct.kind {
                 ContactKind::Aircraft => {
-                    let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16) as f32 / 65536.0 * std::f32::consts::TAU;
+                    let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16) as f32 / 65536.0
+                        * std::f32::consts::TAU;
                     // Friendly blue; hostile red level with us, dark red below, yellow above.
                     let dalt = ct.alt - a.altitude;
                     let colour = if ct.friendly {
@@ -1180,7 +1339,8 @@ impl MfdParams<'_, '_> {
                     plane(c, rel, x, y, colour);
                 }
                 ContactKind::Drone => {
-                    let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16) as f32 / 65536.0 * std::f32::consts::TAU;
+                    let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16) as f32 / 65536.0
+                        * std::f32::consts::TAU;
                     drone(c, rel, x, y, 13);
                 }
                 ContactKind::Missile => {
@@ -1223,8 +1383,19 @@ impl MfdParams<'_, '_> {
     }
 
     fn camera_background(&self, c: &mut Canvas, k: i32) {
-        const SKY: [(i32, u8); 11] =
-            [(3, 138), (6, 137), (6, 136), (3, 135), (3, 134), (3, 133), (1, 132), (2, 131), (1, 129), (1, 128), (31, 238)];
+        const SKY: [(i32, u8); 11] = [
+            (3, 138),
+            (6, 137),
+            (6, 136),
+            (3, 135),
+            (3, 134),
+            (3, 133),
+            (1, 132),
+            (2, 131),
+            (1, 129),
+            (1, 128),
+            (31, 238),
+        ];
         if self.cam.live {
             c.clear(0);
             return;
@@ -1233,7 +1404,13 @@ impl MfdParams<'_, '_> {
         let mut y = 0;
         for (rows, colour) in SKY {
             // FLIR: black and white, dark sky over grey ground (the grey ramp 0xE0..0xEF).
-            let colour = if !flir { colour } else if colour == 238 { 0xEB } else { 0xEF };
+            let colour = if !flir {
+                colour
+            } else if colour == 238 {
+                0xEB
+            } else {
+                0xEF
+            };
             c.fill_rect(0, y, c.w as i32, rows * k, colour);
             y += rows * k;
         }
@@ -1246,7 +1423,8 @@ impl MfdParams<'_, '_> {
 
     /// Clock time shown on the WAY page.
     fn way_time(&self, ac: Option<(&Aircraft, &WorldPos)>) -> f32 {
-        self.clock.start_seconds + self.clock.elapsed.unwrap_or_else(|| ac.map_or(0.0, |(a, _)| a.time))
+        self.clock.start_seconds
+            + self.clock.elapsed.unwrap_or_else(|| ac.map_or(0.0, |(a, _)| a.time))
     }
 
     /// Waypoint legs from the aircraft: (km, minutes, ETA seconds) at the current speed (at
@@ -1267,7 +1445,13 @@ impl MfdParams<'_, '_> {
     }
 
     fn way_colour(&self, i: usize) -> u8 {
-        if i == self.waypoints.current { 15 } else if i % 2 == 1 { 3 } else { 11 }
+        if i == self.waypoints.current {
+            15
+        } else if i % 2 == 1 {
+            3
+        } else {
+            11
+        }
     }
 
     /// WAY page.
@@ -1280,8 +1464,22 @@ impl MfdParams<'_, '_> {
             for (i, (km, minutes, eta)) in self.legs(t, a, pos).into_iter().enumerate() {
                 let (eh, em, _) = hms(eta as f32);
                 let colour = self.way_colour(i);
-                mfd_text(c, fonts, 1, 1 + 2 * i as i32, &format!("WAYPOINT {}-{} KM", i + 1, km as i64), colour);
-                mfd_text(c, fonts, 1, 2 + 2 * i as i32, &format!("{} MIN. ETA {eh:02}:{em:02}", minutes as i64), colour);
+                mfd_text(
+                    c,
+                    fonts,
+                    1,
+                    1 + 2 * i as i32,
+                    &format!("WAYPOINT {}-{} KM", i + 1, km as i64),
+                    colour,
+                );
+                mfd_text(
+                    c,
+                    fonts,
+                    1,
+                    2 + 2 * i as i32,
+                    &format!("{} MIN. ETA {eh:02}:{em:02}", minutes as i64),
+                    colour,
+                );
             }
             // Fuel bar (y 54..57): remaining fuel in green.
             let w = ((a.fuel / FULL_FUEL).clamp(0.0, 1.0) * 75.0).round() as i32;
@@ -1324,7 +1522,14 @@ impl MfdParams<'_, '_> {
 
     /// The modern map; `modern`: the modern avionics' MAP format (muted terrain, no orientation
     /// tag: it is on a bezel button).
-    pub(crate) fn draw_map_hires(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>, modern: bool) {
+    pub(crate) fn draw_map_hires(
+        &self,
+        c: &mut Canvas,
+        art: &CockpitArt,
+        fonts: &Fonts,
+        ac: Option<(&Aircraft, &WorldPos)>,
+        modern: bool,
+    ) {
         let r = &self.raster;
         let Some((a, pos)) = ac.filter(|_| r.buf_valid) else {
             c.clear(6);
@@ -1332,7 +1537,13 @@ impl MfdParams<'_, '_> {
         };
         let (px, py) = bevy_to_map(pos);
         let (h, _, _) = a.euler();
-        let view = hires_view(DVec2::new(px, py), h as f64, self.state.map_zoom, self.state.map_heading_up, Vec2::new(c.w as f32, c.h as f32));
+        let view = hires_view(
+            DVec2::new(px, py),
+            h as f64,
+            self.state.map_zoom,
+            self.state.map_heading_up,
+            Vec2::new(c.w as f32, c.h as f32),
+        );
         // Resample the north-up buffer (nearest pixel); the modern format mutes the terrain.
         let tones = if modern { self.modern_tones() } else { std::array::from_fn(|i| i as u8) };
         let (w, ht, s) = (c.pw(), c.ph(), c.scale as f32);
@@ -1341,7 +1552,11 @@ impl MfdParams<'_, '_> {
                 let m = view.to_map(Vec2::new(x as f32 + 0.5, y as f32 + 0.5) / s);
                 let b = r.buf_view.to_screen(m.x, m.y);
                 let (bx, by) = (b.x.floor() as i32, b.y.floor() as i32);
-                let v = if bx >= 0 && by >= 0 && (bx as usize) < BUFFER && (by as usize) < BUFFER { r.buffer.px[by as usize * BUFFER + bx as usize] } else { 6 };
+                let v = if bx >= 0 && by >= 0 && (bx as usize) < BUFFER && (by as usize) < BUFFER {
+                    r.buffer.px[by as usize * BUFFER + bx as usize]
+                } else {
+                    6
+                };
                 c.px[y * w + x] = tones[v as usize];
             }
         }
@@ -1378,7 +1593,18 @@ impl MfdParams<'_, '_> {
         if let Some(t) = &self.theater {
             for o in t.world.objects.iter().filter(|o| o.target_flags & 0x100 != 0) {
                 let p = view.to_screen(o.x as f64, o.y as f64);
-                c.blit_scaled(&art.sprites, AIRBASE_ICON * 8 + 1, 65, 7, 7, p.x as i32 - 7, p.y as i32 - 7, 2, Some(0), None);
+                c.blit_scaled(
+                    &art.sprites,
+                    AIRBASE_ICON * 8 + 1,
+                    65,
+                    7,
+                    7,
+                    p.x as i32 - 7,
+                    p.y as i32 - 7,
+                    2,
+                    Some(0),
+                    None,
+                );
             }
         }
         let blink = crate::hud::blink(&self.time);
@@ -1420,7 +1646,11 @@ impl MfdParams<'_, '_> {
             let o = Vec2::new(w as f32 - 16.0, 18.0);
             let (p, q) = (o - n * 8.0, o + n * 8.0);
             c.line(p.x as i32, p.y as i32, q.x as i32, q.y as i32, 15);
-            let tip = [q, q - n * 4.0 + Vec2::new(-n.y, n.x) * 3.0, q - n * 4.0 - Vec2::new(-n.y, n.x) * 3.0];
+            let tip = [
+                q,
+                q - n * 4.0 + Vec2::new(-n.y, n.x) * 3.0,
+                q - n * 4.0 - Vec2::new(-n.y, n.x) * 3.0,
+            ];
             fill_triangle(c, tip, 15);
             let l = o - n * 14.0;
             fonts.text_scaled(c, l.x as i32 - 3, l.y as i32 - 5, b"N", 15, 2);
@@ -1429,7 +1659,11 @@ impl MfdParams<'_, '_> {
             text2(c, fonts, 10, 6, if self.state.map_heading_up { "HUP" } else { "NUP" }, 15);
         }
         let px_per_km = 1000.0 / (WU * 32.0 * view.scale);
-        let km = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0].into_iter().rev().find(|k| k * px_per_km <= 60.0).unwrap_or(0.5);
+        let km = [0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0]
+            .into_iter()
+            .rev()
+            .find(|k| k * px_per_km <= 60.0)
+            .unwrap_or(0.5);
         let len = (km * px_per_km) as i32;
         let (x0, y0) = (10, ht - 6);
         c.hline(x0, x0 + len, y0, 15);
@@ -1464,7 +1698,13 @@ impl MfdParams<'_, '_> {
         t
     }
 
-    fn draw_tac_hires(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>) {
+    fn draw_tac_hires(
+        &self,
+        c: &mut Canvas,
+        art: &CockpitArt,
+        fonts: &Fonts,
+        ac: Option<(&Aircraft, &WorldPos)>,
+    ) {
         self.tac(c, art, ac, K);
         // Grid spacing readout.
         let km = 1024.0 * 32.0 * WU / 1000.0;
@@ -1495,7 +1735,12 @@ impl MfdParams<'_, '_> {
         }
     }
 
-    pub(crate) fn draw_way_hires(&self, c: &mut Canvas, fonts: &Fonts, ac: Option<(&Aircraft, &WorldPos)>) {
+    pub(crate) fn draw_way_hires(
+        &self,
+        c: &mut Canvas,
+        fonts: &Fonts,
+        ac: Option<(&Aircraft, &WorldPos)>,
+    ) {
         c.clear(1);
         let t = self.way_time(ac);
         let (hh, mm, ss) = hms(t);
@@ -1509,7 +1754,14 @@ impl MfdParams<'_, '_> {
             if i == self.waypoints.current {
                 c.fill_rect(2, y - 3, c.w as i32 - 4, 16, 8);
             }
-            text2(c, fonts, 6, y, &format!("{}  {:>5} {:>5}  {eh:02}:{em:02}", i + 1, km as i64, minutes as i64), self.way_colour(i));
+            text2(
+                c,
+                fonts,
+                6,
+                y,
+                &format!("{}  {:>5} {:>5}  {eh:02}:{em:02}", i + 1, km as i64, minutes as i64),
+                self.way_colour(i),
+            );
         }
         // Fuel bar: remaining fuel in green.
         text2(c, fonts, 6, 156, "FUEL", 15);
@@ -1532,7 +1784,18 @@ impl MfdParams<'_, '_> {
             }
             if let Some((sx, sy)) = ordnance_picture(bay.picture) {
                 // The side view without the picture's frame lines.
-                c.blit_scaled(&art.ordnance, sx + 1, sy + 1, 75, 13, w - 152, y + (row - 26) / 2, 2, Some(0), None);
+                c.blit_scaled(
+                    &art.ordnance,
+                    sx + 1,
+                    sy + 1,
+                    75,
+                    13,
+                    w - 152,
+                    y + (row - 26) / 2,
+                    2,
+                    Some(0),
+                    None,
+                );
             }
             text2(c, fonts, 6, y + 6, &bay.name, 47);
             text2(c, fonts, 6, y + 22, &format!("X{}", bay.count), 47);
@@ -1581,8 +1844,10 @@ enum TacIcon {
 
 /// Classic TAC icons, 7x7 around the middle pixel: `g` light green, `w` white, `r` red,
 /// `p` light red, `.` clear.
-const AIRFIELD_PIXELS: [&[u8; 7]; 7] = [b"..ggg..", b".g.w.g.", b"g.www.g", b"g..w..g", b"g.www.g", b".g.w.g.", b"..ggg.."];
-const RADAR_PIXELS: [&[u8; 7]; 7] = [b".p...p.", b"p.rrr.p", b"p..r..p", b".p.r.p.", b"...r...", b"..rrr..", b"......."];
+const AIRFIELD_PIXELS: [&[u8; 7]; 7] =
+    [b"..ggg..", b".g.w.g.", b"g.www.g", b"g..w..g", b"g.www.g", b".g.w.g.", b"..ggg.."];
+const RADAR_PIXELS: [&[u8; 7]; 7] =
+    [b".p...p.", b"p.rrr.p", b"p..r..p", b".p.r.p.", b"...r...", b"..rrr..", b"......."];
 
 /// A TAC icon centred on (x, y): pixel art on the classic display, drawn at the modern
 /// display's resolution otherwise.
@@ -1608,19 +1873,20 @@ fn tac_icon(c: &mut Canvas, icon: TacIcon, x: i32, y: i32, hires: bool) {
     }
     // Pixels whose centres are within `r0..r1` of (cx, cy), between angles `a0..a1` (radians
     // counter-clockwise from screen right).
-    let ring = |c: &mut Canvas, cx: f32, cy: f32, r0: f32, r1: f32, a0: f32, a1: f32, colour: u8| {
-        let n = r1.ceil() as i32 + 1;
-        for j in -n..=n {
-            for i in -n..=n {
-                let (px, py) = (cx.floor() as i32 + i, cy.floor() as i32 + j);
-                let d = Vec2::new(px as f32 + 0.5 - cx, cy - (py as f32 + 0.5));
-                let t = d.y.atan2(d.x);
-                if (r0..=r1).contains(&d.length()) && (a0..=a1).contains(&t) {
-                    c.set(px, py, colour);
+    let ring =
+        |c: &mut Canvas, cx: f32, cy: f32, r0: f32, r1: f32, a0: f32, a1: f32, colour: u8| {
+            let n = r1.ceil() as i32 + 1;
+            for j in -n..=n {
+                for i in -n..=n {
+                    let (px, py) = (cx.floor() as i32 + i, cy.floor() as i32 + j);
+                    let d = Vec2::new(px as f32 + 0.5 - cx, cy - (py as f32 + 0.5));
+                    let t = d.y.atan2(d.x);
+                    if (r0..=r1).contains(&d.length()) && (a0..=a1).contains(&t) {
+                        c.set(px, py, colour);
+                    }
                 }
             }
-        }
-    };
+        };
     let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
     let pi = std::f32::consts::PI;
     match icon {
@@ -1655,7 +1921,12 @@ mod tests {
 
     #[test]
     fn map_view_round_trip() {
-        let v = MapView { centre: DVec2::new(1000.0, 2000.0), scale: 2.5, rot: 0.7, size: Vec2::new(231.0, 180.0) };
+        let v = MapView {
+            centre: DVec2::new(1000.0, 2000.0),
+            scale: 2.5,
+            rot: 0.7,
+            size: Vec2::new(231.0, 180.0),
+        };
         for p in [Vec2::ZERO, Vec2::new(30.0, 170.0), Vec2::new(231.0, 2.0)] {
             let m = v.to_map(p);
             assert!(v.to_screen(m.x, m.y).distance(p) < 1e-3);

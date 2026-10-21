@@ -18,11 +18,13 @@ use stealth_mission::weather::{CELL, Cloud, CloudKind, STORM_CELL};
 use stealth_mission::{Sky, Weather};
 
 use crate::camera::EyeCamera;
-use crate::trackcam::TrackCamera;
 use crate::mission::ActiveMission;
 use crate::palette::Palette;
-use crate::palette_material::{FLAG_CLOUD, FLAG_CLOUD_COVERAGE, FLAG_CLOUD_SOLID, PaletteMaterial, PaletteParams, mesh_tag};
+use crate::palette_material::{
+    FLAG_CLOUD, FLAG_CLOUD_COVERAGE, FLAG_CLOUD_SOLID, PaletteMaterial, PaletteParams, mesh_tag,
+};
 use crate::settings::{AppState, SetupSet};
+use crate::trackcam::TrackCamera;
 use crate::world::{FloatingOrigin, WU, WorldPos, wu_to_bevy};
 
 pub struct WeatherPlugin;
@@ -35,7 +37,10 @@ impl Plugin for WeatherPlugin {
             .add_systems(OnExit(AppState::Flight), teardown_weather)
             .add_systems(
                 Update,
-                turbulence.after(crate::flight::FlightSystems).before(crate::camera::RigSystems).run_if(in_state(AppState::Flight)),
+                turbulence
+                    .after(crate::flight::FlightSystems)
+                    .before(crate::camera::RigSystems)
+                    .run_if(in_state(AppState::Flight)),
             )
             .add_systems(
                 PostUpdate,
@@ -121,8 +126,18 @@ impl WeatherState {
     pub fn globals(&self, origin: DVec3) -> (Vec4, Vec4, Vec4, Vec4) {
         let w = &self.weather;
         let l = w.stratus;
-        let clouds = Vec4::new(l.base_ft as f32 * WU as f32, l.top_ft as f32 * WU as f32, l.present() as u32 as f32, self.whiteout);
-        let stratus = Vec4::new(w.stratus_threshold as f32 / 65535.0, (w.seed & 0xFFFF) as f32, origin.x as f32, origin.z as f32);
+        let clouds = Vec4::new(
+            l.base_ft as f32 * WU as f32,
+            l.top_ft as f32 * WU as f32,
+            l.present() as u32 as f32,
+            self.whiteout,
+        );
+        let stratus = Vec4::new(
+            w.stratus_threshold as f32 / 65535.0,
+            (w.seed & 0xFFFF) as f32,
+            origin.x as f32,
+            origin.z as f32,
+        );
         let vis_m = (w.vis_km as f32 * 1000.0).max(4000.0);
         let noise = Vec4::new(
             origin.x.rem_euclid(NOISE_PERIOD) as f32,
@@ -176,7 +191,9 @@ fn unit(h: u64) -> f32 {
 /// A cumulus shape: a lumpy faceted dome with a flat base, x/z in about -1..1, y in 0..1.
 fn cumulus_mesh(seed: u32) -> Mesh {
     let mut mesh = positions_only(Sphere::new(1.0).mesh().ico(1).expect("icosphere"));
-    if let Some(VertexAttributeValues::Float32x3(pos)) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
+    if let Some(VertexAttributeValues::Float32x3(pos)) =
+        mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+    {
         for (i, p) in pos.iter_mut().enumerate() {
             let bump = 0.8 + 0.35 * unit(hash(((seed as u64) << 32) | i as u64));
             let v = Vec3::from(*p) * bump;
@@ -208,10 +225,15 @@ fn tower_mesh(seed: u32) -> Mesh {
         let row: Vec<Vec3> = (0..SIDES)
             .map(|j| {
                 let h = hash(((seed as u64) << 32) | (r * SIDES + j) as u64);
-                let a = (j as f32 + 0.3 * (unit(h >> 32) - 0.5)) / SIDES as f32 * std::f32::consts::TAU;
+                let a =
+                    (j as f32 + 0.3 * (unit(h >> 32) - 0.5)) / SIDES as f32 * std::f32::consts::TAU;
                 let rad = tower_radius(y) * (0.82 + 0.3 * unit(h));
                 // Base and top stay level.
-                let dy = if r == 0 || r == RINGS.len() - 1 { 0.0 } else { 0.025 * (unit(h >> 16) - 0.5) };
+                let dy = if r == 0 || r == RINGS.len() - 1 {
+                    0.0
+                } else {
+                    0.025 * (unit(h >> 16) - 0.5)
+                };
                 Vec3::new(a.cos() * rad, y + dy, a.sin() * rad)
             })
             .collect();
@@ -238,7 +260,9 @@ fn tower_mesh(seed: u32) -> Mesh {
     let last = RINGS.len() - 1;
     for j in 0..SIDES {
         let k = (j + 1) % SIDES;
-        for (centre, a, b, up) in [(Vec3::ZERO, ring[0][j], ring[0][k], -1.0), (top, ring[last][j], ring[last][k], 1.0)] {
+        for (centre, a, b, up) in
+            [(Vec3::ZERO, ring[0][j], ring[0][k], -1.0), (top, ring[last][j], ring[last][k], 1.0)]
+        {
             let mut t = [centre, a, b];
             if (t[1] - t[0]).cross(t[2] - t[0]).y * up < 0.0 {
                 t.swap(1, 2);
@@ -247,7 +271,11 @@ fn tower_mesh(seed: u32) -> Mesh {
         }
     }
     let pos: Vec<Vec3> = tris.into_iter().flatten().collect();
-    Mesh::new(bevy::mesh::PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default()).with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
+    Mesh::new(
+        bevy::mesh::PrimitiveTopology::TriangleList,
+        bevy::asset::RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
 }
 
 fn setup_weather(
@@ -268,18 +296,30 @@ fn setup_weather(
         globals: palette.globals.clone(),
     });
     let args: Vec<String> = std::env::args().collect();
-    let test_strike = args.iter().position(|a| a == "--strike").and_then(|i| args.get(i + 1)).map(|k| k == "ground");
+    let test_strike = args
+        .iter()
+        .position(|a| a == "--strike")
+        .and_then(|i| args.get(i + 1))
+        .map(|k| k == "ground");
     *state = WeatherState {
         weather,
         test_strike,
         rng: weather.seed | 1,
         next_flash: if test_strike.is_some() { 2.0 } else { 3.0 },
         puff_material: materials.add(PaletteMaterial {
-            params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | FLAG_CLOUD_SOLID, ..default() },
+            params: PaletteParams {
+                word: 0xFFE0,
+                flags: FLAG_CLOUD | FLAG_CLOUD_SOLID,
+                ..default()
+            },
             globals: palette.globals.clone(),
         }),
-        cumulus_templates: (0..TEMPLATES).map(|i| meshes.add(cumulus_mesh(weather.seed ^ i))).collect(),
-        tower_templates: (0..TOWER_TEMPLATES).map(|i| meshes.add(tower_mesh(weather.seed ^ (i + 0x100)))).collect(),
+        cumulus_templates: (0..TEMPLATES)
+            .map(|i| meshes.add(cumulus_mesh(weather.seed ^ i)))
+            .collect(),
+        tower_templates: (0..TOWER_TEMPLATES)
+            .map(|i| meshes.add(tower_mesh(weather.seed ^ (i + 0x100))))
+            .collect(),
         ..default()
     };
     info!("weather: {}", weather.describe());
@@ -292,7 +332,11 @@ fn setup_weather(
         commands.spawn((
             CloudEntity,
             DeckPlane { alt_ft },
-            Mesh3d(meshes.add(positions_only(Plane3d::new(normal, Vec2::splat(DECK_HALF)).mesh().build()))),
+            Mesh3d(
+                meshes.add(positions_only(
+                    Plane3d::new(normal, Vec2::splat(DECK_HALF)).mesh().build(),
+                )),
+            ),
             MeshMaterial3d(material.clone()),
             MeshTag(mesh_tag(1, 0, true)),
             WorldPos(DVec3::new(0.0, alt_ft as f64 * WU, 0.0)),
@@ -303,7 +347,11 @@ fn setup_weather(
     }
 }
 
-fn teardown_weather(mut commands: Commands, q: Query<Entity, With<CloudEntity>>, mut state: ResMut<WeatherState>) {
+fn teardown_weather(
+    mut commands: Commands,
+    q: Query<Entity, With<CloudEntity>>,
+    mut state: ResMut<WeatherState>,
+) {
     for e in &q {
         commands.entity(e).try_despawn();
     }
@@ -311,7 +359,12 @@ fn teardown_weather(mut commands: Commands, q: Query<Entity, With<CloudEntity>>,
 }
 
 /// The main viewpoint: the eye camera (XR root in VR), else the free camera.
-type Eyes<'w, 's> = Query<'w, 's, (&'static GlobalTransform, Has<EyeCamera>), (Or<(With<EyeCamera>, With<Camera3d>)>, Without<TrackCamera>)>;
+type Eyes<'w, 's> = Query<
+    'w,
+    's,
+    (&'static GlobalTransform, Has<EyeCamera>),
+    (Or<(With<EyeCamera>, With<Camera3d>)>, Without<TrackCamera>),
+>;
 
 fn eye_position(eyes: &Eyes, origin: &FloatingOrigin) -> Option<DVec3> {
     let (tf, _) = eyes.iter().max_by_key(|(_, eye)| *eye)?;
@@ -319,7 +372,12 @@ fn eye_position(eyes: &Eyes, origin: &FloatingOrigin) -> Option<DVec3> {
 }
 
 /// Viewpoint position, whiteout and deck state.
-fn track_eye(time: Res<Time>, origin: Res<FloatingOrigin>, eyes: Eyes, mut state: ResMut<WeatherState>) {
+fn track_eye(
+    time: Res<Time>,
+    origin: Res<FloatingOrigin>,
+    eyes: Eyes,
+    mut state: ResMut<WeatherState>,
+) {
     let Some(p) = eye_position(&eyes, &origin) else { return };
     let (east, north, alt) = crate::world::bevy_to_wu(p);
     let map = ((east / 32.0) as i32, (0x8000 as f64 - north / 32.0) as i32);
@@ -334,7 +392,11 @@ fn track_eye(time: Res<Time>, origin: Res<FloatingOrigin>, eyes: Eyes, mut state
     state.under_storm = w.under_storm(map.0, map.1, ft as i32);
 }
 
-fn follow_deck(origin: Res<FloatingOrigin>, eyes: Eyes, mut decks: Query<(&DeckPlane, &mut WorldPos)>) {
+fn follow_deck(
+    origin: Res<FloatingOrigin>,
+    eyes: Eyes,
+    mut decks: Query<(&DeckPlane, &mut WorldPos)>,
+) {
     let Some(p) = eye_position(&eyes, &origin) else { return };
     for (deck, mut pos) in &mut decks {
         let want = DVec3::new(p.x.round(), deck.alt_ft as f64 * WU, p.z.round());
@@ -345,7 +407,11 @@ fn follow_deck(origin: Res<FloatingOrigin>, eyes: Eyes, mut decks: Query<(&DeckP
 }
 
 /// Spawns the cumulus and cumulonimbus near the viewpoint and drops the ones left behind.
-fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state: ResMut<WeatherState>) {
+fn stream_clouds(
+    mut commands: Commands,
+    origin: Res<FloatingOrigin>,
+    mut state: ResMut<WeatherState>,
+) {
     let (x, y) = state.eye_map;
     let w = state.weather;
     if let Some((sx, sy)) = state.streamed_at
@@ -364,9 +430,14 @@ fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state:
         }
         near
     });
-    let new: Vec<Cloud> = w.clouds_near(x, y, DRAW_RADIUS).filter(|c| !state.puffs.contains_key(&(c.kind, c.gx, c.gy))).collect();
+    let new: Vec<Cloud> = w
+        .clouds_near(x, y, DRAW_RADIUS)
+        .filter(|c| !state.puffs.contains_key(&(c.kind, c.gx, c.gy)))
+        .collect();
     for c in new {
-        let h = hash(((w.seed as u64) << 32) ^ ((c.gx as u16 as u64) << 16) ^ c.gy as u16 as u64 ^ 0xC10D);
+        let h = hash(
+            ((w.seed as u64) << 32) ^ ((c.gx as u16 as u64) << 16) ^ c.gy as u16 as u64 ^ 0xC10D,
+        );
         let templates = match c.kind {
             CloudKind::Cumulonimbus => &state.tower_templates,
             _ => &state.cumulus_templates,
@@ -383,7 +454,9 @@ fn stream_clouds(mut commands: Commands, origin: Res<FloatingOrigin>, mut state:
                 MeshTag(mesh_tag(1, 0, true)),
                 WorldPos(pos),
                 Transform::from_translation((pos - origin.origin).as_vec3())
-                    .with_rotation(Quat::from_rotation_y((h >> 16 & 0xFFFF) as f32 / 65535.0 * std::f32::consts::TAU))
+                    .with_rotation(Quat::from_rotation_y(
+                        (h >> 16 & 0xFFFF) as f32 / 65535.0 * std::f32::consts::TAU,
+                    ))
                     .with_scale(Vec3::new(r_m, h_m, r_m)),
                 bevy::light::NotShadowCaster,
             ))
@@ -438,7 +511,15 @@ impl Strike {
 
 /// A lightning channel from `a` to `b`: recursive midpoint displacement (the jagged
 /// tortuous path) with forked side branches. Returns line segments with their widths.
-fn bolt_path(state: &mut WeatherState, a: Vec3, b: Vec3, ground: bool, out: &mut Vec<(Vec3, Vec3, f32)>, width: f32, depth: u32) {
+fn bolt_path(
+    state: &mut WeatherState,
+    a: Vec3,
+    b: Vec3,
+    ground: bool,
+    out: &mut Vec<(Vec3, Vec3, f32)>,
+    width: f32,
+    depth: u32,
+) {
     let mut pts = vec![a, b];
     let mut rough = 0.22;
     for _ in 0..7 {
@@ -446,7 +527,13 @@ fn bolt_path(state: &mut WeatherState, a: Vec3, b: Vec3, ground: bool, out: &mut
         for w in pts.windows(2) {
             let (p, q) = (w[0], w[1]);
             let len = p.distance(q);
-            let off = Vec3::new(state.random() - 0.5, (state.random() - 0.5) * if ground { 0.3 } else { 0.6 }, state.random() - 0.5) * 2.0 * len * rough;
+            let off = Vec3::new(
+                state.random() - 0.5,
+                (state.random() - 0.5) * if ground { 0.3 } else { 0.6 },
+                state.random() - 0.5,
+            ) * 2.0
+                * len
+                * rough;
             next.push(p);
             next.push((p + q) * 0.5 + off);
         }
@@ -461,14 +548,22 @@ fn bolt_path(state: &mut WeatherState, a: Vec3, b: Vec3, ground: bool, out: &mut
         return;
     }
     // Branches fork off downwards (cloud-to-ground) or sideways (in-cloud, "spider").
-    let n = if ground { 3 + (state.random() * 4.0) as usize } else { 4 + (state.random() * 5.0) as usize };
+    let n = if ground {
+        3 + (state.random() * 4.0) as usize
+    } else {
+        4 + (state.random() * 5.0) as usize
+    };
     let span = a.distance(b);
     for _ in 0..n {
         let i = (state.random() * (pts.len() - 1) as f32 * if ground { 0.8 } else { 1.0 }) as usize;
         let start = pts[i];
         let main = (b - a).normalize_or_zero();
         let side = Vec3::new(state.random() - 0.5, 0.0, state.random() - 0.5).normalize_or_zero();
-        let dir = if ground { (main * 0.7 + side * 0.6).normalize_or_zero() } else { (side + Vec3::Y * (state.random() - 0.5) * 0.3).normalize_or_zero() };
+        let dir = if ground {
+            (main * 0.7 + side * 0.6).normalize_or_zero()
+        } else {
+            (side + Vec3::Y * (state.random() - 0.5) * 0.3).normalize_or_zero()
+        };
         let len = span * (0.12 + 0.25 * state.random());
         bolt_path(state, start, start + dir * len, ground, out, width * 0.5, depth - 1);
     }
@@ -527,11 +622,15 @@ fn lightning(
     if state.next_flash > 0.0 {
         return;
     }
-    state.next_flash = if state.under_storm { 2.5 + 7.0 * state.random() } else { 5.0 + 15.0 * state.random() };
+    state.next_flash =
+        if state.under_storm { 2.5 + 7.0 * state.random() } else { 5.0 + 15.0 * state.random() };
     // A storm cell near the viewpoint.
     let w = state.weather;
     let (ex, ey) = state.eye_map;
-    let cells: Vec<Cloud> = w.clouds_near(ex, ey, STRIKE_RADIUS).filter(|c| c.kind == CloudKind::Cumulonimbus).collect();
+    let cells: Vec<Cloud> = w
+        .clouds_near(ex, ey, STRIKE_RADIUS)
+        .filter(|c| c.kind == CloudKind::Cumulonimbus)
+        .collect();
     if cells.is_empty() {
         return;
     }
@@ -568,7 +667,8 @@ fn lightning(
     let (a, b) = if ground {
         // From the cloud base down to the ground below it.
         let top = at(0.6, base + 1500.0 + 3000.0 * state.random(), &mut state);
-        let foot = top + Vec3::new((state.random() - 0.5) * 3000.0, 0.0, (state.random() - 0.5) * 3000.0);
+        let foot =
+            top + Vec3::new((state.random() - 0.5) * 3000.0, 0.0, (state.random() - 0.5) * 3000.0);
         (top, Vec3::new(foot.x, 0.0, foot.z))
     } else {
         // Inside the cell: a long, mostly horizontal discharge.
@@ -596,7 +696,11 @@ fn lightning(
         ))
         .id();
     // 1-4 return strokes (cloud-to-ground), in-cloud discharges flicker once or twice.
-    let n = if ground { 1 + (state.random() * 4.0) as usize } else { 1 + (state.random() * 2.0) as usize };
+    let n = if ground {
+        1 + (state.random() * 4.0) as usize
+    } else {
+        1 + (state.random() * 2.0) as usize
+    };
     let mut t = 0.0;
     let mut strokes = Vec::new();
     for _ in 0..n {
@@ -662,7 +766,10 @@ fn rain(
     }
     if state.drops.is_empty() {
         let drops: Vec<Vec3> = (0..DROPS)
-            .map(|_| Vec3::new(state.random(), state.random(), state.random()) * 2.0 * RAIN_BOX - Vec3::splat(RAIN_BOX))
+            .map(|_| {
+                Vec3::new(state.random(), state.random(), state.random()) * 2.0 * RAIN_BOX
+                    - Vec3::splat(RAIN_BOX)
+            })
             .collect();
         state.drops = drops;
     }
@@ -673,7 +780,8 @@ fn rain(
     let mut pos = Vec::with_capacity(DROPS * 4);
     for d in state.drops.iter_mut() {
         *d += wind * dt;
-        *d = (*d + Vec3::splat(RAIN_BOX)).rem_euclid(Vec3::splat(2.0 * RAIN_BOX)) - Vec3::splat(RAIN_BOX);
+        *d = (*d + Vec3::splat(RAIN_BOX)).rem_euclid(Vec3::splat(2.0 * RAIN_BOX))
+            - Vec3::splat(RAIN_BOX);
         let side = streak.cross(-*d).normalize_or_zero() * width * (1.0 + d.length() * 0.05);
         let (a, b) = (*d, *d - streak);
         pos.extend([a - side, a + side, b + side, b - side]);
@@ -703,7 +811,11 @@ fn rain(
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, pos)
             .with_inserted_indices(bevy::mesh::Indices::U32(indices));
             let material = materials.add(PaletteMaterial {
-                params: PaletteParams { word: 0xFFE4, flags: crate::palette_material::FLAG_LINE, ..default() },
+                params: PaletteParams {
+                    word: 0xFFE4,
+                    flags: crate::palette_material::FLAG_LINE,
+                    ..default()
+                },
                 globals: palette.globals.clone(),
             });
             let e = commands
@@ -714,7 +826,9 @@ fn rain(
                     MeshTag(mesh_tag(1, 0, true)),
                     Transform::from_rotation(rot),
                     bevy::camera::visibility::NoFrustumCulling,
-                    bevy::camera::visibility::RenderLayers::layer(crate::camera::MAIN_BACKGROUND_LAYER),
+                    bevy::camera::visibility::RenderLayers::layer(
+                        crate::camera::MAIN_BACKGROUND_LAYER,
+                    ),
                     bevy::light::NotShadowCaster,
                     ChildOf(cam),
                 ))
@@ -726,7 +840,11 @@ fn rain(
 
 /// Storm turbulence: smooth buffeting of the player's attitude inside storm cells (and,
 /// weaker, under them).
-fn turbulence(time: Res<Time>, state: Res<WeatherState>, mut q: Query<&mut crate::flight::Aircraft, With<crate::flight::Player>>) {
+fn turbulence(
+    time: Res<Time>,
+    state: Res<WeatherState>,
+    mut q: Query<&mut crate::flight::Aircraft, With<crate::flight::Player>>,
+) {
     if !state.under_storm {
         return;
     }
@@ -735,7 +853,9 @@ fn turbulence(time: Res<Time>, state: Res<WeatherState>, mut q: Query<&mut crate
     let t = time.elapsed_secs();
     let dt = time.delta_secs();
     let s = (state.weather.seed % 97) as f32;
-    let wave = |a: f32, b: f32, c: f32| (t * a + s).sin() * 0.6 + (t * b + 2.0 * s).sin() * 0.3 + (t * c + 3.0 * s).sin() * 0.1;
+    let wave = |a: f32, b: f32, c: f32| {
+        (t * a + s).sin() * 0.6 + (t * b + 2.0 * s).sin() * 0.3 + (t * c + 3.0 * s).sin() * 0.1
+    };
     let roll = 0.3 * strength * wave(1.7, 4.3, 11.0) * dt;
     let pitch = 0.12 * strength * wave(2.3, 5.9, 13.0) * dt;
     for mut a in &mut q {
@@ -743,6 +863,7 @@ fn turbulence(time: Res<Time>, state: Res<WeatherState>, mut q: Query<&mut crate
             continue;
         }
         let o = a.orientation;
-        a.orientation = (o * Quat::from_rotation_z(roll) * Quat::from_rotation_x(pitch)).normalize();
+        a.orientation =
+            (o * Quat::from_rotation_z(roll) * Quat::from_rotation_x(pitch)).normalize();
     }
 }

@@ -56,12 +56,17 @@ impl Sim {
         let d = approx(dx, dy);
         let brg = bearing(dx, s16(-dy));
         // A slow weave of up to ~10 degrees either side, out of step between drones.
-        let weave = if d > 4 * DIVE_RANGE { self.trig.sin_mul(s16(self.frame * 24 + i as i32 * 0x2345), 0x700) } else { 0 };
+        let weave = if d > 4 * DIVE_RANGE {
+            self.trig.sin_mul(s16(self.frame * 24 + i as i32 * 0x2345), 0x700)
+        } else {
+            0
+        };
         let turn = clamp_q(s16(brg + weave - u.heading), -0x2000, 0x2000);
         u.bank = clamp_q(turn * 2, -0x1800, 0x1800);
         u.heading = s16(u.heading + clamp_q(cdiv(turn, 2 * fs), -0x100, 0x100));
         // Level cruise, then the terminal dive.
-        u.pitch = if d < DIVE_RANGE { clamp_q(-bearing(u.alt >> 6, d.max(1)), -0x2800, 0) } else { 0 };
+        u.pitch =
+            if d < DIVE_RANGE { clamp_q(-bearing(u.alt >> 6, d.max(1)), -0x2800, 0) } else { 0 };
         let mv = cdiv(((0x8000 - u.pitch) & 0xFFFF) * u.speed >> 15, fs);
         let h = self.trig.cos_mul(u.pitch, mv);
         u.wx = u.wx.wrapping_add(self.trig.sin_mul(u.heading, h));

@@ -6,7 +6,10 @@ use stealth_mission::*;
 
 fn main() -> anyhow::Result<()> {
     let a: Vec<String> = std::env::args().skip(1).collect();
-    anyhow::ensure!(a.len() >= 7, "usage: MISSION_DIR THEATER ROE KIND OPP PLANE SRAND_HEX [SORTIES] [--json]");
+    anyhow::ensure!(
+        a.len() >= 7,
+        "usage: MISSION_DIR THEATER ROE KIND OPP PLANE SRAND_HEX [SORTIES] [--json]"
+    );
     let n = |i: usize| a[i].parse::<u8>().unwrap();
     let s = MissionSettings {
         theater: n(1) as usize,

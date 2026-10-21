@@ -88,12 +88,19 @@ fn debrief_ui(
                 ui.label(egui::RichText::new("MISSION DEBRIEF").heading().color(BRIGHT));
                 if let Some(m) = &d.mission {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(clean_text(&m.briefing.title).to_ascii_uppercase()).color(DIM));
+                        ui.label(
+                            egui::RichText::new(clean_text(&m.briefing.title).to_ascii_uppercase())
+                                .color(DIM),
+                        );
                     });
                 }
             });
             ui.separator();
-            ui.label(egui::RichText::new(d.title.to_ascii_uppercase()).size(24.0).color(if r.outcome.fatal() { AMBER } else { BRIGHT }));
+            ui.label(
+                egui::RichText::new(d.title.to_ascii_uppercase())
+                    .size(24.0)
+                    .color(if r.outcome.fatal() { AMBER } else { BRIGHT }),
+            );
             if r.training {
                 ui.label(egui::RichText::new("TRAINING MISSION").color(DIM));
             }
@@ -102,7 +109,8 @@ fn debrief_ui(
                 ui.vertical(|ui| {
                     ui.set_width(width * 0.3);
                     section(ui, "Results");
-                    let yes_no = |b: bool| if b { ("ACCOMPLISHED", GREEN) } else { ("FAILED", AMBER) };
+                    let yes_no =
+                        |b: bool| if b { ("ACCOMPLISHED", GREEN) } else { ("FAILED", AMBER) };
                     let rows = [
                         ("PRIMARY", yes_no(r.primary_done)),
                         ("SECONDARY", yes_no(r.secondary_done)),
@@ -115,7 +123,14 @@ fn debrief_ui(
                         }
                         for (k, v) in [
                             ("AIRCRAFT", r.air_kills.to_string()),
-                            ("DRONES", if r.drones_killed + r.drones_leaked > 0 { format!("{} down, {} through", r.drones_killed, r.drones_leaked) } else { "-".into() }),
+                            (
+                                "DRONES",
+                                if r.drones_killed + r.drones_leaked > 0 {
+                                    format!("{} down, {} through", r.drones_killed, r.drones_leaked)
+                                } else {
+                                    "-".into()
+                                },
+                            ),
                             ("GROUND", r.ground_kills.to_string()),
                             ("WEAPONS", r.weapons_fired.to_string()),
                             ("RADAR IDS", r.radar_ids.to_string()),
@@ -134,19 +149,37 @@ fn debrief_ui(
                     section(ui, "Points");
                     egui::Grid::new("points").num_columns(2).spacing([14.0, 4.0]).show(ui, |ui| {
                         for (what, p) in &r.points {
-                            ui.label(egui::RichText::new(what.to_ascii_uppercase()).size(14.0).color(DIM));
-                            ui.label(egui::RichText::new(format!("{p:+}")).size(16.0).color(if *p < 0 { AMBER } else { GREEN }));
+                            ui.label(
+                                egui::RichText::new(what.to_ascii_uppercase())
+                                    .size(14.0)
+                                    .color(DIM),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!("{p:+}")).size(16.0).color(if *p < 0 {
+                                    AMBER
+                                } else {
+                                    GREEN
+                                }),
+                            );
                             ui.end_row();
                         }
                         ui.label(egui::RichText::new("DIFFICULTY").size(14.0).color(DIM));
-                        ui.label(egui::RichText::new(format!("x{:.2}", r.multiplier)).size(16.0).color(GREEN));
+                        ui.label(
+                            egui::RichText::new(format!("x{:.2}", r.multiplier))
+                                .size(16.0)
+                                .color(GREEN),
+                        );
                         ui.end_row();
                         ui.label(egui::RichText::new("TOTAL").size(16.0).color(BRIGHT));
                         ui.label(egui::RichText::new(r.total.to_string()).size(24.0).color(BRIGHT));
                         ui.end_row();
                     });
                     ui.add_space(8.0);
-                    ui.label(egui::RichText::new(r.rating.to_ascii_uppercase()).size(22.0).color(if r.total > 0 { BRIGHT } else { AMBER }));
+                    ui.label(
+                        egui::RichText::new(r.rating.to_ascii_uppercase())
+                            .size(22.0)
+                            .color(if r.total > 0 { BRIGHT } else { AMBER }),
+                    );
                     if !d.career.is_empty() {
                         section(ui, "Service record");
                         for line in &d.career {
@@ -156,17 +189,20 @@ fn debrief_ui(
                 });
                 ui.vertical(|ui| {
                     section(ui, "Timeline");
-                    egui::ScrollArea::vertical().max_height(320.0).auto_shrink([false, true]).show(ui, |ui| {
-                        if r.timeline.is_empty() {
-                            ui.label(egui::RichText::new("No events").color(DIM));
-                        }
-                        for e in &r.timeline {
-                            ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(clock(e.tick)).color(DIM));
-                                ui.label(&e.text);
-                            });
-                        }
-                    });
+                    egui::ScrollArea::vertical().max_height(320.0).auto_shrink([false, true]).show(
+                        ui,
+                        |ui| {
+                            if r.timeline.is_empty() {
+                                ui.label(egui::RichText::new("No events").color(DIM));
+                            }
+                            for e in &r.timeline {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(clock(e.tick)).color(DIM));
+                                    ui.label(&e.text);
+                                });
+                            }
+                        },
+                    );
                 });
             });
             ui.add_space(6.0);

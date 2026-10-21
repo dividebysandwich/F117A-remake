@@ -37,14 +37,18 @@ impl Fonts {
     /// Width of `s` in unscaled pixels (colour-change bytes take no room).
     pub fn width(&self, s: &[u8]) -> i32 {
         let f = self.font(HUD_FONT);
-        s.iter().take_while(|&&b| b != 0).filter(|&&b| b < 0x80).filter_map(|&b| f.glyph(b)).map(|g| g.advance as i32).sum()
+        s.iter()
+            .take_while(|&&b| b != 0)
+            .filter(|&&b| b < 0x80)
+            .filter_map(|&b| f.glyph(b))
+            .map(|g| g.advance as i32)
+            .sum()
     }
 
     /// Glyph height of the flight font in unscaled pixels.
     pub fn height(&self) -> i32 {
         self.font(HUD_FONT).height as i32
     }
-
 }
 
 /// Glyphs of the flight font, `#` = set pixel.
@@ -128,8 +132,15 @@ fn flight_font() -> Font {
         .map(|code| {
             let ch = code.to_ascii_uppercase() as char;
             let art = GLYPHS.iter().find(|(c, _)| *c == ch).map_or(["..."; 5], |(_, a)| *a);
-            let mut rows: Vec<u16> =
-                art.iter().map(|r| r.bytes().enumerate().filter(|&(_, b)| b == b'#').fold(0, |m, (x, _)| m | 0x8000 >> x)).collect();
+            let mut rows: Vec<u16> = art
+                .iter()
+                .map(|r| {
+                    r.bytes()
+                        .enumerate()
+                        .filter(|&(_, b)| b == b'#')
+                        .fold(0, |m, (x, _)| m | 0x8000 >> x)
+                })
+                .collect();
             rows.push(0);
             Glyph { code, width: 3, advance: 4, rows }
         })
@@ -147,12 +158,29 @@ pub fn upper(s: &str) -> Vec<u8> {
     s.bytes().map(|b| b.to_ascii_uppercase()).collect()
 }
 
-pub fn draw_text(c: &mut Canvas, f: &Font, x: i32, y: i32, s: &[u8], fg: u8, bg: Option<u8>) -> i32 {
+pub fn draw_text(
+    c: &mut Canvas,
+    f: &Font,
+    x: i32,
+    y: i32,
+    s: &[u8],
+    fg: u8,
+    bg: Option<u8>,
+) -> i32 {
     draw_text_scaled(c, f, x, y, s, fg, bg, 1)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn draw_text_scaled(c: &mut Canvas, f: &Font, mut x: i32, y: i32, s: &[u8], mut fg: u8, bg: Option<u8>, scale: i32) -> i32 {
+pub fn draw_text_scaled(
+    c: &mut Canvas,
+    f: &Font,
+    mut x: i32,
+    y: i32,
+    s: &[u8],
+    mut fg: u8,
+    bg: Option<u8>,
+    scale: i32,
+) -> i32 {
     let rows = if bg.is_some() { (f.height + f.extra_height) as i32 } else { f.height as i32 };
     for &b in s {
         if b == 0 {
@@ -260,7 +288,12 @@ pub fn stroke_text(c: &mut Canvas, x: f32, y: f32, s: &str, h: f32, w: f32, col:
                 let pts: Vec<Vec2> = poly
                     .split(' ')
                     .filter_map(|p| p.split_once(','))
-                    .map(|(a, b)| Vec2::new(x + a.parse::<f32>().unwrap_or(0.0) * u, y + b.parse::<f32>().unwrap_or(0.0) * u))
+                    .map(|(a, b)| {
+                        Vec2::new(
+                            x + a.parse::<f32>().unwrap_or(0.0) * u,
+                            y + b.parse::<f32>().unwrap_or(0.0) * u,
+                        )
+                    })
                     .collect();
                 if pts.len() == 1 {
                     c.stroke(pts[0], pts[0], w, col);
@@ -283,7 +316,16 @@ pub enum Align {
 
 /// [`stroke_text`] anchored at (x, y): x by `align`, y at the text's vertical middle.
 #[allow(clippy::too_many_arguments)]
-pub fn stroke_text_at(c: &mut Canvas, x: f32, y: f32, s: &str, h: f32, w: f32, col: u8, align: Align) -> f32 {
+pub fn stroke_text_at(
+    c: &mut Canvas,
+    x: f32,
+    y: f32,
+    s: &str,
+    h: f32,
+    w: f32,
+    col: u8,
+    align: Align,
+) -> f32 {
     let width = stroke_width(s, h);
     let x0 = match align {
         Align::Left => x,

@@ -442,7 +442,13 @@ pub struct SimOptions {
 
 impl Default for SimOptions {
     fn default() -> Self {
-        Self { landing: LandingMode::Easy, fix_original_bugs: true, seed: None, prior_damage: None, external_stores: false }
+        Self {
+            landing: LandingMode::Easy,
+            fix_original_bugs: true,
+            seed: None,
+            prior_damage: None,
+            external_stores: false,
+        }
     }
 }
 
@@ -461,7 +467,11 @@ impl WorldDamage {
     /// Adds a later mission's damage.
     pub fn merge(&mut self, later: &WorldDamage) {
         for t in &later.tiles {
-            match self.tiles.iter_mut().find(|d| (d.level, d.index, d.col, d.row) == (t.level, t.index, t.col, t.row)) {
+            match self
+                .tiles
+                .iter_mut()
+                .find(|d| (d.level, d.index, d.col, d.row) == (t.level, t.index, t.col, t.row))
+            {
                 Some(d) => d.shape = t.shape,
                 None => self.tiles.push(*t),
             }
@@ -539,38 +549,81 @@ pub enum SimEvent {
     /// HUD message line, as printed by the original.
     Message(String),
     /// Sound effect `id` at `priority`.
-    Sound { id: u8, priority: u8 },
+    Sound {
+        id: u8,
+        priority: u8,
+    },
     /// Radar warning receiver tone (replaces the original's sounds 8 and 9).
     Rwr(RwrTone),
     /// Time acceleration must be cancelled.
     CancelTimeAccel,
-    MissileLaunched { slot: usize, spec: i32, launcher: Launcher },
+    MissileLaunched {
+        slot: usize,
+        spec: i32,
+        launcher: Launcher,
+    },
     /// Player damaged: the bits that were rolled this time.
-    PlayerHit { bits: u8 },
+    PlayerHit {
+        bits: u8,
+    },
     /// Red damage flash.
     DamageFlash,
     /// Impact flash (flash timer value: 0x10 kill, -6 bomb, -16 crash, -1 gun).
-    Explosion { x: i32, y: i32, alt: i32, kind: i32 },
+    Explosion {
+        x: i32,
+        y: i32,
+        alt: i32,
+        kind: i32,
+    },
     /// A gun round hit the ground here (a round's fine units: x east, y south).
-    RoundImpact { x: i32, y: i32 },
-    AircraftDestroyed { unit: usize, spec: i32 },
-    AircraftCrashed { unit: usize },
-    AircraftTakeoff { unit: usize, base: usize },
+    RoundImpact {
+        x: i32,
+        y: i32,
+    },
+    AircraftDestroyed {
+        unit: usize,
+        spec: i32,
+    },
+    AircraftCrashed {
+        unit: usize,
+    },
+    AircraftTakeoff {
+        unit: usize,
+        base: usize,
+    },
     /// The downed pilot fired a signal flare (map position).
-    SignalFlare { x: i32, y: i32 },
+    SignalFlare {
+        x: i32,
+        y: i32,
+    },
     /// An attack drone reached its target (map position).
-    DroneImpact { unit: usize, x: i32, y: i32 },
+    DroneImpact {
+        unit: usize,
+        x: i32,
+        y: i32,
+    },
     /// A world object was destroyed; `shape` = the shape to draw now (`| 0x100` = wreck state).
-    GroundDestroyed { object: usize, shape: i32 },
+    GroundDestroyed {
+        object: usize,
+        shape: i32,
+    },
     /// A plain tile object was destroyed or replaced.
     TileDestroyed(TileDamage),
-    ObjectiveDone { primary: bool },
-    PhotoTaken { frame: i32 },
+    ObjectiveDone {
+        primary: bool,
+    },
+    PhotoTaken {
+        frame: i32,
+    },
     /// Extra fuel tank transferred (fuel += lbs).
-    FuelTransfer { lbs: i32 },
+    FuelTransfer {
+        lbs: i32,
+    },
     /// Resupply (training): fuel = 5000.
     Resupplied,
-    Ejected { success: bool },
+    Ejected {
+        success: bool,
+    },
     /// "No Crashes" collision with a 3D object: the flight model adds 500 ft and drops the autopilot.
     CollisionBounce,
     MissionEnd(MissionEnd),

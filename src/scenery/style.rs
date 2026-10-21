@@ -192,7 +192,16 @@ impl Style {
         if town == TownKind::City && core > 0.7 && rng.chance(0.45) {
             let s = rng.range(18.0, 30.0) as f32;
             let h = rng.range(35.0, 30.0 + 80.0 * core) as f32;
-            return Building { kind: Kind::Tower, l: s, w: s * rng.range(0.7, 1.0) as f32, h, roof: Roof::Flat, wall: rng.pick(&[0xF2, 0xF4, 0xE3, 0xB4]), roof_colour: 0xE7, ..base };
+            return Building {
+                kind: Kind::Tower,
+                l: s,
+                w: s * rng.range(0.7, 1.0) as f32,
+                h,
+                roof: Roof::Flat,
+                wall: rng.pick(&[0xF2, 0xF4, 0xE3, 0xB4]),
+                roof_colour: 0xE7,
+                ..base
+            };
         }
         if rng.chance(big) {
             let floors = rng.range(3.0, 4.0 + 8.0 * core).floor() as f32;
@@ -207,17 +216,25 @@ impl Style {
             };
         }
         let floors = if rng.chance(0.35) { 2.0 } else { 1.0 };
-        Building { l: rng.range(8.0, 13.0) as f32, w: rng.range(7.0, 10.0) as f32, h: floors * 2.9 + 0.3, ..base }
+        Building {
+            l: rng.range(8.0, 13.0) as f32,
+            w: rng.range(7.0, 10.0) as f32,
+            h: floors * 2.9 + 0.3,
+            ..base
+        }
     }
 
     /// Whether a point of a town (`core` 1 at the centre) is a district of panel blocks.
     pub fn panel_district(&self, town: TownKind, core: f64) -> bool {
-        self.soviet && core > if town == TownKind::City { 0.2 } else { 0.5 } && town != TownKind::Village
+        self.soviet
+            && core > if town == TownKind::City { 0.2 } else { 0.5 }
+            && town != TownKind::Village
     }
 
     /// A panel block: a five-storey slab, a nine to sixteen storey slab or point tower.
     pub fn panel(&self, rng: &mut Rng, core: f64, max_len: f64) -> Building {
-        let floors = [5.0, 5.0, 9.0, 9.0, 12.0, 16.0][(rng.f() * (2.0 + 4.0 * core)).min(5.0) as usize] as f32;
+        let floors = [5.0, 5.0, 9.0, 9.0, 12.0, 16.0]
+            [(rng.f() * (2.0 + 4.0 * core)).min(5.0) as usize] as f32;
         let tower = floors > 9.0 && rng.chance(0.35);
         Building {
             p: DVec2::ZERO,

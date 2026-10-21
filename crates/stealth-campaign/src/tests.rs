@@ -252,3 +252,19 @@ fn the_same_inputs_give_the_same_campaign() {
     };
     assert_eq!(run(), run());
 }
+
+#[test]
+fn sites_are_spotted_by_rwr_and_recon() {
+    let mut c = campaign("ce", 3);
+    let wittstock = place_named(&c, "Wittstock");
+    let sam = c.places[wittstock as usize].defences[0];
+    assert!(!c.site(sam).unwrap().spotted);
+    c.tick(1.0, &WorldView::default(), &[Report::SiteSpotted { object: sam }]);
+    assert!(c.site(sam).unwrap().spotted);
+    // Recon photos map a place's defences.
+    let tabor = place_named(&c, "Tabor");
+    let other = c.places[tabor as usize].defences[0];
+    let mut ev = Vec::new();
+    c.gain_intel(tabor, &mut ev);
+    assert!(c.site(other).unwrap().spotted);
+}

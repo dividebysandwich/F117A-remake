@@ -143,8 +143,11 @@ pub struct ActiveCampaign {
     crash_timer: f32,
     /// Leave the campaign (back to the menu) at the next frame.
     pub exit: bool,
-    /// The stores chosen in the briefing for the sortie being taken.
+    /// The stores and the route chosen in the briefing for the sortie being taken.
     pub take_loadout: Option<crate::loadout::PlannedLoadout>,
+    pub take_route: Option<PlannedRoute>,
+    /// Seconds since the friendly aircraft last looked for enemy radars.
+    spot_timer: f32,
 }
 
 impl ActiveCampaign {
@@ -178,6 +181,8 @@ impl ActiveCampaign {
             crash_timer: 0.0,
             exit: false,
             take_loadout: None,
+            take_route: None,
+            spot_timer: 0.0,
         }
     }
 
@@ -318,6 +323,47 @@ fn world_view(sim: &Sim) -> WorldView {
         vec![PlayerPos { id: ME, x: p.mx, y: p.my, airborne: p.alt > 50 }]
     };
     WorldView { aaa, flights, players }
+}
+
+/// Enemy SAM sites a friendly aircraft detects now: their radar painted the player (his RWR)
+/// or they fire at friendly aircraft, or a friendly aircraft is within their radar's range and
+/// above its horizon (its RWR picks the radar up).
+fn spotted(state: &CampaignState, sim: &Sim) -> Vec<Report> {
+    let eyes: Vec<(i32, i32, f64)> = sim
+        .flights()
+        .iter()
+        .enumerate()
+        .filter(|(_, u)| {
+            u.flags & (fflags::EXISTS | fflags::AIRBORNE) == fflags::EXISTS | fflags::AIRBORNE
+                && u.flags & fflags::DESTROYED == 0
+                && u.speed > 0
+        })
+        .filter(|(i, u)| {
+            sim.campaign_flight(*i).map_or_else(|| sim.friendly_aircraft(u.spec), |f| f.blue)
+        })
+        .map(|(_, u)| (u.x, u.y, u.alt.max(0) as f64 * crate::world::WU))
+        .collect();
+    let objects = sim.objects();
+    state
+        .sites
+        .iter()
+        .filter(|s| s.kind == stealth_campaign::SiteKind::Sam && s.alive() && !s.spotted)
+        .filter_map(|s| {
+            let i = s.object as usize;
+            let o = objects.get(i)?;
+            if o.unit_type == 0 {
+                return None;
+            }
+            let rwr = o.flags & (oflags::PAINTED | oflags::TRACKING) != 0 || sim.site_engaging(i);
+            let range = (sim.radar_range(o.unit_type) * 64) as f64;
+            let seen = eyes.iter().any(|&(x, y, alt)| {
+                // Radar horizon (map units) of a target at `alt` metres.
+                let horizon = 4120.0 * (alt.sqrt() + 3.2) / 15.625;
+                ((x - o.x) as f64).hypot((y - o.y) as f64) < range.min(horizon)
+            });
+            (rwr || seen).then_some(Report::SiteSpotted { object: s.object })
+        })
+        .collect()
 }
 
 /// How a sortie ended, from the simulation's end record.
@@ -558,6 +604,12 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
             _ => {}
         }
     }
+    // Enemy radars friendly aircraft pick up, once a second.
+    c.spot_timer += dt;
+    if c.spot_timer > 1.0 {
+        c.spot_timer = 0.0;
+        reports.extend(spotted(&c.state, &s.combat.sim));
+    }
     for k in std::mem::take(&mut s.combat.aaa_killed) {
         let by = (c.phase == Phase::Sortie).then_some(ME);
         reports.push(Report::AaaDestroyed { index: k as u32, by });
@@ -684,7 +736,7 @@ fn begin_sortie(c: &mut ActiveCampaign, s: &mut Session, sortie: &Sortie) {
         .unwrap_or_else(|| crate::loadout::PlannedLoadout::of(&m, aircraft));
     s.combat.sim.set_loadout(&loadout.stations());
     s.combat.sim.select_bay(loadout.first_choice(&m));
-    let route = PlannedRoute::of(&m);
+    let route = c.take_route.take().filter(|r| r.fits(&m)).unwrap_or_else(|| PlannedRoute::of(&m));
     *s.wps = Waypoints {
         points: route
             .points

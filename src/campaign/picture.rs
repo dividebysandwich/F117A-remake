@@ -101,7 +101,7 @@ pub fn picture(state: &CampaignState, sim: &Sim) -> Picture {
         .into_iter()
         .filter(|a| eyes.iter().any(|&(x, y, r)| near(a.x, a.y, x, y, r)))
         .collect();
-    // SAM sites: reconned, or seen painting the player or firing.
+    // SAM sites: reconned, or once detected by a friendly aircraft (`CampaignState` spotted).
     let objects = sim.objects();
     for s in state.sites.iter().filter(|s| s.kind == SiteKind::Sam && s.alive()) {
         let i = s.object as usize;
@@ -110,8 +110,7 @@ pub fn picture(state: &CampaignState, sim: &Sim) -> Picture {
             continue;
         }
         let reconned = sim.has_intel(i);
-        let seen = o.flags & (oflags::PAINTED | oflags::TRACKING) != 0 || sim.site_engaging(i);
-        if reconned || seen {
+        if reconned || s.spotted || sim.site_engaging(i) {
             pic.sams.push(SamSite {
                 object: i,
                 x: o.x,

@@ -25,6 +25,11 @@ impl CampaignState {
                     }
                 }
             }
+            Report::SiteSpotted { object } => {
+                if let Some(s) = self.site_mut(object).filter(|s| s.alive()) {
+                    s.spotted = true;
+                }
+            }
             Report::FlightDestroyed { tag, .. } if tag != 0 => {
                 self.patrols.retain(|p| p.0 != tag);
                 let Some(k) = self.insertions.iter().position(|i| i.helicopters.contains(&tag))

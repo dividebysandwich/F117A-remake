@@ -180,8 +180,13 @@ impl CampaignState {
         let until = self.clock + INTEL_SECONDS;
         let Some(p) = self.places.get_mut(place as usize) else { return };
         p.intel_until = Some(until);
-        let objects = p.members.iter().chain(&p.defences).copied().collect();
+        let objects: Vec<ObjectId> = p.members.iter().chain(&p.defences).copied().collect();
         let name = p.name.clone();
+        for &o in &objects {
+            if let Some(s) = self.site_mut(o) {
+                s.spotted = true;
+            }
+        }
         self.note(format!("Recon photos of {name}: its defences are mapped"));
         ev.push(CampaignEvent::IntelGained { place, objects });
     }

@@ -86,6 +86,13 @@ impl Planner {
         Self { open, ..default() }
     }
 
+    /// The next route shown is fitted to the view again (a new campaign sortie: its route
+    /// key is the campaign's).
+    pub fn refit(&mut self) {
+        self.fitted = None;
+        self.drag = None;
+    }
+
     /// The map picture of theater `id`, once prepared.
     pub fn map_texture(&self, id: &str) -> Option<&egui::TextureHandle> {
         self.texture.as_ref().filter(|(t, ..)| t == id).map(|(_, t, _)| t)
@@ -187,7 +194,12 @@ struct Ring {
 /// The game's radar detection ([`stealth_sim::radar`]): a site detects the player when its
 /// score plus his EMV passes 100; the score falls linearly with range from
 /// `terrain * (2 * opponents + tier + 1)` (an average aspect) to 0 at the radar's lethality.
-fn threat_rings(m: &Mission, sim: &SimData, profile: Profile) -> Vec<Ring> {
+fn threat_rings(
+    m: &Mission,
+    sim: &SimData,
+    profile: Profile,
+    known: &dyn Fn(usize) -> bool,
+) -> Vec<Ring> {
     let w = &m.world;
     let diff = m.settings.opponents as i32;
     let lockheed = m.settings.plane == stealth_mission::Plane::Lockheed;
@@ -202,7 +214,7 @@ fn threat_rings(m: &Mission, sim: &SimData, profile: Profile) -> Vec<Ring> {
     (3..(w.ground_unit_count as usize).min(w.objects.len()))
         .filter_map(|i| {
             let o = w.objects[i];
-            if o.unit_type <= 0 || o.flags & (F::FRIENDLY | F::NEUTRAL) != 0 {
+            if o.unit_type <= 0 || o.flags & (F::FRIENDLY | F::NEUTRAL) != 0 || !known(i) {
                 return None;
             }
             let t = sim.threat(o.unit_type as i32)?;
@@ -283,8 +295,6 @@ pub fn planner_ui(ctx: &egui::Context, planner: &mut Planner, state: &mut MenuSt
     if !route.fits(&m) {
         *route = PlannedRoute::of(&m);
     }
-    let rings =
-        planner.sim.as_ref().map(|s| threat_rings(&m, s, planner.profile)).unwrap_or_default();
     let screen = ctx.content_rect();
     let size = egui::vec2(
         (screen.width() - 32.0).clamp(600.0, 1600.0),
@@ -301,54 +311,12 @@ pub fn planner_ui(ctx: &egui::Context, planner: &mut Planner, state: &mut MenuSt
         .show(ctx, |ui| {
             ui.label(egui::RichText::new("MISSION PLANNER").heading().color(BRIGHT));
             ui.separator();
-            ui.horizontal_top(|ui| {
-                let side = 300.0;
-                let map_size = egui::vec2(ui.available_width() - side - 12.0, ui.available_height() - 8.0);
-                map_view(ui, planner, &m, route, &rings, map_size);
-                ui.vertical(|ui| {
-                    ui.set_width(side);
-                    section(ui, "Route");
-                    let pts = with_base(&m, &route.points);
-                    let label = |i: usize| if i == 0 { "BASE".to_string() } else { point_label(&route.points, i - 1) };
-                    egui::Grid::new("legs").num_columns(3).spacing([12.0, 3.0]).show(ui, |ui| {
-                        for i in 1..pts.len() {
-                            let km = (((pts[i].x - pts[i - 1].x) as f64).powi(2) + ((pts[i].y - pts[i - 1].y) as f64).powi(2)).sqrt() / PER_KM;
-                            ui.label(format!("{} > {}", label(i - 1), label(i)));
-                            ui.label(format!("{km:5.0} km"));
-                            ui.label(leg_time(km));
-                            ui.end_row();
-                        }
-                    });
-                    let length = |r: &[RoutePoint]| PlannedRoute { mission: Default::default(), points: with_base(&m, r) }.length() / PER_KM;
-                    let total = length(&route.points);
-                    let default = length(&PlannedRoute::of(&m).points);
-                    ui.add_space(4.0);
-                    ui.label(egui::RichText::new(format!("TOTAL {total:.0} KM  {}", leg_time(total))).color(BRIGHT));
-                    ui.label(egui::RichText::new(format!("Briefed route {default:.0} km, fuel {} lbs", m.fuel_lbs)).color(DIM));
-                    section(ui, "Radar coverage for");
-                    ui.horizontal(|ui| {
-                        for p in Profile::ALL {
-                            ui.radio_value(&mut planner.profile, p, egui::RichText::new(p.name()).small());
-                        }
-                    });
-                    let detect = exposure(&pts, &rings, |r| r.detect);
-                    ui.label(egui::RichText::new(format!("{detect:.0} km of the route detected")).color(if detect > 0.0 { AMBER } else { GREEN }));
-                    ui.label(egui::RichText::new("Radar coverage assumes 480kt level flight, bay doors closed.").small().color(DIM));
-                    section(ui, "Map");
-                    legend(ui, Legend::Detection, "Radar detection range");
-                    legend(ui, Legend::Missile, "Missile range");
-                    if m.drones.is_some() {
-                        legend(ui, Legend::Drone, "Enemy UAV");
-                    }
-                    ui.label(egui::RichText::new("Drag a point to move it, the map to pan. Click a leg to add a point, right click to remove it. Wheel: zoom.").small().color(DIM));
-                    ui.add_space(12.0);
-                    if ui.add(big_button("RESET")).clicked() {
-                        *route = PlannedRoute::of(&m);
-                    }
-                    if ui.add(big_button("DONE").fill(DIM)).clicked() {
-                        open = false;
-                    }
-                });
+            let size = ui.available_size();
+            route_panel(ui, planner, &m, route, &|_| true, None, size, |ui| {
+                ui.add_space(12.0);
+                if ui.add(big_button("DONE").fill(DIM)).clicked() {
+                    open = false;
+                }
             });
         });
     if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -357,12 +325,84 @@ pub fn planner_ui(ctx: &egui::Context, planner: &mut Planner, state: &mut MenuSt
     }
 }
 
+/// The route editor: the map with the known radars' coverage, the route's legs and its
+/// exposure (the menu's planner, the campaign's briefing). `known`: the radar sites (world
+/// object indices) to show; `overlay`: drawn over the map instead of the mission's airfields;
+/// `buttons`: below the side column.
+#[allow(clippy::too_many_arguments)]
+pub fn route_panel(
+    ui: &mut egui::Ui,
+    planner: &mut Planner,
+    m: &Mission,
+    route: &mut PlannedRoute,
+    known: &dyn Fn(usize) -> bool,
+    overlay: Option<&dyn Fn(&egui::Painter, &MapView)>,
+    size: egui::Vec2,
+    buttons: impl FnOnce(&mut egui::Ui),
+) {
+    let rings = planner
+        .sim
+        .as_ref()
+        .map(|s| threat_rings(m, s, planner.profile, known))
+        .unwrap_or_default();
+    ui.allocate_ui(size, |ui| {
+    ui.horizontal_top(|ui| {
+        let side = 300.0;
+        let map_size = egui::vec2(ui.available_width() - side - 12.0, ui.available_height() - 8.0);
+        map_view(ui, planner, m, route, &rings, overlay, map_size);
+        ui.vertical(|ui| {
+            ui.set_width(side);
+            section(ui, "Route");
+            let pts = with_base(m, &route.points);
+            let label = |i: usize| if i == 0 { "BASE".to_string() } else { point_label(&route.points, i - 1) };
+            egui::Grid::new("legs").num_columns(3).spacing([12.0, 3.0]).show(ui, |ui| {
+                for i in 1..pts.len() {
+                    let km = (((pts[i].x - pts[i - 1].x) as f64).powi(2) + ((pts[i].y - pts[i - 1].y) as f64).powi(2)).sqrt() / PER_KM;
+                    ui.label(format!("{} > {}", label(i - 1), label(i)));
+                    ui.label(format!("{km:5.0} km"));
+                    ui.label(leg_time(km));
+                    ui.end_row();
+                }
+            });
+            let length = |r: &[RoutePoint]| PlannedRoute { mission: Default::default(), points: with_base(m, r) }.length() / PER_KM;
+            let total = length(&route.points);
+            let default = length(&PlannedRoute::of(m).points);
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(format!("TOTAL {total:.0} KM  {}", leg_time(total))).color(BRIGHT));
+            ui.label(egui::RichText::new(format!("Briefed route {default:.0} km, fuel {} lbs", m.fuel_lbs)).color(DIM));
+            section(ui, "Radar coverage for");
+            ui.horizontal(|ui| {
+                for p in Profile::ALL {
+                    ui.radio_value(&mut planner.profile, p, egui::RichText::new(p.name()).small());
+                }
+            });
+            let detect = exposure(&pts, &rings, |r| r.detect);
+            ui.label(egui::RichText::new(format!("{detect:.0} km of the route detected")).color(if detect > 0.0 { AMBER } else { GREEN }));
+            ui.label(egui::RichText::new("Radar coverage assumes 480kt level flight, bay doors closed.").small().color(DIM));
+            section(ui, "Map");
+            legend(ui, Legend::Detection, "Radar detection range");
+            legend(ui, Legend::Missile, "Missile range");
+            if m.drones.is_some() {
+                legend(ui, Legend::Drone, "Enemy UAV");
+            }
+            ui.label(egui::RichText::new("Drag a point to move it, the map to pan. Click a leg to add a point, right click to remove it. Wheel: zoom.").small().color(DIM));
+            ui.add_space(12.0);
+            if ui.add(big_button("RESET")).clicked() {
+                *route = PlannedRoute::of(m);
+            }
+            buttons(ui);
+        });
+    });
+    });
+}
+
 fn map_view(
     ui: &mut egui::Ui,
     planner: &mut Planner,
     m: &Mission,
     route: &mut PlannedRoute,
     rings: &[Ring],
+    overlay: Option<&dyn Fn(&egui::Painter, &MapView)>,
     size: egui::Vec2,
 ) {
     let (resp, painter) = ui.allocate_painter(size, egui::Sense::click_and_drag());
@@ -401,7 +441,10 @@ fn map_view(
         }
         map_draw::site(&painter, &view, c, &ring.name, alpha);
     }
-    map_draw::airfields(&painter, &view, m);
+    match overlay {
+        Some(draw) => draw(&painter, &view),
+        None => map_draw::airfields(&painter, &view, m),
+    }
     // Drones on their way (drone defense).
     if let Some(d) = &m.drones {
         let t = &m.world.objects[d.target as usize];

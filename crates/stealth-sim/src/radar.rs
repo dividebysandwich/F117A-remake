@@ -598,6 +598,11 @@ impl Sim {
         out
     }
 
+    /// Detection range (km) of radar type `t` (its lethality).
+    pub fn radar_range(&self, t: i32) -> i32 {
+        self.threat_type(t).map_or(0, |t| t.lethality as i32)
+    }
+
     /// Lock range (km) of the missile a site of radar type `t` fires.
     pub fn site_lock_range(&self, t: i32) -> i32 {
         self.missile(self.site_missile(t)).lock_range as i32

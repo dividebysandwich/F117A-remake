@@ -94,6 +94,10 @@ pub enum Report {
         player: PlayerId,
         object: ObjectId,
     },
+    /// A friendly aircraft detected an enemy site (its radar on the RWR, or it fired).
+    SiteSpotted {
+        object: ObjectId,
+    },
 }
 
 /// A player's request.

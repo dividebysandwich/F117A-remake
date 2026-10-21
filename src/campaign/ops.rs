@@ -52,8 +52,8 @@ struct Briefing {
     loadout: crate::loadout::PlannedLoadout,
     window: crate::loadout::LoadoutWindow,
     page: BriefPage,
-    /// Map centre and scale (fitted to the route at first).
-    view: Option<(egui::Vec2, f32)>,
+    /// The route to fly (None until the editor first shows it).
+    route: Option<crate::mission::PlannedRoute>,
 }
 
 /// The camera that carries the Ops screen's egui context.
@@ -65,7 +65,8 @@ pub struct OpsCamera;
 pub fn overlay(
     mut commands: Commands,
     c: Option<Res<ActiveCampaign>>,
-    mut cams: Query<(Entity, &mut Msaa), With<OpsCamera>>,
+    tagged: Query<Entity, With<OpsCamera>>,
+    mut cams: Query<&mut Msaa, With<OpsCamera>>,
     eye: Query<&Msaa, (With<crate::camera::EyeCamera>, Without<OpsCamera>)>,
     settings: Res<crate::settings::Settings>,
     root: Option<Res<crate::camera::XrRoot>>,
@@ -78,16 +79,18 @@ pub fn overlay(
     // gets a picture of its own that nothing clears: the world gone behind the screen and
     // moved windows leaving trails). The 3D view's MSAA follows the shading settings.
     let msaa = eye.iter().next().copied().unwrap_or(Msaa::Off);
-    for (_, mut m) in &mut cams {
+    for mut m in &mut cams {
         if *m != msaa {
             *m = msaa;
         }
     }
-    if want == !cams.is_empty() {
+    // Everything spawned with the screen carries the tag (in VR also the panel, the laser and
+    // the desktop mirror), not only the cameras.
+    if want == !tagged.is_empty() {
         return;
     }
     if !want {
-        for (e, _) in &cams {
+        for e in &tagged {
             commands.entity(e).try_despawn();
         }
         #[cfg(feature = "xr")]
@@ -197,7 +200,7 @@ pub fn ops_ui(
     mut contexts: EguiContexts,
     mut c: ResMut<ActiveCampaign>,
     mut s: Session,
-    planner: Res<crate::planner::Planner>,
+    mut planner: ResMut<crate::planner::Planner>,
     loadout: Option<Res<crate::loadout::PlannedLoadout>>,
     mut next: ResMut<NextState<AppState>>,
     mut unit_view: ResMut<super::UnitView>,
@@ -276,11 +279,11 @@ pub fn ops_ui(
             loadout: crate::loadout::PlannedLoadout::of(&m, s.settings.aircraft),
             window: default(),
             page,
-            view: None,
+            route: None,
         });
     }
     if c.ui.briefing.is_some() {
-        briefing(ctx, c, &mut s, tex.as_ref(), egui::vec2(width, height));
+        briefing(ctx, c, &mut s, &mut planner, egui::vec2(width, height));
         return Ok(());
     }
     let mut leave = false;
@@ -567,7 +570,7 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, s: &mut Session, width: f32)
                     loadout,
                     window: default(),
                     page: BriefPage::Map,
-                    view: None,
+                    route: None,
                 });
             }
         });
@@ -816,7 +819,7 @@ fn briefing(
     ctx: &egui::Context,
     c: &mut ActiveCampaign,
     s: &mut Session,
-    tex: Option<&egui::TextureHandle>,
+    planner: &mut crate::planner::Planner,
     size: egui::Vec2,
 ) {
     let Some(mut b) = c.ui.briefing.take() else { return };
@@ -860,7 +863,7 @@ fn briefing(
             ));
             ui.horizontal(|ui| {
                 for (page, label) in
-                    [(BriefPage::Map, "BRIEFING MAP"), (BriefPage::Loadout, "LOADOUT")]
+                    [(BriefPage::Map, "ROUTE & THREATS"), (BriefPage::Loadout, "LOADOUT")]
                 {
                     if ui.selectable_label(b.page == page, label).clicked() {
                         b.page = page;
@@ -868,12 +871,13 @@ fn briefing(
                 }
             });
             ui.separator();
-            let height = size.y - 70.0;
+            // Room for the heading lines above and the buttons below.
+            let height = size.y - 150.0;
             ui.allocate_ui(egui::vec2(size.x, height), |ui| {
                 ui.set_min_height(height);
                 match b.page {
                     BriefPage::Map => {
-                        brief_map(ui, c, s, &m, &mut b, tex, egui::vec2(size.x, height))
+                        route_editor(ui, c, s, planner, &m, &mut b, egui::vec2(size.x, height))
                     }
                     BriefPage::Loadout => {
                         crate::loadout::editor(ui, &mut b.window, &mut b.loadout, &m, height);
@@ -902,6 +906,7 @@ fn briefing(
     if take_off {
         let cmd = stealth_campaign::Command::TakeMission { offer: o.id, base: Some(b.base) };
         c.take_loadout = Some(b.loadout.clone());
+        c.take_route = b.route.clone();
         match c.state.apply(ME, cmd) {
             Ok(ev) => {
                 c.ui.error = None;
@@ -910,6 +915,7 @@ fn briefing(
             }
             Err(e) => {
                 c.take_loadout = None;
+                c.take_route = None;
                 c.ui.error = Some(e);
             }
         }
@@ -919,110 +925,57 @@ fn briefing(
     }
 }
 
-/// The briefing map: the route, the target and what is known around them.
-fn brief_map(
+/// The route editor (the mission planner's): drag, add and remove waypoints over the radars
+/// friendly aircraft have detected (and that still stand), with their detection and missile
+/// ranges and the route's exposure; the campaign's places and air picture over the map.
+fn route_editor(
     ui: &mut egui::Ui,
     c: &ActiveCampaign,
     s: &Session,
+    planner: &mut crate::planner::Planner,
     m: &stealth_mission::Mission,
     b: &mut Briefing,
-    tex: Option<&egui::TextureHandle>,
     size: egui::Vec2,
 ) {
-    let legend_w = 210.0;
-    ui.horizontal_top(|ui| {
-        let (rect, resp) = ui.allocate_exact_size(
-            egui::vec2(size.x - legend_w, size.y),
-            egui::Sense::click_and_drag(),
-        );
-        let route: Vec<egui::Vec2> = std::iter::once(m.takeoff.position)
-            .chain(m.waypoints.iter().copied())
-            .map(|p| egui::vec2(p.x as f32, p.y as f32))
-            .collect();
-        let (mut centre, mut scale) = *b.view.get_or_insert_with(|| {
-            let lo = route.iter().fold(egui::vec2(f32::MAX, f32::MAX), |a, p| a.min(*p));
-            let hi = route.iter().fold(egui::vec2(f32::MIN, f32::MIN), |a, p| a.max(*p));
-            // Room around the target for its defences.
-            MapView::fit(
-                rect,
-                lo - egui::vec2(0x300 as f32, 0x300 as f32),
-                hi + egui::vec2(0x300 as f32, 0x300 as f32),
-            )
-        });
-        let view = MapView { rect, centre, scale };
-        view.pan_zoom(ui, &resp, &mut centre, &mut scale);
-        b.view = Some((centre, scale));
-        let painter = ui.painter_at(rect);
-        map_draw::picture(&painter, &view, tex);
-        let st = &c.state;
-        let at = |x: f32, y: f32| view.to_screen(x, y);
+    let route = b.route.get_or_insert_with(|| {
+        planner.refit();
+        crate::mission::PlannedRoute::of(m)
+    });
+    let st = &c.state;
+    let known = |i: usize| st.site(i as u16).is_some_and(|x| x.spotted && x.alive());
+    // The SAM sites are the editor's own rings.
+    let mut pic = super::picture::picture(st, &s.combat.sim);
+    pic.sams.clear();
+    let overlay = |painter: &egui::Painter, view: &MapView| {
         for p in &st.places {
             let col = match p.owner {
                 Side::Blue => FRIENDLY_BLUE,
                 Side::Red => MISSILE_RED,
                 Side::Neutral => DIM,
             };
-            let c0 = at(p.x as f32, p.y as f32);
-            painter.circle_stroke(c0, 5.0, egui::Stroke::new(1.5, col));
+            let c0 = view.to_screen(p.x as f32, p.y as f32);
+            if p.airfield.is_some() {
+                let r = egui::Rect::from_center_size(c0, egui::vec2(9.0, 9.0));
+                painter.rect_stroke(r, 0.0, egui::Stroke::new(1.5, col), egui::StrokeKind::Middle);
+            } else {
+                painter.circle_stroke(c0, 4.5, egui::Stroke::new(1.5, col));
+            }
             painter.text(
-                c0 + egui::vec2(7.0, -7.0),
-                egui::Align2::LEFT_BOTTOM,
+                c0 + egui::vec2(7.0, 7.0),
+                egui::Align2::LEFT_TOP,
                 &p.name,
                 egui::FontId::monospace(11.0),
                 col,
             );
         }
-        let pic = super::picture::picture(st, &s.combat.sim);
-        super::picture::draw(&painter, &view, &pic, true);
-        // The route: out to the target and home.
-        let pts: Vec<egui::Pos2> = route.iter().map(|p| at(p.x, p.y)).collect();
-        painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(2.0, GREEN)));
-        for (k, p) in pts.iter().enumerate().skip(1) {
-            painter.circle_filled(*p, 3.5, GREEN);
-            painter.text(
-                *p + egui::vec2(6.0, 6.0),
-                egui::Align2::LEFT_TOP,
-                format!("{k}"),
-                egui::FontId::monospace(11.0),
-                GREEN,
-            );
-        }
-        let t = at(m.waypoints[1].x as f32, m.waypoints[1].y as f32);
-        painter.circle_stroke(t, 12.0, egui::Stroke::new(2.0, AMBER));
-        painter.circle_stroke(t, 4.0, egui::Stroke::new(2.0, AMBER));
-        ui.vertical(|ui| {
-            ui.set_width(legend_w - 12.0);
-            section(ui, "Legend");
-            map_draw::legend(ui, "Route, waypoints", |p, c0| {
-                p.line_segment(
-                    [c0 - egui::vec2(7.0, 0.0), c0 + egui::vec2(7.0, 0.0)],
-                    egui::Stroke::new(2.0, GREEN),
-                );
-            });
-            map_draw::legend(ui, "Target", |p, c0| {
-                p.circle_stroke(c0, 6.0, egui::Stroke::new(2.0, AMBER));
-            });
-            map_draw::legend(ui, "SAM missile reach", |p, c0| {
-                p.extend(map_draw::missile_circle(c0, 6.0, 1.0));
-            });
-            super::picture::legend(ui);
-            ui.add_space(8.0);
-            let known = pic.sams.len() + pic.guns.len();
-            ui.label(egui::RichText::new(format!("{known} defences known")).color(BRIGHT));
-            if o_intel(c, m) {
-                ui.label(egui::RichText::new("Recon photos of the target").color(GREEN));
-            } else {
-                ui.label(
-                    egui::RichText::new("No recon of the target: expect more").small().color(AMBER),
-                );
-            }
-            ui.label(egui::RichText::new("Wheel: zoom, drag: pan").small().color(DIM));
-        });
+        super::picture::draw(painter, view, &pic, false);
+    };
+    crate::planner::route_panel(ui, planner, m, route, &known, Some(&overlay), size, |ui| {
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new("Radars shown: detected by friendly aircraft, still standing")
+                .small()
+                .color(AMBER),
+        );
     });
-}
-
-/// The sortie's target place has recon intelligence.
-fn o_intel(c: &ActiveCampaign, m: &stealth_mission::Mission) -> bool {
-    let (x, y) = (m.waypoints[1].x, m.waypoints[1].y);
-    c.state.places.iter().any(|p| p.intel(c.state.clock) && dist(p.x, p.y, x, y) < 0x200)
 }

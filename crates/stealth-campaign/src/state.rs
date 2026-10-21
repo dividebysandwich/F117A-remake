@@ -63,6 +63,10 @@ pub struct Site {
     pub destroyed_at: Option<f64>,
     /// Removed for good (the defences of a captured place).
     pub removed: bool,
+    /// A friendly aircraft has detected it (its radar on an RWR, recon photos): the briefings
+    /// show it while it lives.
+    #[serde(default)]
+    pub spotted: bool,
 }
 
 impl Site {
@@ -377,6 +381,7 @@ impl CampaignState {
                 side,
                 destroyed_at: None,
                 removed: false,
+                spotted: false,
             });
         }
         // Places: cities and airfields, merged by name and distance.

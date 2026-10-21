@@ -596,6 +596,11 @@ impl Sim {
         !self.parking.is_empty()
     }
 
+    /// How aircraft spec `spec` flies (plane, helicopter, drone).
+    pub fn aircraft_kind(&self, spec: i32) -> AircraftKind {
+        self.ac_type(spec).kind
+    }
+
     /// Whether aircraft spec `spec` is friendly (radar type -1).
     pub fn friendly_aircraft(&self, spec: i32) -> bool {
         self.ac_type(spec).radar == -1

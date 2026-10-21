@@ -12,15 +12,22 @@
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
 //!   ejection, explosions and flares, and on the ground the emergency beacon (`beacon.flac`, two
 //!   chirps every 3 s at half volume) until the rescue ends.
+//! - Out of the cockpit under the chute and on the ground, the pilot hears the aircraft around
+//!   (`jet.flac`, `helicopter.flac`, tools/gen_aircraft_sounds.py), placed by direction with
+//!   stereo panning that follows the head, fading with distance, with a Doppler shift.
 
 use std::collections::HashMap;
 
-use bevy::audio::{AudioSink, PlaybackMode, PlaybackSettings, Volume};
+use bevy::audio::{AudioSink, PlaybackMode, PlaybackSettings, SpatialAudioSink, SpatialListener, SpatialScale, Volume};
 use bevy::prelude::*;
+use stealth_sim::{AircraftKind, fflags};
 
+use crate::camera::EyeCamera;
+use crate::combat::{CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player};
 use crate::input::{Action, ActionEvent};
 use crate::settings::AppState;
+use crate::world::{FloatingOrigin, WorldPos, wu_to_bevy};
 
 pub struct SoundPlugin;
 
@@ -33,6 +40,7 @@ impl Plugin for SoundPlugin {
                 Update,
                 (flight_sounds, play_sounds, engine_drone, beacon).chain().run_if(in_state(AppState::Flight)),
             )
+            .add_systems(Update, distant_aircraft.after(CombatSystems).run_if(in_state(AppState::Flight)))
             .add_systems(OnExit(AppState::Flight), stop_all);
     }
 }
@@ -90,6 +98,22 @@ const EJECTED_SOUNDS: [u8; 4] = [4, 5, 0x14, 0x1C];
 const BEACON_INTERVAL: f32 = 3.0;
 const BEACON_VOLUME: f32 = 0.5;
 
+/// Aircraft heard by the downed pilot: jets and helicopters up to their range (m), at full
+/// volume within the reference distance (m), then falling off with 1 / distance; the nearest
+/// `DISTANT_MAX` of them.
+const JET_RANGE: f32 = 12_000.0;
+const JET_REF: f32 = 500.0;
+const JET_VOLUME: f32 = 0.9;
+const HELICOPTER_RANGE: f32 = 5_000.0;
+const HELICOPTER_REF: f32 = 200.0;
+const HELICOPTER_VOLUME: f32 = 0.8;
+const DISTANT_MAX: usize = 6;
+/// Speed of sound (m/s) for the Doppler shift, and the shift's limits.
+const SPEED_OF_SOUND: f32 = 340.0;
+const DOPPLER_RANGE: (f32, f32) = (0.75, 1.35);
+/// Distance between the listener's ears (m).
+const EAR_GAP: f32 = 0.2;
+
 #[derive(Resource, Default)]
 struct SoundBank {
     /// Sound id -> variants (speech 43 has two).
@@ -97,6 +121,8 @@ struct SoundBank {
     /// Engine loops by recorded airspeed.
     engine: Vec<(f32, Handle<AudioSource>)>,
     beacon: Option<Handle<AudioSource>>,
+    jet: Option<Handle<AudioSource>>,
+    helicopter: Option<Handle<AudioSource>>,
 }
 
 /// A playing one-shot sound (one instance per id at a time, like the single-voice driver).
@@ -105,6 +131,16 @@ struct OneShot(u8);
 
 #[derive(Component)]
 struct Beacon;
+
+/// The loop of another aircraft heard by the downed pilot.
+#[derive(Component)]
+struct DistantAircraft {
+    unit: usize,
+    helicopter: bool,
+    /// Distance (m) last frame, and the current Doppler factor.
+    dist: f32,
+    doppler: f32,
+}
 
 #[derive(Component)]
 struct EngineDrone {
@@ -136,9 +172,10 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
             bank.sfx.entry(rwr_id(tone)).or_default().push(server.load(format!("sounds/rwr/{file}")));
         }
     }
-    if crate::asset_path::asset("sounds/beacon.flac").exists() {
-        bank.beacon = Some(server.load("sounds/beacon.flac"));
-    }
+    let optional = |name: &str| crate::asset_path::asset(&format!("sounds/{name}")).exists().then(|| server.load(format!("sounds/{name}")));
+    bank.beacon = optional("beacon.flac");
+    bank.jet = optional("jet.flac");
+    bank.helicopter = optional("helicopter.flac");
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));
     commands.insert_resource(bank);
 }
@@ -344,7 +381,117 @@ fn beacon(
     }
 }
 
-fn stop_all(mut commands: Commands, q: Query<Entity, Or<(With<OneShot>, With<EngineDrone>, With<Beacon>)>>) {
+/// The aircraft around the pilot, out of the cockpit (under the chute and on the ground): each
+/// one's loop plays from its position, panned by its direction from the eye (the ears follow the
+/// head) and shifted by its closing speed; out of range or beyond the nearest few, it stops.
+#[allow(clippy::too_many_arguments)]
+fn distant_aircraft(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    combat: Option<Res<crate::combat::Combat>>,
+    origin: Res<FloatingOrigin>,
+    virt: Res<Time<Virtual>>,
+    eye: Query<(Entity, &GlobalTransform, Has<SpatialListener>), With<EyeCamera>>,
+    mut playing: Query<(Entity, &mut DistantAircraft, &mut WorldPos, Option<&mut SpatialAudioSink>)>,
+) {
+    let heard = level.0 == 3 && has_ejected(combat.as_deref()) && combat.as_ref().is_some_and(|c| c.end.is_none());
+    let (Some(bank), Some(combat), Ok((cam, eye_tf, listening))) = (bank.filter(|_| heard), combat, eye.single()) else {
+        for (e, ..) in &playing {
+            commands.entity(e).despawn();
+        }
+        return;
+    };
+    if !listening {
+        // rodio's panning plays an emitter on the right louder in the left channel, so the ears
+        // are swapped to come out right.
+        commands.entity(cam).insert(SpatialListener { left_ear_offset: Vec3::X * EAR_GAP / 2.0, right_ear_offset: Vec3::X * EAR_GAP / -2.0 });
+    }
+    let ear = origin.origin + eye_tf.translation().as_dvec3();
+    let sim = &combat.sim;
+    // The nearest jets and helicopters in range: (unit, helicopter, position, distance).
+    let mut heard: Vec<(usize, bool, bevy::math::DVec3, f32)> = sim
+        .active_aircraft()
+        .into_iter()
+        .filter(|(_, u, _)| u.flags & fflags::DESTROYED == 0 && (u.wx != 0 || u.wy != 0) && (u.flags & fflags::AIRBORNE != 0 || u.speed > 0))
+        .filter_map(|(i, u, _)| {
+            let helicopter = match sim.aircraft_kind(u.spec) {
+                AircraftKind::Plane => false,
+                AircraftKind::Helicopter => true,
+                AircraftKind::Drone => return None,
+            };
+            let (east, north, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
+            let p = wu_to_bevy(east, north, alt);
+            let d = (p - ear).length() as f32;
+            let range = if helicopter { HELICOPTER_RANGE } else { JET_RANGE };
+            (d < range).then_some((i, helicopter, p, d))
+        })
+        .collect();
+    heard.sort_by(|a, b| a.3.total_cmp(&b.3));
+    heard.truncate(DISTANT_MAX);
+
+    let dt = virt.delta_secs();
+    let mut have = Vec::new();
+    for (e, mut d, mut pos, sink) in &mut playing {
+        let Some(&(_, helicopter, p, dist)) = heard.iter().find(|h| h.0 == d.unit && h.1 == d.helicopter) else {
+            commands.entity(e).despawn();
+            continue;
+        };
+        have.push(d.unit);
+        pos.0 = p;
+        if dt > 0.0 {
+            let away = (dist - d.dist) / dt;
+            let target = (SPEED_OF_SOUND / (SPEED_OF_SOUND + away).max(1.0)).clamp(DOPPLER_RANGE.0, DOPPLER_RANGE.1);
+            d.doppler += (target - d.doppler) * (dt * 4.0).min(1.0);
+        }
+        d.dist = dist;
+        let Some(mut sink) = sink else { continue };
+        if virt.is_paused() {
+            sink.pause();
+            continue;
+        }
+        sink.play();
+        sink.set_volume(Volume::Linear(distant_volume(helicopter, dist)));
+        sink.set_speed(unit_pitch(d.unit) * d.doppler);
+    }
+    for &(unit, helicopter, p, dist) in heard.iter().filter(|h| !have.contains(&h.0)) {
+        let handle = if helicopter { bank.helicopter.clone() } else { bank.jet.clone() };
+        let Some(handle) = handle else { continue };
+        let range = if helicopter { HELICOPTER_RANGE } else { JET_RANGE };
+        commands.spawn((
+            AudioPlayer(handle),
+            PlaybackSettings {
+                mode: PlaybackMode::Loop,
+                volume: Volume::Linear(distant_volume(helicopter, dist)),
+                speed: unit_pitch(unit),
+                spatial: true,
+                // Positions shrunk to within rodio's unit distance: it only pans, the volume
+                // falls off here.
+                spatial_scale: Some(SpatialScale::new(1.0 / range)),
+                ..default()
+            },
+            WorldPos(p),
+            Transform::from_translation((p - origin.origin).as_vec3()),
+            DistantAircraft { unit, helicopter, dist, doppler: 1.0 },
+        ));
+    }
+}
+
+/// Volume of an aircraft heard `dist` metres away, fading out over the last quarter of the range.
+fn distant_volume(helicopter: bool, dist: f32) -> f32 {
+    let (range, reference, volume) = if helicopter { (HELICOPTER_RANGE, HELICOPTER_REF, HELICOPTER_VOLUME) } else { (JET_RANGE, JET_REF, JET_VOLUME) };
+    let fade = ((range - dist) / (0.25 * range)).clamp(0.0, 1.0);
+    volume * (reference / dist.max(1.0)).min(1.0) * fade
+}
+
+/// A slightly different pitch per aircraft, so that several don't sound alike.
+fn unit_pitch(unit: usize) -> f32 {
+    0.92 + 0.16 * (unit as f32 * 0.618).fract()
+}
+
+type FlightSound = Or<(With<OneShot>, With<EngineDrone>, With<Beacon>, With<DistantAircraft>)>;
+
+fn stop_all(mut commands: Commands, q: Query<Entity, FlightSound>) {
     for e in &q {
         commands.entity(e).despawn();
     }

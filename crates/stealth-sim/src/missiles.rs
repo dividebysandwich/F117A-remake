@@ -246,7 +246,7 @@ impl Sim {
                         self.proj[s].ttl = 2 * fs;
                         if !self.decoy_active() {
                             self.msg(format!("Hit by {}", mt.name));
-                            self.player_hit();
+                            self.player_hit(true);
                             if !self.training() {
                                 self.log_event(5, spec);
                             }
@@ -386,7 +386,7 @@ impl Sim {
             let d = approx(self.p.mx - ex, self.p.my - ey) + (self.p.view_z >> 5);
             if self.diff * 32 > d {
                 // The original builds a "Blast damage" message after the miss text but never shows it.
-                self.player_hit();
+                self.player_hit(false);
             }
         } else if s >= 8 {
             self.msg(format!("{long} ground impact"));

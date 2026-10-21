@@ -438,6 +438,11 @@ pub struct SimOptions {
     /// their radar signature (not in the original).
     #[serde(default)]
     pub external_stores: bool,
+    /// Realistic weapon damage (not in the original): a missile hit can destroy the aircraft
+    /// outright, damages more systems, starts fires more often (a fire burns out or the aircraft
+    /// explodes) and damaged control surfaces put the aircraft out of trim.
+    #[serde(default)]
+    pub realistic_damage: bool,
 }
 
 impl Default for SimOptions {
@@ -448,6 +453,7 @@ impl Default for SimOptions {
             seed: None,
             prior_damage: None,
             external_stores: false,
+            realistic_damage: false,
         }
     }
 }
@@ -751,4 +757,20 @@ pub struct DamageEffects {
     pub heavy_stall: bool,
     /// Ground contact is fatal (hits > 4).
     pub fragile: bool,
+    /// Damaged control surfaces (realistic damage): the stick input they add.
+    pub controls: ControlFault,
+    /// The airframe is breaking up (realistic damage): the aircraft explodes within seconds.
+    pub destroyed: bool,
+}
+
+/// Damaged control surfaces (realistic damage): a constant out-of-trim input and an oscillating
+/// one (a flapping surface), in thousandths of full stick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ControlFault {
+    pub roll: i32,
+    pub pitch: i32,
+    /// Oscillation amplitudes and its period (tenths of a second, 0 = none).
+    pub roll_swing: i32,
+    pub pitch_swing: i32,
+    pub period: i32,
 }

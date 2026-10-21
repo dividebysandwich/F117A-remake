@@ -187,6 +187,7 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
         (settings.classic_avionics, "--classic-avionics"),
         (settings.classic_flight, "--classic-flight"),
         (settings.no_crashes, "--no-crashes"),
+        (settings.realistic_damage, "--realistic-damage"),
     ] {
         if on {
             cmd.arg(flag);
@@ -478,6 +479,17 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str) {
 
 /// A labelled CLASSIC / MODERN slide switch; `modern` is the right position.
 fn slide_switch(ui: &mut egui::Ui, label: &str, modern: &mut bool) -> egui::Response {
+    two_way_switch(ui, label, modern, ("CLASSIC", "MODERN"))
+}
+
+/// A labelled slide switch between two settings (`sides`: left, right); `right` is the right
+/// position.
+fn two_way_switch(
+    ui: &mut egui::Ui,
+    label: &str,
+    modern: &mut bool,
+    sides: (&str, &str),
+) -> egui::Response {
     let width = ui.available_width().min(200.0);
     let (rect, mut resp) = ui.allocate_exact_size(egui::vec2(width, 22.0), egui::Sense::click());
     if resp.clicked() {
@@ -515,8 +527,7 @@ fn slide_switch(ui: &mut egui::Ui, label: &str, modern: &mut bool) -> egui::Resp
         )
         .shrink(2.0);
         p.rect_filled(knob, 0.0, if *modern { DIM } else { AMBER.gamma_multiply(0.55) });
-        for (i, (text, on)) in [("CLASSIC", !*modern), ("MODERN", *modern)].into_iter().enumerate()
-        {
+        for (i, (text, on)) in [(sides.0, !*modern), (sides.1, *modern)].into_iter().enumerate() {
             let center = egui::pos2(track.left() + half * (i as f32 + 0.5), track.center().y);
             p.text(
                 center,
@@ -699,6 +710,20 @@ fn menu_ui(
                     if facts(
                         ui.checkbox(&mut s.no_crashes, "Crash protection"),
                         &["Pulls up automatically near the ground (gear up)", "Ground contact and collisions are not fatal", "Off: the ground can always be hit"],
+                    )
+                    .changed()
+                    {
+                        settings.set_changed();
+                    }
+                    section(ui, "Realism");
+                    let s = settings.bypass_change_detection();
+                    if facts(
+                        two_way_switch(ui, "Damage", &mut s.realistic_damage, ("GAME", "REAL")),
+                        &[
+                            "Weapon damage", "Game: the original's damage; hits add up but never bring the aircraft down",
+                            "Realistic: a missile hit can destroy the aircraft (eject!), damages more systems and often starts a fire, which burns out or blows the aircraft up",
+                            "Realistic: damaged control surfaces put the aircraft out of trim or make it oscillate",
+                        ],
                     )
                     .changed()
                     {

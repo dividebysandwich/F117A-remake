@@ -245,7 +245,13 @@ fn start_combat(
     let mut sim = Sim::with_options(
         &data,
         m,
-        SimOptions { landing, prior_damage, external_stores, ..default() },
+        SimOptions {
+            landing,
+            prior_damage,
+            external_stores,
+            realistic_damage: settings.realistic_damage,
+            ..default()
+        },
     );
     // The stores chosen in the menu, else the briefed ones on this aircraft.
     let loadout = loadout
@@ -850,6 +856,11 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         fuel_leak: d.fuel_leak as f32,
         heavy_stall: d.heavy_stall,
         fragile: d.fragile,
+        roll_trim: d.controls.roll as f32 / 1000.0,
+        pitch_trim: d.controls.pitch as f32 / 1000.0,
+        roll_swing: d.controls.roll_swing as f32 / 1000.0,
+        pitch_swing: d.controls.pitch_swing as f32 / 1000.0,
+        swing_period: d.controls.period as f32 / 10.0,
     };
     if a.damage != damage {
         a.damage = damage;

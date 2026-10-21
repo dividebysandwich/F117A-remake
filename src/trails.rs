@@ -360,7 +360,7 @@ fn update_trails(
         && d.bits != 0
         && a.ended.is_none()
     {
-        let heavy = d.bits & stealth_sim::dmg::FIRE != 0 || d.hits >= 4;
+        let heavy = d.bits & stealth_sim::dmg::FIRE != 0 || d.hits >= 6;
         emitters.push((
             Source::PlayerSmoke(heavy),
             if heavy { &HEAVY_DAMAGE_SMOKE } else { &DAMAGE_SMOKE },

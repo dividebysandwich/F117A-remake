@@ -6,6 +6,7 @@ pub mod types;
 
 mod ai;
 pub mod csar;
+mod damage;
 pub mod drones;
 pub mod lights;
 mod missiles;
@@ -93,6 +94,14 @@ pub struct Sim {
     pub(crate) emv: i32,
     pub(crate) damage: u8,
     pub(crate) hits: i32,
+    /// Realistic damage: damaged control surfaces; frames until a fire is decided (burns out
+    /// or blows the aircraft up) and until the destroyed airframe breaks up (0 = none).
+    #[serde(default)]
+    pub(crate) control_fault: ControlFault,
+    #[serde(default)]
+    pub(crate) fire_frames: i32,
+    #[serde(default)]
+    pub(crate) breakup_frames: i32,
     pub(crate) irj_heat: i32,
     pub(crate) door_anim: i32,
     pub(crate) bay_req: bool,
@@ -329,6 +338,9 @@ impl Sim {
             emv: 0,
             damage: 0,
             hits: 2,
+            control_fault: ControlFault::default(),
+            fire_frames: 0,
+            breakup_frames: 0,
             irj_heat: 0,
             door_anim: 0,
             bay_req: false,
@@ -710,6 +722,7 @@ impl Sim {
         self.update_cm_timers();
         self.update_bullets(ps);
         self.update_light_timers();
+        self.update_damage();
         if self.alarm_timer > 0 {
             self.alarm_timer -= 1;
         }
@@ -953,7 +966,11 @@ impl Sim {
         DamageEffects {
             bits: d,
             hits: self.hits,
-            throttle_cap: (d & dmg::ENG != 0).then(|| ((25 - self.hits) * 4).max(0)),
+            throttle_cap: if self.breakup_frames > 0 {
+                Some(0)
+            } else {
+                (d & dmg::ENG != 0).then(|| ((25 - self.hits) * 4).max(0))
+            },
             stick_jitter: if d & dmg::FC != 0 { (self.hits * 4).clamp(0, 32) } else { 0 },
             autopilot_failed: d & dmg::AV != 0,
             doors_jammed: d & dmg::BD != 0,
@@ -961,6 +978,8 @@ impl Sim {
             jammers_failed: d & dmg::JAM != 0,
             heavy_stall: self.hits > 8,
             fragile: self.hits > 4,
+            controls: self.control_fault,
+            destroyed: self.breakup_frames > 0,
         }
     }
 

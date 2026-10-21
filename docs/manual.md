@@ -45,6 +45,7 @@ the *Cockpit* switch).
 | **Situation** | *Cold War*: covert peacetime operation, fewer enemy aircraft. *Limited War*: regional conflict, air defences on alert. *Conventional War*: full-scale war, all enemy forces active. The briefing states the exact rules of engagement. |
 | **Mission** | *Strike*: ground target (destroy, photograph or reach), with a primary and a secondary objective. *Air to air*: intercept an enemy aircraft. *Strike training* and *Air training*: practice missions. *Drone defense* (Ukraine only): stop a wave of attack drones, then bomb their launch site (chapter 11). |
 | **Aircraft** | *F-117A* or *F-16C*: the flown aircraft. *Realistic weapons* (F-117A only): two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. |
+| **Realism** | *Damage*: *Game* keeps the original's weapon damage (hits add up, damaging systems, but never bring the aircraft down). *Real*: a missile hit can destroy the aircraft outright (the engine dies, it burns and breaks up within seconds: eject), otherwise it damages several systems at once and often starts a fire, which either burns out or blows the aircraft up after a while. Hits to the flight controls bend control surfaces: the aircraft rolls or pitches by itself (hold the stick against it) or wobbles. |
 | **Weather** | Random (based on the theater's climate), Clear, Scattered, Broken, Overcast, Storm. *Random cover* off: a slider sets the coverage of the main cloud layer. Clouds block optical seekers and visual identification for both sides; radar sees through clouds. |
 | **Classic / Modern** | *Shaders*: flat original shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: original panel or modern panel (this manual describes the modern panel). *HUD*: the original HUD, or a high-resolution F-16 style HUD in green. *Flight model*: original flight model, or an aerodynamic model with fly-by-wire: the stick commands pitch rate (up to 7 g) and roll rate; released, the nose stays where it was left and, once the flight path has caught up with it, the path is held (also in turns up to 60° of bank). Angle of attack and g limiters only act near the limits. New players start with modern shaders, cockpit, HUD, avionics and flight model, and classic shadows and lighting. |
 
@@ -204,7 +205,8 @@ The lamps are dark when inactive. Their layout from top to bottom:
 | 4 | **BD** bay door damage (doors stay open) · **AV** avionics damage · (unused) |
 | 5 | **RAD** radar-guided missile in flight · **IR** infrared missile in flight · **TRAK** enemy radar tracking the aircraft |
 
-A fire on board also sounds the fire warning siren until the fire is out. A damaged aircraft
+A fire on board also sounds the fire warning siren until the fire is out (with realistic damage
+a fire burns out or blows the aircraft up; with game damage it burns on, leaking fuel). A damaged aircraft
 trails smoke (grey, black when badly hit), and flames while it burns.
 
 | Control | Key | Function |

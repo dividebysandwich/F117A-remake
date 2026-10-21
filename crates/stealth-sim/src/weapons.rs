@@ -183,6 +183,9 @@ impl Sim {
     fn resupply(&mut self) {
         self.damage = 0;
         self.hits = 0;
+        self.control_fault = ControlFault::default();
+        self.fire_frames = 0;
+        self.breakup_frames = 0;
         for b in self.bays.iter_mut() {
             b.1 = if b.0 < 16 { 9 } else { 1 };
         }
@@ -510,7 +513,7 @@ impl Sim {
                 if d < 0x20 {
                     self.msg("Hit by gunfire");
                     if d < 0x20 / (4 - self.diff) {
-                        self.player_hit();
+                        self.player_hit(false);
                     }
                     let (bx, by) = b.map_xy();
                     self.emit(SimEvent::Explosion { x: bx, y: by, alt: b.alt / f, kind: -1 });

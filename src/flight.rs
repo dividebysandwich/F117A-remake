@@ -165,6 +165,26 @@ pub struct FlightDamage {
     pub heavy_stall: bool,
     /// More than 4 hits: any fast ground contact outside a runway is fatal.
     pub fragile: bool,
+    /// Damaged control surfaces (realistic damage): constant roll and pitch input, oscillating
+    /// roll and pitch input amplitudes (fractions of full stick) and the oscillation period (s).
+    pub roll_trim: f32,
+    pub pitch_trim: f32,
+    pub roll_swing: f32,
+    pub pitch_swing: f32,
+    pub swing_period: f32,
+}
+
+impl FlightDamage {
+    /// Stick input (roll, pitch; fractions of full stick) the damaged control surfaces add at
+    /// `t` seconds.
+    pub fn control_bias(&self, t: f32) -> (f32, f32) {
+        let s = if self.swing_period > 0.0 {
+            (t * std::f32::consts::TAU / self.swing_period).sin()
+        } else {
+            0.0
+        };
+        (self.roll_trim + self.roll_swing * s, self.pitch_trim + self.pitch_swing * s)
+    }
 }
 
 /// The player's aircraft state.
@@ -442,6 +462,11 @@ fn step_one(
             turb = (turb / 2.0).floor();
         }
         turb += a.damage.stick_jitter;
+        if air {
+            let (r, p) = a.damage.control_bias(a.time);
+            roll_input += r * 126.0;
+            pitch_input += p * 42.0;
+        }
         if turb > 0.0 && air {
             roll_input += rand::random_range(0.0..turb) - turb / 2.0;
             pitch_input += (rand::random_range(0.0..turb) - turb / 2.0) / 2.0;

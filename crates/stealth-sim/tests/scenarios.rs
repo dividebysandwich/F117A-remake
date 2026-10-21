@@ -1059,3 +1059,78 @@ fn ccrp_releases_at_the_release_point() {
         assert_eq!(sim.weapon_groups().0[0].1, 1, "weapon {w}: one bomb");
     }
 }
+
+/// An SA-2 site 10 km north of a slow, high player with open bays fires until a hit; returns
+/// the simulation after the first hit (None: no hit in 4 minutes).
+fn sa2_hit(opts: SimOptions) -> Option<(Sim, PlayerState)> {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    place_site(&mut sim, 3, 1, mx, my - 640);
+    let mut p = player_at(mx, my, 6000, 0x4000, 200);
+    p.cmd.toggle_bay = true;
+    for _ in 0..15 * 240 {
+        let ev = sim.step(&p, 15);
+        p.cmd = Commands::default();
+        if ev.iter().any(|e| matches!(e, SimEvent::PlayerHit { .. })) {
+            return Some((sim, p));
+        }
+    }
+    None
+}
+
+/// Realistic damage: some missile hits destroy the aircraft (it explodes seconds later, ending
+/// the mission), some start fires, control hits bend the controls; the original's damage never
+/// ends the mission.
+#[test]
+fn realistic_missile_damage() {
+    let (mut destroyed, mut exploded, mut bent, mut survived) = (0, 0, 0, 0);
+    for seed in 0..24u32 {
+        let opts = SimOptions {
+            seed: Some(seed * 7919 + 1),
+            realistic_damage: true,
+            ..Default::default()
+        };
+        let Some((mut sim, p)) = sa2_hit(opts) else { continue };
+        let fx = sim.damage_effects();
+        destroyed += fx.destroyed as i32;
+        if fx.destroyed {
+            assert_eq!(fx.throttle_cap, Some(0), "the engine dies with the airframe");
+            assert!(fx.controls != ControlFault::default());
+        }
+        bent += (fx.controls != ControlFault::default()) as i32;
+        // The site is gone: only the damage runs its course.
+        sim.objects_mut()[3].unit_type = 0;
+        for _ in 0..15 * 90 {
+            sim.step(&p, 15);
+        }
+        match sim.mission_end() {
+            Some(e) => {
+                assert_eq!(e.outcome, 1);
+                exploded += 1;
+            }
+            None => {
+                assert!(!sim.damage_effects().destroyed);
+                survived += 1;
+            }
+        }
+    }
+    assert!(
+        destroyed > 0 && exploded >= destroyed && survived > 0,
+        "{destroyed} {exploded} {survived}"
+    );
+    assert!(bent > 0);
+
+    for seed in 0..8u32 {
+        let opts = SimOptions { seed: Some(seed * 7919 + 1), ..Default::default() };
+        let Some((mut sim, p)) = sa2_hit(opts) else { continue };
+        assert!(!sim.damage_effects().destroyed);
+        assert_eq!(sim.damage_effects().controls, ControlFault::default());
+        sim.objects_mut()[3].unit_type = 0;
+        for _ in 0..15 * 90 {
+            sim.step(&p, 15);
+        }
+        assert!(sim.mission_end().is_none(), "the original's damage is never fatal in the air");
+    }
+}

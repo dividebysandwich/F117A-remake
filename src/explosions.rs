@@ -469,9 +469,8 @@ fn damage_trail(
     let vel = (seg / dt as f64).as_vec3();
     let len = seg.length() as f32;
     let fire = d.bits & stealth_sim::dmg::FIRE != 0;
-    let hits = d.hits.max(1) as f32;
-    // Severity 0 (one hit) .. 1 (eight or more).
-    let sev = ((hits - 1.0) / 7.0).clamp(0.0, 1.0);
+    // Severity 0 (one hit; the count starts at 2) .. 1 (eight or more).
+    let sev = ((d.hits - 3) as f32 / 7.0).clamp(0.0, 1.0);
     let heavy = if fire { 1.0 } else { sev };
 
     // Smoke: drifts in the air where it was left, growing and fading; light grey and thin at

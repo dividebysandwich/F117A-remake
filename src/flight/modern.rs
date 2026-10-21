@@ -459,6 +459,8 @@ pub(super) fn step(
         let mut q_cmd =
             q_turn + q_stick + st.hold.map_or(0.0, |g0| (g0 - gamma) * HOLD_GAIN * roll.cos());
         let mut p_cmd = roll_stick * ae.roll_rate * (qbar / ROLL_Q_FULL).clamp(0.25, 1.0);
+        // Damaged control surfaces: out of trim or flapping, whatever the fly-by-wire wants.
+        let (roll_fault, pitch_fault) = a.damage.control_bias(a.time);
         if a.autopilot() {
             // Bank toward the waypoint bearing (at most 30 degrees), hold the altitude.
             let e = bam(bam_diff(a.waypoint_bearing, to_bam(heading)));
@@ -478,6 +480,7 @@ pub(super) fn step(
             q_cmd = q_cmd.max(q_path + (4.0 - n0).max(0.0) * G / v);
             a.modern.hold = None;
         }
+        q_cmd += pitch_fault * ae.pitch_rate_max;
         // Limiters: the angle of attack stays within the limiter angles and the angles that give
         // the load factor limits (corrected towards them near the limits only).
         let lo_n = if per_cl > 1e-3 {
@@ -497,6 +500,7 @@ pub(super) fn step(
         if alpha > alpha_stall(ae, a) {
             q_cmd -= (alpha - alpha_stall(ae, a)) * 4.0;
         }
+        p_cmd += roll_fault * ae.roll_rate * (qbar / ROLL_Q_FULL).clamp(0.25, 1.0);
         let r_cmd = (-path_rate.dot(up) + (beta + rudder * BETA_RUDDER) / TAU_BETA)
             .clamp(-ae.yaw_rate_max, ae.yaw_rate_max);
         // Pitch rate: second-order response to its command.

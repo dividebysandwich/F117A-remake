@@ -43,6 +43,7 @@ pub struct Prefs {
     pub weather: Option<Sky>,
     pub cloud_cover: Option<u8>,
     pub no_crashes: bool,
+    pub realistic_damage: bool,
     pub modern_shading: bool,
     pub shadows: bool,
     pub local_lights: bool,
@@ -72,6 +73,7 @@ impl Default for Prefs {
             weather: menu.weather,
             cloud_cover: menu.cloud_cover,
             no_crashes: false,
+            realistic_damage: false,
             // New players: modern shaders; classic shadows and lighting; modern cockpit, HUD,
             // avionics and flight model.
             modern_shading: true,
@@ -115,6 +117,7 @@ impl Prefs {
             weather: menu.weather,
             cloud_cover: menu.cloud_cover,
             no_crashes: s.no_crashes,
+            realistic_damage: s.realistic_damage,
             modern_shading: s.modern_shading,
             shadows: s.shadows,
             local_lights: s.local_lights,
@@ -138,6 +141,7 @@ impl Prefs {
         menu.weather = self.weather;
         menu.cloud_cover = self.cloud_cover.map(|c| c.min(100));
         s.no_crashes |= self.no_crashes;
+        s.realistic_damage |= self.realistic_damage;
         s.modern_shading |= self.modern_shading;
         s.shadows |= self.shadows;
         s.local_lights |= self.local_lights;

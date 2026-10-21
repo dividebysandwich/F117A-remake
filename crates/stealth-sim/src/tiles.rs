@@ -311,17 +311,25 @@ impl Sim {
         }
     }
 
-    /// The player is hit.
-    pub(crate) fn player_hit(&mut self) {
+    /// The player is hit (`missile`: by a missile's warhead).
+    pub(crate) fn player_hit(&mut self, missile: bool) {
         if self.training() {
             return;
         }
+        if missile && self.opts.realistic_damage {
+            self.missile_damage();
+            return;
+        }
+        let before = self.damage;
         let mut bits = 0u8;
         for _ in 0..=self.diff {
             let b = 1u8 << self.rng.random(8).clamp(0, 7);
             bits |= b;
             self.damage |= b;
             self.hits += 1;
+        }
+        if self.opts.realistic_damage {
+            self.new_damage(bits, before);
         }
         self.emit(SimEvent::PlayerHit { bits });
         self.emit(SimEvent::DamageFlash);

@@ -52,6 +52,11 @@ const CHAFF: u8 = 7;
 const DECOY: u8 = 13;
 const TRACER: u8 = 17;
 const ENEMY_TRACER: u8 = 41;
+/// A coasting missile (motor burnt out) by day: black in every flight palette. At night it is
+/// drawn additively instead (`SimVisuals::night_dot`), a little brighter than the sky.
+const COASTING: u8 = 5;
+/// Marks the night look of a coasting missile's dot (not a palette colour).
+const NIGHT_DOT: u8 = 0;
 /// A tracer's streak behind the round: this many sim frames of its travel.
 const TRACER_FRAMES: f64 = 0.6;
 const CHUTE: u8 = 15;
@@ -91,8 +96,11 @@ struct Cartridge {
 #[derive(Resource, Default)]
 struct SimVisuals {
     aircraft: HashMap<usize, (Entity, (i32, bool))>,
-    /// Projectile model, spec and motor glow (gone once the motor burns out).
-    proj: [Option<(Entity, i32, Option<Entity>)>; N_PROJ],
+    /// Projectile model, spec and missile dot with its current look: the motor's glow
+    /// (`TRACER`), black by day (`COASTING`) or additive at night (`NIGHT_DOT`).
+    proj: [Option<(Entity, i32, Option<(Entity, u8)>)>; N_PROJ],
+    /// The additive dot material of coasting missiles at night.
+    night_dot: Option<Handle<PaletteMaterial>>,
     cms: [Option<Cartridge>; 4],
     /// Gun rounds: the dot at the round and its tracer line.
     bullets: Vec<(Entity, Entity)>,
@@ -593,35 +601,63 @@ fn sync_objects(
             let Some(e) = spawn_model(&mut commands, &assets, &file, model, false) else {
                 continue;
             };
-            // Rocket motor glow on missiles (not on bombs / equipment), so they can be followed.
-            let mut glow = None;
-            if crate::trails::is_missile(m.spec) && m.motor_visible() {
-                let material = vis.material(&mut materials, &globals, TRACER);
-                let dot = commands
-                    .spawn((
-                        crate::dots::DotLight::bundle(
-                            Vec3::ZERO,
-                            &assets.dots,
-                            mesh_tag(LEVEL_AIRCRAFT, 0, true),
-                        ),
-                        MeshMaterial3d(material),
-                        crate::lighting::LightEmitter {
-                            color: Vec3::new(1.6, 0.9, 0.4),
-                            range: 60.0,
-                        },
+            // A dot on missiles (not on bombs / equipment), so they can be followed: the
+            // rocket motor's glow, then a dark dot once it burns out.
+            let mut dot = None;
+            if crate::trails::is_missile(m.spec) {
+                let d = commands
+                    .spawn(crate::dots::DotLight::bundle(
+                        Vec3::ZERO,
+                        &assets.dots,
+                        mesh_tag(LEVEL_AIRCRAFT, 0, true),
                     ))
                     .id();
-                commands.entity(e).add_child(dot);
-                glow = Some(dot);
+                commands.entity(e).add_child(d);
+                dot = Some((d, 0));
             }
-            vis.proj[s] = Some((e, m.spec, glow));
+            vis.proj[s] = Some((e, m.spec, dot));
         }
-        // The motor burnt out.
-        if !m.motor_visible()
-            && let Some((_, _, glow)) = vis.proj[s].as_mut()
-            && let Some(dot) = glow.take()
+        // The dot's look: glowing while the motor burns, then black, or at night a little
+        // brighter than the sky behind it.
+        let look = if m.motor_visible() {
+            TRACER
+        } else if lights {
+            NIGHT_DOT
+        } else {
+            COASTING
+        };
+        if let Some((_, _, Some((dot, cur)))) = vis.proj[s]
+            && cur != look
         {
-            commands.entity(dot).try_despawn();
+            let material = if look == NIGHT_DOT {
+                vis.night_dot
+                    .get_or_insert_with(|| {
+                        materials.add(PaletteMaterial {
+                            params: PaletteParams {
+                                word: 0xFF00 | COASTING as u32,
+                                flags: FLAG_LINE | crate::palette_material::FLAG_DOT_ADD,
+                                ..default()
+                            },
+                            globals: globals.clone(),
+                        })
+                    })
+                    .clone()
+            } else {
+                vis.material(&mut materials, &globals, look)
+            };
+            let mut d = commands.entity(dot);
+            d.insert(MeshMaterial3d(material));
+            if look == TRACER {
+                d.insert(crate::lighting::LightEmitter {
+                    color: Vec3::new(1.6, 0.9, 0.4),
+                    range: 60.0,
+                });
+            } else {
+                d.remove::<crate::lighting::LightEmitter>();
+            }
+            if let Some((_, _, Some((_, cur)))) = vis.proj[s].as_mut() {
+                *cur = look;
+            }
         }
         let Some((e, ..)) = vis.proj[s] else { continue };
         if let (Ok((mut pos, mut tf, _, _)), Some((p, rot))) =

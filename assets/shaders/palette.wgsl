@@ -118,6 +118,8 @@ const AIRCRAFT_DOT_MAX: f32 = 5.0;
 const DOT_RANGE: f32 = 30000.0;
 const DOT_VIS_FACTOR: f32 = 1.5;
 const DOT_NEAR: f32 = 0.4;
+// Linear brightness an additive dot (FLAG_DOT_ADD) adds to what is behind it.
+const DOT_ADD: f32 = 0.02;
 
 // World units per model unit, by level code in the mesh tag (bits 0..2):
 // 0: LOD0 (0.5), 1: LOD1 (1), 2: LOD2 (4), 3: LOD3 (16), 4: LOD4 (64), 5: aircraft (1/8)
@@ -678,6 +680,11 @@ fn flir(rgb: vec3<f32>, warm: u32, fog_f: f32) -> vec3<f32> {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if ((u32(globals.light_info.w) & 1u) != 0u) {
         return vec4<f32>(pal(material.word & 0xFFu), 1.0);
+    }
+    // Additive dot (FLAG_DOT_ADD): a faint grey added to what is behind it, fading with haze
+    // (alpha 0: AlphaMode::Add blends premultiplied, keeping all of the background).
+    if ((material.flags & 256u) != 0u) {
+        return vec4<f32>(vec3<f32>(DOT_ADD * (1.0 - in.fog_f / 16.0)), 0.0);
     }
     if (flir_view()) {
         // Background: cold sky, cool ground.

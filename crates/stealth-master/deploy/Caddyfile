@@ -1,0 +1,6 @@
+# Caddy in front of the master server: HTTPS (certificates from Let's Encrypt, renewed by
+# Caddy) to the plain HTTP server on this machine, which believes X-Forwarded-For from it.
+sm-master.playspoon.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8089
+}

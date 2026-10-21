@@ -942,15 +942,22 @@ keys with the trigger and DONE when finished. The career's pilot name uses the s
 
 ### Joining
 
-JOIN A GAME takes the server's IP address or host name, with the port after a colon if it is not
-the default 28989 (`192.168.1.20`, `sm89.example.org:29000`, `[2001:db8::1]:28989`). CONNECT
-brings you to the campaign's Ops screen; your aircraft waits at a friendly base.
+JOIN A GAME lists the **public servers** at the top: each one's name, the pilots in it out of
+how many it takes, the theater, the situation and the campaign's clock. JOIN on a row connects
+to it (REFRESH fetches the list again; a server of another game version is greyed out). The
+same list is on the web at https://sm-master.playspoon.com, where a server opens up for its
+settings, the places each side holds and who flies what.
+
+Or type the server's IP address or host name, with the port after a colon if it is not the
+default 28989 (`192.168.1.20`, `sm89.example.org:29000`, `[2001:db8::1]:28989`), and CONNECT.
+Either way you come to the campaign's Ops screen; your aircraft waits at a friendly base.
 
 ### Hosting
 
 HOST A GAME serves a new campaign (theater, opponents, situation) or one of your saved ones, and
 you fly in it. Give the server a name (the others see it when they join; without one it is
-"<your name>'s campaign"), choose the UDP port and how many players may join; to play over the internet,
+"<your name>'s campaign"), choose the UDP port and how many players may join, and whether the
+game is on the public server list (on by default); to play over the internet,
 forward that UDP port to your computer in your router. The campaign is saved on your computer as
 when you play alone.
 
@@ -1005,6 +1012,8 @@ stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 289
 | `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`, `--realistic-weapons` | The rules. |
 | `--save <file>` | The campaign file (default `campaigns/dedicated.json` in the game's data directory). |
 | `--send-rate <hz>` | How often the moving world goes to the players, 1 to 15 times a second (default 7.5). More is smoother; less leaves bandwidth for more players. |
+| `--master <url>` | The server list to be on (default `https://sm-master.playspoon.com`; reported every 30 seconds). |
+| `--no-master` | Not on the server list: players join by address. |
 | `--plain` | Log lines instead of the console screen. |
 
 The server saves the campaign (which side holds which place, what is destroyed, the players'

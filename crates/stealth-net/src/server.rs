@@ -55,6 +55,8 @@ struct Remote {
 pub struct Server {
     net: Endpoint,
     pub name: String,
+    /// Players at most (the listen server's own among them).
+    pub max_players: usize,
     remotes: HashMap<ConnId, Remote>,
     /// Players who dropped out, and when their aircraft goes.
     grace: HashMap<PlayerId, Instant>,
@@ -72,6 +74,9 @@ pub struct Server {
     last_pump: Option<Instant>,
     /// What happened, for a dedicated server's log.
     pub log: Vec<String>,
+    /// On the public server list: its reporter, and the time since the last update.
+    master: Option<crate::master::Reporter>,
+    master_timer: f32,
 }
 
 impl Server {
@@ -87,6 +92,7 @@ impl Server {
         Ok(Self {
             net,
             name: name.to_string(),
+            max_players: max_players.min(MAX_PLAYERS),
             remotes: HashMap::new(),
             grace: HashMap::new(),
             local,
@@ -99,7 +105,14 @@ impl Server {
             campaign_dirty: false,
             last_pump: None,
             log: Vec::new(),
+            master: None,
+            master_timer: f32::MAX,
         })
+    }
+
+    /// Puts the server on the public list at `master` (reported to every half minute).
+    pub fn list_on(&mut self, master: &str) {
+        self.master = Some(crate::master::Reporter::new(master));
     }
 
     pub fn port(&self) -> Option<u16> {
@@ -175,6 +188,7 @@ impl Server {
         }
         self.sync_timer += dt;
         self.roster_timer += dt;
+        self.master_timer += dt;
         self.rate_timer += dt;
         if self.rate_timer >= 1.0 {
             for r in self.remotes.values_mut() {
@@ -449,6 +463,15 @@ impl Server {
             }
         }
         self.net.flush(now);
+        // The public list's view of the server, now and then.
+        if self.master.is_some() && self.master_timer >= 1.0 {
+            self.master_timer = 0.0;
+            let report = crate::master::report(self, host, sim, self.local.is_none());
+            if let Some(m) = &self.master {
+                m.update(report);
+                self.log.extend(m.take_log());
+            }
+        }
     }
 
     /// The moving world for pilot `me`: the pilots far from him only in some of the messages
@@ -503,6 +526,9 @@ impl Server {
 
     /// The server goes down: everybody is told.
     pub fn shutdown(&mut self, reason: &str) {
+        if let Some(mut m) = self.master.take() {
+            m.stop();
+        }
         let m = encode(&ToClient::Shutdown(reason.to_string()));
         let conns: Vec<ConnId> = self.remotes.keys().copied().collect();
         for c in &conns {

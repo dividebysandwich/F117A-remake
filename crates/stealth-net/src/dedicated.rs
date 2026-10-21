@@ -39,6 +39,8 @@ pub struct Config {
     pub save: PathBuf,
     /// Simulation frames between the moving world's messages (`--send-rate`, a second).
     pub send_every: u32,
+    /// The server list's master server (None: not listed, `--no-master`).
+    pub master: Option<String>,
     /// Plain log lines instead of the terminal screen.
     pub plain: bool,
 }
@@ -90,6 +92,8 @@ impl Config {
                 let hz = num(get("--send-rate"), "--send-rate", FS as f32 / SEND_EVERY as f32)?;
                 (FS as f32 / hz.max(1.0)).round().clamp(1.0, FS as f32) as u32
             },
+            master: (!has("--no-master"))
+                .then(|| get("--master").unwrap_or_else(|| crate::master::DEFAULT_MASTER.into())),
             plain: has("--plain"),
         })
     }
@@ -166,6 +170,9 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
     let mut server = Server::new(&cfg.name, cfg.port, cfg.max_players, None)
         .with_context(|| format!("listening on UDP port {}", cfg.port))?;
     server.send_every = cfg.send_every;
+    if let Some(m) = &cfg.master {
+        server.list_on(m);
+    }
     con.say(format!(
         "{} listening on UDP port {} for {} players, saving to {}",
         cfg.name,
@@ -181,6 +188,7 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
     let mut next = Instant::now();
     let mut last = Instant::now();
     let mut save_timer = 0.0f32;
+
     while !stop.load(Ordering::Relaxed) && !con.stop_asked() {
         let now = Instant::now();
         if now < next {
@@ -207,6 +215,7 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
             con.say(line);
         }
         con.draw(&status(&cfg, &host, &sim, &server));
+
         save_timer += dt as f32;
         if save_timer >= SAVE_EVERY {
             save_timer = 0.0;
@@ -244,24 +253,14 @@ fn log_events(con: &mut Console, events: &[HostEvent]) {
 
 /// What the console shows.
 fn status(cfg: &Config, host: &Host, sim: &stealth_sim::Sim, server: &Server) -> Status {
+    use crate::master::held;
     use stealth_campaign::Side;
-    let st = &host.state;
-    let held = |side: Side| {
-        let p = st.places.iter().filter(|p| p.owner == side);
-        (p.clone().count(), p.filter(|p| p.airfield.is_some()).count())
-    };
-    let h = st.sky_hours();
     Status {
         name: cfg.name.clone(),
         port: server.port().unwrap_or(cfg.port),
-        theater: st.setup.theater_code.to_ascii_uppercase(),
-        clock: format!(
-            "day {} {:02}:{:02}",
-            (h / 24.0).floor() as i64 + 1,
-            h.rem_euclid(24.0) as i64,
-            (h.rem_euclid(1.0) * 60.0) as i64
-        ),
-        places: [held(Side::Blue), held(Side::Red), held(Side::Neutral)],
+        theater: host.state.setup.theater_code.to_ascii_uppercase(),
+        clock: crate::master::clock_text(host),
+        places: [held(host, Side::Blue), held(host, Side::Red), held(host, Side::Neutral)],
         players: server.roster(host, sim),
         max_players: cfg.max_players,
         rules: rules_text(&host.rules),
@@ -270,16 +269,6 @@ fn status(cfg: &Config, host: &Host, sim: &stealth_sim::Sim, server: &Server) ->
 }
 
 fn rules_text(r: &Rules) -> String {
-    let on: Vec<&str> = [
-        (r.realistic_damage, "realistic damage"),
-        (r.realistic_guidance, "realistic guidance"),
-        (r.no_crashes, "no crashes"),
-        (r.continuous_time, "continuous time"),
-        (r.realistic_weapons, "realistic weapons"),
-    ]
-    .iter()
-    .filter(|x| x.0)
-    .map(|x| x.1)
-    .collect();
+    let on = crate::master::rules_list(r);
     if on.is_empty() { "classic".into() } else { on.join(", ") }
 }

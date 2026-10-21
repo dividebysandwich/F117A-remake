@@ -1,0 +1,18 @@
+# /etc/systemd/system/stealth-master.service
+[Unit]
+Description=Stealth Mission 89 master server (server list)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/stealth-master --listen 127.0.0.1:8089
+Restart=on-failure
+RestartSec=5
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

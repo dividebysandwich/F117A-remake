@@ -68,6 +68,8 @@ pub struct Prefs {
     pub server_name: String,
     pub host_port: u16,
     pub max_players: u8,
+    /// None: on (the default before it could be chosen).
+    pub list_public: Option<bool>,
 }
 
 const VR_SCALE_VERSION: u32 = 2;
@@ -107,6 +109,7 @@ impl Default for Prefs {
             server_name: menu.server_name,
             host_port: menu.host_port,
             max_players: menu.max_players,
+            list_public: Some(menu.list_public),
         }
     }
 }
@@ -159,6 +162,7 @@ impl Prefs {
             server_name: menu.server_name.clone(),
             host_port: menu.host_port,
             max_players: menu.max_players,
+            list_public: Some(menu.list_public),
         }
     }
 
@@ -175,6 +179,7 @@ impl Prefs {
         menu.player_name = self.player_name.clone();
         menu.server_addr = self.server_addr.clone();
         menu.server_name = self.server_name.clone();
+        menu.list_public = self.list_public.unwrap_or(true);
         if self.host_port != 0 {
             menu.host_port = self.host_port;
         }

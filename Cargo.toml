@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/bevy_fast_clouds", "crates/stealth-campaign", "crates/stealth-formats", "crates/stealth-host", "crates/stealth-mission", "crates/stealth-net", "crates/stealth-sim"]
+members = [".", "crates/bevy_fast_clouds", "crates/stealth-campaign", "crates/stealth-formats", "crates/stealth-host", "crates/stealth-master", "crates/stealth-master-proto", "crates/stealth-mission", "crates/stealth-net", "crates/stealth-sim"]
 resolver = "3"
 
 [workspace.package]
@@ -36,6 +36,7 @@ stealth-sim = { path = "crates/stealth-sim" }
 stealth-campaign = { path = "crates/stealth-campaign" }
 stealth-host = { path = "crates/stealth-host" }
 stealth-net = { path = "crates/stealth-net" }
+stealth-master-proto = { path = "crates/stealth-master-proto" }
 bevy_fast_clouds = { path = "crates/bevy_fast_clouds" }
 anyhow.workspace = true
 rand = "0.9"

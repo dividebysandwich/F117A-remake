@@ -8,8 +8,10 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
+use std::sync::{Arc, Mutex};
 use stealth_campaign::{CampaignSetup, PlayerId};
 use stealth_host::{Host, save};
+use stealth_master_proto::ServerEntry;
 use stealth_net::client::{Client, ClientEvent};
 use stealth_net::server::Server;
 
@@ -40,6 +42,11 @@ pub struct MultiplayerWindow {
     start_hour: f32,
     /// `--host`: host a new campaign at once.
     auto_host: bool,
+    /// The public server list: as last fetched, being fetched, or why not.
+    servers: Vec<ServerEntry>,
+    fetching: Option<Arc<Mutex<Option<Result<Vec<ServerEntry>, String>>>>>,
+    list_error: Option<String>,
+    listed_once: bool,
 }
 
 impl MultiplayerWindow {
@@ -52,7 +59,38 @@ impl MultiplayerWindow {
             self.sky_ratio = 24.0;
             self.start_hour = 8.0;
         }
+        if !self.listed_once {
+            self.listed_once = true;
+            self.refresh_list();
+        }
     }
+
+    /// Fetches the public server list (on a thread; `multiplayer_window` takes the answer).
+    fn refresh_list(&mut self) {
+        if self.fetching.is_some() {
+            return;
+        }
+        let answer = Arc::new(Mutex::new(None));
+        let (to, url) = (answer.clone(), master_url());
+        std::thread::spawn(move || {
+            let list = stealth_net::master::fetch_list(&url);
+            if let Ok(mut a) = to.lock() {
+                *a = Some(list);
+            }
+        });
+        self.fetching = Some(answer);
+        self.list_error = None;
+    }
+}
+
+/// The public server list's master server (`--master <url>` for tests).
+pub fn master_url() -> String {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter()
+        .position(|a| a == "--master")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_else(|| stealth_net::master::DEFAULT_MASTER.to_string())
 }
 
 pub struct MultiplayerMenuPlugin;
@@ -143,6 +181,19 @@ fn multiplayer_window(
     let mut join = false;
     let auto_host = std::mem::take(&mut w.auto_host);
     let mut host: Option<Result<(String, Host), String>> = None;
+    // The public server list, when it came.
+    let came = w.fetching.as_ref().and_then(|a| a.lock().ok().and_then(|mut a| a.take()));
+    match came {
+        Some(Ok(list)) => {
+            w.servers = list;
+            w.fetching = None;
+        }
+        Some(Err(e)) => {
+            w.list_error = Some(e);
+            w.fetching = None;
+        }
+        None => {}
+    }
     // Joining: what the server says.
     if let Some((client, addr)) = w.joining.as_mut() {
         let now = std::time::Instant::now();
@@ -201,6 +252,10 @@ fn multiplayer_window(
         ui.separator();
         match w.page {
             Page::Join => {
+                if let Some(addr) = server_list(ui, &mut w, named) {
+                    state.server_addr = addr;
+                    join = true;
+                }
                 section(ui, "Server");
                 text_entry(
                     ui,
@@ -268,6 +323,7 @@ fn multiplayer_window(
                         .small()
                         .color(DIM),
                 );
+                ui.checkbox(&mut state.list_public, "List on the public server list (others find the game in JOIN A GAME)");
                 ui.horizontal_top(|ui| {
                     ui.vertical(|ui| {
                         ui.set_width(210.0);
@@ -365,7 +421,10 @@ fn multiplayer_window(
                 state.max_players as usize,
                 Some(PlayerId(0)),
             ) {
-                Ok(server) => {
+                Ok(mut server) => {
+                    if state.list_public {
+                        server.list_on(&master_url());
+                    }
                     let c = ActiveCampaign::with_host(name, h, Role::Host);
                     c.save();
                     commands.insert_resource(NetLink::Host(server));
@@ -391,4 +450,87 @@ fn server_title(state: &crate::menu::MenuState) -> String {
         "" => format!("{}'s campaign", state.player_name.trim()),
         name => name.to_string(),
     }
+}
+
+/// The public server list on the Join page: a server's JOIN gives its address.
+fn server_list(ui: &mut egui::Ui, w: &mut MultiplayerWindow, named: bool) -> Option<String> {
+    let mut pick = None;
+    ui.horizontal(|ui| {
+        section(ui, "Public servers");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if w.fetching.is_some() {
+                ui.add(egui::Spinner::new().color(GREEN));
+            } else if ui.button("REFRESH").clicked() {
+                w.refresh_list();
+            }
+            let n: usize = w.servers.iter().map(|s| s.report.players.len()).sum();
+            if !w.servers.is_empty() {
+                ui.label(
+                    egui::RichText::new(format!("{} servers, {n} pilots", w.servers.len()))
+                        .color(DIM),
+                );
+            }
+        });
+    });
+    if let Some(e) = &w.list_error {
+        ui.label(
+            egui::RichText::new(format!("The server list is not reachable: {e}")).color(AMBER),
+        );
+    } else if w.servers.is_empty() && w.fetching.is_none() {
+        ui.label(egui::RichText::new("No public servers right now").color(DIM));
+    }
+    if w.servers.is_empty() {
+        ui.add_space(6.0);
+        return None;
+    }
+    egui::ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+        egui::Grid::new("mp_servers")
+            .num_columns(5)
+            .spacing(egui::vec2(18.0, 6.0))
+            .striped(true)
+            .show(ui, |ui| {
+                for h in ["SERVER", "PILOTS", "THEATER", "WAR", ""] {
+                    ui.label(egui::RichText::new(h).color(DIM));
+                }
+                ui.end_row();
+                for s in &w.servers {
+                    let r = &s.report;
+                    let ours = r.protocol == stealth_net::PROTOCOL;
+                    let full = r.max_players > 0 && r.players.len() >= r.max_players as usize;
+                    let col = if ours { BRIGHT } else { DIM };
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(&r.name).strong().color(col));
+                        if r.dedicated {
+                            ui.label(egui::RichText::new("DEDICATED").small().color(DIM));
+                        }
+                    })
+                    .response
+                    .on_hover_text(s.addr.as_str());
+                    let count = format!("{}/{}", r.players.len(), r.max_players);
+                    ui.label(egui::RichText::new(count).monospace().color(if full {
+                        AMBER
+                    } else {
+                        GREEN
+                    }));
+                    ui.label(egui::RichText::new(&r.theater).color(col));
+                    ui.label(
+                        egui::RichText::new(format!("{}, {}", r.situation, r.clock)).color(DIM),
+                    );
+                    if !ours {
+                        ui.label(egui::RichText::new("other version").small().color(DIM));
+                    } else if ui
+                        .add_enabled(
+                            named && !full && w.joining.is_none(),
+                            egui::Button::new("JOIN"),
+                        )
+                        .clicked()
+                    {
+                        pick = Some(s.addr.clone());
+                    }
+                    ui.end_row();
+                }
+            });
+    });
+    ui.add_space(6.0);
+    pick
 }

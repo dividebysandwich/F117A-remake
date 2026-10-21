@@ -1,0 +1,11 @@
+[package]
+name = "stealth-master"
+version.workspace = true
+edition.workspace = true
+description = "Stealth Mission 89 master server: the list of coop servers (REST API and web page)"
+
+[dependencies]
+stealth-master-proto = { path = "../stealth-master-proto" }
+serde.workspace = true
+serde_json = "1"
+tiny_http = "0.12.0"

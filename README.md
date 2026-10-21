@@ -135,6 +135,11 @@ object custom properties (buttons, levers, lamps); the conventions are listed in
 <img width="1842" height="1269" alt="image" src="https://github.com/user-attachments/assets/5c706024-1f8b-46f8-ad07-95373a8a8056" />
 
 
+## Server list
+Coop servers report to a master server (`crates/stealth-master`, at sm-master.playspoon.com),
+which games list them from and which shows them as a web page; see its
+[README](crates/stealth-master/README.md) for the API and how it is deployed.
+
 ## Testing
 ```sh
 cargo test --workspace

@@ -6,10 +6,12 @@
 //! * [`protocol`]: the messages and their encoding.
 //! * [`server`]: the host's side, [`client`]: a player's.
 //! * [`dedicated`]: the server without a game of its own.
+//! * [`master`]: the public server list.
 
 pub mod client;
 pub mod console;
 pub mod dedicated;
+pub mod master;
 pub mod protocol;
 pub mod server;
 pub mod transport;

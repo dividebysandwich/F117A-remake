@@ -1,0 +1,8 @@
+[package]
+name = "stealth-master-proto"
+version.workspace = true
+edition.workspace = true
+description = "Stealth Mission 89 server list: what game servers report to the master server and what it lists"
+
+[dependencies]
+serde.workspace = true

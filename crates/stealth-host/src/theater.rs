@@ -48,3 +48,25 @@ pub fn theater_index(code: &str) -> Option<usize> {
 pub fn codes() -> Vec<String> {
     stealth_formats::ALL_THEATERS.iter().map(|t| t.to_ascii_lowercase()).collect()
 }
+
+/// Theaters in the original's order, then the remake's own (file prefix, display name).
+pub const THEATERS: [(&str, &str); 10] = [
+    ("lb", "Libya (1986)"),
+    ("pg", "Persian Gulf (1984)"),
+    ("nc", "North Cape"),
+    ("ce", "Central Europe"),
+    ("vn", "Vietnam"),
+    ("me", "Middle East"),
+    ("ku", "Desert Storm"),
+    ("cu", "Cuba"),
+    ("ko", "Korea"),
+    ("ua", "Ukraine (2026)"),
+];
+
+/// A theater's display name ("ce": "Central Europe"; the code itself if unknown).
+pub fn theater_name(code: &str) -> String {
+    THEATERS
+        .iter()
+        .find(|t| t.0.eq_ignore_ascii_case(code))
+        .map_or_else(|| code.to_ascii_uppercase(), |t| t.1.to_string())
+}

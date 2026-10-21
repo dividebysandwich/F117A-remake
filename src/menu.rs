@@ -48,18 +48,7 @@ impl Plugin for MenuPlugin {
 }
 
 /// Theaters in the original's order, then the remake's own (file prefix, display name).
-pub const THEATERS: [(&str, &str); 10] = [
-    ("lb", "Libya (1986)"),
-    ("pg", "Persian Gulf (1984)"),
-    ("nc", "North Cape"),
-    ("ce", "Central Europe"),
-    ("vn", "Vietnam"),
-    ("me", "Middle East"),
-    ("ku", "Desert Storm"),
-    ("cu", "Cuba"),
-    ("ko", "Korea"),
-    ("ua", "Ukraine (2026)"),
-];
+pub use stealth_host::theater::THEATERS;
 
 #[derive(Resource)]
 pub struct MenuState {
@@ -92,6 +81,8 @@ pub struct MenuState {
     pub server_name: String,
     pub host_port: u16,
     pub max_players: u8,
+    /// A hosted game is on the public server list.
+    pub list_public: bool,
     dirty: bool,
 }
 
@@ -141,6 +132,7 @@ impl Default for MenuState {
             server_name: String::new(),
             host_port: stealth_net::DEFAULT_PORT,
             max_players: 8,
+            list_public: true,
             dirty: true,
         }
     }

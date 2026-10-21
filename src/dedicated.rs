@@ -21,6 +21,8 @@ stealth-mission-89 --dedicated [switches]
   --start-hour <h>       hour of the day at the start (default 8, new campaigns)
   --send-rate <hz>       how often the moving world goes to the players, 1..15 a second
                          (default 7.5; more is smoother, less takes more players)
+  --master <url>         the server list to be on (default https://sm-master.playspoon.com)
+  --no-master            not on the server list (players join by address)
   --save <file>          the campaign file (default: campaigns/dedicated.json in the
                          game's data directory), saved every minute and on stopping
   --realistic-damage     realistic missile damage

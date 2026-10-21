@@ -1212,7 +1212,7 @@ impl MfdParams<'_, '_> {
             let p = map_to_screen(centre, zoom, k.east / 32.0, 0x8000 as f64 - k.north / 32.0);
             let (x, y) = (p.x as i32, p.y as i32);
             match k.kind {
-                ContactKind::Aircraft => c.fill_rect(x, y, 2, 2, 41),
+                ContactKind::Aircraft => c.fill_rect(x, y, 2, 2, if k.friendly { 9 } else { 41 }),
                 ContactKind::Drone => c.fill_rect(x, y, 2, 1, 13),
                 ContactKind::Missile => c.set(x, y, 17),
                 ContactKind::GroundRadar => c.fill_rect(x, y, 2, 2, 0),
@@ -1641,7 +1641,9 @@ impl MfdParams<'_, '_> {
             let p = to(k.east, k.north);
             let (x, y) = (p.x as i32, p.y as i32);
             match k.kind {
-                ContactKind::Aircraft => c.fill_rect(x - 2, y - 2, 4, 4, 41),
+                ContactKind::Aircraft => {
+                    c.fill_rect(x - 2, y - 2, 4, 4, if k.friendly { 9 } else { 41 })
+                }
                 ContactKind::Drone => {
                     c.line(x - 2, y - 2, x + 2, y + 2, 13);
                     c.line(x - 2, y + 2, x + 2, y - 2, 13);

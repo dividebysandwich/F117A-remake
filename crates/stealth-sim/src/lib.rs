@@ -215,6 +215,10 @@ pub struct Sim {
     pub(crate) mirror: bool,
     #[serde(skip)]
     pub(crate) remote: Vec<net::RemotePilot>,
+    /// A mirror's: the other pilots' gun rounds, flown here from their trigger (only drawn),
+    /// with their age in frames.
+    #[serde(skip)]
+    pub(crate) remote_rounds: Vec<(Bullet, u16)>,
     /// A host's: the shells fired since they were last taken.
     #[serde(skip)]
     pub(crate) record_shells: bool,
@@ -452,6 +456,7 @@ impl Sim {
             event_credit: Vec::new(),
             mirror: false,
             remote: Vec::new(),
+            remote_rounds: Vec::new(),
             record_shells: false,
             new_shells: Vec::new(),
             new_ai_shells: Vec::new(),
@@ -931,6 +936,21 @@ impl Sim {
     /// Gun rounds (0..n player, n..n+3 enemy); x == 0 = free.
     pub fn bullets(&self) -> (&[Bullet], usize) {
         (&self.bullets, self.n_bullets)
+    }
+
+    /// The other pilots' gun rounds in flight (a host's: theirs; a mirror's: as flown from
+    /// their trigger).
+    pub fn other_rounds(&self) -> Vec<Bullet> {
+        if self.mirror {
+            return self.remote_rounds.iter().map(|(b, _)| *b).collect();
+        }
+        let me = self.pl.id as usize;
+        self.present()
+            .into_iter()
+            .filter(|&k| k != me)
+            .flat_map(|k| self.pilot_ref(k).rounds.iter().copied())
+            .filter(|b| b.x != 0)
+            .collect()
     }
 
     pub fn countermeasures(&self) -> &[Countermeasure; 4] {

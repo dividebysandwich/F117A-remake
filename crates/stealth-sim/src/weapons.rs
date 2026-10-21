@@ -1,6 +1,6 @@
 use crate::math::{abs16, approx, cdiv, clamp_v, s16};
 use crate::types::*;
-use crate::{Sim, ballistics};
+use crate::{PlayerView, Sim, ballistics};
 
 /// Frames a nearest-target request waits for the HUD to switch to the weapon's mode.
 const NEAREST_WAIT: u8 = 8;
@@ -459,6 +459,15 @@ impl Sim {
         (GUN_GRAVITY / WU_METRES * ROUND_FINE as f64 / (fs * fs) as f64).round() as i32
     }
 
+    /// A round leaving the cannon of an aircraft at `p`, one frame out.
+    pub fn gun_round(p: &PlayerView, fs: i32) -> Bullet {
+        let f = ROUND_FINE;
+        let (vx, vy, vz) = Self::gun_round_velocity(p.heading, p.pitch, p.knots, fs);
+        let (vx, vy, vz) = (vx.round() as i32, vy.round() as i32, vz.round() as i32);
+        let (x, y) = (p.wx * f, (0x100000 - p.wy) * f);
+        Bullet { x: x + vx, y: y + vy, alt: (p.view_z - 2) * f + vz, vx, vy, vz }
+    }
+
     /// The active pilot's cannon and gun rounds: move, then the hit tests (his kills).
     pub(crate) fn update_own_rounds(&mut self, ps: &PlayerState) {
         let fs = self.fs;
@@ -472,22 +481,7 @@ impl Sim {
             if trigger && self.pl.gun_ammo > 0 && self.pl.eject == 0 {
                 self.pl.gun_ammo = clamp_v(self.pl.gun_ammo + cdiv(-20, fs), 0, 1000);
                 self.sound(6, 2);
-                let (vx, vy, vz) = Self::gun_round_velocity(
-                    self.pl.p.heading,
-                    self.pl.p.pitch,
-                    self.pl.p.knots,
-                    fs,
-                );
-                let (vx, vy, vz) = (vx.round() as i32, vy.round() as i32, vz.round() as i32);
-                let (x, y) = (self.pl.p.wx * f, (0x100000 - self.pl.p.wy) * f);
-                self.bullets[slot] = Bullet {
-                    x: x + vx,
-                    y: y + vy,
-                    alt: (self.pl.p.view_z - 2) * f + vz,
-                    vx,
-                    vy,
-                    vz,
-                };
+                self.bullets[slot] = Self::gun_round(&self.pl.p, fs);
                 self.pl.gun_firing = true;
             } else {
                 self.bullets[slot].x = 0;

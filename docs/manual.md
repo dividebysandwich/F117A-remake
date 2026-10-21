@@ -973,6 +973,10 @@ or F-16) for each sortie on the briefing's LOADOUT page.
   up in a staggered formation on the runway: the first in the middle, far enough down the runway
   for the others, then rows of two behind him.
 
+In the air the other players are friendly contacts on the MFD (blue on the classic map and TAC
+pages, a green ring on the modern MFD), never a radar lock; their weapons in flight show as
+missiles. Their cannon fire is drawn as tracers like your own.
+
 If your connection drops during a sortie, your aircraft waits for you for 30 seconds: join again
 under the same name and fly on. After that the sortie ends as aborted.
 

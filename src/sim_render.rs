@@ -60,6 +60,8 @@ const CHAFF: u8 = 7;
 const DECOY: u8 = 13;
 const TRACER: u8 = 17;
 const ENEMY_TRACER: u8 = 41;
+/// The other players' rounds: the same ammunition as ours.
+const FRIENDLY_TRACER: u8 = TRACER;
 /// A coasting missile (motor burnt out) by day: black in every flight palette. At night it is
 /// drawn additively instead (`SimVisuals::night_dot`), a little brighter than the sky.
 const COASTING: u8 = 5;
@@ -128,6 +130,8 @@ struct SimVisuals {
     cms: [Option<Cartridge>; 4],
     /// Gun rounds: the dot at the round and its tracer line.
     bullets: Vec<(Entity, Entity)>,
+    /// The other pilots' rounds (as many as were ever in flight at once).
+    other_bullets: Vec<(Entity, Entity)>,
     wreck: Option<Entity>,
     chute: Option<Entity>,
     canopy: Option<Entity>,
@@ -559,6 +563,45 @@ fn spawn_dot(
     parent
 }
 
+/// Puts a round's dot and tracer line where the round is, one sim frame behind (hidden for a
+/// free slot).
+fn place_tracer(
+    b: &stealth_sim::Bullet,
+    dot: Entity,
+    line: Entity,
+    alpha: f32,
+    q: &mut Query<
+        (&mut WorldPos, &mut Transform, Option<&mut ModelState>, &mut Visibility),
+        With<SimObject>,
+    >,
+) {
+    let fine = stealth_sim::ROUND_FINE as f64;
+    let (x, y, alt) = b.map_pos();
+    let step = (b.vx as f64 / (32.0 * fine), b.vy as f64 / (32.0 * fine), b.vz as f64 / fine);
+    let back = 1.0 - alpha as f64;
+    let head = map_point(x - step.0 * back, y - step.1 * back, alt - step.2 * back);
+    let tail = map_point(
+        x - step.0 * (back + TRACER_FRAMES),
+        y - step.1 * (back + TRACER_FRAMES),
+        alt - step.2 * (back + TRACER_FRAMES),
+    );
+    let streak = (tail - head).as_vec3();
+    for e in [dot, line] {
+        if let Ok((mut pos, mut tf, _, mut v)) = q.get_mut(e) {
+            if b.x != 0 {
+                pos.0 = head;
+                if e == line {
+                    tf.rotation = Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
+                    tf.scale = Vec3::new(1.0, 1.0, streak.length().max(0.01));
+                }
+                v.set_if_neq(Visibility::Inherited);
+            } else {
+                v.set_if_neq(Visibility::Hidden);
+            }
+        }
+    }
+}
+
 /// A tracer line: a unit segment along +Z from the round, scaled to the streak.
 fn spawn_tracer(commands: &mut Commands, material: Handle<PaletteMaterial>) -> Entity {
     let e = commands
@@ -911,33 +954,20 @@ fn sync_objects(
         let line = spawn_tracer(&mut commands, material);
         vis.bullets.push((dot, line));
     }
-    let fine = stealth_sim::ROUND_FINE as f64;
     for (b, &(dot, line)) in bullets.iter().zip(&vis.bullets) {
-        let (x, y, alt) = b.map_pos();
-        let step = (b.vx as f64 / (32.0 * fine), b.vy as f64 / (32.0 * fine), b.vz as f64 / fine);
-        let back = 1.0 - alpha as f64;
-        let head = map_point(x - step.0 * back, y - step.1 * back, alt - step.2 * back);
-        let tail = map_point(
-            x - step.0 * (back + TRACER_FRAMES),
-            y - step.1 * (back + TRACER_FRAMES),
-            alt - step.2 * (back + TRACER_FRAMES),
-        );
-        let streak = (tail - head).as_vec3();
-        for e in [dot, line] {
-            if let Ok((mut pos, mut tf, _, mut v)) = q.get_mut(e) {
-                if b.x != 0 {
-                    pos.0 = head;
-                    if e == line {
-                        tf.rotation =
-                            Quat::from_rotation_arc(Vec3::Z, streak.normalize_or(Vec3::Z));
-                        tf.scale = Vec3::new(1.0, 1.0, streak.length().max(0.01));
-                    }
-                    v.set_if_neq(Visibility::Inherited);
-                } else {
-                    v.set_if_neq(Visibility::Hidden);
-                }
-            }
-        }
+        place_tracer(b, dot, line, alpha, &mut q);
+    }
+    // The other pilots' rounds (theirs on the host, flown from their trigger on a client).
+    let others = sim.other_rounds();
+    while vis.other_bullets.len() < others.len() {
+        let material = vis.material(&mut materials, &globals, FRIENDLY_TRACER);
+        let dot = spawn_dot(&mut commands, &assets, material.clone(), &[Vec3::ZERO]);
+        let line = spawn_tracer(&mut commands, material);
+        vis.other_bullets.push((dot, line));
+    }
+    let none = stealth_sim::Bullet::default();
+    for (k, &(dot, line)) in vis.other_bullets.iter().enumerate() {
+        place_tracer(others.get(k).unwrap_or(&none), dot, line, alpha, &mut q);
     }
 
     // --- falling wreck (model 11) until it hits the ground

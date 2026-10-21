@@ -434,9 +434,24 @@ impl Sim {
         self.pl = p;
     }
 
-    /// One frame of the mirror between the host's: the shells fly on.
+    /// One frame of the mirror between the host's: the shells fly on, and the other pilots'
+    /// rounds from their trigger (only the trigger crosses the network).
     pub fn mirror_frame(&mut self) {
-        let dt = 1.0 / self.fs.max(1) as f64;
+        let fs = self.fs.max(1);
+        let nb = self.n_bullets as u16;
+        let g = Self::gun_round_gravity(fs);
+        self.remote_rounds.retain_mut(|(b, age)| {
+            b.x += b.vx;
+            b.y += b.vy;
+            b.alt += b.vz;
+            b.vz -= g;
+            *age += 1;
+            *age < nb && b.alt > 0
+        });
+        for p in self.remote.iter().filter(|p| p.gun_firing && !p.lockheed && p.chute.is_none()) {
+            self.remote_rounds.push((Self::gun_round(&p.view, fs), 0));
+        }
+        let dt = 1.0 / fs as f64;
         let fly = |s: &mut Shell| {
             s.pos = [s.pos[0] + s.vel[0] * dt, s.pos[1] + s.vel[1] * dt, s.pos[2] + s.vel[2] * dt];
             s.vel[2] -= 9.81 * dt;

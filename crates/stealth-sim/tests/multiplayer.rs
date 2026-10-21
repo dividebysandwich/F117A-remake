@@ -258,3 +258,42 @@ fn a_mirror_follows_the_host() {
     }
     assert!(mirror.stores().0 < 12, "the flare went");
 }
+
+#[test]
+fn a_mirror_flies_the_other_pilots_rounds_from_their_trigger() {
+    let (mut host, base) = two_pilots();
+    let b = host.objects()[base];
+    let d = data();
+    let s = MissionSettings {
+        theater: 3,
+        roe: 2,
+        opponents: 1,
+        kind: MissionKind::Strike,
+        ..Default::default()
+    };
+    let mut m = stealth_mission::generate(&d.gdata, &s, Seed::Srand(77)).unwrap();
+    m.world = d.gdata.theaters[3].world.clone();
+    let mut mirror =
+        Sim::with_options(&d.sim, &m, SimOptions { campaign: true, ..Default::default() });
+    mirror.make_mirror(1);
+    let mut inputs = vec![
+        (0, flying(b.x, b.y - 0x800, 4000, 0, 400)),
+        (1, flying(b.x + 0x400, b.y - 0x800, 4000, 0, 400)),
+    ];
+    inputs[0].1.cmd.gun = true;
+    for _ in 0..10 {
+        host.step_pilots(&inputs, 15);
+        mirror.apply_world_fast(&host.world_fast());
+        mirror.mirror_frame();
+    }
+    // Pilot 0's rounds on the host (pilot 1's view of them: the host has pilot 0 active).
+    let (bullets, n) = host.bullets();
+    let theirs: Vec<Bullet> = bullets[..n].iter().copied().filter(|b| b.x != 0).collect();
+    let seen = mirror.other_rounds();
+    assert!(!theirs.is_empty() && seen.len() == theirs.len(), "{} {}", seen.len(), theirs.len());
+    // Flown from the same aircraft one frame later: within a frame's travel of the host's.
+    let lead = |v: &[Bullet]| *v.iter().max_by_key(|b| b.y.abs_diff(v[0].y)).unwrap();
+    let (a, b) = (lead(&theirs), lead(&seen));
+    assert!((a.x - b.x).abs() + (a.y - b.y).abs() < 4 * a.vy.abs().max(a.vx.abs()), "{a:?} {b:?}");
+    assert!(host.as_pilot(1, |s| s.other_rounds()).len() == theirs.len(), "the host's view");
+}

@@ -1014,6 +1014,36 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             threat: None,
         });
     }
+    // The other players: friendly aircraft (never a lock), and their weapons in flight.
+    let me = sim.active_pilot();
+    for p in sim.remote_pilots().iter().filter(|p| p.id != me && p.chute.is_none()) {
+        if !p.on_ground {
+            let v = p.view;
+            contacts.list.push(Contact {
+                kind: ContactKind::Aircraft,
+                east: v.wx as f64,
+                north: v.wy as f64,
+                alt: v.view_z as f32,
+                heading: v.heading as u16,
+                friendly: true,
+                target: None,
+                threat: None,
+            });
+        }
+        for m in &p.missiles {
+            let (east, north) = map_wu(m.x, m.y);
+            contacts.list.push(Contact {
+                kind: ContactKind::Missile,
+                east,
+                north,
+                alt: m.alt as f32,
+                heading: m.heading as u16,
+                friendly: true,
+                target: None,
+                threat: None,
+            });
+        }
+    }
     for (_, m, _, _) in sim.active_projectiles() {
         let (east, north) = map_wu(m.x, m.y);
         contacts.list.push(Contact {

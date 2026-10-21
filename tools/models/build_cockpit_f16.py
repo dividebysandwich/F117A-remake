@@ -12,7 +12,8 @@
 # buttons and keypad, the data entry display, the round instruments in their bezels, the main
 # panel with the faces and displays of `PanelLayout::f16` (src/cockpit3d/layout.rs; the layout
 # JSON is written by `UPDATE_F16_LAYOUT=1 cargo test f16_layout_file`), the side stick and the
-# throttle.
+# throttle, the centre pedestal between the legs with the knee wall's air vents, and the side
+# consoles' switch panels and yellow handles (dressing, after the F-16's).
 #
 # Blender frame: eye at the origin, x right, y forward, z up, metres. A control's face points
 # along its local -Y (towards the pilot), local Z is up the panel.
@@ -176,6 +177,12 @@ def material(name, like):
 
 for n, like in (("hsi", "adi"), ("screen_rwr", "adi"), ("ded", "adi"), ("trackcam_left", "trackcam")):
     material(n, like)
+# Guard covers and red buttons (not a shared material: the game takes its colour from the model).
+red = material("red", "yellow")
+red.diffuse_color = (0.55, 0.04, 0.03, 1.0)
+for nd in red.node_tree.nodes if red.use_nodes else ():
+    if nd.type == "BSDF_PRINCIPLED":
+        nd.inputs["Base Color"].default_value = red.diffuse_color
 
 
 # --- building blocks
@@ -511,6 +518,8 @@ plates = [
     ("dark", (-750.0, -108.0, 48.0, 40.0)),  # gear lights (left slope)
     ("black", (90.0, -157.0, 130.0, 60.0)),  # data entry display
     ("dark", (1146.0, -74.0, 80.0, 75.0)),  # countermeasures (right slope)
+    ("black", (1146.0, 24.0, 110.0, 70.0)),  # switches under them
+    ("black", (-326.0, 14.0, 52.0, 110.0)),  # switches low on the left wing
 ]
 for mat, r in plates:
     panel_box(mat, mat, r, PLATE)
@@ -524,13 +533,15 @@ knob(52.0, -100.0, 0.006, 0.010, offset=PLATE)
 knob(52.0, -66.0, 0.008, 0.014, "dark", offset=PLATE)
 # A few switches on the right slope's lower part and low on the left of the panel.
 for v in (40.0, 60.0, 80.0):
-    toggle(1160.0, v, 0.0, up=(v != 60.0))
-    toggle(1200.0, v, 0.0, up=(v == 60.0))
-knob(1240.0, 60.0, 0.008, 0.012)
+    toggle(1160.0, v, PLATE, up=(v != 60.0))
+    toggle(1200.0, v, PLATE, up=(v == 60.0))
+knob(1240.0, 60.0, 0.008, 0.012, offset=PLATE)
 for v in (30.0, 56.0, 82.0):
-    toggle(-312.0, v, 0.0, up=(v != 56.0))
-    toggle(-288.0, v, 0.0, up=(v == 56.0))
-knob(-300.0, 108.0, 0.007, 0.012)
+    toggle(-312.0, v, PLATE, up=(v != 56.0))
+    toggle(-288.0, v, PLATE, up=(v == 56.0))
+knob(-300.0, 108.0, 0.007, 0.012, offset=PLATE)
+# The master arm switch's red guard over the top left one, hinged at its top.
+mesh_object("red", box_mesh("red", (0.014, 0.012, 0.022), "red", (0.0, -0.006, -0.002)), point(-312.0, 30.0, PLATE), rotation(-312.0))
 # MFDs in their wells, the bezel's face MFD_WELL behind the panel surface, with fixed side
 # bezel buttons (the game uses the top and bottom rows). The bezel plate overlaps the well's
 # walls, so nothing shows through round it.
@@ -555,6 +566,79 @@ for f in layout["faces"]:
         control(f["key"], f["rect"], -MFD_WELL, f["control"], "osb")
     else:
         control(f["key"], f["rect"], PLATE, f["control"], f["kind"], f["round"])
+
+
+# --- side console panels: black plates on the consoles' tops round the throttle and the stick,
+# with knobs, toggles, red guards and buttons (dressing; none of them is a control)
+CONSOLE_FACE = CONSOLE_TOP + 0.004
+
+
+def fitting(c, p):
+    """A console fitting at p (on a panel's top): k / K small / large knob, t / T toggle leaning
+    forward / back, g red guard, r red button."""
+    if c in "kK":
+        r, h = (0.006, 0.010) if c == "k" else (0.009, 0.013)
+        mesh_object("dark", cylinder_mesh("dark", r + 0.003, 0.002, "dark", axis="Z", n=KNOB), p)
+        mesh_object("metal", cylinder_mesh("metal", r, h, "metal", axis="Z", n=KNOB), p + Vector((0.0, 0.0, 0.002)))
+    elif c in "tT":
+        mesh_object("dark", cylinder_mesh("dark", 0.005, 0.004, "dark", axis="Z", n=KNOB), p)
+        lean = Euler((math.radians(-30.0 if c == "t" else 30.0), 0.0, 0.0)).to_quaternion()
+        mesh_object("metal", box_mesh("metal", (0.004, 0.004, 0.016), "metal", (0.0, 0.0, 0.008), lean), p + Vector((0.0, 0.0, 0.003)))
+    elif c == "g":
+        mesh_object("red", box_mesh("red", (0.013, 0.022, 0.012), "red", (0.0, 0.0, 0.006)), p)
+    elif c == "r":
+        mesh_object("red", cylinder_mesh("red", 0.005, 0.006, "red", axis="Z", n=KNOB), p)
+
+
+def console_panel(x0, x1, y0, y1, rows, h=0.006):
+    """A plate over x0..x1, y0..y1 (m) on a console, its fittings in rows from the front."""
+    box("black", "black", ((x0 + x1) / 2, (y0 + y1) / 2, CONSOLE_FACE + h / 2), (x1 - x0, y1 - y0, h))
+    for i, row in enumerate(rows):
+        y = y1 - (y1 - y0) * (i + 0.5) / len(rows)
+        for j, c in enumerate(row):
+            fitting(c, Vector((x0 + (x1 - x0) * (j + 0.5) / len(row), y, CONSOLE_FACE + h)))
+
+
+for s in (-1, 1):
+    def side(x0, x1, y0, y1, rows):
+        """A panel given for the right console (x outwards), mirrored on the left."""
+        console_panel(*sorted((s * x0, s * x1)), y0, y1, [r if s > 0 else r[::-1] for r in rows])
+    # Behind the throttle and the arm rest, the width of the console.
+    side(0.208, 0.352, -0.300, -0.212, ["kKk", "tgt"])
+    side(0.208, 0.352, -0.204, -0.110 if s > 0 else -0.080, ["tttt", "kTk"] if s > 0 else ["tttt", "rgrg", "kk"])
+for rows, rect in (
+    (["kk", "TT", "kr"], (-0.352, -0.208, -0.070, 0.062)),  # ahead of those, behind the throttle
+    (["k", "t", "r", "k"], (-0.354, -0.312, 0.080, 0.360)),  # outboard of the throttle rails
+    (["t", "k", "t"], (-0.250, -0.210, 0.190, 0.360)),  # inboard of them
+    (["kk", "tt", "rr", "Kk"], (0.208, 0.260, -0.095, 0.150)),  # inboard of the arm rest
+):
+    console_panel(*rect, rows)
+# Yellow handles on the consoles' inner faces by the pilot's knees (canopy jettison left,
+# its emergency release right).
+for s, y in ((-1, 0.30), (1, 0.12)):
+    x = s * (CONSOLE_X[0] - 0.022)
+    box("yellow", "yellow", (x, y, -0.66), (0.012, 0.012, 0.08))
+    for dz in (-0.03, 0.03):
+        box("yellow", "yellow", (s * (CONSOLE_X[0] - 0.011), y, -0.66 + dz), (0.022, 0.01, 0.01))
+
+# --- centre pedestal between the legs, under the panel's centre column, and air vents in the
+# knee wall either side of it
+col = point(0.0, CENTRE_BOTTOM, -0.03, True)
+PEDESTAL = 0.06  # half width
+front = col.y - 0.004
+wall = low.y + 0.08
+box("panel_grey", "panel_grey", (0.0, (front + wall + WELL_DEPTH) / 2, (col.z - 1.0) / 2), (2 * PEDESTAL, wall + WELL_DEPTH - front, col.z + 1.0))
+# A recessed panel down its face with two knobs and a toggle.
+box("dark", "dark", (0.0, front - 0.002, col.z - 0.10), (0.09, 0.004, 0.12))
+for z in (-0.06, -0.10):
+    mesh_object("metal", cylinder_mesh("metal", 0.008, 0.012, "metal", n=KNOB), (0.0, front - 0.004, col.z + z))
+mesh_object("dark", cylinder_mesh("dark", 0.005, 0.004, "dark", n=KNOB), (0.0, front - 0.004, col.z - 0.14))
+mesh_object("metal", box_mesh("metal", (0.004, 0.016, 0.004), "metal", (0.0, -0.008, 0.0), Euler((math.radians(-30.0), 0, 0)).to_quaternion()), (0.0, front - 0.007, col.z - 0.14))
+for s in (-1, 1):
+    x, z = s * (PEDESTAL + LEGS[0]) / 2, (low.z + LEGS[1]) / 2
+    box("black", "black", (x, wall - 0.012, z), (0.09, 0.006, 0.05))
+    for k in range(3):
+        box("dark", "dark", (x, wall - 0.016, z - 0.015 + 0.015 * k), (0.08, 0.004, 0.006))
 
 # --- side stick (right console) and throttle (left console), after the F-16's
 # Stick: a boot on the console, the pivot above it; a short grip leaning forward with the
@@ -628,6 +712,8 @@ for v in hud.data.vertices:
 mesh_object("approach", quad_mesh("approach", 0.02, 0.056, "approach"), (-0.15, 0.66, -0.09), props={"no_shadow": True})
 box("dark", "dark", (-0.15, 0.668, -0.09), (0.028, 0.014, 0.066))
 box("dark", "dark", (0.15, 0.665, -0.09), (0.028, 0.014, 0.066))
+for z in (-0.073, -0.107):
+    mesh_object("black", cylinder_mesh("black", 0.009, 0.003, "black", n=ROUND), (0.15, 0.658, z))
 for o in root.children:
     if o.name.startswith("lamp") and abs(o.location.x) > 0.3:
         o.location.x = math.copysign(0.30, o.location.x)

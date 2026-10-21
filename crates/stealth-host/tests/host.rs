@@ -27,9 +27,13 @@ fn two_players(code: &str) {
     host.begin(&mut sim);
     host.tick(&mut sim, 0.1, &[]);
     let me = PlayerId(0);
-    let wing = host.join(&mut sim, "Wingman");
+    let wing = host.join(&mut sim, "Wingman", |_| true).unwrap();
     assert_eq!(wing, PlayerId(1));
-    assert_eq!(host.join(&mut sim, "wingman"), wing, "the same name is the same player");
+    assert_eq!(
+        host.join(&mut sim, "wingman", |_| true).unwrap(),
+        wing,
+        "the same name is the same player"
+    );
     let flown: Vec<u32> =
         host.state.board.iter().filter(|o| !o.kind.ai_flown()).map(|o| o.id).collect();
     assert!(flown.len() >= 2, "{:?}", host.state.board);

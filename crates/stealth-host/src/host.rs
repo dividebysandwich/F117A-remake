@@ -146,11 +146,17 @@ impl Host {
         self.started
     }
 
-    /// A player joins (a slot and record by name): his id, a pilot of the simulation.
-    pub fn join(&mut self, sim: &mut Sim, name: &str) -> PlayerId {
-        let id = self.state.join(name);
+    /// A player joins (a slot and record by name): his id, a pilot of the simulation. None:
+    /// every slot is taken by someone `busy` or flying.
+    pub fn join(
+        &mut self,
+        sim: &mut Sim,
+        name: &str,
+        busy: impl Fn(PlayerId) -> bool,
+    ) -> Option<PlayerId> {
+        let id = self.state.join(name, stealth_sim::MAX_PILOTS, busy)?;
         sim.add_pilot(id.0);
-        id
+        Some(id)
     }
 
     /// A player's sortie: a mission of the board from a friendly base (None: the offer's) in
@@ -386,6 +392,9 @@ impl Host {
     }
 }
 
+/// Places of the take-off formation on the runway.
+const FORMATION: usize = 8;
+
 /// The places of the take-off formation, relative to the runway start (along the runway,
 /// to its right): the lead in the middle, far enough down the runway for the others; behind
 /// him rows of two, left and right of the centre line, the right one a little behind the
@@ -411,10 +420,15 @@ fn formation_place(sim: &Sim, id: u8, start: &PlayerState) -> PlayerState {
         .filter_map(|k| sim.pilot_view(k))
         .map(|v| (v.wx, v.wy))
         .collect();
-    let free = (0..8).map(formation).map(at).find(|&(x, y)| {
-        others.iter().all(|&(ox, oy)| (ox - x).abs().max((oy - y).abs()) > PLACE_TAKEN)
-    });
-    let (x, y) = free.unwrap_or_else(|| at(formation(id as usize % 8)));
+    let room = |(x, y): (i32, i32)| {
+        others.iter().map(|&(ox, oy)| (ox - x).abs().max((oy - y).abs())).min().unwrap_or(i32::MAX)
+    };
+    let places = || (0..FORMATION).map(formation).map(at);
+    // All places taken (a crowd at one base): the one with the most room.
+    let (x, y) = places()
+        .find(|&p| room(p) > PLACE_TAKEN)
+        .or_else(|| places().max_by_key(|&p| room(p)))
+        .expect("the formation has places");
     PlayerState { x, y, ..start.clone() }
 }
 

@@ -138,7 +138,7 @@ impl Default for MenuState {
             player_name: String::new(),
             server_addr: String::new(),
             host_port: stealth_net::DEFAULT_PORT,
-            max_players: stealth_net::protocol::MAX_PLAYERS as u8,
+            max_players: 8,
             dirty: true,
         }
     }

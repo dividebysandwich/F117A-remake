@@ -41,7 +41,7 @@ pub const N_PROJ: usize = 12;
 pub const ENEMY_SLOTS: usize = 8;
 pub const PILOT_SLOTS: usize = N_PROJ - ENEMY_SLOTS;
 /// Pilots a simulation takes at most (coop players).
-pub const MAX_PILOTS: usize = 8;
+pub const MAX_PILOTS: usize = 64;
 
 /// Player-derived values of the current frame (in the original game's units).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

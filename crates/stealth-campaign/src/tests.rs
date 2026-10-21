@@ -274,3 +274,18 @@ fn sites_are_spotted_by_rwr_and_recon() {
     c.gain_intel(tabor, &mut ev);
     assert!(c.site(other).unwrap().spotted);
 }
+
+#[test]
+fn a_full_campaign_hands_an_idle_slot_to_a_new_name() {
+    // Slot 0 is the local player's.
+    let mut c = campaign("ce", 3);
+    let b = PlayerId(1);
+    assert_eq!(c.join("Alpha", 3, |_| false), Some(b));
+    assert_eq!(c.join("Bravo", 3, |_| false), Some(PlayerId(2)));
+    assert_eq!(c.join("alpha", 3, |_| false), Some(b), "the same name, the same slot");
+    // Everybody connected: no room.
+    assert_eq!(c.join("Charlie", 3, |_| true), None);
+    // Alpha left: Charlie gets his slot.
+    assert_eq!(c.join("Charlie", 3, |id| id != b), Some(b));
+    assert_eq!(c.player_name(b), Some("Charlie"));
+}

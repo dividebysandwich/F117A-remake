@@ -1028,47 +1028,55 @@ fn exit_button(role: Role) -> egui::Button<'static> {
 fn players(ui: &mut egui::Ui, c: &ActiveCampaign) {
     section(ui, "Players");
     let list = c.players();
-    egui::Grid::new("players").num_columns(5).spacing(egui::vec2(24.0, 8.0)).striped(true).show(
-        ui,
-        |ui| {
-            for h in ["#", "NAME", "STATUS", "SORTIES", "PING"] {
-                ui.label(egui::RichText::new(h).color(DIM));
-            }
-            ui.end_row();
-            for p in &list {
-                ui.label(egui::RichText::new(format!("{}", p.id.0 + 1)).monospace().color(DIM));
-                let mut name = egui::RichText::new(&p.name).color(BRIGHT);
-                if p.id == c.me {
-                    name = name.strong();
+    // Up to 64 of them: the list scrolls.
+    let height = (ui.available_height() - 60.0).max(120.0);
+    egui::ScrollArea::vertical().max_height(height).auto_shrink([false, true]).show(ui, |ui| {
+        egui::Grid::new("players")
+            .num_columns(5)
+            .spacing(egui::vec2(24.0, 8.0))
+            .striped(true)
+            .show(ui, |ui| {
+                for h in ["#", "NAME", "STATUS", "SORTIES", "PING"] {
+                    ui.label(egui::RichText::new(h).color(DIM));
                 }
-                ui.horizontal(|ui| {
-                    ui.label(name);
-                    if p.id == c.me {
-                        ui.label(egui::RichText::new("(you)").small().color(DIM));
-                    }
-                    if p.host {
-                        ui.label(egui::RichText::new("HOST").small().color(FRIENDLY_BLUE));
-                    }
-                });
-                let (status, col) = match &p.status {
-                    PlayerStatus::Ops => ("On the mission board".to_string(), DIM),
-                    PlayerStatus::Flying { title, aircraft } => {
-                        (format!("Flying {title} - {}", kind_of(*aircraft).name()), GREEN)
-                    }
-                    PlayerStatus::Reconnecting { seconds } => {
-                        (format!("Connection lost - aircraft held {seconds} s"), AMBER)
-                    }
-                };
-                ui.label(egui::RichText::new(status).color(col));
-                let flown = c.state().records(p.id).count();
-                let won =
-                    c.state().records(p.id).filter(|r| r.result == SortieResult::Success).count();
-                ui.label(format!("{flown} ({won} achieved)"));
-                ui.label(if p.ping > 0 { format!("{} ms", p.ping) } else { "-".into() });
                 ui.end_row();
-            }
-        },
-    );
+                for p in &list {
+                    ui.label(egui::RichText::new(format!("{}", p.id.0 + 1)).monospace().color(DIM));
+                    let mut name = egui::RichText::new(&p.name).color(BRIGHT);
+                    if p.id == c.me {
+                        name = name.strong();
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(name);
+                        if p.id == c.me {
+                            ui.label(egui::RichText::new("(you)").small().color(DIM));
+                        }
+                        if p.host {
+                            ui.label(egui::RichText::new("HOST").small().color(FRIENDLY_BLUE));
+                        }
+                    });
+                    let (status, col) = match &p.status {
+                        PlayerStatus::Ops => ("On the mission board".to_string(), DIM),
+                        PlayerStatus::Flying { title, aircraft } => {
+                            (format!("Flying {title} - {}", kind_of(*aircraft).name()), GREEN)
+                        }
+                        PlayerStatus::Reconnecting { seconds } => {
+                            (format!("Connection lost - aircraft held {seconds} s"), AMBER)
+                        }
+                    };
+                    ui.label(egui::RichText::new(status).color(col));
+                    let flown = c.state().records(p.id).count();
+                    let won = c
+                        .state()
+                        .records(p.id)
+                        .filter(|r| r.result == SortieResult::Success)
+                        .count();
+                    ui.label(format!("{flown} ({won} achieved)"));
+                    ui.label(if p.ping > 0 { format!("{} ms", p.ping) } else { "-".into() });
+                    ui.end_row();
+                }
+            });
+    });
     if c.role == Role::Local {
         ui.add_space(10.0);
         ui.label(

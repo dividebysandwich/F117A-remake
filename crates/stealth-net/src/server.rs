@@ -243,13 +243,16 @@ impl Server {
             self.net.close(conn, &reason);
             return;
         }
-        let id = host.join(sim, &name);
-        if id.0 as usize >= MAX_PLAYERS {
+        let busy = |id: PlayerId| {
+            Some(id) == self.local || self.conn_of(id).is_some() || self.grace.contains_key(&id)
+        };
+        let Some(id) = host.join(sim, &name, busy) else {
             let reason = "The campaign has no room for more pilots".to_string();
             self.send(conn, Channel::Reliable, &ToClient::Reject { reason: reason.clone() });
+            self.net.flush(now);
             self.net.close(conn, &reason);
             return;
-        }
+        };
         // Back within the grace period: the aircraft is still there.
         let resume = if self.grace.remove(&id).is_some() && !sim.pilot_absent(id.0) {
             host.state

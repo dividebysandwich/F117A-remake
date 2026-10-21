@@ -542,15 +542,35 @@ impl CampaignState {
     }
 
     /// A player joining under `name`: his slot (and record) if he played before, else a new
-    /// one.
-    pub fn join(&mut self, name: &str) -> PlayerId {
+    /// one below `max`; with none left, the slot of a player not `busy` and not flying (his
+    /// record goes). None: no room.
+    pub fn join(
+        &mut self,
+        name: &str,
+        max: usize,
+        busy: impl Fn(PlayerId) -> bool,
+    ) -> Option<PlayerId> {
         if let Some(p) = self.players.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
-            return p.id;
+            return Some(p.id);
         }
-        let id = (0..=u8::MAX).map(PlayerId).find(|id| self.players.iter().all(|p| p.id != *id));
-        let id = id.unwrap_or(PlayerId(u8::MAX));
+        let max = max.min(u8::MAX as usize + 1);
+        let free =
+            (0..max).map(|k| PlayerId(k as u8)).find(|id| self.players.iter().all(|p| p.id != *id));
+        let id = match free {
+            Some(id) => id,
+            None => {
+                let id = self
+                    .players
+                    .iter()
+                    .filter(|p| (p.id.0 as usize) < max && p.sortie.is_none() && !busy(p.id))
+                    .map(|p| p.id)
+                    .next()?;
+                self.history.retain(|r| r.player != id);
+                id
+            }
+        };
         self.slot_mut(id).name = name.to_string();
-        id
+        Some(id)
     }
 
     /// Renames a player (the local pilot's name).

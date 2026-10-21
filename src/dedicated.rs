@@ -10,7 +10,7 @@ stealth-mission-89 --dedicated [switches]
 
   --name <text>          server name (shown to the players)
   --port <n>             UDP port (default 28989)
-  --max-players <n>      1..8 (default 8)
+  --max-players <n>      1..64 (default 64)
   --theater <code>       ce, cu, ko, ku, lb, me, nc, pg, ua, vn (default: the saved
                          campaign's, else ce; another theater than the saved one starts
                          a new campaign and keeps the old save aside)

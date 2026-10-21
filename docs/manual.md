@@ -929,7 +929,7 @@ mission ends when the parachute lands, as before.
 
 ## 13. Multiplayer
 
-Up to eight players fly the dynamic campaign together (coop: everybody is on the friendly side).
+Up to 64 players fly the dynamic campaign together (coop: everybody is on the friendly side).
 One computer runs the war, the **server**: either a player's game (HOST A GAME) or a dedicated
 server without a game of its own. The others join it over UDP.
 
@@ -988,7 +988,7 @@ stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 289
 |---|---|
 | `--name <text>` | Server name, shown to the players. |
 | `--port <n>` | UDP port (default 28989). |
-| `--max-players <n>` | 1 to 8 (default 8). |
+| `--max-players <n>` | 1 to 64 (default 64). |
 | `--theater <code>` | ce, cu, ko, ku, lb, me, nc, pg, ua, vn. Default: the saved campaign's, else ce. |
 | `--roe <0..2>`, `--opponents <0..3>`, `--seed <n>`, `--start-hour <h>` | A new campaign's options. |
 | `--sky-ratio <x>` | The sky runs x times faster than real time (default 24: a day per hour). |

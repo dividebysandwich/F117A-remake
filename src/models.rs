@@ -201,11 +201,15 @@ fn parse_conds(name: &str) -> Vec<(usize, i16)> {
 /// Distances used for the LOD choice. While the tracking camera is live, its own distance is
 /// divided by the zoom magnification (focal 256 << z vs. 256 for the main view), so zoomed-in
 /// targets get the detail of their on-screen size instead of disappearing past the last level.
-/// The recon cameras share the tracking camera's levels: the nearest of them counts.
+/// The recon cameras and the campaign's unit view share the tracking camera's levels: the
+/// nearest of them counts.
 fn update_camera_distance(
     cameras: Query<(&Camera, &GlobalTransform), Without<crate::camera::OffscreenCamera>>,
     track: Query<(&Camera, &GlobalTransform), With<crate::trackcam::TrackCamera>>,
-    recon: Query<(&Camera, &GlobalTransform), With<crate::recon::ReconCamera>>,
+    recon: Query<
+        (&Camera, &GlobalTransform),
+        Or<(With<crate::recon::ReconCamera>, With<crate::campaign::UnitCamera>)>,
+    >,
     track_info: Option<Res<crate::mfd::TrackCam>>,
     mut models: Query<(&GlobalTransform, &mut CameraDistance)>,
 ) {

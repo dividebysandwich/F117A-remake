@@ -186,6 +186,8 @@ pub const MAIN_LOD_LAYER: usize = 3;
 pub const TRACKCAM_LOD_LAYER: usize = 4;
 /// Background spheres of the recon cameras (one layer per target).
 pub const RECON_BACKGROUND_LAYER: [usize; 2] = [5, 6];
+/// Background sphere of the campaign's unit view camera.
+pub const UNIT_BACKGROUND_LAYER: usize = 7;
 
 /// A 3D camera rendering into a texture (the tracking camera, the recon cameras): not the
 /// main view.

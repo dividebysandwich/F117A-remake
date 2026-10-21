@@ -18,6 +18,9 @@ const PLAYER_RADAR: i32 = 0x1400;
 const RECON_GUNS: i32 = 0x180;
 
 pub struct Aircraft {
+    /// Flight unit and its type (the unit view checks the slot still holds it).
+    pub unit: usize,
+    pub spec: i32,
     pub x: i32,
     pub y: i32,
     pub heading: i32,
@@ -25,6 +28,7 @@ pub struct Aircraft {
 }
 
 pub struct SamSite {
+    pub object: usize,
     pub x: i32,
     pub y: i32,
     pub name: String,
@@ -34,6 +38,8 @@ pub struct SamSite {
 }
 
 pub struct Gun {
+    /// AAA unit index.
+    pub index: usize,
     pub x: i32,
     pub y: i32,
     pub kind: AaaKind,
@@ -77,6 +83,8 @@ pub fn picture(state: &CampaignState, sim: &Sim) -> Picture {
         }
         let blue = sim.campaign_flight(i).map_or_else(|| sim.friendly_aircraft(u.spec), |f| f.blue);
         let a = Aircraft {
+            unit: i,
+            spec: u.spec,
             x: u.x,
             y: u.y,
             heading: u.heading,
@@ -105,6 +113,7 @@ pub fn picture(state: &CampaignState, sim: &Sim) -> Picture {
         let seen = o.flags & (oflags::PAINTED | oflags::TRACKING) != 0 || sim.site_engaging(i);
         if reconned || seen {
             pic.sams.push(SamSite {
+                object: i,
                 x: o.x,
                 y: o.y,
                 name: sim.threat_name(o.unit_type).to_string(),
@@ -121,7 +130,7 @@ pub fn picture(state: &CampaignState, sim: &Sim) -> Picture {
             continue;
         }
         if sim.aaa_engaging(k) || reconned.iter().any(|&(x, y)| near(u.x, u.y, x, y, RECON_GUNS)) {
-            pic.guns.push(Gun { x: u.x, y: u.y, kind: u.kind });
+            pic.guns.push(Gun { index: k, x: u.x, y: u.y, kind: u.kind });
         }
     }
     pic
@@ -183,15 +192,15 @@ pub fn draw(painter: &egui::Painter, view: &MapView, pic: &Picture, rings: bool)
 /// The legend lines of the picture.
 pub fn legend(ui: &mut egui::Ui) {
     map_draw::legend(ui, "Friendly aircraft", |p, c0| {
-        let a = Aircraft { x: 0, y: 0, heading: 0, helicopter: false };
+        let a = Aircraft { unit: 0, spec: 0, x: 0, y: 0, heading: 0, helicopter: false };
         aircraft(p, c0, &a, FRIENDLY_BLUE);
     });
     map_draw::legend(ui, "Friendly helicopter", |p, c0| {
-        let a = Aircraft { x: 0, y: 0, heading: 0, helicopter: true };
+        let a = Aircraft { unit: 0, spec: 0, x: 0, y: 0, heading: 0, helicopter: true };
         aircraft(p, c0, &a, FRIENDLY_BLUE);
     });
     map_draw::legend(ui, "Enemy fighter (on radar)", |p, c0| {
-        let a = Aircraft { x: 0, y: 0, heading: 0, helicopter: false };
+        let a = Aircraft { unit: 0, spec: 0, x: 0, y: 0, heading: 0, helicopter: false };
         aircraft(p, c0, &a, MISSILE_RED);
     });
     map_draw::legend(ui, "SAM site (known)", |p, c0| {
@@ -207,4 +216,36 @@ pub fn legend(ui: &mut egui::Ui) {
     map_draw::legend(ui, "You", |p, c0| {
         p.circle_stroke(c0, 5.0, egui::Stroke::new(2.0, GREEN));
     });
+}
+
+/// The unit nearest a screen point on the map (within a few points), and its name.
+pub fn pick(
+    view: &MapView,
+    pic: &Picture,
+    sim: &Sim,
+    at: egui::Pos2,
+) -> Option<(super::unit_view::UnitRef, String)> {
+    use super::unit_view::UnitRef;
+    let screen = |x: i32, y: i32| view.to_screen(x as f32, y as f32);
+    let mut best: Option<(f32, UnitRef, String)> = None;
+    let mut consider = |p: egui::Pos2, r: UnitRef, name: String| {
+        let d = p.distance(at);
+        if d < 12.0 && best.as_ref().is_none_or(|b| d < b.0) {
+            best = Some((d, r, name));
+        }
+    };
+    for a in pic.friendly.iter().chain(&pic.fighters) {
+        consider(
+            screen(a.x, a.y),
+            UnitRef::Flight { index: a.unit, spec: a.spec },
+            sim.aircraft_name(a.spec),
+        );
+    }
+    for s in &pic.sams {
+        consider(screen(s.x, s.y), UnitRef::Site(s.object), format!("{} site", s.name));
+    }
+    for g in &pic.guns {
+        consider(screen(g.x, g.y), UnitRef::Aaa(g.index), g.kind.name().to_string());
+    }
+    best.map(|b| (b.1, b.2))
 }

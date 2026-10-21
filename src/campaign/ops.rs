@@ -179,6 +179,7 @@ pub fn ops_ui(
     planner: Res<crate::planner::Planner>,
     loadout: Option<Res<crate::loadout::PlannedLoadout>>,
     mut next: ResMut<NextState<AppState>>,
+    mut unit_view: ResMut<super::UnitView>,
 ) -> Result {
     if !c.screen_open() || c.exit {
         return Ok(());
@@ -303,7 +304,9 @@ pub fn ops_ui(
                 ui.set_min_height(height);
                 match c.ui.tab {
                     Tab::Board => board(ui, c, &mut s, width),
-                    Tab::Map => war_map(ui, c, &s, tex.as_ref(), egui::vec2(width, height)),
+                    Tab::Map => {
+                        war_map(ui, c, &s, &mut unit_view, tex.as_ref(), egui::vec2(width, height))
+                    }
                     Tab::Debrief => debrief(ui, c),
                     Tab::Log => log(ui, c),
                 }
@@ -540,6 +543,7 @@ fn war_map(
     ui: &mut egui::Ui,
     c: &mut ActiveCampaign,
     s: &Session,
+    unit_view: &mut super::UnitView,
     tex: Option<&egui::TextureHandle>,
     size: egui::Vec2,
 ) {
@@ -615,6 +619,31 @@ fn war_map(
         // What the friendly side sees: its aircraft, enemy fighters on radar, known defences.
         let pic = super::picture::picture(st, &s.combat.sim);
         super::picture::draw(&painter, &view, &pic, false);
+        // Test aid: `--campaign-watch` watches the first friendly aircraft.
+        if std::env::args().any(|a| a == "--campaign-watch")
+            && unit_view.target.is_none()
+            && let Some(a) = pic.friendly.first()
+            && !std::mem::replace(&mut c.ui.test_taken, true)
+        {
+            let unit = super::unit_view::UnitRef::Flight { index: a.unit, spec: a.spec };
+            unit_view.watch(unit, s.combat.sim.aircraft_name(a.spec));
+        }
+        // A unit under the pointer: its name; a click watches it live.
+        if let Some(pos) = resp.hover_pos()
+            && let Some((unit, name)) = super::picture::pick(&view, &pic, &s.combat.sim, pos)
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            painter.text(
+                pos + egui::vec2(10.0, -10.0),
+                egui::Align2::LEFT_BOTTOM,
+                format!("{name} - click to watch"),
+                egui::FontId::monospace(12.0),
+                BRIGHT,
+            );
+            if resp.clicked() {
+                unit_view.watch(unit, name);
+            }
+        }
         if pic.player.is_none()
             && let Some(b) = c.parked.and_then(|b| st.site(b as u16))
         {
@@ -657,6 +686,7 @@ fn war_map(
             });
             super::picture::legend(ui);
             ui.add_space(8.0);
+            ui.label(egui::RichText::new("Click a unit to watch it live").small().color(BRIGHT));
             ui.label(egui::RichText::new("Wheel: zoom, drag: pan").small().color(DIM));
         });
     });

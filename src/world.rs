@@ -401,6 +401,8 @@ fn apply_world_positions(
 #[derive(Resource, Default)]
 pub struct StreamSites {
     pub points: Vec<DVec3>,
+    /// A unit watched from close by (the campaign's unit view), streamed while watched.
+    pub follow: Option<DVec3>,
     /// The tile objects around `points` are spawned.
     pub streamed: bool,
 }
@@ -427,7 +429,8 @@ fn stream_tiles(
     }
     // Cells wanted: (lod, col, row) -> ships only (beyond the level's own radius).
     let mut wanted: HashMap<(usize, i32, i32), bool> = HashMap::new();
-    let eyes = std::iter::once((anchor.0, true)).chain(sites.points.iter().map(|&p| (p, false)));
+    let eyes = std::iter::once((anchor.0, true))
+        .chain(sites.points.iter().chain(&sites.follow).map(|&p| (p, false)));
     for (eye, ships) in eyes {
         let (east, north, _) = bevy_to_wu(eye);
         for lod in 1..=4usize {

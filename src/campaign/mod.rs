@@ -22,8 +22,10 @@ mod menu;
 mod ops;
 mod picture;
 mod save;
+pub mod unit_view;
 
 pub use menu::CampaignWindow;
+pub use unit_view::{UnitCamera, UnitView};
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
@@ -75,8 +77,27 @@ impl Plugin for CampaignPlugin {
             ops::ops_ui.run_if(in_state(AppState::Flight)).run_if(running),
         )
         .init_resource::<CampaignWindow>()
+        .init_resource::<UnitView>()
+        .add_systems(
+            Update,
+            unit_view::follow
+                .after(crate::sim_render::SimRenderSystems)
+                .run_if(in_state(AppState::Flight)),
+        )
+        .add_systems(
+            EguiPrimaryContextPass,
+            unit_view::window
+                .after(ops::ops_ui)
+                .run_if(in_state(AppState::Flight))
+                .run_if(|c: Option<Res<ActiveCampaign>>| c.is_some_and(|c| c.screen_open())),
+        )
         .add_systems(EguiPrimaryContextPass, menu::campaign_window.run_if(in_state(AppState::Menu)))
         .add_systems(OnExit(AppState::Flight), leave);
+        #[cfg(feature = "xr")]
+        app.add_systems(
+            Update,
+            unit_view::vr_panel.after(unit_view::follow).run_if(in_state(AppState::Flight)),
+        );
     }
 }
 
@@ -778,10 +799,15 @@ fn leave(
     mut commands: Commands,
     c: Option<Res<ActiveCampaign>>,
     cams: Query<Entity, With<ops::OpsCamera>>,
+    mut view: ResMut<UnitView>,
+    mut sites: ResMut<crate::world::StreamSites>,
 ) {
     for e in &cams {
         commands.entity(e).try_despawn();
     }
+    view.close();
+    unit_view::follow_cleanup(&mut commands, &mut view);
+    sites.follow = None;
     #[cfg(feature = "xr")]
     commands.remove_resource::<crate::vr_menu::WorldPanel>();
     if let Some(c) = c {

@@ -36,6 +36,9 @@ pub const REPAIR_AIRFIELD: f64 = 60.0 * 60.0;
 pub const INSERTION_HELOS: usize = 4;
 pub const INSERTION_LEAD: f64 = 180.0;
 pub const CAPTURE_RADIUS: i32 = 0x60;
+/// Insertion helicopters cover this many map units a second on average, take-off and landing
+/// included (~310 km/h; for the intercepts' arrival times).
+pub const HELO_SPEED: f64 = 5.5;
 /// The campaign sends an insertion on its own when a front place's threat is at most this, and
 /// not more often than this.
 pub const AUTO_INSERT_THREAT: i32 = 0;

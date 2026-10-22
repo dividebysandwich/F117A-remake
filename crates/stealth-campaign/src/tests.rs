@@ -527,6 +527,43 @@ fn an_intercept_succeeds_when_the_helicopters_go_down() {
     assert_eq!(record.air_kills, tuning::INSERTION_HELOS as u32);
 }
 
+/// The intercept is offered on the helicopters' track, with their timing.
+#[test]
+fn an_intercept_meets_the_helicopters_on_their_way() {
+    let mut c = campaign("ce", 3);
+    enemy_order(&mut c);
+    c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+    let o = c.board.iter().find(|o| o.kind == MissionKind::Intercept).unwrap().clone();
+    let Objective::Intercept { insertion } = o.objective else { unreachable!() };
+    let ins = c.insertion(insertion).unwrap().clone();
+    let (a, b) = (c.site(ins.from).unwrap(), c.site(ins.target).unwrap());
+    let track = dist(a.x - b.x, a.y - b.y);
+    // Between the enemy's base and its goal, well away from both.
+    assert!(dist(o.x - a.x, o.y - a.y) < track && dist(o.x - b.x, o.y - b.y) < track);
+    assert!(dist(o.x - b.x, o.y - b.y) > track / 4, "{o:?}");
+    let t = c.insertion_status(insertion).unwrap();
+    assert!(t.contains("lift off") && t.contains(&a.name), "{t}");
+    enemy_launch(&mut c);
+    assert!(c.insertion_status(insertion).unwrap().contains("due in"));
+}
+
+/// An enemy insertion without helicopters is not flown, and nobody stopped it.
+#[test]
+fn an_insertion_without_helicopters_is_called_off() {
+    let mut c = campaign("ce", 3);
+    enemy_order(&mut c);
+    c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+    take(&mut c, P0, MissionKind::Intercept);
+    c.red.helicopters = 0;
+    let ev = c.tick(tuning::ENEMY_INSERTION_LEAD + 1.0, &WorldView::default(), &[]);
+    let ins = c.insertions.iter().find(|i| i.side == Side::Red).unwrap();
+    assert_eq!(ins.state, InsertionState::CalledOff);
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::Message(t) if t.contains("called off"))));
+    assert!(!ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { .. })));
+    let r = finished(&c.apply(P0, Command::EndSortie { end: SortieEnd::Landed }).unwrap());
+    assert_eq!(r.result, SortieResult::Failed);
+}
+
 /// Ticks until the enemy's first raid takes off: the raid's id, target and tags.
 fn raid(c: &mut CampaignState) -> (u32, ObjectId, Vec<u32>) {
     c.tick(1.0, &WorldView::default(), &[]);

@@ -625,6 +625,12 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
             section(ui, o.kind.name());
             ui.label(egui::RichText::new(&o.title).size(20.0).color(BRIGHT));
             ui.label(egui::RichText::new(describe_offer(c, &o)).color(DIM));
+            if let Objective::Intercept { insertion } | Objective::Escort { insertion } =
+                o.objective
+                && let Some(t) = c.state().insertion_status(insertion)
+            {
+                ui.label(egui::RichText::new(t).color(BRIGHT));
+            }
             group_label(ui, c, o.id);
             ui.add_space(6.0);
             if let Some(p) = place_of(&o.objective).and_then(|p| c.state().place(p)) {

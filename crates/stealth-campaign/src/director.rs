@@ -203,6 +203,7 @@ impl CampaignState {
             state: InsertionState::Pending { launch_at: self.clock + lead },
             scrambled: false,
             ordered_by: by,
+            enroute_at: None,
         });
         let base = self.site(from).map(|s| s.name.clone()).unwrap_or_default();
         let mins = (lead / 60.0).round();
@@ -250,9 +251,7 @@ impl CampaignState {
                         self.insertion_base(side, place.x, place.y)
                     };
                     let Some(from) = from else {
-                        let id = ins.id;
-                        self.insertions[k].state = InsertionState::Failed;
-                        self.settle_insertion(id, InsertionState::Failed);
+                        self.insertion_called_off(k, ev);
                         continue;
                     };
                     // From the side's helicopters; a player's order always gets the reserve.
@@ -262,9 +261,7 @@ impl CampaignState {
                         n = n.max(RESERVE_HELICOPTERS);
                     }
                     if n == 0 {
-                        let id = ins.id;
-                        self.insertions[k].state = InsertionState::Failed;
-                        self.settle_insertion(id, InsertionState::Failed);
+                        self.insertion_called_off(k, ev);
                         continue;
                     }
                     let f = self.forces_mut(side);
@@ -276,6 +273,7 @@ impl CampaignState {
                     ins.helicopters = tags.clone();
                     ins.alive = vec![true; tags.len()];
                     ins.state = InsertionState::Enroute;
+                    ins.enroute_at = Some(self.clock);
                     let (id, target) = (ins.id, ins.target);
                     if side == Side::Blue {
                         self.note(format!("Helicopters on the way to {name}"));
@@ -321,6 +319,62 @@ impl CampaignState {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Insertion `k` cannot lift off (no base in reach, no helicopters left): it is not flown,
+    /// and nobody stopped it.
+    fn insertion_called_off(&mut self, k: usize, ev: &mut Vec<CampaignEvent>) {
+        let ins = &mut self.insertions[k];
+        ins.state = InsertionState::CalledOff;
+        let (id, place, side) = (ins.id, ins.place, ins.side);
+        self.settle_insertion(id, InsertionState::CalledOff);
+        let name = self.places[place as usize].name.clone();
+        let text = if side == Side::Blue {
+            format!("Insertion at {name} called off: no helicopters to fly it")
+        } else {
+            format!("Enemy insertion at {name} called off")
+        };
+        self.note(text.clone());
+        self.board_at = f64::MIN;
+        ev.push(CampaignEvent::Message(text));
+    }
+
+    /// Where an interceptor meets an enemy insertion: half way along the helicopters' track.
+    pub fn intercept_point(&self, ins: &Insertion) -> (i32, i32) {
+        match (self.site(ins.from), self.site(ins.target)) {
+            (Some(a), Some(b)) => ((a.x + b.x) / 2, (a.y + b.y) / 2),
+            _ => {
+                let p = &self.places[ins.place as usize];
+                (p.x, p.y)
+            }
+        }
+    }
+
+    /// An insertion's timing for the briefings: when the helicopters lift off, or when they
+    /// are due at their goal.
+    pub fn insertion_status(&self, id: u32) -> Option<String> {
+        let ins = self.insertion(id)?;
+        let (from, to) = (self.site(ins.from)?, self.site(ins.target)?);
+        let flight = dist(from.x - to.x, from.y - to.y) as f64 / HELO_SPEED;
+        let mins = |s: f64| (s.max(0.0) / 60.0).ceil();
+        let to_name = &self.places[ins.place as usize].name;
+        match ins.state {
+            InsertionState::Pending { launch_at } => Some(format!(
+                "Helicopters lift off from {} in {} min, then about {} min to {to_name}",
+                from.name,
+                mins(launch_at - self.clock),
+                mins(flight)
+            )),
+            InsertionState::Enroute => {
+                let left = ins.enroute_at.map_or(flight, |t| flight - (self.clock - t));
+                Some(format!(
+                    "Helicopters from {} inbound to {to_name}, due in about {} min",
+                    from.name,
+                    mins(left)
+                ))
+            }
+            _ => None,
         }
     }
 
@@ -655,6 +709,7 @@ impl CampaignState {
                         ended: None,
                         escorted: false,
                         drones: false,
+                        enroute_at: None,
                     });
                     let name = self.places[place as usize].name.clone();
                     let text = format!(
@@ -756,6 +811,7 @@ impl CampaignState {
             r.aircraft = tags.clone();
             r.alive = vec![true; tags.len()];
             r.state = RaidState::Enroute;
+            r.enroute_at = Some(now);
             self.note(format!("{what} on the way to {name}"));
             ev.push(CampaignEvent::Message(if side == Side::Blue {
                 format!("{what} on the way to {name}")
@@ -955,8 +1011,8 @@ impl CampaignState {
             {
                 continue;
             }
-            let p = &self.places[ins.place as usize];
-            let (x, y, name) = (p.x, p.y, p.name.clone());
+            let name = self.places[ins.place as usize].name.clone();
+            let (x, y) = self.intercept_point(&ins);
             add(
                 self,
                 MissionKind::Intercept,

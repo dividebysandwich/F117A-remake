@@ -297,6 +297,9 @@ pub struct Insertion {
     /// Interceptors were sent against it.
     pub scrambled: bool,
     pub ordered_by: Option<PlayerId>,
+    /// When the helicopters lifted off.
+    #[serde(default)]
+    pub enroute_at: Option<f64>,
 }
 
 /// How a sortie ended for the pilot (who never dies in a dynamic campaign).
@@ -519,6 +522,9 @@ pub struct Raid {
     /// Attack drones (they dive into the target) instead of strike aircraft.
     #[serde(default)]
     pub drones: bool,
+    /// When the strike aircraft took off.
+    #[serde(default)]
+    pub enroute_at: Option<f64>,
 }
 
 impl Raid {

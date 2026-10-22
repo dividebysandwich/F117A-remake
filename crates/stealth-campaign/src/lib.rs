@@ -303,6 +303,7 @@ impl CampaignState {
                 ins.helicopters.clear();
                 ins.alive.clear();
                 ins.scrambled = false;
+                ins.enroute_at = None;
             }
         }
         let lead = self.clock + tuning::RAID_LEAD;
@@ -312,6 +313,7 @@ impl CampaignState {
                 r.aircraft.clear();
                 r.alive.clear();
                 r.escorted = false;
+                r.enroute_at = None;
             }
         }
         self.patrols.clear();

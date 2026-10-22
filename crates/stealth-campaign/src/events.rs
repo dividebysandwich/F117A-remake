@@ -127,6 +127,7 @@ impl CampaignState {
             ended: None,
             escorted: true,
             drones: true,
+            enroute_at: None,
         });
         let text = format!(
             "Intelligence: enemy attack drones to be launched at {} in {} min",
@@ -186,6 +187,7 @@ impl CampaignState {
             ended: None,
             escorted: true,
             drones: false,
+            enroute_at: None,
         });
         let who = self.player_name(player).unwrap_or("A pilot");
         let text = format!(

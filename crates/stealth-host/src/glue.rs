@@ -176,7 +176,15 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     m.landing = home;
     let target = MapPoint { x: o.x, y: o.y };
     let mid = MapPoint { x: (bx + o.x) / 2, y: (by + o.y) / 2 };
-    m.waypoints = [mid, target, target, MapPoint { x: bx, y: by }];
+    // An intercept meets the helicopters on their track, then follows them to their goal.
+    let then = match o.objective {
+        stealth_campaign::Objective::Intercept { insertion } => state
+            .insertion(insertion)
+            .and_then(|i| state.site(i.target))
+            .map_or(target, |s| MapPoint { x: s.x, y: s.y }),
+        _ => target,
+    };
+    m.waypoints = [mid, target, then, MapPoint { x: bx, y: by }];
     // The targets are the campaign's: nothing of the generated strike mission's stays.
     let (object, shape_name, area) = primary_target(state, &o.objective);
     let p = &mut m.primary;
@@ -282,6 +290,12 @@ pub fn summary(state: &CampaignState, sortie: &Sortie) -> String {
             format!("The city of {}: its stores and factories feed the enemy.", site(object))
         }
         Objective::AntiShip { .. } => "An enemy ship off the coast.".into(),
+        Objective::Intercept { insertion } | Objective::Escort { insertion } => {
+            match state.insertion_status(insertion) {
+                Some(t) => format!("{t}. {}", describe(o.kind)),
+                None => describe(o.kind).into(),
+            }
+        }
         _ => describe(o.kind).into(),
     }
 }

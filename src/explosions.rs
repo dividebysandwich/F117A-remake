@@ -271,9 +271,9 @@ struct Particles {
     smoke_clock: [f32; 16],
     /// Flash lights: entity, age, life, strength.
     lights: Vec<(Entity, f32, f32, f32)>,
-    /// The damaged player aircraft's trail: last emitter point and the puffs owed (smoke, fire).
-    trail: Option<DVec3>,
-    trail_owed: (f32, f32),
+    /// The damaged aircraft's trails (the player's: None, the other pilots' by id): last
+    /// emitter point and the puffs owed (smoke, fire).
+    trails: std::collections::HashMap<Option<u8>, (DVec3, (f32, f32))>,
     rng: u32,
 }
 
@@ -451,7 +451,7 @@ const FIRE_SPACING: f32 = 2.5;
 
 /// The player's aircraft trails smoke once it is damaged, and flames while it is on fire. The
 /// smoke puffs billow for a few seconds and fade into the long smoke ribbon
-/// ([`crate::trails`]) that carries the trail on for kilometres.
+/// ([`crate::trails`]) that carries the trail on for kilometres. So do the other pilots'.
 fn damage_trail(
     combat: Res<Combat>,
     mut p: ResMut<Particles>,
@@ -460,30 +460,67 @@ fn damage_trail(
 ) {
     let p = &mut *p;
     let dt = time.delta_secs();
-    let d = combat.sim.damage_effects();
-    let Ok((a, pos)) = player.single() else { return };
-    if d.bits == 0 || dt <= 0.0 || a.ended.is_some() {
-        p.trail = None;
-        p.trail_owed = (0.0, 0.0);
+    if dt <= 0.0 {
         return;
     }
-    let at = pos.0 + (a.orientation * crate::trails::DAMAGE_EMITTER).as_dvec3();
-    // A jump (a respawn, the floating origin) starts a new trail.
-    let last = p.trail.filter(|l| l.distance(at) < 400.0).unwrap_or(at);
-    p.trail = Some(at);
+    // Emitter point, severity 0 (light) .. 1 (heavy), on fire.
+    let mut emitters: Vec<(Option<u8>, DVec3, f32, bool)> = Vec::new();
+    let d = combat.sim.damage_effects();
+    if let Ok((a, pos)) = player.single()
+        && d.bits != 0
+        && a.ended.is_none()
+    {
+        let fire = d.bits & stealth_sim::dmg::FIRE != 0;
+        // Severity 0 (one hit; the count starts at 2) .. 1 (eight or more).
+        let sev = ((d.hits - 3) as f32 / 7.0).clamp(0.0, 1.0);
+        let at = pos.0 + (a.orientation * crate::trails::DAMAGE_EMITTER).as_dvec3();
+        emitters.push((None, at, if fire { 1.0 } else { sev }, fire));
+    }
+    let me = combat.sim.active_pilot();
+    for o in combat.sim.remote_pilots().iter().filter(|o| o.id != me) {
+        if o.smoke == 0 || o.chute.is_some() {
+            continue;
+        }
+        let (pos, rot) = crate::sim_render::remote_pose(&combat, o);
+        let at = pos + (rot * crate::trails::DAMAGE_EMITTER).as_dvec3();
+        let fire = o.smoke >= 3 || o.burning;
+        let heavy = if fire { 1.0 } else { [0.0, 0.1, 0.6][o.smoke as usize] };
+        emitters.push((Some(o.id), at, heavy, fire));
+    }
+    p.trails.retain(|k, _| emitters.iter().any(|e| e.0 == *k));
+    for (key, at, heavy, fire) in emitters {
+        // A jump (a respawn, the floating origin) starts a new trail.
+        let (last, owed) = p
+            .trails
+            .get(&key)
+            .copied()
+            .filter(|(l, _)| l.distance(at) < 400.0)
+            .unwrap_or((at, (0.0, 0.0)));
+        let owed = emit_damage_trail(p, last, at, dt, heavy, fire, owed);
+        p.trails.insert(key, (at, owed));
+    }
+}
+
+/// One aircraft's damage trail from `last` to `at` over `dt` seconds (severity `heavy`); the
+/// puffs still owed after it.
+fn emit_damage_trail(
+    p: &mut Particles,
+    last: DVec3,
+    at: DVec3,
+    dt: f32,
+    heavy: f32,
+    fire: bool,
+    mut owed: (f32, f32),
+) -> (f32, f32) {
     let seg = at - last;
     let vel = (seg / dt as f64).as_vec3();
     let len = seg.length() as f32;
-    let fire = d.bits & stealth_sim::dmg::FIRE != 0;
-    // Severity 0 (one hit; the count starts at 2) .. 1 (eight or more).
-    let sev = ((d.hits - 3) as f32 / 7.0).clamp(0.0, 1.0);
-    let heavy = if fire { 1.0 } else { sev };
 
     // Smoke: drifts in the air where it was left, growing and fading; light grey and thin at
     // first, darker and thicker with more damage or a fire.
-    p.trail_owed.0 += len / SMOKE_SPACING + dt * 4.0;
-    let n = p.trail_owed.0.floor();
-    p.trail_owed.0 -= n;
+    owed.0 += len / SMOKE_SPACING + dt * 4.0;
+    let n = owed.0.floor();
+    owed.0 -= n;
     for i in 0..n as usize {
         let k = (i as f64 + p.rand() as f64) / n as f64;
         let o = last + seg * k + (p.dir(0.0) * 0.6).as_dvec3();
@@ -497,9 +534,9 @@ fn damage_trail(
 
     // Flames: short lived glowing puffs streaming back from the engines.
     if fire {
-        p.trail_owed.1 += len / FIRE_SPACING + dt * 30.0;
-        let n = p.trail_owed.1.floor();
-        p.trail_owed.1 -= n;
+        owed.1 += len / FIRE_SPACING + dt * 30.0;
+        let n = owed.1.floor();
+        owed.1 -= n;
         for i in 0..n as usize {
             let k = (i as f64 + p.rand() as f64) / n as f64;
             let o = last + seg * k + (p.dir(0.0) * 0.4).as_dvec3();
@@ -510,6 +547,7 @@ fn damage_trail(
             p.puff(o, v, life, (s, s * 1.8), PuffLook::Fire, 1.5, 1.0, 0.85);
         }
     }
+    owed
 }
 
 fn colour_material(

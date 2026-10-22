@@ -16,7 +16,7 @@ use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player, bam};
 use crate::models::{ModelAssets, ModelGlobals, ModelLibrary, ModelState};
 use crate::palette_material::{
-    FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, mesh_tag, spot_size,
+    FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, dot_scale, mesh_tag, spot_size,
 };
 use crate::player::{AIRCRAFT_MODEL_SCALE, OwnLights, OwnModel};
 use crate::settings::AppState;
@@ -564,13 +564,28 @@ fn spawn_dot(
     material: Handle<PaletteMaterial>,
     offsets: &[Vec3],
 ) -> Entity {
+    spawn_dot_scaled(commands, assets, material, offsets, 1)
+}
+
+/// [`spawn_dot`] `scale` times the size.
+fn spawn_dot_scaled(
+    commands: &mut Commands,
+    assets: &ModelAssets,
+    material: Handle<PaletteMaterial>,
+    offsets: &[Vec3],
+    scale: u32,
+) -> Entity {
     let parent = commands
         .spawn((SimObject, WorldPos::default(), Transform::default(), Visibility::Hidden))
         .id();
     for &o in offsets {
         let dot = commands
             .spawn((
-                crate::dots::DotLight::bundle(o, &assets.dots, mesh_tag(LEVEL_AIRCRAFT, 0, true)),
+                crate::dots::DotLight::bundle(
+                    o,
+                    &assets.dots,
+                    mesh_tag(LEVEL_AIRCRAFT, 0, true) | dot_scale(scale),
+                ),
                 MeshMaterial3d(material.clone()),
             ))
             .id();
@@ -1019,7 +1034,13 @@ fn sync_objects(
     let others = sim.other_rounds();
     while vis.other_bullets.len() < others.len() {
         let material = vis.material(&mut materials, &globals, FRIENDLY_TRACER);
-        let dot = spawn_dot(&mut commands, &assets, material.clone(), &[Vec3::ZERO]);
+        let dot = spawn_dot_scaled(
+            &mut commands,
+            &assets,
+            material.clone(),
+            &[Vec3::ZERO],
+            OTHER_ROUND_DOT_SCALE,
+        );
         let line = spawn_tracer(&mut commands, material);
         vis.other_bullets.push((dot, line));
     }
@@ -1263,18 +1284,59 @@ fn own_shadow(
     }
 }
 
-/// The other pilots' aircraft (coop) as drawn: per pilot the entity, its model, and the
-/// view before the latest one (for the interpolation); their weapons in flight.
+/// The other pilots' aircraft (coop) as drawn: per pilot the entity, its model, its spotting
+/// dot and its muzzle flash; their weapons in flight by (pilot, slot): the model, its spec and
+/// its dot with the dot's look.
 #[derive(Resource, Default)]
 pub struct RemoteVisuals {
-    planes: HashMap<u8, (Entity, &'static str, SpotDot)>,
-    missiles: Vec<(Entity, i32)>,
+    planes: HashMap<u8, (Entity, &'static str, SpotDot, Entity)>,
+    missiles: HashMap<(u8, u8), RemoteMissileVisual>,
     /// Solid palette-colour materials (word 0xFF00 | index).
     materials: HashMap<u8, Handle<PaletteMaterial>>,
 }
 
+/// Another pilot's weapon in flight: its model, its spec, and its dot with the dot's look.
+type RemoteMissileVisual = (Entity, i32, Option<(Entity, u8)>);
+
+/// The muzzle flash of another pilot's cannon: a big glowing dot at the nose (metres ahead of
+/// the aircraft's middle), seen from far away; its size multiplier.
+const MUZZLE_AHEAD: f32 = 9.0;
+const MUZZLE_DOT_SCALE: u32 = 4;
+/// The other pilots' gun rounds are drawn this much bigger than the own.
+const OTHER_ROUND_DOT_SCALE: u32 = 2;
+
+/// Another pilot's aircraft as drawn: its middle and attitude between the samples around the
+/// time shown (carried on a little past the last).
+pub fn remote_pose(combat: &Combat, p: &stealth_sim::net::RemotePilot) -> (DVec3, Quat) {
+    let (old, cur, t) = combat.remote_track.at(p.id, combat.remote_time, p.view);
+    let lerp = |a: i32, b: i32| a as f64 + (b - a) as f64 * t;
+    let pos = wu_to_bevy(lerp(old.wx, cur.wx), lerp(old.wy, cur.wy), lerp(old.alt, cur.alt));
+    let rot = attitude(old.heading, old.pitch, old.roll)
+        .slerp(attitude(cur.heading, cur.pitch, cur.roll), t.min(1.0) as f32);
+    (pos, rot)
+}
+
+/// One of the other pilots' weapons in flight as drawn: between its last two frames.
+pub fn remote_missile_pose(
+    combat: &Combat,
+    key: (u8, u8),
+    m: &stealth_sim::Projectile,
+) -> (DVec3, Quat) {
+    let (x, y, z) = m.map_pos();
+    let mut at = map_point(x, y, z);
+    if let Some((_, p)) = combat.prev_remote.iter().find(|(k, _)| *k == key)
+        && p.spec == m.spec
+        && (p.x - m.x).abs() < 0x400
+        && (p.y - m.y).abs() < 0x400
+    {
+        let (px, py, pz) = p.map_pos();
+        at = map_point(px, py, pz).lerp(at, combat.alpha as f64);
+    }
+    (at, attitude(m.heading, m.pitch, m.roll))
+}
+
 /// The other pilots' aircraft, interpolated between the simulation's frames like the AI's,
-/// and their missiles and bombs.
+/// their cannon's muzzle flash, and their missiles and bombs.
 #[allow(clippy::too_many_arguments)]
 fn sync_remote_pilots(
     mut commands: Commands,
@@ -1284,8 +1346,11 @@ fn sync_remote_pilots(
     server: Res<AssetServer>,
     assets: ModelAssets,
     mut materials: ResMut<Assets<PaletteMaterial>>,
+    time: Res<Time>,
     mut q: Query<(&mut WorldPos, &mut Transform, Option<&mut ModelState>), With<SimObject>>,
+    mut muzzles: Query<&mut Visibility, Without<SimObject>>,
 ) {
+    let vis = &mut *vis;
     let sim = &combat.sim;
     let lights = assets.palette.lights_on();
     let globals = assets.palette.globals.clone();
@@ -1327,20 +1392,33 @@ fn sync_remote_pilots(
                 crate::models::LodRange(FRIENDLY_LOD_RANGE),
             ));
             let dot = spawn_spot_dot(&mut commands, &assets, e, SPOT_METRES);
-            vis.planes.insert(p.id, (e, spec.model, dot));
+            let tag = mesh_tag(LEVEL_AIRCRAFT, 0, true) | dot_scale(MUZZLE_DOT_SCALE);
+            let nose = Vec3::NEG_Z * MUZZLE_AHEAD / AIRCRAFT_MODEL_SCALE as f32;
+            let material = solid_material(&mut vis.materials, &mut materials, &globals, TRACER);
+            let muzzle = commands
+                .spawn((
+                    crate::dots::DotLight::bundle(nose, &assets.dots, tag),
+                    MeshMaterial3d(material),
+                    Visibility::Hidden,
+                    crate::lighting::LightEmitter { color: Vec3::new(2.0, 1.5, 0.8), range: 80.0 },
+                ))
+                .id();
+            commands.entity(e).add_child(muzzle);
+            vis.planes.insert(p.id, (e, spec.model, dot, muzzle));
         }
         let look = if lights { SPOT_NIGHT } else { SPOT };
-        let vis = &mut *vis;
         let Some(v) = vis.planes.get_mut(&p.id) else { continue };
         spot_look(&mut commands, &mut v.2, look, |c| {
             solid_material(&mut vis.materials, &mut materials, &globals, c)
         });
-        // Between the samples around the time shown (carried on a little past the last).
-        let (old, cur, t) = combat.remote_track.at(p.id, combat.remote_time, p.view);
-        let lerp = |a: i32, b: i32| a as f64 + (b - a) as f64 * t;
-        let pos = wu_to_bevy(lerp(old.wx, cur.wx), lerp(old.wy, cur.wy), lerp(old.alt, cur.alt));
-        let rot = attitude(old.heading, old.pitch, old.roll)
-            .slerp(attitude(cur.heading, cur.pitch, cur.roll), t.min(1.0) as f32);
+        // The muzzle flash flickers while the cannon fires.
+        let firing = p.gun_firing && !p.lockheed;
+        let flash =
+            firing && !((time.elapsed_secs() * 25.0) as u32 + p.id as u32).is_multiple_of(3);
+        if let Ok(mut m) = muzzles.get_mut(v.3) {
+            m.set_if_neq(if flash { Visibility::Inherited } else { Visibility::Hidden });
+        }
+        let (pos, rot) = remote_pose(&combat, p);
         if let Ok((mut wp, mut tf, state)) = q.get_mut(v.0) {
             wp.0 = pos + (rot * Vec3::Y * spec.model_lift).as_dvec3();
             tf.rotation = rot;
@@ -1363,29 +1441,64 @@ fn sync_remote_pilots(
             }
         }
     }
-    // Their weapons in flight.
-    let missiles: Vec<stealth_sim::Projectile> =
-        others.iter().flat_map(|p| p.missiles.iter().copied()).collect();
-    while vis.missiles.len() > missiles.len() {
-        if let Some((e, _)) = vis.missiles.pop() {
-            commands.entity(e).try_despawn();
+    // Their weapons in flight, with a dot on the missiles like the own: the motor's glow, then
+    // black by day, white at night.
+    let missiles: Vec<((u8, u8), stealth_sim::Projectile)> =
+        others.iter().flat_map(|p| p.missiles.iter().map(move |&(s, m)| ((p.id, s), m))).collect();
+    vis.missiles.retain(|key, (e, spec, _)| {
+        let keep = missiles.iter().any(|(k, m)| k == key && m.spec == *spec);
+        if !keep {
+            commands.entity(*e).try_despawn();
         }
-    }
-    for (k, m) in missiles.iter().enumerate() {
-        let model = sim_missile_model(&combat, m.spec);
-        if vis.missiles.get(k).is_some_and(|&(_, md)| md != model) {
-            let (e, _) = vis.missiles.remove(k);
-            commands.entity(e).try_despawn();
-        }
-        if vis.missiles.len() <= k {
+        keep
+    });
+    for (key, m) in &missiles {
+        if !vis.missiles.contains_key(key) {
+            let model = sim_missile_model(&combat, m.spec);
             let file = library.load(&server, model_file(model));
             let Some(e) = spawn_model(&mut commands, &assets, &file, model, true) else { break };
-            vis.missiles.push((e, model));
+            let mut dot = None;
+            if crate::trails::is_missile(m.spec) {
+                let d = commands
+                    .spawn(crate::dots::DotLight::bundle(
+                        Vec3::ZERO,
+                        &assets.dots,
+                        mesh_tag(LEVEL_AIRCRAFT, 0, true),
+                    ))
+                    .id();
+                commands.entity(e).add_child(d);
+                dot = Some((d, 0));
+            }
+            vis.missiles.insert(*key, (e, m.spec, dot));
         }
-        let (x, y, alt) = m.map_pos();
-        if let Ok((mut wp, mut tf, _)) = q.get_mut(vis.missiles[k].0) {
-            wp.0 = map_point(x, y, alt);
-            tf.rotation = attitude(m.heading, m.pitch, m.roll);
+        let look = if m.motor_visible() {
+            TRACER
+        } else if lights {
+            COASTING_NIGHT
+        } else {
+            COASTING
+        };
+        let Some((e, _, dot)) = vis.missiles.get_mut(key) else { continue };
+        if let Some((d, cur)) = dot
+            && *cur != look
+        {
+            *cur = look;
+            let material = solid_material(&mut vis.materials, &mut materials, &globals, look);
+            let mut d = commands.entity(*d);
+            d.insert(MeshMaterial3d(material));
+            if look == TRACER {
+                d.insert(crate::lighting::LightEmitter {
+                    color: Vec3::new(1.6, 0.9, 0.4),
+                    range: 60.0,
+                });
+            } else {
+                d.remove::<crate::lighting::LightEmitter>();
+            }
+        }
+        if let Ok((mut wp, mut tf, _)) = q.get_mut(*e) {
+            let (pos, rot) = remote_missile_pose(&combat, *key, m);
+            wp.0 = pos;
+            tf.rotation = rot;
         }
     }
 }

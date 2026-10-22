@@ -8,6 +8,7 @@
 //! * Aircraft (AI and the player) above `CONTRAIL_VIEW_Z` leave two contrails.
 //! * The damaged player aircraft trails smoke: grey, black when badly hit or on fire. It fades
 //!   in behind the smoke puffs of [`crate::explosions`] and hangs in the air for a minute.
+//! * So do the other pilots' (coop) missiles and damaged aircraft.
 
 use std::collections::HashMap;
 
@@ -194,6 +195,10 @@ enum Source {
     Player(usize),
     /// Damaged player aircraft (heavy smoke).
     PlayerSmoke(bool),
+    /// Another pilot's missile: (pilot, slot) and spec.
+    RemoteMissile((u8, u8), i32),
+    /// Another pilot's damaged aircraft (heavy smoke).
+    RemoteSmoke(u8, bool),
 }
 
 struct Trail {
@@ -360,6 +365,27 @@ fn update_trails(
             if heavy { &HEAVY_DAMAGE_SMOKE } else { &DAMAGE_SMOKE },
             pos.0 + (a.orientation * DAMAGE_EMITTER).as_dvec3(),
         ));
+    }
+
+    // The other pilots' missiles and damaged aircraft.
+    let me = sim.active_pilot();
+    for p in sim.remote_pilots().iter().filter(|p| p.id != me) {
+        for &(slot, m) in &p.missiles {
+            if is_missile(m.spec) && m.motor_visible() {
+                let key = (p.id, slot);
+                let (pos, _) = crate::sim_render::remote_missile_pose(&combat, key, &m);
+                emitters.push((Source::RemoteMissile(key, m.spec), &SMOKE, pos));
+            }
+        }
+        if p.smoke > 0 && p.chute.is_none() {
+            let heavy = p.smoke >= 2;
+            let (pos, rot) = crate::sim_render::remote_pose(&combat, p);
+            emitters.push((
+                Source::RemoteSmoke(p.id, heavy),
+                if heavy { &HEAVY_DAMAGE_SMOKE } else { &DAMAGE_SMOKE },
+                pos + (rot * DAMAGE_EMITTER).as_dvec3(),
+            ));
+        }
     }
 
     // Detach the trails whose emitter is gone.

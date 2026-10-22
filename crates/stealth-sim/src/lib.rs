@@ -234,6 +234,10 @@ pub struct Sim {
     pub(crate) local_round: usize,
     #[serde(skip)]
     pub(crate) claimed: Vec<(u16, u32)>,
+    /// Crash sites of pilots whose sortie ended, for the next step's events (a sortie can end
+    /// between steps, whose events only the campaign host sees).
+    #[serde(skip)]
+    pub(crate) crash_sites: Vec<(i32, i32)>,
     /// A host's: the shells fired since they were last taken.
     #[serde(skip)]
     pub(crate) record_shells: bool,
@@ -480,6 +484,7 @@ impl Sim {
             pending_claims: Vec::new(),
             local_round: 0,
             claimed: Vec::new(),
+            crash_sites: Vec::new(),
             record_shells: false,
             new_shells: Vec::new(),
             new_ai_shells: Vec::new(),
@@ -743,6 +748,9 @@ impl Sim {
         }
         if fs as i32 != self.fs {
             self.set_fs(fs as i32);
+        }
+        for (x, y) in std::mem::take(&mut self.crash_sites) {
+            self.emit(SimEvent::Explosion { x, y, alt: 0, kind: -16 });
         }
         let present = self.present();
         if present.is_empty() {

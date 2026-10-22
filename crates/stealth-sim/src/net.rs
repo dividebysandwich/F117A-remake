@@ -42,18 +42,20 @@ pub struct RemotePilot {
     pub external_stores: bool,
     pub gun_firing: bool,
     pub burning: bool,
+    /// Damage smoke: 0 none, 1 light, 2 heavy (badly hit), 3 on fire.
+    pub smoke: u8,
     /// Ejected: the parachute (map x, map y, alt).
     pub chute: Option<(i32, i32, i32)>,
-    /// His weapons in flight (projectile records).
-    pub missiles: Vec<Projectile>,
+    /// His weapons in flight: slot, projectile record.
+    pub missiles: Vec<(u8, Projectile)>,
     /// His countermeasures.
     pub cms: [Countermeasure; 4],
 }
 
 /// [`RemotePilot`] as a sequence without field names: id, view (wx, wy, mx, my, alt, view_z,
 /// heading, pitch, roll, velocity, knots, climb), flags (gear up, on the ground, F-117A as it
-/// was, external stores, gun firing, burning), bay doors, parachute, missiles, the live
-/// countermeasures by slot.
+/// was, external stores, gun firing, burning, damage smoke in two bits), bay doors, parachute,
+/// missiles by slot, the live countermeasures by slot.
 #[derive(Serialize, Deserialize)]
 struct RemoteWire(
     u8,
@@ -61,7 +63,7 @@ struct RemoteWire(
     u8,
     i32,
     Option<(i32, i32, i32)>,
-    Vec<Projectile>,
+    Vec<(u8, Projectile)>,
     Vec<(u8, Countermeasure)>,
 );
 
@@ -72,7 +74,8 @@ impl From<RemotePilot> for RemoteWire {
             [p.gear_up, p.on_ground, p.lockheed, p.external_stores, p.gun_firing, p.burning]
                 .iter()
                 .enumerate()
-                .fold(0u8, |f, (k, &b)| f | (b as u8) << k);
+                .fold(0u8, |f, (k, &b)| f | (b as u8) << k)
+                | p.smoke.min(3) << 6;
         RemoteWire(
             p.id,
             [
@@ -125,6 +128,7 @@ impl From<RemoteWire> for RemotePilot {
             external_stores: bit(3),
             gun_firing: bit(4),
             burning: bit(5),
+            smoke: flags >> 6,
             chute,
             missiles,
             cms,
@@ -274,8 +278,20 @@ impl Sim {
                     external_stores: p.external_stores,
                     gun_firing: p.gun_firing,
                     burning: p.fire_frames > 0 || p.breakup_frames > 0,
+                    smoke: if p.damage & dmg::FIRE != 0 {
+                        3
+                    } else if p.hits >= 6 {
+                        2
+                    } else {
+                        (p.damage != 0) as u8
+                    },
                     chute: (p.eject != 0).then_some(p.chute),
-                    missiles: missiles.into_iter().filter(|m| m.ttl != 0).collect(),
+                    missiles: missiles
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.ttl != 0)
+                        .map(|(s, m)| (s as u8, m))
+                        .collect(),
                     cms: p.cms,
                 }
             })

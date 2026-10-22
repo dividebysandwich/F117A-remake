@@ -45,6 +45,8 @@ const TRACER_HIT: i32 = 300;
 const MAX_SHELLS: usize = 200;
 /// Low-level air defences in a campaign at most.
 const MAX_UNITS: usize = 400;
+/// A crashed pilot's aircraft below this (ft) leaves a burning wreck where it came down.
+const CRASH_SITE_ALT: i32 = 200;
 
 /// What a campaign aircraft is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,6 +246,7 @@ impl Sim {
                 damage: self.pl.damage,
                 hits: self.pl.hits,
             };
+            self.crash_site(outcome);
             self.emit(SimEvent::SortieEnded(e));
             self.leave_world();
         }
@@ -253,8 +256,18 @@ impl Sim {
     /// Campaign `finalize`: the sortie ends, the simulation goes on.
     pub(crate) fn finalize_sortie(&mut self, e: MissionEnd) {
         self.log_event(8, 0);
+        self.crash_site(e.outcome);
         self.emit(SimEvent::SortieEnded(e));
         self.leave_world();
+    }
+
+    /// A pilot who crashed into the ground (outcomes 1, 2) without ejecting leaves a burning
+    /// wreck everyone sees, from the next step (one blown up in the air has had his explosion).
+    fn crash_site(&mut self, outcome: u8) {
+        let p = self.pl.p;
+        if matches!(outcome, 1 | 2) && self.pl.eject == 0 && p.alt < CRASH_SITE_ALT {
+            self.crash_sites.push((p.mx, p.my));
+        }
     }
 
     /// Campaign: a new sortie from base object `base` with the objective (mission type 1

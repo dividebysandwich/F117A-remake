@@ -102,6 +102,8 @@ pub struct Combat {
     /// Flight units and projectiles before the last step, for render interpolation.
     pub prev_flights: Vec<FlightUnit>,
     pub prev_proj: [Projectile; N_PROJ],
+    /// The other pilots' weapons in flight before the last step (or server frame).
+    pub prev_remote: Vec<RemoteMissile>,
     /// Classic missiles' smoothed paths as drawn (`sim_render::smooth_projectiles`).
     pub proj_smooth: [Option<crate::sim_render::Smoothed>; N_PROJ],
     /// Fraction of a sim frame elapsed since the last step (0..1; a coop client's: of the
@@ -342,6 +344,7 @@ fn start_combat(
         sky_seconds: None,
         prev_flights: sim.flights().to_vec(),
         prev_proj: *sim.projectiles(),
+        prev_remote: remote_missiles(&sim),
         proj_smooth: [None; N_PROJ],
         sim,
         data,
@@ -647,6 +650,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
                     combat.prev_flights.clear();
                     combat.prev_flights.extend_from_slice(combat.sim.flights());
                     combat.prev_proj = *combat.sim.projectiles();
+                    combat.prev_remote = remote_missiles(&combat.sim);
                     combat.sim.apply_world_fast(&w);
                     combat.sim.set_host_step(step);
                     if let Some(mine) = &mine {
@@ -685,6 +689,7 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
         combat.prev_flights.clear();
         combat.prev_flights.extend_from_slice(combat.sim.flights());
         combat.prev_proj = *combat.sim.projectiles();
+        combat.prev_remote = remote_missiles(&combat.sim);
         let aaa_before: Vec<bool> = combat.sim.aaa_units().iter().map(|u| u.destroyed).collect();
         // A listen server steps the joined players' aircraft too.
         let mut inputs = Vec::new();
@@ -747,6 +752,19 @@ fn step_combat(mut combat: ResMut<Combat>, p: StepParams) {
             combat.end = Some(end_info(&combat.sim, Some(end)));
         }
     }
+}
+
+/// One of the other pilots' weapons in flight: (pilot, slot) and its record.
+pub type RemoteMissile = ((u8, u8), Projectile);
+
+/// The other pilots' weapons in flight.
+pub fn remote_missiles(sim: &Sim) -> Vec<RemoteMissile> {
+    let me = sim.active_pilot();
+    sim.remote_pilots()
+        .iter()
+        .filter(|p| p.id != me)
+        .flat_map(|p| p.missiles.iter().map(move |&(s, m)| ((p.id, s), m)))
+        .collect()
 }
 
 /// `--log-flight` / `--log-sim`: simulation events on stdout (test automation).
@@ -1099,7 +1117,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                 threat: None,
             });
         }
-        for m in &p.missiles {
+        for (_, m) in &p.missiles {
             let (east, north) = map_wu(m.x, m.y);
             contacts.list.push(Contact {
                 kind: ContactKind::Missile,

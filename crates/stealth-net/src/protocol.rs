@@ -8,7 +8,7 @@ use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 /// Changes with every change of the messages: client and server must agree.
-pub const PROTOCOL: u16 = 3;
+pub const PROTOCOL: u16 = 4;
 pub const DEFAULT_PORT: u16 = 28989;
 /// Players a server takes at most.
 pub const MAX_PLAYERS: usize = stealth_sim::MAX_PILOTS;
@@ -192,5 +192,29 @@ mod tests {
         let bytes = encode(&big);
         assert!(bytes.len() < 500 && bytes[0] == 1);
         assert_eq!(format!("{:?}", decode::<ToClient>(&bytes)), format!("{:?}", Some(big)));
+    }
+
+    #[test]
+    fn other_pilots_keep_their_missile_slots_and_smoke() {
+        use stealth_sim::Projectile;
+        use stealth_sim::net::RemotePilot;
+        let p = RemotePilot {
+            id: 2,
+            view: Default::default(),
+            gear_up: true,
+            on_ground: false,
+            door_anim: 2,
+            lockheed: false,
+            external_stores: true,
+            gun_firing: true,
+            burning: false,
+            smoke: 3,
+            chute: None,
+            missiles: vec![(3, Projectile { ttl: 40, spec: 5, ..Default::default() })],
+            cms: Default::default(),
+        };
+        let w = WorldFast { pilots: vec![p.clone()], ..Default::default() };
+        let back = decode::<WorldFast>(&encode(&w)).unwrap();
+        assert_eq!(back.pilots, vec![p]);
     }
 }

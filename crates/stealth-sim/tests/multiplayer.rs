@@ -469,3 +469,26 @@ fn the_client_reports_what_its_rounds_hit_and_the_host_agrees() {
     }
     assert_eq!(by, Some(1), "the client's report is his kill");
 }
+
+#[test]
+fn a_crashed_pilot_leaves_a_burning_wreck_for_everyone() {
+    let (mut sim, base) = two_pilots();
+    let b = sim.objects()[base];
+    let inputs = vec![
+        (0, flying(b.x, b.y - 0x800, 4000, 0, 400)),
+        (1, flying(b.x + 0x400, b.y - 0x800, 100, 0, 300)),
+    ];
+    sim.step_pilots(&inputs, 15);
+    // His flight model hit the ground (the host hears it between steps).
+    sim.end_sortie_pilot(1, 1);
+    let events = sim.step_pilots(&inputs[..1], 15);
+    let blast = events.iter().find_map(|e| match e.event {
+        SimEvent::Explosion { x, y, alt: 0, kind: -16 } => Some((x, y)),
+        _ => None,
+    });
+    assert_eq!(blast, Some((b.x + 0x400, b.y - 0x800)));
+    // Ending a sortie from the menu leaves nothing.
+    sim.end_sortie_pilot(0, 7);
+    let events = sim.step_pilots(&[], 15);
+    assert!(!events.iter().any(|e| matches!(e.event, SimEvent::Explosion { .. })));
+}

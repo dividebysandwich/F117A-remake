@@ -715,12 +715,18 @@ fn draw(
             let mut w = Writer { c, y: TABS + 34.0 };
             w.para(&format!("{} - {}", t.type_name, t.place_name), GREEN);
             w.para(&format!("PRIMARY: {}", b.primary_objective), WHITE);
-            w.para(&format!("SECONDARY: {}", b.secondary_objective), CYAN);
+            if !b.secondary_objective.is_empty() {
+                w.para(&format!("SECONDARY: {}", b.secondary_objective), CYAN);
+            }
             // Recon photos of the primary and the secondary target, side by side.
             let top = w.y as i32 - 6;
             let c = w.c;
             let (pw, ph) = (PHOTO_W as i32, PHOTO_H as i32);
             for (k, tgt) in [&m.primary, &m.secondary].into_iter().enumerate() {
+                // No secondary target (campaign sorties).
+                if k > 0 && (tgt.position.x, tgt.position.y) == (0, 0) {
+                    continue;
+                }
                 let x = 16 + k as i32 * (MAP_W as i32 - pw);
                 let mid = Vec2::new((x + pw / 2) as f32, (top + ph / 2) as f32);
                 match &recon.photos[k] {

@@ -177,15 +177,34 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     let target = MapPoint { x: o.x, y: o.y };
     let mid = MapPoint { x: (bx + o.x) / 2, y: (by + o.y) / 2 };
     m.waypoints = [mid, target, target, MapPoint { x: bx, y: by }];
-    m.primary.place_name = o.title.clone();
-    m.primary.position = target;
-    m.primary.mission_type = if o.kind == MissionKind::Recon { 1 } else { 2 };
-    m.primary.type_name = o.kind.name().into();
-    m.secondary.position = target;
-    m.secondary.mission_type = 0;
+    // The targets are the campaign's: nothing of the generated strike mission's stays.
+    let (object, shape_name, area) = primary_target(state, &o.objective);
+    let p = &mut m.primary;
+    p.place_name = o.title.clone();
+    p.position = object.and_then(|k| state.site(k)).map_or(target, |s| MapPoint { x: s.x, y: s.y });
+    p.mission_type = match o.kind {
+        MissionKind::Recon => 1,
+        k if airborne(k) => 8,
+        _ => 2,
+    };
+    p.type_name = o.kind.name().into();
+    p.object_index = object.map_or(-1, |k| k as i16);
+    p.shape_name = shape_name;
+    p.area_target = area;
+    p.placed_by_generator = false;
+    p.special_model = None;
+    let s = &mut m.secondary;
+    s.position = MapPoint { x: 0, y: 0 };
+    s.mission_type = 0;
+    s.object_index = -1;
+    s.shape_name = String::new();
+    s.place_name = String::new();
+    s.special_model = None;
     let what = describe(o.kind);
     m.briefing.title = o.title.clone();
+    m.briefing.primary_summary = summary(state, sortie);
     m.briefing.primary_objective = what.to_string();
+    m.briefing.secondary_summary = String::new();
     m.briefing.secondary_objective = String::new();
     m.orders.primary = o.title.to_ascii_uppercase();
     m.orders.secondary = String::new();
@@ -200,6 +219,71 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     m.loadout.usable_bays =
         if m.settings.plane == stealth_mission::Plane::Lockheed { 2 } else { 4 };
     m
+}
+
+/// Missions against aircraft or over a point: nothing on the ground to photograph.
+pub fn airborne(kind: MissionKind) -> bool {
+    matches!(
+        kind,
+        MissionKind::Cap
+            | MissionKind::Escort
+            | MissionKind::Insertion
+            | MissionKind::Intercept
+            | MissionKind::Defend
+            | MissionKind::Csar
+            | MissionKind::Awacs
+    )
+}
+
+/// The world object an objective is about (None: aircraft or an area), what it is for the
+/// kneeboard, and whether it is an area target.
+fn primary_target(
+    state: &CampaignState,
+    o: &stealth_campaign::Objective,
+) -> (Option<u16>, String, bool) {
+    use stealth_campaign::{Objective, SiteKind};
+    let object = match *o {
+        Objective::Recon { object, .. }
+        | Objective::Interdict { object, .. }
+        | Objective::AntiShip { ship: object }
+        | Objective::Strike { airfield: object, .. } => Some(object),
+        Objective::Sead { ref sites, .. } => sites.first().copied(),
+        Objective::Cas { .. } => return (None, "GUNS AND MANPADS".into(), true),
+        _ => return (None, String::new(), false),
+    };
+    let name = object.and_then(|k| state.site(k)).map_or(String::new(), |s| {
+        match s.kind {
+            SiteKind::Airfield => "AIRFIELD",
+            SiteKind::Carrier => "CARRIER",
+            SiteKind::City => "CITY",
+            SiteKind::Sam => "SAM SITE",
+            SiteKind::Ship => "SHIP",
+        }
+        .into()
+    });
+    (object, name, false)
+}
+
+/// The intelligence summary of a sortie's target.
+pub fn summary(state: &CampaignState, sortie: &Sortie) -> String {
+    use stealth_campaign::Objective;
+    let o = &sortie.offer;
+    let site = |k: u16| state.site(k).map_or(String::new(), |s| s.name.clone());
+    match o.objective {
+        Objective::Recon { object, .. } => format!("Photograph {} and its defences.", site(object)),
+        Objective::Sead { ref sites, .. } => {
+            format!("{} SAM sites and radars defend the place.", sites.len())
+        }
+        Objective::Cas { ref aaa, .. } => {
+            format!("{} guns and MANPADS teams defend the place.", aaa.len())
+        }
+        Objective::Strike { airfield, .. } => format!("The airfield of {}.", site(airfield)),
+        Objective::Interdict { object, .. } => {
+            format!("The city of {}: its stores and factories feed the enemy.", site(object))
+        }
+        Objective::AntiShip { .. } => "An enemy ship off the coast.".into(),
+        _ => describe(o.kind).into(),
+    }
 }
 
 /// What a kind of mission asks the pilot for.

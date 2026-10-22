@@ -196,3 +196,35 @@ fn a_drone_wave_plays_out() {
     }
     panic!("{:?}", host.state.raids);
 }
+
+/// The kneeboard's targets are the campaign's: an air mission has none to photograph, a strike
+/// its airfield.
+#[test]
+fn a_sortie_briefs_its_own_target() {
+    use stealth_campaign::{MissionKind, Objective, Progress, Sortie, WorldView};
+    let data = theater::game_data().unwrap();
+    let mut host = Host::new(setup("ce"), &data, Rules::default()).unwrap();
+    host.state.tick(0.1, &WorldView::default(), &[]);
+    let sortie = |kind| {
+        let offer = host.state.board.iter().find(|o| o.kind == kind).cloned().unwrap();
+        Sortie {
+            id: 1,
+            base: offer.base,
+            offer,
+            aircraft: Default::default(),
+            started: 0.0,
+            progress: Progress::default(),
+        }
+    };
+    let cap =
+        stealth_host::glue::sortie_mission(&host.mission, &host.state, &sortie(MissionKind::Cap));
+    assert_eq!(cap.primary.mission_type, 8, "airborne: no photo");
+    assert!(cap.primary.shape_name.is_empty());
+    assert_eq!((cap.secondary.position.x, cap.secondary.position.y), (0, 0));
+    let s = sortie(MissionKind::Strike);
+    let Objective::Strike { airfield, .. } = s.offer.objective else { panic!() };
+    let strike = stealth_host::glue::sortie_mission(&host.mission, &host.state, &s);
+    assert_eq!(strike.primary.mission_type, 2);
+    assert_eq!(strike.primary.object_index, airfield as i16);
+    assert_eq!(strike.primary.shape_name, "AIRFIELD");
+}

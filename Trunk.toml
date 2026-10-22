@@ -5,12 +5,15 @@ dist = "dist/web"
 
 # The download page's version (web/download.html): the one in Cargo.toml, so the release links
 # follow it. Then gzipped copies of the wasm and scripts beside them, for nginx's gzip_static
-# (docs/web.md).
+# (docs/web.md), and the gzipped wasm's size for the loading screen (web/loader.js).
 [[hooks]]
 stage = "post_build"
 command = "sh"
 command_arguments = ["-c", """
 v=$(sed -n 's/^version *= *"\\([^"]*\\)".*/\\1/p' Cargo.toml | head -n1)
-printf 'window.SM89_VERSION = "%s";\\n' "$v" > "$TRUNK_STAGING_DIR/version.js"
-gzip -9 -k -f "$TRUNK_STAGING_DIR"/*.wasm "$TRUNK_STAGING_DIR"/*.js
+cd "$TRUNK_STAGING_DIR"
+gzip -9 -k -f *.wasm
+printf 'window.SM89_VERSION = "%s";\\n' "$v" > version.js
+printf 'window.SM89_WASM_GZ = %s;\\n' "$(cat *.wasm.gz | wc -c)" >> version.js
+gzip -9 -k -f *.js
 """]

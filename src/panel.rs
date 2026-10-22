@@ -359,7 +359,8 @@ pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
     let n = c.w.min(c.h) as f32;
     // Ball units: the classic 32 px wide window is 16 units.
     let unit = n / 16.0;
-    let off = 16.0 * pitch.clamp(-1.5, 1.5).tan();
+    // Nose up drops the horizon below the centre (canvas y grows downwards).
+    let off = -16.0 * pitch.clamp(-1.5, 1.5).tan();
     let r2 = (n / 2.0) * (n / 2.0);
     for py in 0..c.h {
         for px in 0..c.w {
@@ -402,8 +403,9 @@ pub fn adi_ball(c: &mut Canvas, pitch: f32, roll: f32) {
     // The ball's axes on the canvas: along the horizon and towards the ground.
     let along = Vec2::new(co, -s);
     let down = Vec2::new(s, co);
-    // Same sense as the classic ball (`adi`): the horizon sits at -h along `down`.
-    let h = pitch.clamp(-1.5, 1.5).to_degrees() * k;
+    // Same sense as the classic ball (`adi`): the horizon sits at -h along `down`, so nose up
+    // moves it towards the ground side.
+    let h = -pitch.clamp(-1.5, 1.5).to_degrees() * k;
     for py in 0..c.h {
         for px in 0..c.w {
             let d = Vec2::new(px as f32 + 0.5, py as f32 + 0.5) - centre;

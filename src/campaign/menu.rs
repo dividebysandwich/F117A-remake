@@ -108,7 +108,7 @@ pub fn campaign_window(
             });
             ui.vertical(|ui| {
                 ui.set_width(200.0);
-                crate::menu::classic_modern_options(ui, &mut settings, vr.0, head.source);
+                crate::menu::classic_modern_options(ui, &mut settings, head.source);
             });
             ui.vertical(|ui| {
             for line in [

@@ -312,7 +312,6 @@ pub fn career_ui(
     w: &mut CareerWindow,
     state: &mut MenuState,
     settings: &mut ResMut<Settings>,
-    vr: bool,
     head: Option<crate::headtrack::Source>,
 ) {
     if !w.open {
@@ -355,7 +354,7 @@ pub fn career_ui(
             ui.vertical(|ui| {
                 ui.set_width(200.0);
                 crate::menu::weather_options(ui, &mut state.weather, &mut state.cloud_cover);
-                crate::menu::classic_modern_options(ui, settings, vr, head);
+                crate::menu::classic_modern_options(ui, settings, head);
             });
             ui.vertical(|ui| {
                 ui.set_width(260.0);

@@ -764,7 +764,7 @@ pub(crate) fn realism_options(ui: &mut egui::Ui, settings: &mut SettingsMut) {
     }
     let s = settings.bypass_change_detection();
     if facts(
-        two_way_switch(ui, "Low level", &mut s.air_defence, ("CLASSIC", "REAL")),
+        two_way_switch(ui, "Air defence", &mut s.air_defence, ("CLASSIC", "REAL")),
         &[
             "Low-level air defences", "Classic: only the original's SAM sites and fighters",
             "Realistic: radar-laid ZSU-23-4 guns (their radar sees you like a SAM's) and S-60 flak batteries guard the airfields and the targets; MANPADS teams in the towns fire SA-14s at what they see",
@@ -808,12 +808,11 @@ pub(crate) fn weather_options(
     }
 }
 
-/// The classic / modern switches, the VR cockpit size and head tracking (`head`: the input
+/// The classic / modern switches and head tracking (`head`: the input
 /// heard).
 pub(crate) fn classic_modern_options(
     ui: &mut egui::Ui,
     settings: &mut SettingsMut,
-    vr: bool,
     head: Option<crate::headtrack::Source>,
 ) {
     section(ui, "Classic / Modern");
@@ -897,28 +896,6 @@ pub(crate) fn classic_modern_options(
     s.classic_hud = !hud;
     s.classic_avionics = !avionics;
     s.classic_flight = !flight;
-    section(ui, "VR");
-    // Read every frame by the rig: no change detection needed.
-    let range = crate::settings::VR_COCKPIT_SCALE_RANGE;
-    let mut pct = (s.vr_cockpit_scale * 100.0).round() as u32;
-    let slider = egui::Slider::new(
-        &mut pct,
-        (*range.start() * 100.0) as u32..=(*range.end() * 100.0) as u32,
-    )
-    .suffix("%")
-    .text("cockpit scale");
-    if facts(
-        ui.add_enabled(vr || s.vr, slider),
-        &[
-            "Size of the cockpit in the headset",
-            "100% (default): the size that suits the aircraft",
-            "Smaller puts more of the panel in view",
-        ],
-    )
-    .changed()
-    {
-        s.vr_cockpit_scale = pct as f32 / 100.0;
-    }
     section(ui, "Head/eye tracking");
     // Read every frame by `headtrack`: no change detection needed.
     facts(
@@ -1189,7 +1166,7 @@ fn menu_ui(
                         ui.set_width(200.0);
                         let state = &mut *state;
                         weather_options(ui, &mut state.weather, &mut state.cloud_cover);
-                        classic_modern_options(ui, &mut settings, vr.0, head.source);
+                        classic_modern_options(ui, &mut settings, head.source);
                     });
                 }
                 // Mission summary in big type, the full briefing below in small type.
@@ -1305,7 +1282,7 @@ fn menu_ui(
         // Another aircraft: the same mission with or without the F-117A's limits.
         state.dirty = true;
     }
-    crate::career::career_ui(ctx, &mut career, &mut state, &mut settings, vr.0, head.source);
+    crate::career::career_ui(ctx, &mut career, &mut state, &mut settings, head.source);
     crate::prefs::Prefs::save_if_changed(&state, &settings, &mut saved);
     Ok(())
 }

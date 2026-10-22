@@ -84,6 +84,23 @@ fn spawn_player(
         a.set_thrust = 50.0;
         a.thrust = 50.0;
     }
+    if let Some(((km, alt, kts), m)) = start_target().zip(mission.as_ref()) {
+        // Test aid (`--start-target km[,ft[,kts]]`): in the air `km` south of the primary
+        // target, heading north at it, gear up.
+        let p = m.0.primary.position;
+        let east = p.x as f64 * 32.0 + 16.0;
+        let north = (0x8000 - p.y) as f64 * 32.0 - 16.0 - km as f64 * 1000.0 / crate::world::WU;
+        pos = wu_to_bevy(east, north, crate::flight::view_z(alt) as f64);
+        let a = &mut aircraft_state;
+        a.orientation = Aircraft::from_euler(0.0, 0.0, 0.0);
+        a.altitude = alt;
+        a.on_ground = false;
+        a.has_flown = true;
+        a.gear_down = false;
+        a.velocity = kts * 27.0;
+        a.set_thrust = 60.0;
+        a.thrust = 60.0;
+    }
     if let Some((p, heading, alt, kts)) =
         mission.as_ref().and_then(|m| crate::stage::chase_start(&m.0))
     {
@@ -130,6 +147,17 @@ fn start_final() -> Option<(f32, f32, f32)> {
     let km = it.next().flatten().unwrap_or(3.0);
     let alt = it.next().flatten().unwrap_or(500.0);
     let kts = it.next().flatten().unwrap_or(170.0);
+    Some((km, alt, kts))
+}
+
+/// `--start-target km[,alt ft[,knots]]` (defaults 8 km, 2000 ft, 350 kt).
+fn start_target() -> Option<(f32, f32, f32)> {
+    let args: Vec<String> = std::env::args().collect();
+    let v = args.iter().position(|a| a == "--start-target").and_then(|i| args.get(i + 1))?;
+    let mut it = v.split(',').map(|x| x.parse::<f32>().ok());
+    let km = it.next().flatten().unwrap_or(8.0);
+    let alt = it.next().flatten().unwrap_or(2000.0);
+    let kts = it.next().flatten().unwrap_or(350.0);
     Some((km, alt, kts))
 }
 

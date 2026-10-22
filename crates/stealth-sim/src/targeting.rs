@@ -450,6 +450,7 @@ impl Sim {
             self.pl.photo_timer -= 1;
         }
         let spec = self.selected_spec();
+        self.pl.targeting.photo = self.photo_cue(spec);
         if !(spec == -1
             && self.pl.pflags & pflags::BAY_OPEN != 0
             && self.pl.camera_mfd
@@ -462,17 +463,8 @@ impl Sim {
         let t = self.pl.gnd_lock & 0x7F;
         let mut in_view = 0;
         for k in 0..2 {
-            let ts = self.pl.targets[k];
-            if ts.mission_type == 1 && ts.object == t && self.obj(t).flags & oflags::DESTROYED == 0
-            {
-                let o = self.obj(t);
-                let (r, b) = self.range_bearing(o.x, o.y);
-                let a = abs16(s16(b - self.pl.p.heading)) >> 4;
-                let bb =
-                    abs16(s16(bearing(-(self.pl.p.view_z >> 5), r) - self.pl.p.pitch + 0x6EF)) >> 4;
-                if a + bb + r < (4 - self.diff) << 7 {
-                    in_view |= k + 1;
-                }
+            if self.photo_aim(k, t).is_some_and(|(r, aim)| r + aim < self.photo_limit()) {
+                in_view |= k + 1;
             }
         }
         if self.pl.photo_timer == 0 && (ps.cmd.fire || self.pl.prev_fire) {
@@ -493,6 +485,47 @@ impl Sim {
                 self.log_event(0x4A, t);
             }
         }
+    }
+
+    /// A frame photographs a recon target when its range and the aiming error add up to less
+    /// than this.
+    fn photo_limit(&self) -> i32 {
+        (4 - self.diff) << 7
+    }
+
+    /// Range and aiming error (heading and pitch off the camera's line, which looks down
+    /// 0x6EF below the nose) to object `t` when it is the intact photo target of slot `k`.
+    fn photo_aim(&self, k: usize, t: i32) -> Option<(i32, i32)> {
+        let ts = self.pl.targets[k];
+        if ts.mission_type != 1 || ts.object != t || self.obj(t).flags & oflags::DESTROYED != 0 {
+            return None;
+        }
+        let o = self.obj(t);
+        let (r, b) = self.range_bearing(o.x, o.y);
+        let a = abs16(s16(b - self.pl.p.heading)) >> 4;
+        let bb = abs16(s16(bearing(-(self.pl.p.view_z >> 5), r) - self.pl.p.pitch + 0x6EF)) >> 4;
+        Some((r, a + bb))
+    }
+
+    /// The HUD's recon cue for the ground lock when it is a photo target still to take.
+    fn photo_cue(&self, spec: i32) -> Option<PhotoCue> {
+        let t = self.pl.gnd_lock;
+        if !(0..0x80).contains(&t) {
+            return None;
+        }
+        let done = [pflags::PRIMARY_DONE, pflags::SECONDARY_DONE];
+        let (range, aim) =
+            (0..2).filter(|&k| self.pl.pflags & done[k] == 0).find_map(|k| self.photo_aim(k, t))?;
+        let needs = if spec != -1 {
+            PhotoNeeds::Camera
+        } else if self.pl.pflags & pflags::BAY_OPEN == 0 {
+            PhotoNeeds::BayOpen
+        } else if !self.pl.camera_mfd {
+            PhotoNeeds::CameraPage
+        } else {
+            PhotoNeeds::Nothing
+        };
+        Some(PhotoCue { range, aim, limit: self.photo_limit(), needs })
     }
 
     /// Radio beacon / "Drop supplies now".

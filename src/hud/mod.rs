@@ -208,6 +208,51 @@ pub struct HudCues {
     pub gun: Option<GunCue>,
     /// Unguided bomb selected in AG: the CCIP or CCRP solution.
     pub bomb: Option<BombCue>,
+    /// A recon target still to photograph is locked.
+    pub recon: Option<ReconCue>,
+}
+
+/// How close the camera has to get to the locked recon target: a frame counts within
+/// `max_km`, which shrinks the farther the nose points off the target (None: too far off
+/// to count at any range). One frame in view is enough.
+#[derive(Debug, Clone, Copy)]
+pub struct ReconCue {
+    pub range_km: f32,
+    pub max_km: Option<f32>,
+    pub in_view: bool,
+    pub needs: stealth_sim::PhotoNeeds,
+}
+
+impl ReconCue {
+    /// The HUD's recon line; `page` names the camera page.
+    pub fn text(&self, page: &str) -> String {
+        use stealth_sim::PhotoNeeds;
+        let step = match self.needs {
+            PhotoNeeds::Camera => Some("SELECT CAMERA".to_string()),
+            PhotoNeeds::BayOpen => Some("OPEN BAY".to_string()),
+            PhotoNeeds::CameraPage => Some(format!("{page} PAGE")),
+            PhotoNeeds::Nothing => None,
+        };
+        let state = if self.in_view {
+            if step.is_none() {
+                "TARGET IN VIEW - SHOOT".to_string()
+            } else {
+                "TARGET IN VIEW".to_string()
+            }
+        } else {
+            // Rounded apart, so that a range still too far never reads as the maximum.
+            let range = (self.range_km * 10.0).ceil() / 10.0;
+            match self.max_km {
+                Some(max) => format!("{range:.1} KM / MAX {:.1}", (max * 10.0).floor() / 10.0),
+                None => format!("{range:.1} KM / AIM AT TGT"),
+            }
+        };
+        let state = if self.in_view { state } else { format!("PHOTO {state}") };
+        match step {
+            Some(s) => format!("{state}  {s}"),
+            None => state,
+        }
+    }
 }
 
 /// The bombsight's solution for the selected free-fall or retarded bomb.
@@ -542,5 +587,24 @@ mod route_tests {
         // N1 P N2 S N3 L: after the primary the planned N2, after both targets N3.
         let w = wps(6, vec![0, 1, 3, 5]);
         assert_eq!([1, 2, 3].map(|k| w.for_mission_waypoint(k)), [1, 2, 4]);
+    }
+}
+
+#[cfg(test)]
+mod recon_tests {
+    use super::*;
+    use stealth_sim::PhotoNeeds;
+
+    #[test]
+    fn recon_line_names_the_range_to_get_to() {
+        let cue = |range_km, max_km, in_view, needs| ReconCue { range_km, max_km, in_view, needs };
+        let far = cue(5.71, Some(5.69), false, PhotoNeeds::Nothing);
+        assert_eq!(far.text("TGP"), "PHOTO 5.8 KM / MAX 5.6");
+        let off = cue(3.0, None, false, PhotoNeeds::BayOpen);
+        assert_eq!(off.text("TGP"), "PHOTO 3.0 KM / AIM AT TGT  OPEN BAY");
+        let near = cue(2.0, Some(4.0), true, PhotoNeeds::CameraPage);
+        assert_eq!(near.text("CAMERA"), "TARGET IN VIEW  CAMERA PAGE");
+        let ready = cue(2.0, Some(4.0), true, PhotoNeeds::Nothing);
+        assert_eq!(ready.text("TGP"), "TARGET IN VIEW - SHOOT");
     }
 }

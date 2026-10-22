@@ -97,6 +97,8 @@ Testing and screenshots
     --shot-debrief             frames counted from the debrief on
   --head-look <yaw,pitch>      initial cockpit view direction (degrees)
   --start-final <km[,ft[,kt]]> start on final approach (default 3 km, 500 ft, 170 kt)
+  --start-target <km[,ft[,kt]]> start in the air south of the primary target, heading at it
+                               (default 8 km, 2000 ft, 350 kt)
   --start-chase <k[,m[,kt]]>   start in the air behind drone k (default 300 m, 250 kt)
   --stage-cam <mode[,dist,height]>
                                staged camera: front, behind, side, high, missile, drone

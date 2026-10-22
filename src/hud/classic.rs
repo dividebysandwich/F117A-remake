@@ -150,6 +150,11 @@ fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8,
     if let Some((loc, gs)) = f.ils {
         ils_cross(c, f, loc, gs, col);
     }
+    // Recon target locked: how close the camera has to get, under the message line.
+    if let Some(r) = &f.cues.recon {
+        let s = r.text("CAMERA");
+        fonts.text(c, 160 - 2 * (s.len() as i32 & !1), 28, s.as_bytes(), col);
+    }
     // HUD message at y=20, centred.
     if let Some(m) = &f.message {
         let s = upper(m);

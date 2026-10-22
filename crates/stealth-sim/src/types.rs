@@ -833,6 +833,33 @@ pub struct TargetingState {
     /// Range (map units) / bearing (BAM) to the ground lock.
     pub range: i32,
     pub bearing: i32,
+    /// The ground lock is a recon target not photographed yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo: Option<PhotoCue>,
+}
+
+/// How far a camera frame is from photographing the locked recon target: it counts when
+/// `range + aim < limit` and the camera is ready.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PhotoCue {
+    /// Range (map units).
+    pub range: i32,
+    /// Heading and pitch off the camera's line to the target (BAM >> 4).
+    pub aim: i32,
+    pub limit: i32,
+    /// What the camera still needs before it takes frames.
+    pub needs: PhotoNeeds,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PhotoNeeds {
+    /// The camera is the selected store.
+    Camera,
+    BayOpen,
+    /// The camera page is up.
+    CameraPage,
+    /// Ready: frames are taken with the trigger.
+    Nothing,
 }
 
 /// Objective status.

@@ -1393,6 +1393,15 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             new_cues.bomb = Some(cue);
         }
         new_cues.ranging_bar = t.ranging_bar;
+        new_cues.recon = t.photo.map(|p| {
+            let km = |mu: i32| mu as f32 * 32.0 * WU as f32 / 1000.0;
+            crate::hud::ReconCue {
+                range_km: km(p.range),
+                max_km: (p.aim < p.limit).then(|| km(p.limit - p.aim)),
+                in_view: p.range + p.aim < p.limit,
+                needs: p.needs,
+            }
+        });
         new_cues.lock = t.lock_valid;
         new_cues.in_range = t.in_range;
         if sim.gun_selected() {

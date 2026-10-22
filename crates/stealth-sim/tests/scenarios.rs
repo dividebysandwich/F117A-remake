@@ -1378,3 +1378,43 @@ fn flak_leads_a_moving_target() {
     let median = misses[misses.len() / 2];
     assert!(median < 80.0, "median miss {median:.0} m of {misses:?}");
 }
+
+/// The recon cue: range and aim against the limit for the locked photo target, the step the
+/// camera still needs, and gone once the target is photographed.
+#[test]
+fn photo_cue_guides_to_the_recon_target() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let mut sim = Sim::new(&d.sim, &m);
+    sim.set_training(true);
+    let (cx, cy) = sandbox(&mut sim, &m);
+    place_site(&mut sim, 5, 0, cx, cy - 200);
+    sim.target_slots_mut()[0] = TargetSlot { mission_type: 1, object: 5, base: 0, code: 0x12 };
+    let camera = sim.weapon_types().iter().position(|w| w.spec == -1).unwrap();
+    sim.set_bay(0, camera as i32, 1);
+    sim.select_bay(0);
+    let mut p = player_at(cx, cy, 1000, 0, 300);
+    sim.step(&p, 15);
+    assert_eq!(sim.targeting().photo, None);
+    sim.set_ground_lock(Some(5));
+    sim.step(&p, 15);
+    let cue = sim.targeting().photo.unwrap();
+    assert_eq!(cue.needs, PhotoNeeds::BayOpen);
+    assert!((195..=205).contains(&cue.range) && cue.range + cue.aim < cue.limit, "{cue:?}");
+    p.cmd.toggle_bay = true;
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    for _ in 0..30 {
+        sim.step(&p, 15);
+    }
+    assert_eq!(sim.targeting().photo.unwrap().needs, PhotoNeeds::CameraPage);
+    p.camera_mfd = true;
+    sim.step(&p, 15);
+    assert_eq!(sim.targeting().photo.unwrap().needs, PhotoNeeds::Nothing);
+    p.cmd.fire = true;
+    for _ in 0..6 {
+        sim.step(&p, 15);
+    }
+    assert!(sim.objectives().primary_done);
+    assert_eq!(sim.targeting().photo, None);
+}

@@ -229,6 +229,9 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     if !status.is_empty() {
         text(c, CX, 131.0, &status.join("  "), Align::Centre);
     }
+    if let Some(r) = &f.cues.recon {
+        text(c, CX, 157.0, &r.text("TGP"), Align::Centre);
+    }
 }
 
 fn flight_path_marker(c: &mut Canvas, p: Vec2, h: Vec2, down: Vec2, caged: bool) {

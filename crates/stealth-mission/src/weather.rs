@@ -81,11 +81,14 @@ pub struct Layer {
     pub cover: u8,
     pub base_ft: i32,
     pub top_ft: i32,
+    /// Seed of the layer's clouds; 0: the weather's seed.
+    #[serde(default)]
+    pub seed: u32,
 }
 
 impl Layer {
     pub fn new(cover: i32, base_ft: i32, top_ft: i32) -> Self {
-        Self { cover: cover.clamp(0, 100) as u8, base_ft, top_ft }
+        Self { cover: cover.clamp(0, 100) as u8, base_ft, top_ft, seed: 0 }
     }
 
     pub fn present(&self) -> bool {
@@ -120,6 +123,8 @@ pub struct Cloud {
     pub r: i32,
     pub base_ft: i32,
     pub top_ft: i32,
+    /// The cloud exists while the layer's coverage exceeds this (0..99).
+    pub rank: u8,
 }
 
 fn mix(mut z: u64) -> u64 {
@@ -176,6 +181,23 @@ impl Weather {
         let seed = (r.rand() as u32) << 15 | r.rand() as u32;
         // Always the same draws, whatever the preset.
         let v: [i32; 8] = std::array::from_fn(|_| r.r(1000));
+        let mut w = Self::from_sky(sky, seed, v);
+        if let Some(c) = cover {
+            let main = if matches!(sky, Sky::Overcast | Sky::Storm) {
+                &mut w.stratus
+            } else {
+                &mut w.cumulus
+            };
+            if main.base_ft > 0 {
+                main.cover = c.min(100);
+            }
+        }
+        w.stratus_threshold = w.threshold_for(w.stratus.cover);
+        w
+    }
+
+    /// The layers of a preset from eight draws 0..999 (the stratus threshold is left unset).
+    pub fn from_sky(sky: Sky, seed: u32, v: [i32; 8]) -> Self {
         let mut w = Self { sky, seed, vis_km: 40, ..Default::default() };
         match sky {
             Sky::Clear => {}
@@ -217,40 +239,41 @@ impl Weather {
                 w.vis_km = 8;
             }
         }
-        if let Some(c) = cover {
-            let main = if matches!(sky, Sky::Overcast | Sky::Storm) {
-                &mut w.stratus
-            } else {
-                &mut w.cumulus
-            };
-            if main.base_ft > 0 {
-                main.cover = c.min(100);
-            }
-        }
-        w.stratus_threshold = w.threshold_for(w.stratus.cover);
         w
     }
 
-    /// Stratus field threshold covering `cover` percent of the map (from a sample grid).
+    /// Stratus field threshold covering `cover` percent of the map.
     fn threshold_for(&self, cover: u8) -> u16 {
-        if cover >= 100 {
-            return 0;
-        }
-        if cover == 0 {
-            return u16::MAX;
-        }
+        self.stratus_thresholds()[cover.min(100) as usize]
+    }
+
+    /// Stratus field thresholds covering 0..=100 percent of the map (from a sample grid).
+    pub fn stratus_thresholds(&self) -> [u16; 101] {
         let mut v: Vec<f32> = (0..128)
             .flat_map(|j| (0..128).map(move |i| (i * 512 + 97, j * 512 + 211)))
             .map(|(x, y)| self.stratus_field(x as f32, y as f32))
             .collect();
         v.sort_by(f32::total_cmp);
-        let k = ((100 - cover as usize) * v.len() / 100).min(v.len() - 1);
-        (v[k] * 65535.0) as u16
+        std::array::from_fn(|cover| match cover {
+            0 => u16::MAX,
+            100 => 0,
+            _ => (v[((100 - cover) * v.len() / 100).min(v.len() - 1)] * 65535.0) as u16,
+        })
+    }
+
+    /// Seed of a layer's clouds.
+    pub fn layer_seed(&self, kind: CloudKind) -> u32 {
+        let l = match kind {
+            CloudKind::Cumulus => self.cumulus,
+            CloudKind::Stratus => self.stratus,
+            CloudKind::Cumulonimbus => self.cumulonimbus,
+        };
+        if l.seed != 0 { l.seed } else { self.seed }
     }
 
     /// Stratus noise field 0..1 at a map position (palette.wgsl `stratus_field`).
     pub fn stratus_field(&self, x: f32, y: f32) -> f32 {
-        let s = self.seed & 0xFFFF;
+        let s = self.layer_seed(CloudKind::Stratus) & 0xFFFF;
         STRATUS_OCTAVES
             .iter()
             .enumerate()
@@ -327,8 +350,8 @@ impl Weather {
             return None;
         }
         let salt = if kind == CloudKind::Cumulonimbus { 0x5354_4F52_4D00_0000 } else { 0 };
-        let h =
-            mix(((self.seed as u64) << 32) ^ ((gx as u16 as u64) << 16) ^ gy as u16 as u64 ^ salt);
+        let seed = self.layer_seed(kind) as u64;
+        let h = mix((seed << 32) ^ ((gx as u16 as u64) << 16) ^ gy as u16 as u64 ^ salt);
         if h % 100 >= layer.cover as u64 {
             return None;
         }
@@ -350,6 +373,7 @@ impl Weather {
             r,
             base_ft,
             top_ft,
+            rank: (h % 100) as u8,
         })
     }
 

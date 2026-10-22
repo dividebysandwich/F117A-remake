@@ -144,7 +144,7 @@ impl WeatherState {
         );
         let stratus = Vec4::new(
             w.stratus_threshold as f32 / 65535.0,
-            (w.seed & 0xFFFF) as f32,
+            (w.layer_seed(CloudKind::Stratus) & 0xFFFF) as f32,
             origin.x as f32,
             origin.z as f32,
         );
@@ -152,7 +152,7 @@ impl WeatherState {
         let noise = Vec4::new(
             origin.x.rem_euclid(NOISE_PERIOD) as f32,
             origin.z.rem_euclid(NOISE_PERIOD) as f32,
-            (w.seed & 0xFFFF) as f32,
+            (w.layer_seed(CloudKind::Stratus) & 0xFFFF) as f32,
             l.cover as f32 / 100.0,
         );
         (clouds, Vec4::new(self.haze_scale(), self.flash, vis_m, 0.0), noise, stratus)
@@ -419,7 +419,10 @@ fn stream_clouds(
         .collect();
     for c in new {
         let h = hash(
-            ((w.seed as u64) << 32) ^ ((c.gx as u16 as u64) << 16) ^ c.gy as u16 as u64 ^ 0xC10D,
+            ((w.layer_seed(c.kind) as u64) << 32)
+                ^ ((c.gx as u16 as u64) << 16)
+                ^ c.gy as u16 as u64
+                ^ 0xC10D,
         );
         let r_m = c.r as f32 * 32.0 * WU as f32;
         let pos = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, c.base_ft as f64);

@@ -4,6 +4,8 @@
 //! relative to the nose, entity and mesh churn), and a last line when the process dies from a
 //! signal or a panic. A log that ends without a "fatal" line means the process was killed with SIGKILL
 //! (usually the out-of-memory killer; `journalctl -k` shows it).
+//! Everything but the fatal line is logged at debug level: run with
+//! `RUST_LOG=info,stealth_mission_89::crash_log=debug` to see it.
 
 use std::collections::VecDeque;
 
@@ -24,7 +26,7 @@ pub struct CrashLogPlugin;
 
 impl Plugin for CrashLogPlugin {
     fn build(&self, app: &mut App) {
-        info!("diag: args {:?}", std::env::args().skip(1).collect::<Vec<_>>());
+        debug!("diag: args {:?}", std::env::args().skip(1).collect::<Vec<_>>());
         install();
         app.init_resource::<Stats>().add_systems(Last, status);
     }
@@ -133,16 +135,16 @@ fn status(
     }
     stats.history.push_back(frame);
     if dt > HITCH && stats.frames > 1 {
-        warn!("diag: long frame {:.0} ms; the frames before it:", dt * 1000.0);
+        debug!("diag: long frame {:.0} ms; the frames before it:", dt * 1000.0);
         let mut prev = None;
         for f in &stats.history {
-            warn!("diag:   {}", f.line(prev));
+            debug!("diag:   {}", f.line(prev));
             prev = Some(f);
         }
     }
     let state = state.map(|s| *s.get());
     if state != stats.state {
-        info!("diag: state {:?}", state);
+        debug!("diag: state {:?}", state);
         stats.state = state;
     }
     if now - stats.last < INTERVAL {
@@ -163,7 +165,7 @@ fn status(
         .iter()
         .filter(|(_, v)| v.get())
         .fold((0, 0), |(b, d), (l, _)| (b + 1, d + l.points.len()));
-    info!(
+    debug!(
         "diag: {:.0} fps worst {:.0} ms | rss {} MB avail {} MB swap free {} MB | temp {} | entities {} meshes {} images {} materials {} | lit lamps {dots} in {batches} batches{}",
         fps,
         stats.worst * 1000.0,

@@ -268,7 +268,7 @@ fn build_scenery(
         .as_ref()
         .map(|s| network::Network::build(&ground, s, &theater.towns))
         .unwrap_or_default();
-    info!(
+    debug!(
         "scenery: {} airfields, {} towns, {} roads, {} buildings, {} power lines in {:.2?}",
         fields.len(),
         net.towns.len(),

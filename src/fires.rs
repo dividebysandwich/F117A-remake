@@ -396,7 +396,7 @@ fn war_fires(
         fires.front_done = true;
         let sites = front_sites(&theater, &scenery, fires.rng as u64);
         if !sites.is_empty() {
-            info!("fires: {} burning along the front", sites.len());
+            debug!("fires: {} burning along the front", sites.len());
         }
         for (p, big) in sites {
             fires.add(
@@ -430,7 +430,7 @@ fn war_fires(
             }
         }
     }
-    info!("fires: {} burning in the war", sites.len());
+    debug!("fires: {} burning in the war", sites.len());
     for (p, big) in sites {
         // Long burning already: full grown plumes.
         fires.add(

@@ -150,7 +150,7 @@ fn refine(
             done.extend(parts.iter().filter_map(|p| p.mesh.as_ref().map(|m| m.id())));
         }
     }
-    info!(
+    debug!(
         "terrain: refined {coasts} coastline and {mountains} mountain models in {:.2?}",
         start.elapsed()
     );

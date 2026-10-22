@@ -87,8 +87,12 @@ pub struct Layer {
     pub base_ft: i32,
     pub top_ft: i32,
     /// Seed of the layer's clouds; 0: the weather's seed.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub seed: u32,
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 impl Layer {

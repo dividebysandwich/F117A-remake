@@ -104,7 +104,7 @@ pub struct Pilot {
     pub(crate) air_lock: i32,
     pub(crate) gnd_lock: i32,
     /// Air lock on another pilot (`Commands::lock_pilot`), while `air_lock` is none.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pilot_lock: Option<u8>,
     pub(crate) targeting: TargetingState,
     pub(crate) gnd_cooldown: i32,

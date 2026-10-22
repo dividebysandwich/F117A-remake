@@ -414,7 +414,7 @@ pub struct Commands {
     #[serde(default)]
     pub lock_unit: Option<u16>,
     /// Lock this other pilot's aircraft (airborne; an air-to-air missile goes for him).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock_pilot: Option<u8>,
     /// Lock what is at this map point (the targeting pod's point track, not in the original):
     /// the object there, or the plain ground as object 0.
@@ -808,7 +808,7 @@ pub struct TargetingState {
     /// Air lock (flight unit index).
     pub air: Option<usize>,
     /// Air lock on another pilot's aircraft (pilot id; instead of `air`).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pilot: Option<u8>,
     /// LOCK oval shown.
     pub lock_valid: bool,

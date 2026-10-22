@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Draws the cockpit sprite atlas and the weapon side views (assets/images/*.idx).
+"""Draws the cockpit sprite atlas (assets/images/sprites.png).
 
-The .idx files are raw palette indices, 320 pixels wide. Only the sprites the game draws are
-in the atlas; their rectangles are the ones the code blits from (src/hud.rs, src/panel.rs,
-src/mfd.rs). Aircraft on the TAC display are drawn as rotated triangles in code, not sprites.
+The atlas is an indexed PNG, 320 pixels wide, whose pixel values are game palette indices.
+Only the sprites the game draws are in it; their rectangles are the ones the code blits from
+(src/hud.rs, src/panel.rs, src/mfd.rs). The weapon side views sit below the HUD and panel
+sprites, from row ORDNANCE_Y. Aircraft on the TAC display are drawn as rotated triangles in
+code, not sprites.
 
-    python3 tools/gen_images.py      (writes .idx files plus .idx.png / .png previews)
+    python3 tools/gen_images.py
 """
 
 import math
 import os
 import re
-import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT = os.path.join(ROOT, "assets", "images")
@@ -207,12 +208,13 @@ def approach_indexer(img):
 
 
 def sprites():
-    img = Img(91)
+    img = Img(ORDNANCE_Y + 16 * ((len(WEAPONS) + 3) // 4))
     heading_ticks(img)
     led_digits(img)
     hud_symbols(img)
     map_icons(img)
     approach_indexer(img)
+    ordnance(img)
     return img
 
 
@@ -222,7 +224,9 @@ OUTLINE = 10  # bright green
 DETAIL = 46  # dim green seams
 FRAME = 47  # box frame, as the WPN page frame
 
-# Picture p sits at (p % 4 * 80, p / 4 * 16), 77x15 including its frame (src/mfd.rs).
+# Picture p sits at (p % 4 * 80, ORDNANCE_Y + p / 4 * 16), 77x15 including its frame
+# (src/mfd.rs).
+ORDNANCE_Y = 91
 BOX_W, BOX_H = 77, 15
 CY = 7.5  # centre line of the box (pixel centres are at +0.5)
 
@@ -456,15 +460,13 @@ WEAPONS = [
 ]
 
 
-def ordnance():
-    img = Img(16 * ((len(WEAPONS) + 3) // 4))
+def ordnance(img):
     for p, draw in enumerate(WEAPONS):
-        bx, by = p % 4 * 80, p // 4 * 16
+        bx, by = p % 4 * 80, ORDNANCE_Y + p // 4 * 16
         img.rect(bx, by, BOX_W, BOX_H, FRAME)
         s = Shape()
         draw(s)
         s.draw(img, bx, by)
-    return img
 
 
 # --- Output ----------------------------------------------------------------------------------
@@ -477,20 +479,12 @@ def palette():
 
 
 def write(name, img):
-    path = os.path.join(OUT, name)
-    with open(path + ".idx", "wb") as f:
-        f.write(img.px)
-    try:
-        from PIL import Image
-    except ImportError:
-        print("PIL not found, previews not written", file=sys.stderr)
-        return
-    Image.frombytes("L", (W, img.h), bytes(img.px)).save(path + ".idx.png")
+    from PIL import Image
+
     p = Image.frombytes("P", (W, img.h), bytes(img.px))
     p.putpalette([v for c in palette() for v in c])
-    p.save(path + ".png")
+    p.save(os.path.join(OUT, name + ".png"))
 
 
 if __name__ == "__main__":
     write("sprites", sprites())
-    write("ordnance", ordnance())

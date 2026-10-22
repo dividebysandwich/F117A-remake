@@ -41,6 +41,7 @@ bevy_fast_clouds = { path = "crates/bevy_fast_clouds" }
 anyhow.workspace = true
 rand = "0.9"
 image = { version = "0.25", default-features = false, features = ["png"] }
+png = "0.18"
 gilrs = "0.11"
 dirs = "6"
 bevy_mod_openxr = { version = "0.6", optional = true }

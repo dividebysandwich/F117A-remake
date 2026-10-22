@@ -1524,7 +1524,7 @@ impl MfdParams<'_, '_> {
         c.clear(0);
         for (i, bay) in self.stores.bays.iter().enumerate().take(4) {
             if let Some((sx, sy)) = ordnance_picture(bay.picture) {
-                c.copy_rect(&art.ordnance, sx, sy, 77, 15, 0, 15 * i as i32);
+                c.copy_rect(&art.sprites, sx, sy, 77, 15, 0, 15 * i as i32);
             }
         }
         c.rect(0, 0, 77, 60, 47);
@@ -1818,7 +1818,7 @@ impl MfdParams<'_, '_> {
             if let Some((sx, sy)) = ordnance_picture(bay.picture) {
                 // The side view without the picture's frame lines.
                 c.blit_scaled(
-                    &art.ordnance,
+                    &art.sprites,
                     sx + 1,
                     sy + 1,
                     75,
@@ -1860,10 +1860,10 @@ fn arc_range(arc: &MapArc) -> (f64, f64) {
     })
 }
 
-/// Weapon side views in `images/ordnance.idx`: picture `p` is the 77x15 box (frame included)
-/// at (p % 4 * 80, p / 4 * 16).
+/// Weapon side views in the sprite atlas: picture `p` is the 77x15 box (frame included)
+/// at (p % 4 * 80, 91 + p / 4 * 16).
 fn ordnance_picture(p: usize) -> Option<(i32, i32)> {
-    (p < 19).then(|| ((p % 4) as i32 * 80, (p / 4) as i32 * 16))
+    (p < 19).then(|| ((p % 4) as i32 * 80, 91 + (p / 4) as i32 * 16))
 }
 
 /// Map icons in the sprite atlas, at (8 * icon + 1, 65), 7x7.

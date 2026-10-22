@@ -5,8 +5,9 @@
 //! for its panel picture and HUD (`cockpit3d::geometry`).
 //!
 //! The instrument panel itself is built from meshes (`cockpit3d`); HUD symbols, LED digits, TAC
-//! map icons and the approach indexer come from a sprite atlas, `images/sprites.idx`, at the
-//! positions of the original 256PIT atlas (drawn by `tools/gen_images.py`).
+//! map icons, the approach indexer and the weapon side views come from a sprite atlas,
+//! `images/sprites.png`, at the positions of the original 256PIT atlas (drawn by
+//! `tools/gen_images.py`).
 
 use bevy::prelude::*;
 
@@ -28,24 +29,32 @@ impl Plugin for CockpitPlugin {
 pub const FOCAL: f32 = 256.0;
 pub const VSCALE: f32 = 0.75;
 
-/// Pictures used as sprite sources: the sprite atlas and the weapon side views.
+/// The sprite atlas, the source of every sprite the displays draw.
 #[derive(Resource)]
 pub struct CockpitArt {
     pub sprites: Canvas,
-    pub ordnance: Canvas,
 }
 
-pub(crate) fn load_idx(name: &str) -> Canvas {
-    let path = crate::asset_path::asset(&format!("images/{name}.idx"));
-    let px = std::fs::read(&path)
-        .unwrap_or_else(|e| panic!("{}: {e} (run tools/gen_images.py)", path.display()));
-    assert_eq!(px.len() % 320, 0, "{}: not 320 pixels wide", path.display());
-    Canvas::from_pixels(320, px.len() / 320, px)
+/// Loads an indexed PNG as palette indices.
+fn load_indexed_png(name: &str) -> Canvas {
+    let path = crate::asset_path::asset(&format!("images/{name}.png"));
+    let fail = |e: &dyn std::fmt::Display| -> ! {
+        panic!("{}: {e} (run tools/gen_images.py)", path.display())
+    };
+    let file = std::fs::File::open(&path).unwrap_or_else(|e| fail(&e));
+    let mut reader =
+        png::Decoder::new(std::io::BufReader::new(file)).read_info().unwrap_or_else(|e| fail(&e));
+    let mut px = vec![0; reader.output_buffer_size().unwrap_or_else(|| fail(&"image too large"))];
+    let frame = reader.next_frame(&mut px).unwrap_or_else(|e| fail(&e));
+    if (frame.color_type, frame.bit_depth) != (png::ColorType::Indexed, png::BitDepth::Eight) {
+        fail(&"not an 8-bit indexed PNG");
+    }
+    px.truncate(frame.buffer_size());
+    Canvas::from_pixels(frame.width as usize, frame.height as usize, px)
 }
 
 fn setup(mut commands: Commands) {
-    let sprites = load_idx("sprites");
-    commands.insert_resource(CockpitArt { sprites, ordnance: load_idx("ordnance") });
+    commands.insert_resource(CockpitArt { sprites: load_indexed_png("sprites") });
     commands.insert_resource(Fonts::builtin());
 }
 

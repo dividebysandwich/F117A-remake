@@ -196,6 +196,11 @@ impl Sim {
                     if u.flags & fflags::AIRBORNE == 0 || u.speed == 0 {
                         continue;
                     }
+                    // Fixed: a falling wreck is no target (classic homed on it until it hit
+                    // the ground).
+                    if self.opts.fix_classic_bugs && u.flags & fflags::DESTROYED != 0 {
+                        continue;
+                    }
                     // The seeker leaves the campaign's friendly aircraft alone unless the
                     // pilot locked one up himself.
                     let friend = self.campaign_flight(j).is_some_and(|f| f.blue);
@@ -336,8 +341,9 @@ impl Sim {
             } else {
                 Some(self.object_target(hit))
             };
-            // The fuse goes off near the player whatever the seeker sees.
-            let fuse = if s < 8 { Some(self.player_target()) } else { target };
+            // The fuse goes off near the player whatever the seeker sees, and at the decoy it
+            // steers for (harmlessly; a missile that cannot reach it would circle it).
+            let fuse = if s < 8 && !self.decoy_active() { Some(self.player_target()) } else { target };
             let fused = self.fly_guided(s, target.filter(|_| locked && aim != 0), fuse);
             if self.proj[s].ttl == 0 {
                 return;

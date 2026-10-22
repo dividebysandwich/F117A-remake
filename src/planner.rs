@@ -24,7 +24,7 @@ use crate::world::Theater;
 /// Side of the rendered theater map (pixels; 32 map units, 500 m, each).
 const MAP_PX: usize = 1024;
 /// Most route points.
-const MAX_POINTS: usize = 16;
+const MAX_POINTS: usize = stealth_campaign::tuning::ROUTE_POINTS;
 /// Cruise speed for the leg times (knots).
 const CRUISE_KTS: f64 = 480.0;
 /// Map units per km.
@@ -91,6 +91,11 @@ impl Planner {
     pub fn refit(&mut self) {
         self.fitted = None;
         self.drag = None;
+    }
+
+    /// A route point is being dragged.
+    pub fn dragging(&self) -> bool {
+        self.drag.is_some()
     }
 
     /// The map picture of theater `id`, once prepared.
@@ -369,7 +374,7 @@ pub fn planner_ui(ctx: &egui::Context, planner: &mut Planner, state: &mut MenuSt
             ui.label(egui::RichText::new("MISSION PLANNER").heading().color(BRIGHT));
             ui.separator();
             let size = ui.available_size();
-            route_panel(ui, planner, &m, route, &|_| true, None, size, |ui| {
+            route_panel(ui, planner, &m, route, &|_| true, None, size, true, |ui| {
                 ui.add_space(12.0);
                 if ui.add(big_button("DONE").fill(DIM)).clicked() {
                     open = false;
@@ -388,7 +393,7 @@ pub type MapOverlay<'a> = Option<&'a dyn Fn(&egui::Painter, &MapView)>;
 /// The route editor: the map with the known radars' coverage, the route's legs and its
 /// exposure (the menu's planner, the campaign's briefing). `known`: the radar sites (world
 /// object indices) to show; `overlay`: drawn over the map instead of the mission's airfields;
-/// `buttons`: below the side column.
+/// `editable`: the route can be changed (else only looked at); `buttons`: below the side column.
 #[allow(clippy::too_many_arguments)]
 pub fn route_panel(
     ui: &mut egui::Ui,
@@ -398,6 +403,7 @@ pub fn route_panel(
     known: &dyn Fn(usize) -> bool,
     overlay: MapOverlay,
     size: egui::Vec2,
+    editable: bool,
     buttons: impl FnOnce(&mut egui::Ui),
 ) {
     let rings = planner
@@ -409,7 +415,7 @@ pub fn route_panel(
     ui.horizontal_top(|ui| {
         let side = 300.0;
         let map_size = egui::vec2(ui.available_width() - side - 12.0, ui.available_height() - 8.0);
-        map_view(ui, planner, m, route, &rings, overlay, map_size);
+        map_view(ui, planner, m, route, &rings, overlay, map_size, editable);
         ui.vertical(|ui| {
             ui.set_width(side);
             section(ui, "Route");
@@ -445,10 +451,14 @@ pub fn route_panel(
             if m.drones.is_some() {
                 legend(ui, Legend::Drone, "Enemy UAV");
             }
-            ui.label(egui::RichText::new("Drag a point to move it, the map to pan. Click a leg to add a point, right click to remove it. Wheel: zoom.").small().color(DIM));
-            ui.add_space(12.0);
-            if ui.add(big_button("RESET")).clicked() {
-                *route = PlannedRoute::of(m);
+            if editable {
+                ui.label(egui::RichText::new("Drag a point to move it, the map to pan. Click a leg to add a point, right click to remove it. Wheel: zoom.").small().color(DIM));
+                ui.add_space(12.0);
+                if ui.add(big_button("RESET")).clicked() {
+                    *route = PlannedRoute::of(m);
+                }
+            } else {
+                ui.label(egui::RichText::new("Drag the map to pan. Wheel: zoom.").small().color(DIM));
             }
             buttons(ui);
         });
@@ -456,6 +466,7 @@ pub fn route_panel(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn map_view(
     ui: &mut egui::Ui,
     planner: &mut Planner,
@@ -464,6 +475,7 @@ fn map_view(
     rings: &[Ring],
     overlay: MapOverlay,
     size: egui::Vec2,
+    editable: bool,
 ) {
     let (resp, painter) = ui.allocate_painter(size, egui::Sense::click_and_drag());
     let rect = resp.rect;
@@ -558,7 +570,7 @@ fn map_view(
             (a + ab * t).distance(pos) < 6.0
         })
     };
-    if let Some(pos) = resp.hover_pos() {
+    if let Some(pos) = resp.hover_pos().filter(|_| editable) {
         if hit_point(pos).is_some_and(|i| route.points[i].kind == RouteKind::Nav) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         } else if hit_leg(pos).is_some() {
@@ -568,6 +580,7 @@ fn map_view(
     // A drag starts once the pointer has moved a little: what it grabs is where the button went
     // down (where the grab cursor was shown).
     if resp.drag_started()
+        && editable
         && let Some(pos) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos())
     {
         planner.drag = hit_point(pos)
@@ -591,6 +604,7 @@ fn map_view(
         planner.drag = None;
     }
     if resp.clicked()
+        && editable
         && let Some(pos) = resp.interact_pointer_pos()
         && hit_point(pos).is_none()
         && let Some(i) = hit_leg(pos)
@@ -600,6 +614,7 @@ fn map_view(
         route.points.insert(i, RoutePoint { x: p.x as i32, y: p.y as i32, kind: RouteKind::Nav });
     }
     if resp.secondary_clicked()
+        && editable
         && let Some(pos) = resp.interact_pointer_pos()
         && let Some(i) = hit_point(pos).filter(|&i| route.points[i].kind == RouteKind::Nav)
         && route.points.len() > 2

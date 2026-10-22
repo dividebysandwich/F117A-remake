@@ -38,13 +38,8 @@ fn world() -> World {
     World { host, sim, server, mirror }
 }
 
-/// One server frame at `now` and the client's side of it.
-fn frame(
-    w: &mut World,
-    c: &mut Client,
-    input: Option<&PlayerState>,
-    now: Instant,
-) -> Vec<ClientEvent> {
+/// One server frame at `now`.
+fn serve(w: &mut World, now: Instant) {
     let ev = w.server.pump(&mut w.host, &mut w.sim, now);
     let _ = ev;
     let inputs = w.server.inputs();
@@ -56,6 +51,16 @@ fn frame(
     w.server.route(&hev);
     w.server.send_frame(&w.host, &mut w.sim, now);
     std::thread::sleep(Duration::from_millis(1));
+}
+
+/// One server frame at `now` and the client's side of it.
+fn frame(
+    w: &mut World,
+    c: &mut Client,
+    input: Option<&PlayerState>,
+    now: Instant,
+) -> Vec<ClientEvent> {
+    serve(w, now);
     if let Some(ps) = input {
         c.send_input(ps);
     }
@@ -254,4 +259,102 @@ fn sixty_four_pilots_fit_in_a_frame() {
     eprintln!("frame without pilots {none} bytes, with 64 {all} bytes");
     assert!((all - none) / 64 < 60, "a pilot costs {} bytes", (all - none) / 64);
     assert!(all < 6_000);
+}
+
+/// Server frames until `done` holds for the clients' events (each client's, every frame).
+fn until(
+    w: &mut World,
+    clients: &mut [&mut Client],
+    now: &mut Instant,
+    mut done: impl FnMut(usize, &ClientEvent) -> bool,
+) -> bool {
+    for _ in 0..300 {
+        *now += Duration::from_millis(66);
+        serve(w, *now);
+        let mut hit = false;
+        for (k, c) in clients.iter_mut().enumerate() {
+            c.flush(*now);
+            for e in c.poll(*now) {
+                hit |= done(k, &e);
+            }
+        }
+        if hit {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+fn players_plan_a_mission_together() {
+    use stealth_campaign::{CampaignEvent, MissionPlan, RouteKind, RoutePoint};
+    let mut w = world();
+    let port = w.server.port().unwrap();
+    let addr = format!("127.0.0.1:{port}");
+    let mut a = Client::connect(&addr, "Alpha").unwrap();
+    let mut b = Client::connect(&addr, "Bravo").unwrap();
+    let mut now = Instant::now();
+    let mut ids = [None, None];
+    assert!(until(&mut w, &mut [&mut a, &mut b], &mut now, |k, e| {
+        if let ClientEvent::Welcome { id, .. } = e {
+            ids[k] = Some(*id);
+        }
+        ids.iter().all(Option::is_some)
+    }));
+    let [pa, pb] = ids.map(Option::unwrap);
+    let o = w.host.state.board.iter().find(|o| !o.kind.ai_flown()).unwrap().clone();
+    let plans = |k: usize, e: &ClientEvent| match e {
+        ClientEvent::Host(HostEvent::Campaign(CampaignEvent::PlansChanged(p))) if k == 1 => {
+            p.iter().find(|p| p.offer == o.id).cloned()
+        }
+        _ => None,
+    };
+    // Both plan it: Bravo sees Alpha's route at once.
+    a.send(&ToServer::Select { offer: Some(o.id), base: o.base });
+    b.send(&ToServer::Select { offer: Some(o.id), base: o.base });
+    let mut seen: Option<MissionPlan> = None;
+    assert!(until(&mut w, &mut [&mut a, &mut b], &mut now, |k, e| {
+        seen = plans(k, e).or(seen.take());
+        seen.as_ref().is_some_and(|p| p.crew.len() == 2)
+    }));
+    let route = vec![
+        RoutePoint { x: 0x2000, y: 0x2000, kind: RouteKind::Nav },
+        RoutePoint { x: o.x, y: o.y, kind: RouteKind::Primary },
+        RoutePoint { x: o.x, y: o.y, kind: RouteKind::Secondary },
+        RoutePoint { x: 0x3000, y: 0x3000, kind: RouteKind::Land },
+    ];
+    a.send(&ToServer::Plan { offer: o.id, base: o.base, route: route.clone() });
+    assert!(until(&mut w, &mut [&mut a, &mut b], &mut now, |k, e| {
+        plans(k, e).is_some_and(|p| p.route == route)
+    }));
+    // Alpha flies it: locked for Bravo.
+    a.send(&ToServer::TakeMission {
+        offer: o.id,
+        base: None,
+        aircraft: Aircraft::F117,
+        stores: None,
+    });
+    assert!(until(&mut w, &mut [&mut a, &mut b], &mut now, |k, e| {
+        plans(k, e).is_some_and(|p| p.flying == vec![pa] && p.crew == vec![pb])
+    }));
+    b.send(&ToServer::Plan { offer: o.id, base: o.base, route: Vec::new() });
+    assert!(until(&mut w, &mut [&mut a, &mut b], &mut now, |k, e| {
+        k == 1 && matches!(e, ClientEvent::Error(_))
+    }));
+    // He aborts: editable again, the route kept.
+    a.send(&ToServer::EndSortie { outcome: 7 });
+    assert!(until(&mut w, &mut [&mut a, &mut b], &mut now, |k, e| {
+        plans(k, e).is_some_and(|p| p.flying.is_empty() && p.route == route)
+    }));
+    b.send(&ToServer::Plan { offer: o.id, base: o.base, route: Vec::new() });
+    assert!(until(&mut w, &mut [&mut a, &mut b], &mut now, |k, e| {
+        plans(k, e).is_some_and(|p| p.route.is_empty())
+    }));
+    // Bravo leaves: off the plan.
+    b.leave();
+    for _ in 0..5 {
+        now += Duration::from_millis(66);
+        serve(&mut w, now);
+    }
+    assert!(w.host.state.plan(o.id).unwrap().crew.is_empty());
 }

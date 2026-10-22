@@ -308,6 +308,37 @@ pub struct SortieRecord {
     pub aircraft: Aircraft,
 }
 
+/// What a route point is: a navigation point a player placed (or the mission's midpoint), or
+/// one of the mission's fixed points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RouteKind {
+    Nav,
+    Primary,
+    Secondary,
+    Land,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutePoint {
+    /// Map units (x east, y south).
+    pub x: i32,
+    pub y: i32,
+    pub kind: RouteKind,
+}
+
+/// The players' shared plan for an offer of the board (coop): the base they fly from and the
+/// route, who is planning it and who is flying it. The route is locked while anyone flies it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MissionPlan {
+    pub offer: u32,
+    pub base: ObjectId,
+    /// Empty: the mission's own route from the base.
+    pub route: Vec<RoutePoint>,
+    /// In the briefing.
+    pub crew: Vec<PlayerId>,
+    pub flying: Vec<PlayerId>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlayerSlot {
     pub id: PlayerId,
@@ -346,6 +377,9 @@ pub struct CampaignState {
     pub sites: Vec<Site>,
     pub places: Vec<Place>,
     pub board: Vec<MissionOffer>,
+    /// The players' plans for offers of the board.
+    #[serde(default)]
+    pub plans: Vec<MissionPlan>,
     pub insertions: Vec<Insertion>,
     pub players: Vec<PlayerSlot>,
     pub history: Vec<SortieRecord>,
@@ -468,6 +502,7 @@ impl CampaignState {
             sites,
             places,
             board: Vec::new(),
+            plans: Vec::new(),
             insertions: Vec::new(),
             players: vec![PlayerSlot { id: PlayerId(0), name: "Player".into(), sortie: None }],
             history: Vec::new(),
@@ -534,6 +569,11 @@ impl CampaignState {
             let s = self.site(b).expect("base is a site");
             dist(s.x - x, s.y - y)
         })
+    }
+
+    /// The players' plan for an offer.
+    pub fn plan(&self, offer: u32) -> Option<&MissionPlan> {
+        self.plans.iter().find(|p| p.offer == offer)
     }
 
     /// The sortie a player is flying.

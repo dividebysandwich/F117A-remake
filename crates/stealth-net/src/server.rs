@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use stealth_campaign::PlayerId;
+use stealth_campaign::{CampaignEvent, PlayerId};
 use stealth_host::{Host, HostEvent};
 use stealth_sim::net::{RemotePilot, SlowBase, WorldFast};
 use stealth_sim::{Commands, PilotEvent, PlayerState, Sim, SimEvent};
@@ -169,6 +169,7 @@ impl Server {
                         if host.state.sortie(p).is_some() {
                             self.grace.insert(p, now + std::time::Duration::from_secs_f32(GRACE));
                         }
+                        out.extend(self.unselect(p, host, sim));
                     }
                 }
                 NetEvent::Message(conn, _, bytes) => {
@@ -235,6 +236,10 @@ impl Server {
                 host.take_mission(sim, p, offer, base, aircraft, stores)
             }
             (ToServer::OrderInsertion { place }, Some(p)) => host.order_insertion(sim, p, place),
+            (ToServer::Select { offer, base }, Some(p)) => host.select(sim, p, offer, base),
+            (ToServer::Plan { offer, base, route }, Some(p)) => {
+                host.edit_plan(sim, p, offer, base, route)
+            }
             (ToServer::EndSortie { outcome }, Some(p)) => Ok(host.end_sortie(sim, p, outcome)),
             (ToServer::Hit(hit), Some(p)) => {
                 sim.claim_hit(p.0, hit);
@@ -252,8 +257,9 @@ impl Server {
                     // Leaving on purpose: the sortie ends now.
                     let name = host.state.player_name(p).unwrap_or("?").to_string();
                     self.log.push(format!("{name} left"));
-                    let ev = host.end_sortie(sim, p, 7);
+                    let mut ev = host.end_sortie(sim, p, 7);
                     self.route(&ev);
+                    ev.extend(self.unselect(p, host, sim));
                     return ev;
                 }
                 return Vec::new();
@@ -270,6 +276,16 @@ impl Server {
                 Vec::new()
             }
         }
+    }
+
+    /// A player gone: off the plans he was on.
+    fn unselect(&mut self, p: PlayerId, host: &mut Host, sim: &mut Sim) -> Vec<HostEvent> {
+        if !host.state.plans.iter().any(|x| x.crew.contains(&p)) {
+            return Vec::new();
+        }
+        let ev = host.select(sim, p, None, 0).unwrap_or_default();
+        self.route(&ev);
+        ev
     }
 
     fn hello(
@@ -378,7 +394,10 @@ impl Server {
                 | HostEvent::Landed { player, .. } => Some(*player),
                 HostEvent::Campaign(_) => None,
             };
-            self.campaign_dirty = true;
+            // The plans come whole with the event (and change often while dragging).
+            if !matches!(e, HostEvent::Campaign(CampaignEvent::PlansChanged(_))) {
+                self.campaign_dirty = true;
+            }
             let msg = encode(&ToClient::Host(e.clone()));
             for r in self.remotes.values() {
                 if r.player.is_some() && to.is_none_or(|p| r.player == Some(p)) {

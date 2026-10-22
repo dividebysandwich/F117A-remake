@@ -289,3 +289,49 @@ fn a_full_campaign_hands_an_idle_slot_to_a_new_name() {
     assert_eq!(c.join("Charlie", 3, |id| id != b), Some(b));
     assert_eq!(c.player_name(b), Some("Charlie"));
 }
+
+#[test]
+fn players_share_a_plan_locked_while_it_is_flown() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let b = PlayerId(1);
+    c.join("Bravo", 3, |_| false);
+    let offer = c.board.iter().find(|o| !o.kind.ai_flown()).unwrap().clone();
+    let bases = c.bases(Side::Blue);
+    let other = *bases.iter().find(|&&x| x != offer.base).expect("two bases");
+    let select = |base| Command::Select { offer: Some(offer.id), base };
+    c.apply(P0, select(offer.base)).expect("select");
+    // The second player joins on the plan's base, whatever he chose.
+    let ev = c.apply(b, select(other)).expect("join");
+    let CampaignEvent::PlansChanged(plans) = &ev[0] else { panic!() };
+    assert_eq!(plans[0].crew, vec![P0, b]);
+    assert_eq!(plans[0].base, offer.base);
+    let route = vec![
+        RoutePoint { x: 100, y: 100, kind: RouteKind::Nav },
+        RoutePoint { x: offer.x, y: offer.y, kind: RouteKind::Primary },
+    ];
+    let plan = |route: Vec<RoutePoint>| Command::Plan { offer: offer.id, base: offer.base, route };
+    c.apply(b, plan(route.clone())).expect("edit");
+    assert_eq!(c.plan(offer.id).unwrap().route, route);
+    // Flown: locked; the pilot leaves the crew.
+    c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F117 })
+        .expect("take");
+    assert_eq!(c.plan(offer.id).unwrap().flying, vec![P0]);
+    assert_eq!(c.plan(offer.id).unwrap().crew, vec![b]);
+    assert!(c.apply(b, plan(Vec::new())).is_err());
+    // Nobody flying any more: editable again, the route kept.
+    c.apply(P0, Command::EndSortie { end: SortieEnd::Aborted }).expect("end");
+    assert_eq!(c.plan(offer.id).unwrap().route, route);
+    c.apply(b, plan(Vec::new())).expect("edit again");
+    // A new base resets the route.
+    c.apply(b, plan(route.clone())).unwrap();
+    c.apply(b, Command::Plan { offer: offer.id, base: other, route: route.clone() }).unwrap();
+    assert_eq!(c.plan(offer.id).unwrap().base, other);
+    assert!(c.plan(offer.id).unwrap().route.is_empty());
+    // Leaving; the plan stays while its offer is on the board.
+    c.apply(b, Command::Select { offer: None, base: 0 }).unwrap();
+    assert!(c.plan(offer.id).unwrap().crew.is_empty());
+    c.board.retain(|o| o.id != offer.id);
+    assert!(c.prune_plans());
+    assert!(c.plan(offer.id).is_none());
+}

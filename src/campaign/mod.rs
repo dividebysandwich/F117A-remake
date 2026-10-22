@@ -152,6 +152,17 @@ pub enum Action {
     Rearm {
         loadout: crate::loadout::PlannedLoadout,
     },
+    /// Plan a mission of the board with the other players on it (None: plan none).
+    SelectMission {
+        offer: Option<u32>,
+        base: u16,
+    },
+    /// The plan's base and route changed.
+    EditPlan {
+        offer: u32,
+        base: u16,
+        route: Vec<crate::mission::RoutePoint>,
+    },
 }
 
 /// The last sortie's debrief.
@@ -690,6 +701,8 @@ fn host_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEvent
                 c.landed = None;
                 Ok(Vec::new())
             }
+            Action::SelectMission { offer, base } => host.select(sim, me, offer, base),
+            Action::EditPlan { offer, base, route } => host.edit_plan(sim, me, offer, base, route),
         };
         match result {
             Ok(ev) => {
@@ -742,6 +755,8 @@ fn client_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEve
                 }
                 ToServer::Rearm { stores: Stores { stations: loadout.stations(), select: 0 } }
             }
+            Action::SelectMission { offer, base } => ToServer::Select { offer, base },
+            Action::EditPlan { offer, base, route } => ToServer::Plan { offer, base, route },
         };
         client.send(&msg);
     }
@@ -818,6 +833,12 @@ fn handle(c: &mut ActiveCampaign, s: &mut Session, events: Vec<HostEvent>) {
                 if player == me =>
             {
                 s.msgs.show("Objective achieved");
+            }
+            // A client's copy has the plans at once (the host's state has them already).
+            HostEvent::Campaign(CampaignEvent::PlansChanged(plans)) => {
+                if let Some(st) = c.copy.as_mut() {
+                    st.plans = plans;
+                }
             }
             HostEvent::Campaign(CampaignEvent::PlaceCaptured { .. }) => {
                 if let Some(t) = s.theater.as_deref_mut() {

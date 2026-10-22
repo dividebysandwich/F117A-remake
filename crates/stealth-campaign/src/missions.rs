@@ -36,11 +36,23 @@ impl CampaignState {
         let from = self.site(base).map(|s| s.name.clone()).unwrap_or_default();
         self.note(format!("{} from {from}", o.title));
         self.slot_mut(player).sortie = Some(sortie.clone());
-        Ok(vec![CampaignEvent::SortieStarted { player, sortie }])
+        self.leave_plans(player);
+        match self.plans.iter_mut().find(|p| p.offer == offer) {
+            Some(p) => p.flying.push(player),
+            None => self.plans.push(MissionPlan {
+                offer,
+                base,
+                route: Vec::new(),
+                crew: Vec::new(),
+                flying: vec![player],
+            }),
+        }
+        Ok(vec![CampaignEvent::SortieStarted { player, sortie }, self.plans_changed()])
     }
 
-    pub(crate) fn end_sortie(&mut self, player: PlayerId, end: SortieEnd) -> Option<CampaignEvent> {
-        let s = self.slot_mut(player).sortie.take()?;
+    pub(crate) fn end_sortie(&mut self, player: PlayerId, end: SortieEnd) -> Vec<CampaignEvent> {
+        let Some(s) = self.slot_mut(player).sortie.take() else { return Vec::new() };
+        self.leave_plans(player);
         let insertion = match s.offer.objective {
             Objective::Escort { insertion } => Some(insertion),
             _ => None,
@@ -77,7 +89,107 @@ impl CampaignState {
         };
         self.note(format!("{}: {} - {verdict}", s.offer.title, end.name()));
         self.history.push(record.clone());
-        Some(CampaignEvent::SortieFinished { player, record })
+        vec![CampaignEvent::SortieFinished { player, record }, self.plans_changed()]
+    }
+
+    /// A player joins the plan of an offer (None: leaves the plans). The plan's base stands
+    /// unless nobody is planning or flying it.
+    pub(crate) fn select(
+        &mut self,
+        player: PlayerId,
+        offer: Option<u32>,
+        base: ObjectId,
+    ) -> Result<Vec<CampaignEvent>, String> {
+        if let Some(offer) = offer {
+            let Some(o) = self.board.iter().find(|o| o.id == offer) else {
+                return Err("That mission is no longer on the board".into());
+            };
+            if o.kind.ai_flown() {
+                return Err(
+                    "Insertions are flown by the helicopter crews: order one instead".into()
+                );
+            }
+            if self.sortie(player).is_some() {
+                return Err("Already flying a sortie".into());
+            }
+            if !self.bases(Side::Blue).contains(&base) {
+                return Err("Not a friendly base".into());
+            }
+        }
+        for p in &mut self.plans {
+            p.crew.retain(|&c| c != player);
+        }
+        if let Some(offer) = offer {
+            match self.plans.iter_mut().find(|p| p.offer == offer) {
+                Some(p) => {
+                    if p.crew.is_empty() && p.flying.is_empty() && p.base != base {
+                        p.base = base;
+                        p.route.clear();
+                    }
+                    p.crew.push(player);
+                }
+                None => self.plans.push(MissionPlan {
+                    offer,
+                    base,
+                    route: Vec::new(),
+                    crew: vec![player],
+                    flying: Vec::new(),
+                }),
+            }
+        }
+        Ok(vec![self.plans_changed()])
+    }
+
+    /// A player on a plan changes its base (which resets the route) and route; not while
+    /// anyone flies it.
+    pub(crate) fn edit_plan(
+        &mut self,
+        player: PlayerId,
+        offer: u32,
+        base: ObjectId,
+        route: Vec<RoutePoint>,
+    ) -> Result<Vec<CampaignEvent>, String> {
+        if route.len() > ROUTE_POINTS {
+            return Err("Too many route points".into());
+        }
+        if !self.bases(Side::Blue).contains(&base) {
+            return Err("Not a friendly base".into());
+        }
+        let Some(p) = self.plans.iter_mut().find(|p| p.offer == offer) else {
+            return Err("That mission is no longer on the board".into());
+        };
+        if !p.crew.contains(&player) {
+            return Err("Not planning that mission".into());
+        }
+        if !p.flying.is_empty() {
+            return Err("The route is locked while the mission is flown".into());
+        }
+        if p.base != base {
+            p.base = base;
+            p.route.clear();
+        } else {
+            p.route = route;
+        }
+        Ok(vec![self.plans_changed()])
+    }
+
+    fn leave_plans(&mut self, player: PlayerId) {
+        for p in &mut self.plans {
+            p.crew.retain(|&c| c != player);
+            p.flying.retain(|&c| c != player);
+        }
+    }
+
+    /// Drops the plans of offers gone from the board nobody flies. True: some went.
+    pub(crate) fn prune_plans(&mut self) -> bool {
+        let n = self.plans.len();
+        let board = &self.board;
+        self.plans.retain(|p| !p.flying.is_empty() || board.iter().any(|o| o.id == p.offer));
+        self.plans.len() != n
+    }
+
+    pub(crate) fn plans_changed(&self) -> CampaignEvent {
+        CampaignEvent::PlansChanged(self.plans.clone())
     }
 
     /// A report's effect on the sorties being flown.

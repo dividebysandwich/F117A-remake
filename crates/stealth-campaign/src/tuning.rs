@@ -11,6 +11,8 @@ pub const FRONT_RANGE: i32 = 0x2600;
 pub const FRONT_PLACES: usize = 3;
 /// Offers on the board at most.
 pub const BOARD_SIZE: usize = 12;
+/// Points of a planned route at most.
+pub const ROUTE_POINTS: usize = 16;
 /// The board is rebuilt this often (and after every capture).
 pub const BOARD_REFRESH: f64 = 60.0;
 /// Enemy ships this close to a friendly place are anti-ship targets (120 km).

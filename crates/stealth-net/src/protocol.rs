@@ -1,14 +1,14 @@
 //! The coop messages and their encoding (CBOR, LZ4-compressed when large).
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use stealth_campaign::{Aircraft, CampaignState, PlaceId, PlayerId, Sortie};
+use stealth_campaign::{Aircraft, CampaignState, PlaceId, PlayerId, RoutePoint, Sortie};
 use stealth_host::{HostEvent, Rules, Stores};
 use stealth_sim::claims::GunHit;
 use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 /// Changes with every change of the messages: client and server must agree.
-pub const PROTOCOL: u16 = 5;
+pub const PROTOCOL: u16 = 6;
 pub const DEFAULT_PORT: u16 = 28989;
 /// Players a server takes at most.
 pub const MAX_PLAYERS: usize = stealth_sim::MAX_PILOTS;
@@ -37,6 +37,17 @@ pub enum ToServer {
     },
     OrderInsertion {
         place: PlaceId,
+    },
+    /// Plan a mission of the board with the others on it, from a base (None: plan none).
+    Select {
+        offer: Option<u32>,
+        base: u16,
+    },
+    /// Change the base and route of the mission he plans.
+    Plan {
+        offer: u32,
+        base: u16,
+        route: Vec<RoutePoint>,
     },
     /// End the sortie (the simulation's outcome codes: 0 landed, 1 crashed, 7 aborted).
     EndSortie {
@@ -189,6 +200,12 @@ mod tests {
             recent: vec![(6, Commands { fire: true, ..Default::default() })],
         };
         assert_eq!(decode::<ToServer>(&encode(&m)), Some(m));
+        let plan = ToServer::Plan {
+            offer: 3,
+            base: 40,
+            route: vec![RoutePoint { x: 1, y: -2, kind: stealth_campaign::RouteKind::Land }],
+        };
+        assert_eq!(decode::<ToServer>(&encode(&plan)), Some(plan));
         let big = ToClient::Error("x".repeat(5000));
         let bytes = encode(&big);
         assert!(bytes.len() < 500 && bytes[0] == 1);

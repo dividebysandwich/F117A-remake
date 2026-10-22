@@ -5,7 +5,8 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, PrimaryEguiContext, egui};
 use stealth_campaign::{
-    Aircraft as Airframe, InsertionState, MissionKind, MissionOffer, Objective, Side, SortieResult,
+    Aircraft as Airframe, InsertionState, MissionKind, MissionOffer, Objective, PlayerId, Side,
+    SortieResult,
 };
 use stealth_host::glue::sortie_mission;
 use stealth_net::protocol::PlayerStatus;
@@ -59,8 +60,38 @@ struct Briefing {
     loadout: crate::loadout::PlannedLoadout,
     window: crate::loadout::LoadoutWindow,
     page: BriefPage,
-    /// The route to fly (None until the editor first shows it).
+    /// The route to fly (None until the editor first shows it). In a coop game the plan's,
+    /// with this player's changes not sent yet.
     route: Option<crate::mission::PlannedRoute>,
+    /// Changed here, not sent to the plan yet.
+    dirty: bool,
+    /// When the last change went (egui time), and until when the plan's route is not taken
+    /// over (its echo is on the way).
+    sent_at: f64,
+    hold_until: f64,
+}
+
+impl Briefing {
+    fn new(
+        offer: u32,
+        base: u16,
+        aircraft: Airframe,
+        loadout: crate::loadout::PlannedLoadout,
+        page: BriefPage,
+    ) -> Self {
+        Self {
+            offer,
+            base,
+            aircraft,
+            loadout,
+            window: default(),
+            page,
+            route: None,
+            dirty: false,
+            sent_at: 0.0,
+            hold_until: 0.0,
+        }
+    }
 }
 
 /// The camera that carries the Ops screen's egui context.
@@ -265,15 +296,11 @@ pub fn ops_ui(
     {
         let sortie = preview(&o, o.base, c.aircraft);
         let m = sortie_mission(&c.mission, c.state(), &sortie);
-        c.ui.briefing = Some(Briefing {
-            offer: o.id,
-            base: o.base,
-            aircraft: c.aircraft,
-            loadout: crate::loadout::PlannedLoadout::of(&m, kind_of(c.aircraft)),
-            window: default(),
-            page,
-            route: None,
-        });
+        let loadout = crate::loadout::PlannedLoadout::of(&m, kind_of(c.aircraft));
+        c.ui.briefing = Some(Briefing::new(o.id, o.base, c.aircraft, loadout, page));
+        if c.role != Role::Local {
+            c.actions.push(Action::SelectMission { offer: Some(o.id), base: o.base });
+        }
     }
     if c.ui.briefing.is_some() {
         briefing(ctx, c, &combat.sim, &mut planner, egui::vec2(width, height));
@@ -475,6 +502,7 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
                             c.ui.base = None;
                             c.ui.error = None;
                         }
+                        group_label(ui, c, o.id);
                         ui.add_space(2.0);
                     }
                     if c.state().board.is_empty() {
@@ -518,6 +546,7 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
             section(ui, o.kind.name());
             ui.label(egui::RichText::new(&o.title).size(20.0).color(BRIGHT));
             ui.label(egui::RichText::new(describe(o.kind)).color(DIM));
+            group_label(ui, c, o.id);
             ui.add_space(6.0);
             if let Some(p) = place_of(&o.objective).and_then(|p| c.state().place(p)) {
                 let intel = p.intel(c.state().clock);
@@ -553,29 +582,47 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
                 })
                 .collect();
             bases.sort_by_key(|b| b.2);
-            let chosen = c.ui.base.filter(|b| bases.iter().any(|x| x.0 == *b)).unwrap_or(o.base);
+            // Another player's plan sets the base (a plan nobody is on: its base unless the
+            // player picks another).
+            let plan = c.state().plan(o.id).filter(|_| c.role != Role::Local);
+            let taken = plan.is_some_and(|p| !p.crew.is_empty() || !p.flying.is_empty());
+            let planned = plan.map(|p| p.base).filter(|b| bases.iter().any(|x| x.0 == *b));
+            let chosen = match planned {
+                Some(b) if taken => b,
+                _ => {
+                    c.ui.base
+                        .filter(|b| bases.iter().any(|x| x.0 == *b))
+                        .or(planned)
+                        .unwrap_or(o.base)
+                }
+            };
             let label = bases
                 .iter()
                 .find(|b| b.0 == chosen)
                 .map_or(String::new(), |b| format!("{} ({:.0} km)", b.1, km(b.2)));
             ui.horizontal(|ui| {
                 ui.label("From");
-                egui::ComboBox::from_id_salt("base").selected_text(label).width(260.0).show_ui(
-                    ui,
-                    |ui| {
-                        for (b, name, d) in &bases {
-                            if ui
-                                .selectable_label(
-                                    *b == chosen,
-                                    format!("{name} ({:.0} km)", km(*d)),
-                                )
-                                .clicked()
-                            {
-                                c.ui.base = Some(*b);
+                ui.add_enabled_ui(!taken, |ui| {
+                    egui::ComboBox::from_id_salt("base").selected_text(label).width(260.0).show_ui(
+                        ui,
+                        |ui| {
+                            for (b, name, d) in &bases {
+                                if ui
+                                    .selectable_label(
+                                        *b == chosen,
+                                        format!("{name} ({:.0} km)", km(*d)),
+                                    )
+                                    .clicked()
+                                {
+                                    c.ui.base = Some(*b);
+                                }
                             }
-                        }
-                    },
-                );
+                        },
+                    );
+                });
+                if taken {
+                    ui.label(egui::RichText::new("Planned by the group").small().color(DIM));
+                }
             });
             let sortie = preview(&o, chosen, c.aircraft);
             let m = sortie_mission(&c.mission, c.state(), &sortie);
@@ -584,17 +631,43 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
             ui.add_space(10.0);
             if ui.add(big_button("ACCEPT MISSION").fill(DIM)).clicked() {
                 c.ui.error = None;
-                c.ui.briefing = Some(Briefing {
-                    offer: o.id,
-                    base: chosen,
-                    aircraft: c.aircraft,
-                    loadout,
-                    window: default(),
-                    page: BriefPage::Map,
-                    route: None,
-                });
+                if c.role != Role::Local {
+                    c.actions.push(Action::SelectMission { offer: Some(o.id), base: chosen });
+                }
+                c.ui.briefing =
+                    Some(Briefing::new(o.id, chosen, c.aircraft, loadout, BriefPage::Map));
             }
         });
+    });
+}
+
+/// The players on an offer's plan (coop): planning it, flying it.
+fn group(c: &ActiveCampaign, offer: u32) -> (Vec<String>, Vec<String>) {
+    let st = c.state();
+    let names = |ids: &[PlayerId]| -> Vec<String> {
+        ids.iter().map(|&p| st.player_name(p).unwrap_or("?").to_string()).collect()
+    };
+    match st.plan(offer) {
+        Some(p) if c.role != Role::Local => (names(&p.crew), names(&p.flying)),
+        _ => default(),
+    }
+}
+
+/// Who is planning and flying an offer, under it on the board.
+fn group_label(ui: &mut egui::Ui, c: &ActiveCampaign, offer: u32) {
+    let (planning, flying) = group(c, offer);
+    if planning.is_empty() && flying.is_empty() {
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        if !planning.is_empty() {
+            let text = format!("PLANNING: {}", planning.join(", "));
+            ui.label(egui::RichText::new(text).small().color(FRIENDLY_BLUE));
+        }
+        if !flying.is_empty() {
+            let text = format!("FLYING: {}", flying.join(", "));
+            ui.label(egui::RichText::new(text).small().color(GREEN));
+        }
     });
 }
 
@@ -850,10 +923,16 @@ fn briefing(
         c.ui.error = Some("That mission is no longer on the board".into());
         return;
     };
+    // A coop game: the group's plan sets the base.
+    let coop = c.role != Role::Local;
+    if coop && let Some(p) = c.state().plan(b.offer) {
+        b.base = p.base;
+    }
     let sortie = preview(&o, b.base, b.aircraft);
     let m = sortie_mission(&c.mission, c.state(), &sortie);
     let mut back = false;
     let mut take_off = false;
+    let mut edit = None;
     egui::Window::new("Briefing")
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .collapsible(false)
@@ -879,6 +958,14 @@ fn briefing(
                 kind_of(b.aircraft).name(),
                 b.loadout.summary()
             ));
+            if coop {
+                group_label(ui, c, o.id);
+                let (_, flying) = group(c, o.id);
+                if !flying.is_empty() {
+                    let text = format!("Route locked: {} flying it", flying.join(", "));
+                    ui.label(egui::RichText::new(text).color(AMBER));
+                }
+            }
             ui.horizontal(|ui| {
                 for (page, label) in
                     [(BriefPage::Map, "ROUTE & THREATS"), (BriefPage::Loadout, "LOADOUT")]
@@ -895,7 +982,15 @@ fn briefing(
                 ui.set_min_height(height);
                 match b.page {
                     BriefPage::Map => {
-                        route_editor(ui, c, sim, planner, &m, &mut b, egui::vec2(size.x, height))
+                        edit = route_editor(
+                            ui,
+                            c,
+                            sim,
+                            planner,
+                            &m,
+                            &mut b,
+                            egui::vec2(size.x, height),
+                        )
                     }
                     BriefPage::Loadout => {
                         ui.horizontal(|ui| {
@@ -940,7 +1035,18 @@ fn briefing(
                 });
             });
         });
+    // This player's changes to the group's route.
+    if let Some(route) = edit {
+        c.actions.push(Action::EditPlan { offer: o.id, base: b.base, route });
+    }
     if take_off {
+        if coop
+            && std::mem::take(&mut b.dirty)
+            && let Some(r) = &b.route
+        {
+            let route = r.points.clone();
+            c.actions.push(Action::EditPlan { offer: o.id, base: b.base, route });
+        }
         c.ui.error = None;
         c.aircraft = b.aircraft;
         c.actions.push(Action::TakeMission {
@@ -954,12 +1060,21 @@ fn briefing(
     }
     if !back {
         c.ui.briefing = Some(b);
+    } else if coop {
+        c.actions.push(Action::SelectMission { offer: None, base: b.base });
     }
 }
 
+/// Seconds between a dragged point's updates to the group.
+const SEND_EVERY: f64 = 0.1;
+/// Seconds the group's route is not taken over after a change of this player's went (until
+/// its echo is back).
+const HOLD: f64 = 1.0;
+
 /// The route editor (the mission planner's): drag, add and remove waypoints over the radars
 /// friendly aircraft have detected (and that still stand), with their detection and missile
-/// ranges and the route's exposure; the campaign's places and air picture over the map.
+/// ranges and the route's exposure; the campaign's places and air picture over the map. In a
+/// coop game the route is the group's (locked while one of them flies it): what to send it.
 #[allow(clippy::too_many_arguments)]
 fn route_editor(
     ui: &mut egui::Ui,
@@ -969,11 +1084,26 @@ fn route_editor(
     m: &stealth_mission::Mission,
     b: &mut Briefing,
     size: egui::Vec2,
-) {
+) -> Option<Vec<crate::mission::RoutePoint>> {
+    let now = ui.input(|i| i.time);
+    let plan = c.state().plan(b.offer).filter(|_| c.role != Role::Local);
+    let locked = plan.is_some_and(|p| !p.flying.is_empty());
     let route = b.route.get_or_insert_with(|| {
         planner.refit();
         crate::mission::PlannedRoute::of(m)
     });
+    // The group's route (the others' changes), unless this player's own are on the way.
+    if let Some(p) = plan
+        && (locked || (!planner.dragging() && !b.dirty && now >= b.hold_until))
+    {
+        b.dirty = false;
+        if p.route.is_empty() {
+            route.points = crate::mission::PlannedRoute::of(m).points;
+        } else if route.points != p.route {
+            route.points = p.route.clone();
+        }
+    }
+    let before = route.points.clone();
     let st = c.state();
     let known = |i: usize| st.site(i as u16).is_some_and(|x| x.spotted && x.alive());
     // The SAM sites are the editor's own rings.
@@ -1003,14 +1133,34 @@ fn route_editor(
         }
         super::picture::draw(painter, view, &pic, false);
     };
-    crate::planner::route_panel(ui, planner, m, route, &known, Some(&overlay), size, |ui| {
-        ui.add_space(6.0);
-        ui.label(
-            egui::RichText::new("Radars shown: detected by friendly aircraft, still standing")
-                .small()
-                .color(AMBER),
-        );
-    });
+    crate::planner::route_panel(
+        ui,
+        planner,
+        m,
+        route,
+        &known,
+        Some(&overlay),
+        size,
+        !locked,
+        |ui| {
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("Radars shown: detected by friendly aircraft, still standing")
+                    .small()
+                    .color(AMBER),
+            );
+        },
+    );
+    plan?;
+    b.dirty |= route.points != before;
+    // A dragged point goes a few times a second, everything else at once.
+    if b.dirty && (!planner.dragging() || now - b.sent_at >= SEND_EVERY) {
+        b.dirty = false;
+        b.sent_at = now;
+        b.hold_until = now + HOLD;
+        return Some(route.points.clone());
+    }
+    None
 }
 
 /// The red way out: SAVE & EXIT, or DISCONNECT from a server.
@@ -1056,7 +1206,18 @@ fn players(ui: &mut egui::Ui, c: &ActiveCampaign) {
                         }
                     });
                     let (status, col) = match &p.status {
-                        PlayerStatus::Ops => ("On the mission board".to_string(), DIM),
+                        PlayerStatus::Ops => {
+                            let planning = c
+                                .state()
+                                .plans
+                                .iter()
+                                .find(|x| x.crew.contains(&p.id))
+                                .and_then(|x| c.state().board.iter().find(|o| o.id == x.offer));
+                            match planning {
+                                Some(o) => (format!("Planning {}", o.title), FRIENDLY_BLUE),
+                                None => ("On the mission board".to_string(), DIM),
+                            }
+                        }
                         PlayerStatus::Flying { title, aircraft } => {
                             (format!("Flying {title} - {}", kind_of(*aircraft).name()), GREEN)
                         }

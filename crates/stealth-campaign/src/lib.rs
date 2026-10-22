@@ -114,6 +114,11 @@ pub enum Command {
     OrderInsertion { place: PlaceId },
     /// The player's sortie is over (landed and done, crashed, ejected, aborted).
     EndSortie { end: SortieEnd },
+    /// Join the plan of an offer from a base (the plan's base unless nobody is on it), or
+    /// leave the plans (None).
+    Select { offer: Option<u32>, base: ObjectId },
+    /// Change the plan the player is on: its base (resets the route) and its route.
+    Plan { offer: u32, base: ObjectId, route: Vec<RoutePoint> },
 }
 
 /// What the authority has to do or show.
@@ -121,6 +126,8 @@ pub enum Command {
 pub enum CampaignEvent {
     /// The mission board changed.
     BoardChanged,
+    /// The players' plans changed (all of them).
+    PlansChanged(Vec<MissionPlan>),
     SortieStarted {
         player: PlayerId,
         sortie: Sortie,
@@ -187,7 +194,9 @@ impl CampaignState {
                 self.take_mission(player, offer, base, aircraft)
             }
             Command::OrderInsertion { place } => self.order_insertion(Some(player), place),
-            Command::EndSortie { end } => Ok(self.end_sortie(player, end).into_iter().collect()),
+            Command::EndSortie { end } => Ok(self.end_sortie(player, end)),
+            Command::Select { offer, base } => self.select(player, offer, base),
+            Command::Plan { offer, base, route } => self.edit_plan(player, offer, base, route),
         }
     }
 
@@ -211,6 +220,9 @@ impl CampaignState {
             if self.rebuild_board(view) {
                 ev.push(CampaignEvent::BoardChanged);
             }
+            if self.prune_plans() {
+                ev.push(self.plans_changed());
+            }
         }
         ev
     }
@@ -229,9 +241,12 @@ impl CampaignState {
         }
         self.patrols.clear();
         self.board_at = f64::MIN;
+        for p in &mut self.plans {
+            p.crew.clear();
+        }
         let players: Vec<PlayerId> =
             self.players.iter().filter(|p| p.sortie.is_some()).map(|p| p.id).collect();
-        players.into_iter().filter_map(|p| self.end_sortie(p, SortieEnd::Aborted)).collect()
+        players.into_iter().flat_map(|p| self.end_sortie(p, SortieEnd::Aborted)).collect()
     }
 
     /// Everything the simulation needs to match the campaign when it is built: destroyed and

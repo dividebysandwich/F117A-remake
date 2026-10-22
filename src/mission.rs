@@ -22,23 +22,7 @@ impl MissionData {
 #[derive(Resource, Clone)]
 pub struct ActiveMission(pub Mission);
 
-/// What a route point is: a navigation point the player placed (or the mission's midpoint),
-/// or one of the mission's fixed points.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum RouteKind {
-    Nav,
-    Primary,
-    Secondary,
-    Land,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct RoutePoint {
-    /// Map units (x east, y south).
-    pub x: i32,
-    pub y: i32,
-    pub kind: RouteKind,
-}
+pub use stealth_campaign::{RouteKind, RoutePoint};
 
 /// The route flown (mission planner); the mission's 4 waypoints unless the player changed it.
 #[derive(Resource, Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

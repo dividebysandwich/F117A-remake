@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use stealth_campaign::{
     Aircraft, CampaignEvent, CampaignSetup, CampaignState, Command, Objective, PlaceId, PlayerId,
-    Report, Side, Sortie, SortieRecord,
+    Report, RoutePoint, Side, Sortie, SortieRecord,
 };
 use stealth_mission::{GameData, Mission};
 use stealth_sim::{PilotEvent, PlayerState, Sim, SimEvent, oflags};
@@ -207,6 +207,31 @@ impl Host {
         Ok(self.apply(sim, events))
     }
 
+    /// A player joins the plan of an offer from a base, or leaves the plans (None).
+    pub fn select(
+        &mut self,
+        sim: &mut Sim,
+        player: PlayerId,
+        offer: Option<u32>,
+        base: u16,
+    ) -> Result<Vec<HostEvent>, String> {
+        let events = self.state.apply(player, Command::Select { offer, base })?;
+        Ok(self.apply(sim, events))
+    }
+
+    /// A player changes the base and route of the plan he is on.
+    pub fn edit_plan(
+        &mut self,
+        sim: &mut Sim,
+        player: PlayerId,
+        offer: u32,
+        base: u16,
+        route: Vec<RoutePoint>,
+    ) -> Result<Vec<HostEvent>, String> {
+        let events = self.state.apply(player, Command::Plan { offer, base, route })?;
+        Ok(self.apply(sim, events))
+    }
+
     /// A player's sortie ends from outside (aborted, or his flight model's crash), with the
     /// simulation's outcome codes.
     pub fn end_sortie(&mut self, sim: &mut Sim, player: PlayerId, outcome: u8) -> Vec<HostEvent> {
@@ -283,7 +308,9 @@ impl Host {
             let started = self.state.sortie(player).map_or(self.state.clock, |s| s.started);
             if let Ok(events) = self.state.apply(player, Command::EndSortie { end }) {
                 for ev in events {
-                    if let CampaignEvent::SortieFinished { record, .. } = ev {
+                    if let CampaignEvent::PlansChanged(_) = ev {
+                        out.push(HostEvent::Campaign(ev));
+                    } else if let CampaignEvent::SortieFinished { record, .. } = ev {
                         let news = self
                             .state
                             .log

@@ -1214,11 +1214,13 @@ impl MfdParams<'_, '_> {
             let p = map_to_screen(centre, zoom, k.east / 32.0, 0x8000 as f64 - k.north / 32.0);
             let (x, y) = (p.x as i32, p.y as i32);
             match k.kind {
-                ContactKind::Aircraft => c.fill_rect(x, y, 2, 2, if k.friendly { 9 } else { 41 }),
+                ContactKind::Aircraft => c.fill_rect(x, y, 2, 2, if k.friendly { 10 } else { 41 }),
                 ContactKind::Drone => c.fill_rect(x, y, 2, 1, 13),
                 ContactKind::Missile => c.set(x, y, 17),
-                ContactKind::GroundRadar => c.fill_rect(x, y, 2, 2, if k.friendly { 9 } else { 0 }),
-                ContactKind::Ship => c.fill_rect(x, y, 3, 1, if k.friendly { 9 } else { 13 }),
+                ContactKind::GroundRadar => {
+                    c.fill_rect(x, y, 2, 2, if k.friendly { 10 } else { 0 })
+                }
+                ContactKind::Ship => c.fill_rect(x, y, 3, 1, if k.friendly { 10 } else { 13 }),
                 ContactKind::Target if blink => c.fill_rect(x - 1, y - 1, 3, 3, 15),
                 ContactKind::Target => {}
             }
@@ -1356,10 +1358,10 @@ impl MfdParams<'_, '_> {
                 ContactKind::Aircraft => {
                     let rel = ct.heading.wrapping_sub(to_bam(h) as i32 as u16) as f32 / 65536.0
                         * std::f32::consts::TAU;
-                    // Friendly blue; hostile red level with us, dark red below, yellow above.
+                    // Friendly green; hostile red level with us, dark red below, yellow above.
                     let dalt = ct.alt - a.altitude;
                     let colour = if ct.friendly {
-                        9
+                        10
                     } else if dalt < -1000.0 {
                         40
                     } else if dalt > 1000.0 {
@@ -1381,7 +1383,7 @@ impl MfdParams<'_, '_> {
                 }
                 ContactKind::GroundRadar => tac_icon(c, TacIcon::Radar, x, y, k > 1),
                 ContactKind::Ship => {
-                    let colour = if ct.friendly { 9 } else { 41 };
+                    let colour = if ct.friendly { 10 } else { 41 };
                     c.hline(x - 2 * k, x + 2 * k, y, colour);
                     c.hline(x - k, x + k, y - 1, colour);
                 }
@@ -1644,7 +1646,7 @@ impl MfdParams<'_, '_> {
             let (x, y) = (p.x as i32, p.y as i32);
             match k.kind {
                 ContactKind::Aircraft => {
-                    c.fill_rect(x - 2, y - 2, 4, 4, if k.friendly { 9 } else { 41 })
+                    c.fill_rect(x - 2, y - 2, 4, 4, if k.friendly { 10 } else { 41 })
                 }
                 ContactKind::Drone => {
                     c.line(x - 2, y - 2, x + 2, y + 2, 13);
@@ -1652,10 +1654,10 @@ impl MfdParams<'_, '_> {
                 }
                 ContactKind::Missile => c.fill_rect(x - 1, y - 1, 2, 2, 17),
                 ContactKind::GroundRadar => {
-                    c.fill_rect(x - 2, y - 2, 4, 4, if k.friendly { 9 } else { 0 })
+                    c.fill_rect(x - 2, y - 2, 4, 4, if k.friendly { 10 } else { 0 })
                 }
                 ContactKind::Ship => {
-                    let colour = if k.friendly { 9 } else { 13 };
+                    let colour = if k.friendly { 10 } else { 13 };
                     c.fill_rect(x - 4, y, 9, 2, colour);
                     c.fill_rect(x - 2, y - 2, 5, 2, colour);
                 }

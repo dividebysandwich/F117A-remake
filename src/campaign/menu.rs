@@ -214,7 +214,7 @@ pub fn campaign_window(
             .show(ctx, |ui| {
                 ui.label(egui::RichText::new("DELETE THIS CAMPAIGN?").heading().color(BRIGHT));
                 ui.label(egui::RichText::new(&label).color(BRIGHT));
-                ui.label(egui::RichText::new("The save is gone for good.").color(DIM));
+                ui.label(egui::RichText::new("Deletion is permanent").color(DIM));
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.add(big_button("DELETE").fill(super::ops::EXIT_RED)).clicked() {

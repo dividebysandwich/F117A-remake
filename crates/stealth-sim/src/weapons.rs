@@ -330,37 +330,9 @@ impl Sim {
         self.emit(SimEvent::CancelTimeAccel);
         let Some(slot) = (8..12).rev().find(|&i| self.proj[i].ttl == 0) else { return };
         let mt = self.missile(spec).clone();
-        let fs = self.fs;
-        let mut ttl =
-            s16(cdiv((mt.lock_range as i32 * fs) << 5, ((mt.max_speed as i32) >> 6) + 1)) + 6;
-        if ttl <= 6 {
-            ttl = 999;
-        }
-        let mut pr = Projectile {
-            x: self.pl.p.mx,
-            y: self.pl.p.my,
-            alt: self.pl.p.view_z - 20,
-            speed: self.pl.p.velocity >> 10,
-            heading: self.pl.p.heading,
-            pitch: self.pl.p.pitch,
-            roll: self.pl.p.roll,
-            ttl,
-            spec,
-            weapon: w,
-            target: -1,
-            launcher: 0,
-            tgt_x: -1,
-            tgt_y: -1,
-            locked: false,
-            fall: None,
-            flight: None,
-            target_pilot: None,
-        };
+        let mut pr = self.launch_projectile(w, spec);
         if spec == 27 {
             self.pl.maverick_view = true;
-        }
-        if matches!(spec, 28 | 29 | 30 | 38) {
-            pr.speed >>= 1;
         }
         let gl = self.pl.gnd_lock;
         if gl >= 0 && (gl as usize) < self.objects.len() {
@@ -406,24 +378,62 @@ impl Sim {
             self.proj[slot].target_pilot = self.pl.pilot_lock.filter(|&k| self.pilot_airborne(k));
         }
         if self.guided(spec) {
-            // Off the aircraft along its nose with its speed (pull up to lob a missile).
-            let pos = [
-                self.pl.p.wx as f64,
-                (0x100000 - self.pl.p.wy) as f64,
-                self.pl.p.alt as f64 - 20.0,
-            ];
-            let vel = crate::guidance::direction(self.pl.p.heading, self.pl.p.pitch)
-                .map(|d| d * self.pl.p.velocity as f64 / 16.0);
             // An air-to-air missile goes for the radar's target.
             let lock = self.pl.air_lock;
             if mt.class == 7 && lock >= 0 && (lock as usize) < self.flights.len() {
                 self.proj[slot].target = lock;
             }
+            let (pos, vel) = self.launch_motion();
             self.start_flight(slot, pos, vel);
         }
         self.pl.last_missile_slot = slot as i32;
         self.msg(format!("{} fired", wt.long_name));
         self.sound(if mt.lock_range == 0 { 0x10 } else { 0x0D }, 2);
+    }
+
+    /// Store `w` (missile table entry `spec`) leaving the aircraft now, before its target is set.
+    pub(crate) fn launch_projectile(&self, w: i32, spec: i32) -> Projectile {
+        let mt = self.missile(spec);
+        let fs = self.fs;
+        let mut ttl =
+            s16(cdiv((mt.lock_range as i32 * fs) << 5, ((mt.max_speed as i32) >> 6) + 1)) + 6;
+        if ttl <= 6 {
+            ttl = 999;
+        }
+        let mut pr = Projectile {
+            x: self.pl.p.mx,
+            y: self.pl.p.my,
+            alt: self.pl.p.view_z - 20,
+            speed: self.pl.p.velocity >> 10,
+            heading: self.pl.p.heading,
+            pitch: self.pl.p.pitch,
+            roll: self.pl.p.roll,
+            ttl,
+            spec,
+            weapon: w,
+            target: -1,
+            launcher: 0,
+            tgt_x: -1,
+            tgt_y: -1,
+            locked: false,
+            fall: None,
+            flight: None,
+            target_pilot: None,
+        };
+        if matches!(spec, 28 | 29 | 30 | 38) {
+            pr.speed >>= 1;
+        }
+        pr
+    }
+
+    /// Where a missile under realistic guidance starts (wu: east, south, true altitude) and its
+    /// velocity: off the aircraft along its nose with its speed (pull up to lob a missile).
+    pub(crate) fn launch_motion(&self) -> ([f64; 3], [f64; 3]) {
+        let pos =
+            [self.pl.p.wx as f64, (0x100000 - self.pl.p.wy) as f64, self.pl.p.alt as f64 - 20.0];
+        let vel = crate::guidance::direction(self.pl.p.heading, self.pl.p.pitch)
+            .map(|d| d * self.pl.p.velocity as f64 / 16.0);
+        (pos, vel)
     }
 
     /// Release a countermeasure `kind`: 1 flare, 2 chaff, 3 decoy.

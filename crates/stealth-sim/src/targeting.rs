@@ -8,7 +8,7 @@ impl Sim {
     }
 
     /// Range (map units) and bearing (BAM) from the player to a map point.
-    fn range_bearing(&self, x: i32, y: i32) -> (i32, i32) {
+    pub(crate) fn range_bearing(&self, x: i32, y: i32) -> (i32, i32) {
         let dx = s16(x - self.pl.p.mx);
         let dy = s16(y - self.pl.p.my);
         (approx(dx, dy), bearing(dx, s16(-dy)))

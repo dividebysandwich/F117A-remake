@@ -112,7 +112,7 @@ const MAX_SECS: i32 = 150;
 /// Proximity fuse radius (wu): SAMs, air-to-air missiles and against ground targets.
 const FUSE_SAM: f64 = 110.0;
 const FUSE_AAM: f64 = 50.0;
-const FUSE_GROUND: f64 = 35.0;
+pub(crate) const FUSE_GROUND: f64 = 35.0;
 /// Speed at launch from the ground (wu/s) and height of the rail.
 const RAIL_SPEED: f64 = 150.0;
 const RAIL_HEIGHT: f64 = 5.0;
@@ -210,22 +210,8 @@ impl Sim {
     /// Starts the realistic flight of the missile just put in slot `s` at `pos` (wu: east,
     /// south, true altitude) with velocity `vel`.
     pub(crate) fn start_flight(&mut self, s: usize, pos: V3, vel: V3) {
-        let q = |a: f64| (a * ROUND_FINE as f64).round() as i32;
         let fs = self.fs;
-        let pm = &mut self.proj[s];
-        pm.flight = Some(MissileFlight {
-            x: q(pos[0]),
-            y: q(pos[1]),
-            alt: q(pos[2]),
-            vx: q(vel[0]),
-            vy: q(vel[1]),
-            vz: q(vel[2]),
-            t: 0,
-            smoke: profile(pm.spec).map_or(0, |p| (p.smoke * fs as f64).min(1e6) as i32),
-            loft: 0,
-        });
-        pm.ttl = MAX_SECS * fs;
-        pm.roll = 0;
+        start_flight(&mut self.proj[s], pos, vel, fs);
     }
 
     /// A SAM leaves site `site` in slot `s` for a target at `tgt`: off its rail toward the
@@ -270,121 +256,182 @@ impl Sim {
         guide: Option<Target>,
         fuse: Option<Target>,
     ) -> bool {
-        let m = self.proj[s];
-        let (Some(mut f), Some(prof)) = (m.flight, profile(m.spec)) else { return false };
-        let fs = self.fs.max(1) as f64;
-        let dt = 1.0 / fs;
-        let fine = ROUND_FINE as f64;
-        let vmax = ((self.missile(m.spec).max_speed as i32 >> 6) * 128) as f64;
-        let mut p = [f.x as f64 / fine, f.y as f64 / fine, f.alt as f64 / fine];
-        let mut v = [f.vx as f64 / fine, f.vy as f64 / fine, f.vz as f64 / fine];
-        let t = f.t as f64 / fs;
-        let speed = len(v);
-        let vh = if speed > 1.0 { mul(v, 1.0 / speed) } else { direction(m.heading, m.pitch) };
-        let sigma = density(p[2]);
-
-        // Lateral acceleration: carry the weight, then the loft or the navigation.
-        let lift = (sigma * (speed / FULL_LIFT_SPEED).powi(2)).clamp(MIN_LIFT, 1.0);
-        let a_max = prof.g * GRAVITY * lift;
-        let up = [0.0, 0.0, 1.0];
-        let mut cmd = mul(up, GRAVITY);
-        if t >= straight_secs(m.spec)
-            && let Some(tg) = guide
-        {
-            let r = sub(tg.p, p);
-            if f.loft != 0 {
-                let loft = f.loft as f64 / BAM;
-                let range = r[0].hypot(r[1]);
-                let elev = r[2].atan2(range);
-                // Push over toward the target once turning down to it would take a good part
-                // of the time left (the missile turns slowly up high), or when the target has
-                // climbed above the loft path.
-                let turn = (vh[2].clamp(-1.0, 1.0).asin() - elev).max(0.0) * speed / a_max;
-                let to_go = len(r) / speed.max(1.0);
-                if range < 1.0 || elev > loft || (t > prof.boost && turn > PUSHOVER * to_go) {
-                    f.loft = 0;
-                } else {
-                    let want = [r[0] / range * loft.cos(), r[1] / range * loft.cos(), loft.sin()];
-                    cmd = add(cmd, mul(across(want, vh), speed * LOFT_GAIN));
-                }
-            }
-            if f.loft == 0 {
-                // Pure proportional navigation: the velocity turns N times as fast as the line
-                // of sight.
-                let omega = mul(cross(r, sub(tg.v, v)), 1.0 / dot(r, r).max(1.0));
-                cmd = add(cmd, mul(cross(omega, v), PN_GAIN));
-            }
-        }
-        let mut a_lat = across(cmd, vh);
-        let a = len(a_lat);
-        if a > a_max {
-            a_lat = mul(a_lat, a_max / a);
-        }
-
-        // Along the flight path: thrust while the motor burns, drag.
-        let drag = DRAG * sigma * speed * speed + INDUCED * len(a_lat);
-        let thrust = if t < prof.burn {
-            let most = vmax / prof.boost + DRAG * sigma * vmax * vmax + GRAVITY;
-            ((vmax - speed) / 0.5 + drag + GRAVITY * vh[2]).clamp(0.0, most)
-        } else {
-            0.0
-        };
-        let acc = add(add(a_lat, mul(vh, thrust - drag)), [0.0, 0.0, -GRAVITY]);
-        let p0 = p;
-        v = add(v, mul(acc, dt));
-        p = add(p, mul(v, dt));
-        f.t += 1;
-        f.smoke = (f.smoke - 1).max(0);
-
-        // Proximity fuse: the closest approach during the step (the target goes on from where
-        // it is now, like the missile).
-        let radius = if s >= 8 && self.missile(m.spec).class != 7 {
+        let spec = self.proj[s].spec;
+        let vmax = self.guided_vmax(spec);
+        let radius = if s >= 8 && self.missile(spec).class != 7 {
             FUSE_GROUND
-        } else if s < 8 && m.launcher > 2 {
+        } else if s < 8 && self.proj[s].launcher > 2 {
             // Site launchers are object indices > 2, aircraft are -flight index.
             FUSE_SAM
         } else {
             FUSE_AAM
         };
-        let fused = fuse.is_some_and(|tg| {
-            let a = sub(p0, tg.p);
-            let b = sub(p, add(tg.p, mul(tg.v, dt)));
-            let d = sub(b, a);
-            let k = (-dot(a, d) / dot(d, d).max(1e-9)).clamp(0.0, 1.0);
-            len(add(a, mul(d, k))) < radius
-        });
+        let fs = self.fs;
+        match flight_step(&mut self.proj[s], vmax, radius, fs, guide, fuse) {
+            Step::Fused => true,
+            Step::Flying => false,
+            Step::Ground => {
+                self.ground_impact(s);
+                false
+            }
+            Step::Spent => {
+                self.proj[s].ttl = 0;
+                false
+            }
+        }
+    }
 
-        // Back into the record.
-        let speed = len(v);
-        let q = |a: f64| (a * fine).round() as i32;
-        let pm = &mut self.proj[s];
-        f.x = q(p[0]);
-        f.y = q(p[1]);
-        f.alt = q(p[2]);
-        f.vx = q(v[0]);
-        f.vy = q(v[1]);
-        f.vz = q(v[2]);
-        pm.flight = Some(f);
-        pm.x = ((p[0] / 32.0).floor() as i32) & 0xFFFF;
-        pm.y = ((p[1] / 32.0).floor() as i32) & 0xFFFF;
-        pm.alt = view_z_f(p[2]) as i32;
-        pm.speed = (speed / 128.0).round() as i32;
-        if v[0].hypot(v[1]) > 1.0 {
-            pm.heading = s16((v[0].atan2(-v[1]) * BAM) as i32);
+    /// Top speed (wu/s) of a missile of type `spec` under realistic guidance.
+    pub(crate) fn guided_vmax(&self, spec: i32) -> f64 {
+        ((self.missile(spec).max_speed as i32 >> 6) * 128) as f64
+    }
+}
+
+/// Starts the realistic flight of missile `pm` at `pos` (wu: east, south, true altitude) with
+/// velocity `vel`.
+pub(crate) fn start_flight(pm: &mut Projectile, pos: V3, vel: V3, fs: i32) {
+    let q = |a: f64| (a * ROUND_FINE as f64).round() as i32;
+    pm.flight = Some(MissileFlight {
+        x: q(pos[0]),
+        y: q(pos[1]),
+        alt: q(pos[2]),
+        vx: q(vel[0]),
+        vy: q(vel[1]),
+        vz: q(vel[2]),
+        t: 0,
+        smoke: profile(pm.spec).map_or(0, |p| (p.smoke * fs as f64).min(1e6) as i32),
+        loft: 0,
+    });
+    pm.ttl = MAX_SECS * fs;
+    pm.roll = 0;
+}
+
+/// How a frame of a realistic flight ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Step {
+    Flying,
+    /// The proximity fuse went off.
+    Fused,
+    /// It hit the ground (`alt` is -1).
+    Ground,
+    /// Out of energy after burnout.
+    Spent,
+}
+
+/// One frame of the realistic flight of `pm` with top speed `vmax` (wu/s) and fuse `radius`:
+/// steers for `guide`, moves and checks the fuse against `fuse`.
+pub(crate) fn flight_step(
+    pm: &mut Projectile,
+    vmax: f64,
+    radius: f64,
+    fs: i32,
+    guide: Option<Target>,
+    fuse: Option<Target>,
+) -> Step {
+    let m = *pm;
+    let (Some(mut f), Some(prof)) = (m.flight, profile(m.spec)) else { return Step::Flying };
+    let fs = fs.max(1) as f64;
+    let dt = 1.0 / fs;
+    let fine = ROUND_FINE as f64;
+    let mut p = [f.x as f64 / fine, f.y as f64 / fine, f.alt as f64 / fine];
+    let mut v = [f.vx as f64 / fine, f.vy as f64 / fine, f.vz as f64 / fine];
+    let t = f.t as f64 / fs;
+    let speed = len(v);
+    let vh = if speed > 1.0 { mul(v, 1.0 / speed) } else { direction(m.heading, m.pitch) };
+    let sigma = density(p[2]);
+    // Lateral acceleration: carry the weight, then the loft or the navigation.
+    let lift = (sigma * (speed / FULL_LIFT_SPEED).powi(2)).clamp(MIN_LIFT, 1.0);
+    let a_max = prof.g * GRAVITY * lift;
+    let up = [0.0, 0.0, 1.0];
+    let mut cmd = mul(up, GRAVITY);
+    if t >= straight_secs(m.spec)
+        && let Some(tg) = guide
+    {
+        let r = sub(tg.p, p);
+        if f.loft != 0 {
+            let loft = f.loft as f64 / BAM;
+            let range = r[0].hypot(r[1]);
+            let elev = r[2].atan2(range);
+            // Push over toward the target once turning down to it would take a good part
+            // of the time left (the missile turns slowly up high), or when the target has
+            // climbed above the loft path.
+            let turn = (vh[2].clamp(-1.0, 1.0).asin() - elev).max(0.0) * speed / a_max;
+            let to_go = len(r) / speed.max(1.0);
+            if range < 1.0 || elev > loft || (t > prof.boost && turn > PUSHOVER * to_go) {
+                f.loft = 0;
+            } else {
+                let want = [r[0] / range * loft.cos(), r[1] / range * loft.cos(), loft.sin()];
+                cmd = add(cmd, mul(across(want, vh), speed * LOFT_GAIN));
+            }
         }
-        pm.pitch = s16((v[2].atan2(v[0].hypot(v[1])) * BAM) as i32);
-        pm.roll = 0;
-        pm.ttl -= 1;
-        if p[2] < 0.0 && !fused {
-            pm.alt = -1;
-            self.ground_impact(s);
-            return false;
+        if f.loft == 0 {
+            // Pure proportional navigation: the velocity turns N times as fast as the line
+            // of sight.
+            let omega = mul(cross(r, sub(tg.v, v)), 1.0 / dot(r, r).max(1.0));
+            cmd = add(cmd, mul(cross(omega, v), PN_GAIN));
         }
-        if !fused && t > prof.burn && speed < MIN_SPEED {
-            // Out of energy: the missile is spent.
-            self.proj[s].ttl = 0;
-        }
-        fused
+    }
+    let mut a_lat = across(cmd, vh);
+    let a = len(a_lat);
+    if a > a_max {
+        a_lat = mul(a_lat, a_max / a);
+    }
+
+    // Along the flight path: thrust while the motor burns, drag.
+    let drag = DRAG * sigma * speed * speed + INDUCED * len(a_lat);
+    let thrust = if t < prof.burn {
+        let most = vmax / prof.boost + DRAG * sigma * vmax * vmax + GRAVITY;
+        ((vmax - speed) / 0.5 + drag + GRAVITY * vh[2]).clamp(0.0, most)
+    } else {
+        0.0
+    };
+    let acc = add(add(a_lat, mul(vh, thrust - drag)), [0.0, 0.0, -GRAVITY]);
+    let p0 = p;
+    v = add(v, mul(acc, dt));
+    p = add(p, mul(v, dt));
+    f.t += 1;
+    f.smoke = (f.smoke - 1).max(0);
+
+    // Proximity fuse: the closest approach during the step (the target goes on from where
+    // it is now, like the missile).
+    let fused = fuse.is_some_and(|tg| {
+        let a = sub(p0, tg.p);
+        let b = sub(p, add(tg.p, mul(tg.v, dt)));
+        let d = sub(b, a);
+        let k = (-dot(a, d) / dot(d, d).max(1e-9)).clamp(0.0, 1.0);
+        len(add(a, mul(d, k))) < radius
+    });
+
+    // Back into the record.
+    let speed = len(v);
+    let q = |a: f64| (a * fine).round() as i32;
+    f.x = q(p[0]);
+    f.y = q(p[1]);
+    f.alt = q(p[2]);
+    f.vx = q(v[0]);
+    f.vy = q(v[1]);
+    f.vz = q(v[2]);
+    pm.flight = Some(f);
+    pm.x = ((p[0] / 32.0).floor() as i32) & 0xFFFF;
+    pm.y = ((p[1] / 32.0).floor() as i32) & 0xFFFF;
+    pm.alt = view_z_f(p[2]) as i32;
+    pm.speed = (speed / 128.0).round() as i32;
+    if v[0].hypot(v[1]) > 1.0 {
+        pm.heading = s16((v[0].atan2(-v[1]) * BAM) as i32);
+    }
+    pm.pitch = s16((v[2].atan2(v[0].hypot(v[1])) * BAM) as i32);
+    pm.roll = 0;
+    pm.ttl -= 1;
+    if fused {
+        Step::Fused
+    } else if p[2] < 0.0 {
+        pm.alt = -1;
+        Step::Ground
+    } else if t > prof.burn && speed < MIN_SPEED {
+        // Out of energy: the missile is spent.
+        Step::Spent
+    } else {
+        Step::Flying
     }
 }
 

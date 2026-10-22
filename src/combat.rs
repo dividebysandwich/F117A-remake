@@ -141,6 +141,8 @@ pub struct Combat {
     /// Number of sim frames run this frame.
     pub steps: u32,
     sim_waypoint: i32,
+    /// The selected air-to-ground missile's launch zone and the sim frame it was found in.
+    launch_zone: (i32, Option<stealth_sim::dlz::LaunchZone>),
     pub end: Option<EndInfo>,
     flight_end_timer: f32,
     lockheed: bool,
@@ -365,6 +367,7 @@ fn start_combat(
         wreck: None,
         steps: 0,
         sim_waypoint: 0,
+        launch_zone: (-1, None),
         end: None,
         flight_end_timer: 0.0,
         lockheed: m.settings.plane == stealth_mission::Plane::Lockheed,
@@ -960,6 +963,11 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
     let o = combat.sim.objectives();
     let waypoint_changed = o.waypoint != combat.sim_waypoint;
     combat.sim_waypoint = o.waypoint;
+    // Flying the missile out takes a while: once per sim frame.
+    let frame = combat.sim.frame();
+    if combat.launch_zone.0 != frame {
+        combat.launch_zone = (frame, combat.sim.launch_zone());
+    }
     let combat = &*combat;
     let Outputs {
         mut player,
@@ -1404,6 +1412,16 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         });
         new_cues.lock = t.lock_valid;
         new_cues.in_range = t.in_range;
+        new_cues.launch_zone = combat.launch_zone.1.filter(|_| hud.mode == HudMode::Gnd).map(|z| {
+            let km = |mu: i32| mu as f32 * 32.0 * WU as f32 / 1000.0;
+            crate::hud::LaunchZoneCue {
+                range_km: km(z.range),
+                scale_km: km(z.lock_max),
+                zone_km: z.zone.map(|(lo, hi)| (km(lo), km(hi))),
+                shoot: z.in_zone() && t.lock_valid,
+                too_close: z.too_close(),
+            }
+        });
         if sim.gun_selected() {
             // The locked aircraft (position and velocity over the last sim frame) or ground
             // object, else a target 1000 m ahead flying along with the aircraft.

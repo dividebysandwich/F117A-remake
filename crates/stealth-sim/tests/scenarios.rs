@@ -1418,3 +1418,73 @@ fn photo_cue_guides_to_the_recon_target() {
     assert!(sim.objectives().primary_done);
     assert_eq!(sim.targeting().photo, None);
 }
+
+/// A Maverick fired from 3000 ft at a target `range` map units northeast (classic guidance
+/// does not steer for a bearing of exactly north), the nose on it: the
+/// launch zone at the shot and whether it hit (None: no lock from there).
+fn maverick_shot(guided: bool, range: i32) -> Option<(dlz::LaunchZone, bool)> {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let opts = SimOptions { realistic_guidance: guided, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    sim.set_training(true);
+    sim.set_loadout(&[(5, 2)]);
+    let t = 5;
+    {
+        let o = &mut sim.objects_mut()[t];
+        let diag = (range as f64 / std::f64::consts::SQRT_2).round() as i32;
+        o.x = mx + diag;
+        o.y = my - diag;
+        o.flags = 0;
+    }
+    let mut p = player_at(mx, my, 3000, 0x2000, 450);
+    p.hud_mode = HudMode::Gnd;
+    p.cmd.toggle_bay = true;
+    p.cmd.lock_object = Some(t as u16);
+    for _ in 0..4 {
+        sim.step(&p, 15);
+        p.cmd = Commands::default();
+    }
+    // Nose down onto the target until the oval locks.
+    (0..96).map(|k| -k * 64).find(|&pitch| {
+        p.pitch = pitch as i16;
+        sim.step(&p, 15);
+        sim.targeting().lock_valid
+    })?;
+    let zone = sim.launch_zone().expect("launch zone");
+    p.cmd.fire = true;
+    let mut hit = false;
+    for _ in 0..15 * 90 {
+        for e in sim.step(&p, 15) {
+            if let SimEvent::Message(s) = e {
+                hit |= s.contains("hit by AGM-65");
+            }
+        }
+        p.cmd = Commands::default();
+    }
+    Some((zone, hit))
+}
+
+#[test]
+fn launch_zone_predicts_maverick_hits() {
+    for guided in [false, true] {
+        let shots: Vec<_> =
+            (1..=40).filter_map(|k| maverick_shot(guided, k * 50).map(|s| (k * 50, s))).collect();
+        assert!(shots.len() > 20, "guided {guided}: {} locks", shots.len());
+        let mut hits = 0;
+        for &(range, (z, hit)) in &shots {
+            let (lo, hi) = z.zone.expect("a zone");
+            assert!(hi <= z.lock_max, "guided {guided}: {z:?}");
+            assert!((z.range - range).abs() <= range / 10 + 2, "{z:?}");
+            // Right but for the edges.
+            let near_edge = (z.range - lo).abs() < 30 || (z.range - hi).abs() < 30;
+            assert!(
+                z.in_zone() == hit || near_edge,
+                "guided {guided} range {range}: {z:?} hit {hit}"
+            );
+            hits += hit as i32;
+        }
+        assert!(hits > 5, "guided {guided}: {hits} hits");
+    }
+}

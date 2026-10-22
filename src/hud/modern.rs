@@ -576,6 +576,35 @@ fn launch_zone(c: &mut Canvas, f: &HudFrame) {
     }
 }
 
+/// AG dynamic launch zone right of the boresight, clear of the altitude readout: the scale up to the range
+/// the seeker locks on from, the zone from the shortest to the longest range bracketed beside
+/// it and the target range caret.
+fn ag_launch_zone(c: &mut Canvas, z: &super::LaunchZoneCue) {
+    let (x, top, bottom) = (820.0, CY - 100.0, CY + 100.0);
+    let full = z.scale_km.max(0.1);
+    let y = |r: f32| bottom - (r / full).clamp(0.0, 1.0) * (bottom - top);
+    c.stroke(Vec2::new(x, top), Vec2::new(x, bottom), THIN, INK);
+    for yy in [top, bottom] {
+        c.stroke(Vec2::new(x, yy), Vec2::new(x + 6.0, yy), THIN, INK);
+    }
+    small(c, x + 6.0, top - 14.0, &format!("{full:.0}"), Align::Centre);
+    if let Some((lo, hi)) = z.zone_km {
+        let (a, b) = (Vec2::new(x + 14.0, y(hi)), Vec2::new(x + 14.0, y(lo)));
+        c.polyline(&[Vec2::new(x, a.y), a, b, Vec2::new(x, b.y)], PEN, INK);
+    }
+    let yy = y(z.range_km);
+    c.polyline(
+        &[
+            Vec2::new(x - 2.0, yy),
+            Vec2::new(x - 12.0, yy - 6.0),
+            Vec2::new(x - 12.0, yy + 6.0),
+            Vec2::new(x - 2.0, yy),
+        ],
+        PEN,
+        INK,
+    );
+}
+
 /// "m:ss" of seconds (0 and up).
 fn min_sec(secs: f32) -> String {
     let s = secs.max(0.0).round() as i32;
@@ -635,12 +664,25 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2, down: Vec2) {
         let s = 16.0;
         c.frame(q - Vec2::splat(s), q + Vec2::splat(s), PEN, INK);
         c.ring(q, 1.5, PEN, INK);
-        if cues.lock && cues.in_range {
-            small(c, q.x, q.y - s - 14.0, "IN RNG", Align::Centre);
+        match cues.launch_zone {
+            Some(z) if z.shoot => {
+                if f.blink {
+                    small(c, q.x, q.y - s - 14.0, "SHOOT", Align::Centre);
+                }
+            }
+            Some(z) if z.too_close => small(c, q.x, q.y - s - 14.0, "TOO CLOSE", Align::Centre),
+            Some(_) => {}
+            None if cues.lock && cues.in_range => {
+                small(c, q.x, q.y - s - 14.0, "IN RNG", Align::Centre)
+            }
+            None => {}
         }
         if let Some(r) = f.target_range_km {
             small(c, q.x, q.y + s + 16.0, &format!("{r:.1}"), Align::Centre);
         }
+    }
+    if let Some(z) = &cues.launch_zone {
+        ag_launch_zone(c, z);
     }
     let bomb = cues.bomb;
     if let Some(dir) = cues.ccip_dir.filter(|_| bomb.is_none_or(|b| !b.ccrp)) {
@@ -798,6 +840,41 @@ mod tests {
             release_secs: Some(8.0),
         });
         assert!(ink(&f) > asl, "solution cue");
+    }
+
+    #[test]
+    fn draws_the_air_to_ground_launch_zone() {
+        let ink = |f: &HudFrame| {
+            let mut c = Canvas::new(WIDTH, HEIGHT);
+            draw(&mut c, f);
+            c.px.iter().filter(|&&p| p != 0).count()
+        };
+        let mut f = frame(HudMode::Gnd);
+        f.blink = true;
+        f.cues.target_dir = Some(Vec3::new(0.05, -0.2, -1.0));
+        let plain = ink(&f);
+        let mut z = crate::hud::LaunchZoneCue {
+            range_km: 20.0,
+            scale_km: 28.0,
+            zone_km: None,
+            shoot: false,
+            too_close: false,
+        };
+        f.cues.launch_zone = Some(z);
+        let scale = ink(&f);
+        assert!(scale > plain);
+        z.zone_km = Some((3.0, 25.0));
+        f.cues.launch_zone = Some(z);
+        let zone = ink(&f);
+        assert!(zone > scale);
+        z.shoot = true;
+        f.cues.launch_zone = Some(z);
+        assert!(ink(&f) > zone, "SHOOT");
+        z.shoot = false;
+        z.too_close = true;
+        z.range_km = 1.0;
+        f.cues.launch_zone = Some(z);
+        assert!(ink(&f) > zone, "TOO CLOSE");
     }
 
     #[test]

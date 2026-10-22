@@ -9,12 +9,8 @@ impl Sim {
     /// success. Optical seekers also need a line of sight through the clouds (`talt` viewZ).
     fn acquire(&mut self, s: usize, tx: i32, ty: i32, talt: i32, cls: i32) -> bool {
         let m = self.proj[s];
-        let dx = s16(tx - m.x);
-        let dy = s16(ty - m.y);
-        let r = approx(dx, dy);
-        let aim = bearing(dx, s16(-dy));
+        let (r, aim, off) = seeker_geometry(&m, tx, ty);
         self.acq_aim = aim;
-        let off = abs16(s16(aim - m.heading));
         if off > 0x1000 && cls != 3 {
             if off > 0x6000 && s < 8 && m.speed < r {
                 self.proj[s].ttl = 0;
@@ -343,57 +339,22 @@ impl Sim {
             };
             // The fuse goes off near the player whatever the seeker sees, and at the decoy it
             // steers for (harmlessly; a missile that cannot reach it would circle it).
-            let fuse = if s < 8 && !self.decoy_active() { Some(self.player_target()) } else { target };
+            let fuse =
+                if s < 8 && !self.decoy_active() { Some(self.player_target()) } else { target };
             let fused = self.fly_guided(s, target.filter(|_| locked && aim != 0), fuse);
             if self.proj[s].ttl == 0 {
                 return;
             }
             fused
         } else {
-            let diff = self.diff;
-            let turn = mt.turn as i32;
-            let m = &mut self.proj[s];
-            m.locked = locked;
-            if aim != 0 && locked {
-                let mut d = s16(aim - m.heading);
-                if s < 8 {
-                    d = clamp_q(d, -(diff + 1) << 8, (diff + 1) << 8);
-                }
-                d = clamp_q(d, -turn << 7, turn << 7);
-                m.heading = s16(m.heading + cdiv(d * 4, fs));
-                m.roll = s16(d * 2);
-                let ab = best.abs();
-                let pa = if s < 8 && best < 0x400 {
-                    bearing(s16(alt0 - m.alt) >> 4, ab)
-                } else {
-                    bearing((s16(alt0 - m.alt) >> 5) + if ab > 0x140 { ab >> 3 } else { 0 }, ab)
-                };
-                let mut dp = s16(pa - m.pitch);
-                if s < 8 {
-                    dp = clamp_q(dp, -(diff + 1) << 9, (diff + 1) << 9);
-                }
-                dp = clamp_q(dp, -turn << 8, turn << 8);
-                m.pitch = s16(m.pitch + cdiv(dp * 4, fs));
-            } else if m.pitch > 0 && m.spec != 30 {
-                m.pitch = s16(m.pitch - cdiv(sign(m.pitch) * 0x800, fs));
-            }
-            if m.spec == 28 {
-                m.pitch = m.pitch.min(-0x800);
-            }
-            if m.spec == 30 || m.alt == 1 {
-                m.pitch = s16(m.pitch - cdiv(0x800, fs)).max(s16(m.launcher));
-            }
-            let step = cdiv(self.trig.cos_mul(m.pitch, m.speed) * 4, fs);
-            m.x = (m.x + self.trig.sin_mul(m.heading, step)) & 0xFFFF;
-            m.y = (m.y - self.trig.cos_mul(m.heading, step)) & 0xFFFF;
-            m.alt += self.trig.sin_mul(m.pitch, cdiv(m.speed << 7, fs));
-            m.ttl -= 1;
+            let mut m = self.proj[s];
+            let fused = self.classic_step(&mut m, s < 8, locked, aim, best, alt0);
+            self.proj[s] = m;
             // Terrain contact: flat world, objects are not tested.
-            if self.proj[s].alt < 0 {
+            if m.alt < 0 {
                 self.ground_impact(s);
             }
-            let m = self.proj[s];
-            locked && (s16(alt0 - m.alt).abs() >> 5) + best < cdiv(m.speed << 3, fs)
+            fused
         };
         // Proximity fuse.
         let m = self.proj[s];
@@ -460,6 +421,58 @@ impl Sim {
                 self.msg(format!("{text} hit by {}", mt.name));
             }
         }
+    }
+
+    /// One frame of the classic flight of missile `m` (an enemy missile when `enemy`): turns
+    /// toward `aim` when `locked` (the target `best` map units away at viewZ `alt0`) and moves.
+    /// True when the fuse goes off.
+    pub(crate) fn classic_step(
+        &self,
+        m: &mut Projectile,
+        enemy: bool,
+        locked: bool,
+        aim: i32,
+        best: i32,
+        alt0: i32,
+    ) -> bool {
+        let (diff, fs) = (self.diff, self.fs);
+        let turn = self.missile(m.spec).turn as i32;
+        m.locked = locked;
+        if aim != 0 && locked {
+            let mut d = s16(aim - m.heading);
+            if enemy {
+                d = clamp_q(d, -(diff + 1) << 8, (diff + 1) << 8);
+            }
+            d = clamp_q(d, -turn << 7, turn << 7);
+            m.heading = s16(m.heading + cdiv(d * 4, fs));
+            m.roll = s16(d * 2);
+            let ab = best.abs();
+            let pa = if enemy && best < 0x400 {
+                bearing(s16(alt0 - m.alt) >> 4, ab)
+            } else {
+                bearing((s16(alt0 - m.alt) >> 5) + if ab > 0x140 { ab >> 3 } else { 0 }, ab)
+            };
+            let mut dp = s16(pa - m.pitch);
+            if enemy {
+                dp = clamp_q(dp, -(diff + 1) << 9, (diff + 1) << 9);
+            }
+            dp = clamp_q(dp, -turn << 8, turn << 8);
+            m.pitch = s16(m.pitch + cdiv(dp * 4, fs));
+        } else if m.pitch > 0 && m.spec != 30 {
+            m.pitch = s16(m.pitch - cdiv(sign(m.pitch) * 0x800, fs));
+        }
+        if m.spec == 28 {
+            m.pitch = m.pitch.min(-0x800);
+        }
+        if m.spec == 30 || m.alt == 1 {
+            m.pitch = s16(m.pitch - cdiv(0x800, fs)).max(s16(m.launcher));
+        }
+        let step = cdiv(self.trig.cos_mul(m.pitch, m.speed) * 4, fs);
+        m.x = (m.x + self.trig.sin_mul(m.heading, step)) & 0xFFFF;
+        m.y = (m.y - self.trig.cos_mul(m.heading, step)) & 0xFFFF;
+        m.alt += self.trig.sin_mul(m.pitch, cdiv(m.speed << 7, fs));
+        m.ttl -= 1;
+        locked && (s16(alt0 - m.alt).abs() >> 5) + best < cdiv(m.speed << 3, fs)
     }
 
     /// A ballistic bomb's frame: it moves along its path ([`ballistics`]) and lands where the
@@ -566,4 +579,12 @@ impl Sim {
             c.ttl -= 1;
         }
     }
+}
+
+/// Range (map units), bearing and angle off the heading of (tx, ty) from missile `m`.
+pub(crate) fn seeker_geometry(m: &Projectile, tx: i32, ty: i32) -> (i32, i32, i32) {
+    let dx = s16(tx - m.x);
+    let dy = s16(ty - m.y);
+    let aim = bearing(dx, s16(-dy));
+    (approx(dx, dy), aim, abs16(s16(aim - m.heading)))
 }

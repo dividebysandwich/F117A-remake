@@ -11,6 +11,7 @@ pub mod types;
 mod ai;
 pub mod csar;
 mod damage;
+pub mod dlz;
 pub mod drones;
 pub mod guidance;
 pub mod lights;

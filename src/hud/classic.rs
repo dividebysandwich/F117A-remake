@@ -150,6 +150,9 @@ fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8,
     if let Some((loc, gs)) = f.ils {
         ils_cross(c, f, loc, gs, col);
     }
+    if let Some(z) = f.cues.launch_zone.filter(|_| st.mode == HudMode::Gnd) {
+        launch_zone(c, fonts, &z, f.blink, col);
+    }
     // Recon target locked: how close the camera has to get, under the message line.
     if let Some(r) = &f.cues.recon {
         let s = r.text("CAMERA");
@@ -160,6 +163,35 @@ fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8,
         let s = upper(m);
         fonts.text(c, 160 - 2 * (s.len() as i32 & !1), 20, &s, col);
     }
+}
+
+/// AG dynamic launch zone: a scale left of the altitude tape up to the range the seeker locks
+/// on from, the zone bracketed beside it and the target range caret; SHOOT (blinking) in the
+/// zone with the lock or TOO CLOSE inside it, under the message and recon lines.
+fn launch_zone(c: &mut Canvas, fonts: &Fonts, z: &super::LaunchZoneCue, blink: bool, col: u8) {
+    let (x, top, bottom) = (228, 58, 82);
+    let full = z.scale_km.max(0.1);
+    let y = |r: f32| bottom - ((r / full).clamp(0.0, 1.0) * (bottom - top) as f32).round() as i32;
+    c.line(x, top, x, bottom, col);
+    c.line(x, top, x + 1, top, col);
+    c.line(x, bottom, x + 1, bottom, col);
+    if let Some((lo, hi)) = z.zone_km {
+        let (a, b) = (y(hi), y(lo));
+        c.line(x, a, x + 3, a, col);
+        c.line(x + 3, a, x + 3, b, col);
+        c.line(x, b, x + 3, b, col);
+    }
+    let yy = y(z.range_km);
+    c.line(x - 3, yy - 2, x - 1, yy, col);
+    c.line(x - 3, yy + 2, x - 1, yy, col);
+    let text: &[u8] = if z.shoot && blink {
+        b"SHOOT"
+    } else if z.too_close {
+        b"TOO CLOSE"
+    } else {
+        return;
+    };
+    fonts.text(c, 160 - 2 * (text.len() as i32 & !1), 36, text, col);
 }
 
 /// Ellipse outline (16 segments) around (x, y).

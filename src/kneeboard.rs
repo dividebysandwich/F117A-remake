@@ -714,7 +714,8 @@ fn draw(
             let t = &m.primary;
             let mut w = Writer { c, y: TABS + 34.0 };
             w.para(&format!("{} - {}", t.type_name, t.place_name), GREEN);
-            w.para(&b.primary_objective, WHITE);
+            w.para(&format!("PRIMARY: {}", b.primary_objective), WHITE);
+            w.para(&format!("SECONDARY: {}", b.secondary_objective), CYAN);
             // Recon photos of the primary and the secondary target, side by side.
             let top = w.y as i32 - 6;
             let c = w.c;

@@ -105,6 +105,11 @@ pub fn campaign_window(
                 ui.set_width(190.0);
                 crate::menu::aircraft_options(ui, &mut settings, None);
                 crate::menu::realism_options(ui, &mut settings);
+                ui.label(
+                    egui::RichText::new("A saved campaign keeps the rules it was started with")
+                        .small()
+                        .color(DIM),
+                );
             });
             ui.vertical(|ui| {
                 ui.set_width(200.0);

@@ -1,7 +1,7 @@
 //! The settings that decide how the war is fought: the host's, for everybody in a session.
 
 use serde::{Deserialize, Serialize};
-use stealth_campaign::Aircraft;
+use stealth_campaign::{Aircraft, CampaignRules};
 use stealth_sim::{LandingMode, SimOptions};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -19,6 +19,32 @@ pub struct Rules {
     /// The players' missiles and gunfire damage each other.
     #[serde(default)]
     pub friendly_fire: bool,
+}
+
+impl From<CampaignRules> for Rules {
+    fn from(r: CampaignRules) -> Self {
+        Self {
+            realistic_damage: r.realistic_damage,
+            realistic_guidance: r.realistic_guidance,
+            no_crashes: r.no_crashes,
+            continuous_time: r.continuous_time,
+            realistic_weapons: r.realistic_weapons,
+            friendly_fire: r.friendly_fire,
+        }
+    }
+}
+
+impl From<Rules> for CampaignRules {
+    fn from(r: Rules) -> Self {
+        Self {
+            realistic_damage: r.realistic_damage,
+            realistic_guidance: r.realistic_guidance,
+            no_crashes: r.no_crashes,
+            continuous_time: r.continuous_time,
+            realistic_weapons: r.realistic_weapons,
+            friendly_fire: r.friendly_fire,
+        }
+    }
 }
 
 impl Rules {

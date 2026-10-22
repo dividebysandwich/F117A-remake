@@ -236,6 +236,7 @@ impl Server {
                 host.take_mission(sim, p, offer, base, aircraft, stores)
             }
             (ToServer::OrderInsertion { place }, Some(p)) => host.order_insertion(sim, p, place),
+            (ToServer::RequestSupport { offer }, Some(p)) => host.request_support(sim, p, offer),
             (ToServer::Select { offer, base }, Some(p)) => host.select(sim, p, offer, base),
             (ToServer::Plan { offer, base, route }, Some(p)) => {
                 host.edit_plan(sim, p, offer, base, route)

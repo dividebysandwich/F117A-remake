@@ -115,3 +115,84 @@ fn friendly_air_defences_stand_from_the_start() {
         assert_eq!(blue(&sim, AaaKind::PatriotRadar), batteries, "{code}");
     }
 }
+
+/// The enemy's offensive played out in the simulation: its raid and its insertion end one way
+/// or the other (the strike aircraft bomb or are stopped, the Hinds land or are shot down).
+#[test]
+fn the_enemy_offensive_plays_out() {
+    use stealth_campaign::{InsertionState, RaidState, Side, tuning};
+    let s = CampaignSetup { opponents: 3, ..setup("ce") };
+    let data = theater::game_data().unwrap();
+    let sim_data = theater::sim_data(s.theater, "ce").unwrap();
+    let mut host = Host::new(s, &data, Rules::default()).unwrap();
+    let mut sim = host.new_sim(&sim_data);
+    host.begin(&mut sim);
+    // Both due at once.
+    host.state.raid_at = -tuning::RAID_EVERY[3];
+    host.state.enemy_insert_at = -tuning::ENEMY_INSERT_EVERY[3];
+    for _ in 0..15 * 60 * 60 {
+        let e = sim.step_pilots(&[], 15);
+        let mut e2 = host.take_sim_events(&mut sim);
+        e2.extend(e);
+        host.tick(&mut sim, 1.0 / 15.0, &e2);
+        let raid = host.state.raids.first().map(|r| r.state);
+        let ins = host.state.insertions.iter().find(|i| i.side == Side::Red).map(|i| i.state);
+        let done = |s: Option<bool>| s == Some(true);
+        if done(raid.map(|r| matches!(r, RaidState::Hit | RaidState::Repelled)))
+            && done(ins.map(|i| matches!(i, InsertionState::Captured | InsertionState::Failed)))
+        {
+            return;
+        }
+    }
+    panic!(
+        "not over in an hour: raids {:?}, insertions {:?}",
+        host.state.raids,
+        host.state.insertions.iter().map(|i| (i.side, i.state)).collect::<Vec<_>>()
+    );
+}
+
+/// A campaign keeps the rules it started with, whoever serves it later.
+#[test]
+fn a_campaign_keeps_its_rules() {
+    let data = theater::game_data().unwrap();
+    let hard = Rules { realistic_damage: true, friendly_fire: true, ..Default::default() };
+    let host = Host::new(setup("ce"), &data, hard).unwrap();
+    let saved: stealth_campaign::CampaignState =
+        serde_json::from_str(&serde_json::to_string(&host.state).unwrap()).unwrap();
+    let again = Host::resume(saved, &data, Rules::default()).unwrap();
+    assert_eq!(again.rules, hard);
+    // An older save takes the server's.
+    let mut old = host.state.clone();
+    old.rules = None;
+    let easy = Rules { no_crashes: true, ..Default::default() };
+    assert_eq!(Host::resume(old, &data, easy).unwrap().rules, easy);
+}
+
+/// A drone wave over Ukraine played out in the simulation: the drones dive into their target
+/// or are shot down.
+#[test]
+fn a_drone_wave_plays_out() {
+    use stealth_campaign::{RaidState, tuning};
+    let s = setup("ua");
+    let data = theater::game_data().unwrap();
+    let sim_data = theater::sim_data(s.theater, "ua").unwrap();
+    let mut host = Host::new(s, &data, Rules::default()).unwrap();
+    let mut sim = host.new_sim(&sim_data);
+    host.begin(&mut sim);
+    host.state.drones_at = -tuning::DRONES_EVERY[1];
+    for _ in 0..15 * 60 * 120 {
+        let e = sim.step_pilots(&[], 15);
+        let mut e2 = host.take_sim_events(&mut sim);
+        e2.extend(e);
+        host.tick(&mut sim, 1.0 / 15.0, &e2);
+        if host
+            .state
+            .raids
+            .iter()
+            .any(|r| r.drones && matches!(r.state, RaidState::Hit | RaidState::Repelled))
+        {
+            return;
+        }
+    }
+    panic!("{:?}", host.state.raids);
+}

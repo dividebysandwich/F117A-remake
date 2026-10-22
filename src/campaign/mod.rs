@@ -145,6 +145,10 @@ pub enum Action {
     OrderInsertion {
         place: PlaceId,
     },
+    /// Call in AI SEAD for an offer's place.
+    RequestSupport {
+        offer: u32,
+    },
     /// The sortie ends (the simulation's outcome codes: 0 landed and done, 7 aborted).
     EndSortie {
         outcome: u8,
@@ -599,7 +603,7 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
                 c.crash_timer += dt;
                 if c.crash_timer > 3.0 {
                     let p = s.combat.sim.player();
-                    c.landed = c.state().nearest_base(Side::Blue, p.mx, p.my).map(|b| b as usize);
+                    c.landed = c.state().nearest_player_base(p.mx, p.my).map(|b| b as usize);
                 }
             }
             _ => c.crash_timer = 0.0,
@@ -695,6 +699,7 @@ fn host_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEvent
                 host.take_mission(sim, me, offer, base, aircraft, Some(stores))
             }
             Action::OrderInsertion { place } => host.order_insertion(sim, me, place),
+            Action::RequestSupport { offer } => host.request_support(sim, me, offer),
             Action::EndSortie { outcome } => Ok(host.end_sortie(sim, me, outcome)),
             Action::Rearm { loadout } => {
                 host.rearm(sim, me, &Stores { stations: loadout.stations(), select: 0 });
@@ -744,6 +749,7 @@ fn client_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEve
                 ToServer::TakeMission { offer, base, aircraft, stores: Some(stores) }
             }
             Action::OrderInsertion { place } => ToServer::OrderInsertion { place },
+            Action::RequestSupport { offer } => ToServer::RequestSupport { offer },
             Action::EndSortie { outcome } => ToServer::EndSortie { outcome },
             Action::Rearm { loadout } => {
                 s.msgs.show("Rearmed and refuelled");

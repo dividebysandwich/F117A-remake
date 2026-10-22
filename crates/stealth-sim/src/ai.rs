@@ -79,8 +79,11 @@ impl Sim {
             mode = 2;
         } else if self.alarm_timer != 0
             && (u.flags & 0x140 == 0 || self.alarm_timer > self.alarm_recent())
-            // A friendly fighter (a campaign CAP) never goes for the player.
-            && !self.campaign_flight(i).is_some_and(|f| f.blue)
+            // A friendly fighter (a campaign CAP) never goes for the player, nor does a
+            // campaign helicopter or strike aircraft.
+            && !self
+                .campaign_flight(i)
+                .is_some_and(|f| f.blue || f.role != crate::campaign::Role::Fighter)
         {
             mode = 1;
             if self.decoy_active() {
@@ -104,7 +107,11 @@ impl Sim {
             if let Some((gx, gy)) = self.campaign_goal(i, &u) {
                 x = gx;
                 y = gy;
-                z = clamp_q(u.alt, 6000, 16000);
+                z = if self.campaign_striking(i) {
+                    crate::campaign::STRIKE_ALT
+                } else {
+                    clamp_q(u.alt, 6000, 16000)
+                };
             } else if u.flags & fflags::ESCORT != 0
                 && self.escort_leader >= 0
                 && (self.escort_leader as usize) < nf

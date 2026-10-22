@@ -458,3 +458,675 @@ fn patriots_stand_in_the_rear() {
         }
     }
 }
+
+/// Ticks until the enemy orders its first insertion; the order's place.
+fn enemy_order(c: &mut CampaignState) -> PlaceId {
+    c.tick(1.0, &WorldView::default(), &[]);
+    c.tick(tuning::ENEMY_INSERT_EVERY[c.setup.opponents as usize], &WorldView::default(), &[]);
+    let ins = c.insertions.iter().find(|i| i.side == Side::Red).expect("an enemy insertion");
+    assert_eq!(c.places[ins.place as usize].owner, Side::Blue);
+    ins.place
+}
+
+/// Lifts the enemy's helicopters off: their insertion id, target and tags.
+fn enemy_launch(c: &mut CampaignState) -> (u32, ObjectId, Vec<u32>) {
+    let ev = c.tick(tuning::ENEMY_INSERTION_LEAD + 1.0, &WorldView::default(), &[]);
+    ev.iter()
+        .find_map(|e| match e {
+            CampaignEvent::InsertionLaunched { id, side: Side::Red, target, tags, .. } => {
+                Some((*id, *target, tags.clone()))
+            }
+            _ => None,
+        })
+        .expect("enemy helicopters launched")
+}
+
+#[test]
+fn the_enemy_takes_a_friendly_place() {
+    let mut c = campaign("ce", 3);
+    let place = enemy_order(&mut c);
+    c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+    assert!(c.board.iter().any(|o| o.kind == MissionKind::Intercept), "an intercept offer");
+    // No escort or insertion offers for the enemy's insertion.
+    assert!(c.board.iter().all(|o| o.objective != Objective::Insertion { place }));
+    let (_, target, tags) = enemy_launch(&mut c);
+    let t = c.site(target).unwrap().clone();
+    let ev = c.tick(
+        1.0,
+        &WorldView::default(),
+        &[Report::FlightLanded { tag: tags[0], x: t.x, y: t.y }],
+    );
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        CampaignEvent::PlaceCaptured { place: p, side: Side::Red, .. } if *p == place
+    )));
+    assert_eq!(c.places[place as usize].owner, Side::Red);
+    assert!(!c.player_bases().contains(&target));
+}
+
+#[test]
+fn an_intercept_succeeds_when_the_helicopters_go_down() {
+    let mut c = campaign("ce", 3);
+    let place = enemy_order(&mut c);
+    c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+    let offer = c.board.iter().find(|o| o.kind == MissionKind::Intercept).unwrap().clone();
+    c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F16 })
+        .unwrap();
+    let (id, _, tags) = enemy_launch(&mut c);
+    let down: Vec<Report> = tags
+        .iter()
+        .map(|&tag| Report::FlightDestroyed { tag, side: Side::Red, x: 0, y: 0, by: Some(P0) })
+        .collect();
+    let ev = c.tick(1.0, &WorldView::default(), &down);
+    assert!(ev.contains(&CampaignEvent::InsertionFailed { id, place }));
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { .. })));
+    assert_eq!(c.places[place as usize].owner, Side::Blue);
+    let ev = c.apply(P0, Command::EndSortie { end: SortieEnd::Landed }).unwrap();
+    let CampaignEvent::SortieFinished { record, .. } = &ev[0] else { panic!() };
+    assert_eq!(record.result, SortieResult::Success);
+    assert_eq!(record.air_kills, tuning::INSERTION_HELOS as u32);
+}
+
+/// Ticks until the enemy's first raid takes off: the raid's id, target and tags.
+fn raid(c: &mut CampaignState) -> (u32, ObjectId, Vec<u32>) {
+    c.tick(1.0, &WorldView::default(), &[]);
+    c.tick(tuning::RAID_EVERY[c.setup.opponents as usize], &WorldView::default(), &[]);
+    assert!(c.raids.iter().any(|r| r.open()), "a raid ordered");
+    // The escort takes off first.
+    let ev = c.tick(tuning::RAID_LEAD - tuning::RAID_ESCORT_LEAD + 1.0, &WorldView::default(), &[]);
+    let escorts = ev
+        .iter()
+        .filter(|e| matches!(e, CampaignEvent::LaunchFighters { side: Side::Red, .. }))
+        .count();
+    assert!(escorts >= tuning::RAID_ESCORTS, "{ev:?}");
+    assert!(!ev.iter().any(|e| matches!(e, CampaignEvent::RaidLaunched { .. })));
+    let ev = c.tick(tuning::RAID_ESCORT_LEAD, &WorldView::default(), &[]);
+    ev.iter()
+        .find_map(|e| match e {
+            CampaignEvent::RaidLaunched { id, side: Side::Red, target, tags, .. } => {
+                Some((*id, *target, tags.clone()))
+            }
+            _ => None,
+        })
+        .expect("strike aircraft launched")
+}
+
+#[test]
+fn a_raid_grounds_the_ai_but_never_the_players() {
+    let mut c = campaign("ce", 3);
+    let (id, target, tags) = raid(&mut c);
+    assert_eq!(tags.len(), tuning::RAID_AIRCRAFT);
+    assert_eq!(c.owner(target), Some(Side::Blue));
+    assert!(c.board.iter().any(|o| o.objective == Objective::Defend { raid: id }));
+    c.tick(1.0, &WorldView::default(), &[Report::ObjectDestroyed { object: target, by: None }]);
+    assert_eq!(c.raid(id).unwrap().state, RaidState::Hit);
+    // The AI does not fly from the bombed airfield; the players still do.
+    assert!(!c.bases(Side::Blue).contains(&target));
+    assert!(c.player_bases().contains(&target));
+    c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+    let offer = c.board.iter().find(|o| !o.kind.ai_flown()).unwrap().clone();
+    c.apply(
+        P0,
+        Command::TakeMission { offer: offer.id, base: Some(target), aircraft: Aircraft::F117 },
+    )
+    .expect("take off from the bombed airfield");
+}
+
+#[test]
+fn a_defended_airfield_repels_the_raid() {
+    let mut c = campaign("ce", 3);
+    let (id, target, tags) = raid(&mut c);
+    let offer = c.board.iter().find(|o| o.objective == Objective::Defend { raid: id }).unwrap();
+    c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F16 })
+        .unwrap();
+    // One shot down, the other turns back: repelled.
+    let ev = c.tick(
+        1.0,
+        &WorldView::default(),
+        &[
+            Report::FlightDestroyed { tag: tags[0], side: Side::Red, x: 0, y: 0, by: Some(P0) },
+            Report::FlightLanded { tag: tags[1], x: 0, y: 0 },
+        ],
+    );
+    assert_eq!(c.raid(id).unwrap().state, RaidState::Repelled);
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { .. })));
+    assert!(c.bases(Side::Blue).contains(&target));
+}
+
+#[test]
+fn a_defence_ended_early_is_settled_by_the_raid() {
+    let mut c = campaign("ce", 3);
+    let (id, target, _) = raid(&mut c);
+    let offer = c.board.iter().find(|o| o.objective == Objective::Defend { raid: id }).unwrap();
+    c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F16 })
+        .unwrap();
+    let ev = c.apply(P0, Command::EndSortie { end: SortieEnd::Landed }).unwrap();
+    let CampaignEvent::SortieFinished { record, .. } = &ev[0] else { panic!() };
+    assert_eq!(record.result, SortieResult::Pending);
+    c.tick(1.0, &WorldView::default(), &[Report::ObjectDestroyed { object: target, by: None }]);
+    assert_eq!(c.history.last().unwrap().result, SortieResult::Failed);
+}
+
+#[test]
+fn the_war_is_won_and_lost() {
+    let mut c = campaign("ce", 3);
+    for p in c.places.iter_mut().filter(|p| p.owner == Side::Red) {
+        p.owner = Side::Blue;
+    }
+    let ev = c.tick(1.0, &WorldView::default(), &[]);
+    assert!(ev.contains(&CampaignEvent::Ended { winner: Side::Blue }));
+    assert!(c.board.is_empty());
+    assert_eq!(c.ended_for(), Some(0.0));
+    // Over: nothing happens any more.
+    let ev = c.tick(tuning::RAID_EVERY[3] * 4.0, &WorldView::default(), &[]);
+    assert!(ev.is_empty(), "{ev:?}");
+    assert_eq!(c.ended_for(), Some(tuning::RAID_EVERY[3] * 4.0));
+
+    let mut c = campaign("ce", 3);
+    for p in c.places.iter_mut().filter(|p| p.owner == Side::Blue && p.airfield.is_some()) {
+        p.owner = Side::Red;
+    }
+    for s in c.sites.iter_mut().filter(|s| s.kind == SiteKind::Carrier) {
+        s.removed = true;
+    }
+    let ev = c.tick(1.0, &WorldView::default(), &[]);
+    assert!(ev.contains(&CampaignEvent::Ended { winner: Side::Red }));
+    // No theater is over before it starts.
+    for (code, index) in [("ce", 3), ("ua", 9), ("pg", 1), ("vn", 4)] {
+        let mut c = campaign(code, index);
+        c.tick(1.0, &WorldView::default(), &[]);
+        assert!(c.outcome.is_none(), "{code}");
+    }
+}
+
+#[test]
+fn lost_guns_stay_lost_until_replaced() {
+    let mut c = campaign("ce", 3);
+    let tabor = place_named(&c, "Tabor");
+    let (x, y) = (c.places[tabor as usize].x, c.places[tabor as usize].y);
+    let gun = AaaView { x: x + 20, y, side: Side::Red, alive: false };
+    let view = WorldView { aaa: vec![gun], ..Default::default() };
+    c.tick(1.0, &view, &[Report::AaaDestroyed { index: 0, by: Some(P0) }]);
+    assert_eq!(c.places[tabor as usize].guns_lost, 1);
+    // Saved with the campaign.
+    let d: CampaignState = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+    assert_eq!(d.places[tabor as usize].guns_lost, 1);
+    let ev = c.tick(tuning::REPAIR_GUN, &WorldView::default(), &[]);
+    assert!(ev.contains(&CampaignEvent::GunRepaired { place: tabor }));
+    assert_eq!(c.places[tabor as usize].guns_lost, 0);
+}
+
+#[test]
+fn an_older_save_still_loads() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    launch(&mut c);
+    let mut v = serde_json::to_value(&c).unwrap();
+    let o = v.as_object_mut().unwrap();
+    for k in [
+        "raids",
+        "enemy_insert_at",
+        "raid_at",
+        "outcome",
+        "blue",
+        "red",
+        "resupply_at",
+        "income_at",
+        "downed",
+        "rules",
+        "awacs",
+        "awacs_at",
+        "awacs_down",
+        "drones_at",
+    ] {
+        o.remove(k);
+    }
+    for p in o["places"].as_array_mut().unwrap() {
+        p.as_object_mut().unwrap().remove("guns_lost");
+        p.as_object_mut().unwrap().remove("guns_repair_at");
+    }
+    for i in o["insertions"].as_array_mut().unwrap() {
+        i.as_object_mut().unwrap().remove("side");
+    }
+    let d: CampaignState = serde_json::from_value(v).expect("an older save");
+    assert!(d.insertions.iter().all(|i| i.side == Side::Blue));
+    assert!(d.outcome.is_none() && d.raids.is_empty());
+}
+
+#[test]
+fn places_and_cities_bring_in_materiel() {
+    let mut c = campaign("ce", 3);
+    let (places, cities) = c.producers(Side::Red);
+    assert_eq!(places, c.held(Side::Red));
+    assert!(cities > 0);
+    let income = c.income(Side::Red);
+    assert_eq!(
+        income,
+        tuning::INCOME_BASE
+            + tuning::INCOME_PLACE * places as f64
+            + tuning::INCOME_CITY * cities as f64
+    );
+    c.red.materiel = 0.0;
+    c.tick(1800.0, &WorldView::default(), &[]);
+    // Half an hour of income (less what the enemy spent meanwhile).
+    assert!((c.red.ledger.earned - income / 2.0).abs() < 1.0, "{:?}", c.red.ledger);
+    let spent = c.red.ledger.repairs + c.red.ledger.operations + c.red.ledger.aircraft;
+    assert!((c.red.materiel - (c.red.ledger.earned - spent)).abs() < 0.01);
+    // A city bombed: materiel lost at once, and less income while it is in ruins.
+    let city = c
+        .sites
+        .iter()
+        .find(|s| s.kind == SiteKind::City && c.owner(s.object) == Some(Side::Red))
+        .unwrap()
+        .object;
+    c.red.materiel = 100.0;
+    c.tick(1.0, &WorldView::default(), &[Report::ObjectDestroyed { object: city, by: Some(P0) }]);
+    assert_eq!(c.red.ledger.lost, tuning::CITY_LOSS);
+    assert_eq!(c.income(Side::Red), income - tuning::INCOME_CITY);
+}
+
+#[test]
+fn repairs_wait_for_materiel() {
+    let mut c = campaign("ce", 3);
+    let airfield = c.bases(Side::Red)[0];
+    c.tick(1.0, &WorldView::default(), &[Report::ObjectDestroyed { object: airfield, by: None }]);
+    c.red.materiel = 0.0;
+    c.red.fighters = 0;
+    c.income_at = f64::MAX;
+    c.tick(tuning::REPAIR_AIRFIELD, &WorldView::default(), &[]);
+    assert!(!c.bases(Side::Red).contains(&airfield), "repaired without materiel");
+    c.red.materiel = tuning::REPAIR_COST_AIRFIELD;
+    let ev = c.tick(1.0, &WorldView::default(), &[]);
+    assert!(ev.contains(&CampaignEvent::Repaired { object: airfield }));
+    assert_eq!(c.red.ledger.repairs, tuning::REPAIR_COST_AIRFIELD);
+}
+
+#[test]
+fn the_ai_flies_the_aircraft_it_has() {
+    let mut c = campaign("ce", 3);
+    // No fighters: no patrol.
+    c.red.fighters = 0;
+    let ev = c.tick(tuning::PATROL_EVERY + 1.0, &WorldView::default(), &[]);
+    assert!(!ev.iter().any(|e| matches!(e, CampaignEvent::LaunchFighters { side: Side::Red, .. })));
+    // One: it goes, and comes back to the ground when it lands.
+    c.red.fighters = 1;
+    let ev = c.tick(tuning::PATROL_EVERY + 1.0, &WorldView::default(), &[]);
+    let tag = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::LaunchFighters { tag, side: Side::Red, .. } => Some(*tag),
+            _ => None,
+        })
+        .expect("a patrol");
+    assert_eq!(c.red.fighters, 0);
+    assert_eq!(c.airborne(Side::Red).0, 1);
+    c.tick(1.0, &WorldView::default(), &[Report::FlightLanded { tag, x: 0, y: 0 }]);
+    assert_eq!(c.red.fighters, 1);
+    // A friendly CAP only with fighters left.
+    let mut c = campaign("ce", 3);
+    c.blue.fighters = 0;
+    let (base, view) = raided_base(&c, 2);
+    assert!(caps_from(&c.tick(1.0, &view, &[]), base).is_empty());
+}
+
+#[test]
+fn a_players_insertion_always_has_helicopters() {
+    let mut c = campaign("ce", 3);
+    c.blue.helicopters = 0;
+    // The campaign's own needs them.
+    let place = c.front(Side::Blue)[0];
+    assert!(c.order_insertion(None, place).is_err());
+    c.apply(P0, Command::OrderInsertion { place }).expect("a player's order");
+    let ev = c.tick(tuning::INSERTION_LEAD + 1.0, &WorldView::default(), &[]);
+    let tags = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::InsertionLaunched { tags, side: Side::Blue, .. } => Some(tags.clone()),
+            _ => None,
+        })
+        .expect("launched");
+    assert_eq!(tags.len(), tuning::RESERVE_HELICOPTERS);
+    assert_eq!(c.blue.helicopters, 0);
+}
+
+#[test]
+fn deep_strikes_hit_the_enemys_rear() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let deep: Vec<_> =
+        c.board.iter().filter(|o| o.kind == MissionKind::Interdiction).cloned().collect();
+    assert!(!deep.is_empty(), "{:?}", c.board.iter().map(|o| &o.title).collect::<Vec<_>>());
+    assert!(deep.len() <= tuning::DEEP_TARGETS);
+    let front = c.front(Side::Blue);
+    for o in &deep {
+        let (Objective::Interdict { place, .. } | Objective::Strike { place, .. }) = o.objective
+        else {
+            panic!("{o:?}");
+        };
+        assert!(!front.contains(&place));
+    }
+    // A city where there is one in reach (Ukraine has plenty), else an airfield.
+    let mut c = campaign("ua", 9);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let o = c
+        .board
+        .iter()
+        .find(|o| matches!(o.objective, Objective::Interdict { .. }))
+        .expect("a city to interdict")
+        .clone();
+    let Objective::Interdict { object, .. } = o.objective else { unreachable!() };
+    c.apply(P0, Command::TakeMission { offer: o.id, base: None, aircraft: Aircraft::F117 })
+        .unwrap();
+    let before = c.red.materiel;
+    let ev =
+        c.tick(1.0, &WorldView::default(), &[Report::ObjectDestroyed { object, by: Some(P0) }]);
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { .. })));
+    assert!(c.red.materiel < before);
+}
+
+/// Player 0 ejects over the enemy's place `name`.
+fn eject_over(c: &mut CampaignState, name: &str) -> (Vec<CampaignEvent>, i32, i32) {
+    c.tick(1.0, &WorldView::default(), &[]);
+    let offer = c.board.iter().find(|o| !o.kind.ai_flown()).unwrap().id;
+    c.apply(P0, Command::TakeMission { offer, base: None, aircraft: Aircraft::F16 }).unwrap();
+    let p = &c.places[place_named(c, name) as usize];
+    let (x, y) = (p.x + 30, p.y);
+    let view = WorldView {
+        players: vec![PlayerPos { id: P0, x, y, airborne: true }],
+        ..Default::default()
+    };
+    c.tick(1.0, &view, &[]);
+    let ev = c.apply(P0, Command::EndSortie { end: SortieEnd::Ejected }).unwrap();
+    (ev, x, y)
+}
+
+#[test]
+fn a_pilot_down_behind_the_lines_is_rescued() {
+    let mut c = campaign("ce", 3);
+    let (ev, x, y) = eject_over(&mut c, "Tabor");
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::Message(m) if m.contains("down near"))));
+    let d = c.downed[0].clone();
+    assert_eq!((d.x, d.y, d.state), (x, y, DownedState::Waiting));
+    c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+    let offer = c.board.iter().find(|o| o.kind == MissionKind::Csar).unwrap().clone();
+    assert_eq!(offer.objective, Objective::Rescue { downed: d.id });
+    // The wingman covers the helicopter in.
+    let b = PlayerId(1);
+    c.join("Bravo", 4, |_| false);
+    c.apply(b, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F16 })
+        .unwrap();
+    let over = WorldView {
+        players: vec![PlayerPos { id: b, x: x + 0x40, y, airborne: true }],
+        ..Default::default()
+    };
+    let mut rescued = false;
+    for _ in 0..(tuning::RESCUE_SECONDS as i32 / 10 + 1) {
+        rescued |= c
+            .tick(10.0, &over, &[])
+            .iter()
+            .any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { player, .. } if *player == b));
+    }
+    assert!(rescued);
+    assert_eq!(c.downed_pilot(d.id).unwrap().state, DownedState::Rescued);
+    // Over friendly territory: no rescue needed.
+    let mut c = campaign("ce", 3);
+    eject_over(&mut c, "Ramstein");
+    assert!(c.downed.is_empty());
+}
+
+#[test]
+fn a_pilot_nobody_rescues_is_captured() {
+    let mut c = campaign("ce", 3);
+    eject_over(&mut c, "Tabor");
+    // No helicopter left for the campaign's own try.
+    c.blue.helicopters = 0;
+    let (materiel, fighters) = (c.blue.materiel, c.blue.fighters);
+    c.income_at = f64::MAX;
+    c.resupply_at = f64::MAX;
+    let ev = c.tick(tuning::RESCUE_WINDOW, &WorldView::default(), &[]);
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::Message(m) if m.contains("captured"))));
+    assert_eq!(c.downed[0].state, DownedState::Captured);
+    assert!(c.blue.materiel <= materiel - tuning::CAPTURE_COST + 0.01);
+    assert!(c.blue.fighters < fighters);
+    // The players still fly.
+    let offer = c.board.iter().find(|o| !o.kind.ai_flown()).unwrap().id;
+    c.apply(P0, Command::TakeMission { offer, base: None, aircraft: Aircraft::F16 }).unwrap();
+}
+
+#[test]
+fn aircraft_in_the_air_are_back_on_the_ground_after_a_load() {
+    let mut c = campaign("ce", 3);
+    let fighters = c.red.fighters;
+    c.tick(tuning::PATROL_EVERY + 1.0, &WorldView::default(), &[]);
+    assert_eq!(c.red.fighters, fighters - 1);
+    let mut d: CampaignState = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+    d.after_load();
+    assert_eq!(d.red.fighters, fighters);
+}
+
+/// Player `p` takes the first offer of `kind` (its id and objective).
+fn take(c: &mut CampaignState, p: PlayerId, kind: MissionKind) -> (u32, Objective) {
+    let o = c.board.iter().find(|o| o.kind == kind).unwrap_or_else(|| panic!("no {kind:?}"));
+    let (id, obj) = (o.id, o.objective.clone());
+    c.apply(p, Command::TakeMission { offer: id, base: None, aircraft: Aircraft::F16 }).unwrap();
+    (id, obj)
+}
+
+fn finished(ev: &[CampaignEvent]) -> SortieRecord {
+    ev.iter()
+        .find_map(|e| match e {
+            CampaignEvent::SortieFinished { record, .. } => Some(record.clone()),
+            _ => None,
+        })
+        .expect("finished")
+}
+
+#[test]
+fn sorties_earn_points_and_pilots_keep_their_record() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let (_, obj) = take(&mut c, P0, MissionKind::Recon);
+    let Objective::Recon { object, .. } = obj else { unreachable!() };
+    let kill = Report::FlightDestroyed { tag: 999, side: Side::Red, x: 0, y: 0, by: Some(P0) };
+    c.tick(1.0, &WorldView::default(), &[Report::PhotoTaken { player: P0, object }, kill]);
+    let r = finished(&c.apply(P0, Command::EndSortie { end: SortieEnd::Landed }).unwrap());
+    assert_eq!(
+        r.points,
+        MissionKind::Recon.points() + tuning::POINTS_AIR_KILL + tuning::POINTS_LANDED
+    );
+    assert_eq!(r.pilot, "Player");
+    // The leaderboard; a newcomer taking the idle slot does not take the record.
+    let alpha = c.join("Alpha", 2, |_| false).unwrap();
+    assert_eq!(c.pilot_records()[0].points, r.points);
+    let charlie = c.join("Charlie", 2, |id| id != P0).unwrap();
+    assert_eq!(charlie, P0);
+    assert_eq!(c.records(charlie).count(), 0);
+    let board = c.pilot_records();
+    assert_eq!(board[0].name, "Player");
+    assert_eq!(board[0].points, r.points);
+    assert!(board.iter().any(|p| p.name == "Charlie" && p.points == 0));
+    assert!(board.iter().any(|p| p.name == "Alpha"));
+    let _ = alpha;
+}
+
+#[test]
+fn a_pending_sortie_earns_its_points_when_settled() {
+    let mut c = campaign("ce", 3);
+    let place = c.front(Side::Blue)[0];
+    c.apply(P0, Command::OrderInsertion { place }).unwrap();
+    c.tick(1.0, &WorldView::default(), &[]);
+    take(&mut c, P0, MissionKind::Escort);
+    let r = finished(&c.apply(P0, Command::EndSortie { end: SortieEnd::Crashed }).unwrap());
+    assert_eq!(r.points, 0);
+    let ev = c.tick(tuning::INSERTION_LEAD, &WorldView::default(), &[]);
+    let (tags, target) = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::InsertionLaunched { tags, target, .. } => Some((tags.clone(), *target)),
+            _ => None,
+        })
+        .unwrap();
+    let t = c.site(target).unwrap().clone();
+    c.tick(1.0, &WorldView::default(), &[Report::FlightLanded { tag: tags[0], x: t.x, y: t.y }]);
+    assert_eq!(c.history.last().unwrap().points, MissionKind::Escort.points());
+}
+
+#[test]
+fn objectives_flown_together_are_a_package() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let b = PlayerId(1);
+    c.join("Bravo", 4, |_| false);
+    // SEAD and strike on the same place.
+    let sead = c
+        .board
+        .iter()
+        .find(|o| {
+            o.kind == MissionKind::Sead
+                && c.board.iter().any(|s| {
+                    s.kind == MissionKind::Strike
+                        && c.objective_place(&s.objective) == c.objective_place(&o.objective)
+                })
+        })
+        .expect("SEAD and strike on one place")
+        .clone();
+    let place = c.objective_place(&sead.objective).unwrap();
+    let strike = c
+        .board
+        .iter()
+        .find(|o| o.kind == MissionKind::Strike && c.objective_place(&o.objective) == Some(place))
+        .unwrap()
+        .clone();
+    for (p, o) in [(P0, &sead), (b, &strike)] {
+        c.apply(p, Command::TakeMission { offer: o.id, base: None, aircraft: Aircraft::F16 })
+            .unwrap();
+    }
+    let Objective::Sead { sites, .. } = &sead.objective else { unreachable!() };
+    let down: Vec<Report> =
+        sites.iter().map(|&object| Report::ObjectDestroyed { object, by: Some(P0) }).collect();
+    c.tick(1.0, &WorldView::default(), &down);
+    // The SEAD pilot lands before the strike: the bonus reaches him all the same.
+    let first = finished(&c.apply(P0, Command::EndSortie { end: SortieEnd::Landed }).unwrap());
+    assert_eq!(first.bonus, 0);
+    c.tick(60.0, &WorldView::default(), &[]);
+    let Objective::Strike { airfield, .. } = strike.objective else { unreachable!() };
+    let ev = c.tick(
+        1.0,
+        &WorldView::default(),
+        &[Report::ObjectDestroyed { object: airfield, by: Some(b) }],
+    );
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::Message(m) if m.starts_with("Package"))));
+    let sead_record = c.history.iter().find(|r| r.id == first.id).unwrap();
+    assert_eq!(sead_record.bonus, tuning::PACKAGE_BONUS);
+    assert_eq!(sead_record.points, first.points + tuning::PACKAGE_BONUS);
+    let second = finished(&c.apply(b, Command::EndSortie { end: SortieEnd::Landed }).unwrap());
+    assert_eq!(second.bonus, tuning::PACKAGE_BONUS);
+}
+
+#[test]
+fn ai_sead_goes_for_the_sam_sites_on_request() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let o = c.board.iter().find(|o| o.kind == MissionKind::Sead).unwrap().clone();
+    let place = c.objective_place(&o.objective).unwrap();
+    let (materiel, fighters) = (c.blue.materiel, c.blue.fighters);
+    c.apply(P0, Command::RequestSupport { offer: o.id }).expect("support");
+    assert!(c.apply(P0, Command::RequestSupport { offer: o.id }).is_err(), "twice");
+    assert_eq!(c.blue.materiel, materiel - tuning::SUPPORT_COST);
+    c.income_at = f64::MAX;
+    let ev = c.tick(tuning::SUPPORT_LEAD + 1.0, &WorldView::default(), &[]);
+    let (id, target) = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::RaidLaunched { id, side: Side::Blue, target, drones: false, .. } => {
+                Some((*id, *target))
+            }
+            _ => None,
+        })
+        .expect("AI SEAD launched");
+    assert!(c.places[place as usize].defences.contains(&target));
+    assert!(c.blue.fighters <= fighters - tuning::RAID_AIRCRAFT as u32);
+    // No defence offers for the friendly side's own raid.
+    c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+    assert!(c.board.iter().all(|o| o.objective != Objective::Defend { raid: id }));
+    c.tick(1.0, &WorldView::default(), &[Report::ObjectDestroyed { object: target, by: None }]);
+    assert_eq!(c.raid(id).unwrap().state, RaidState::Hit);
+    assert!(!c.site(target).unwrap().alive());
+}
+
+#[test]
+fn the_enemy_awacs_is_worth_shooting_down() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let ev = c.tick(tuning::AWACS_EVERY, &WorldView::default(), &[]);
+    let tag = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::LaunchAwacs { tag, side: Side::Red, from, .. } => {
+                assert_eq!(c.owner(*from), Some(Side::Red));
+                Some(*tag)
+            }
+            _ => None,
+        })
+        .expect("an AWACS");
+    c.tick(1.0, &WorldView::default(), &[]);
+    let (_, obj) = take(&mut c, P0, MissionKind::Awacs);
+    assert_eq!(obj, Objective::Awacs { tag });
+    let red = c.red.materiel;
+    let ev = c.tick(
+        1.0,
+        &WorldView::default(),
+        &[Report::FlightDestroyed { tag, side: Side::Red, x: 0, y: 0, by: Some(P0) }],
+    );
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { .. })));
+    assert!(c.awacs.is_none());
+    assert!(c.red.materiel < red);
+    // Not shot down: called home after its time.
+    let mut c = campaign("ce", 3);
+    c.tick(tuning::AWACS_EVERY + 1.0, &WorldView::default(), &[]);
+    let tag = c.awacs.as_ref().unwrap().tag;
+    let ev = c.tick(tuning::AWACS_ENDURANCE, &WorldView::default(), &[]);
+    assert!(ev.contains(&CampaignEvent::Recall { tag }));
+    assert!(c.awacs.is_none());
+}
+
+#[test]
+fn drone_waves_hit_ukraine() {
+    let mut c = campaign("ua", 9);
+    c.tick(1.0, &WorldView::default(), &[]);
+    c.tick(tuning::DRONES_EVERY[1], &WorldView::default(), &[]);
+    let r = c.raids.iter().find(|r| r.drones).expect("a drone wave").clone();
+    assert_eq!(c.owner(r.target), Some(Side::Blue));
+    c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+    let o = c.board.iter().find(|o| o.objective == Objective::Defend { raid: r.id }).unwrap();
+    assert!(o.title.starts_with("Drone defense"), "{}", o.title);
+    let fighters = c.red.fighters;
+    let ev = c.tick(tuning::DRONE_LEAD, &WorldView::default(), &[]);
+    let tags = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::RaidLaunched { tags, drones: true, .. } => Some(tags.clone()),
+            _ => None,
+        })
+        .expect("launched");
+    assert_eq!(tags.len(), tuning::DRONE_WAVE);
+    // Drones are no fighters: only the fighters launched meanwhile are gone.
+    let launched = ev
+        .iter()
+        .filter(|e| matches!(e, CampaignEvent::LaunchFighters { side: Side::Red, .. }))
+        .count() as u32;
+    let strike: u32 = ev
+        .iter()
+        .filter_map(|e| match e {
+            CampaignEvent::RaidLaunched { side: Side::Red, drones: false, tags, .. } => {
+                Some(tags.len() as u32)
+            }
+            _ => None,
+        })
+        .sum();
+    assert_eq!(c.red.fighters + launched + strike, fighters);
+    // Not in other theaters.
+    let mut c = campaign("ce", 3);
+    c.tick(tuning::DRONES_EVERY[1] + 1.0, &WorldView::default(), &[]);
+    assert!(c.raids.iter().all(|r| !r.drones));
+}

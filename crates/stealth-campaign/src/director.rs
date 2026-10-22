@@ -1,17 +1,25 @@
-//! The campaign's own decisions: the mission board, insertions, enemy patrols, repairs and
-//! intelligence going stale. Written for a side, so the enemy can later run the same logic
-//! against the player's places (only the friendly side attacks for now).
+//! The campaign's own decisions: the mission board, insertions, enemy patrols, raids and
+//! offensives, repairs, intelligence going stale and the end of the war. Insertions are
+//! written for a side: the enemy takes the friendly places the way the friendly side takes
+//! its own.
 
 use crate::state::*;
 use crate::tuning::*;
 use crate::{CampaignEvent, Report, WorldView};
 
 impl CampaignState {
-    pub(crate) fn report(&mut self, r: &Report, ev: &mut Vec<CampaignEvent>) {
+    pub(crate) fn report(&mut self, r: &Report, view: &WorldView, ev: &mut Vec<CampaignEvent>) {
         self.sortie_report(r);
         match *r {
             Report::ObjectDestroyed { object, .. } => {
                 let now = self.clock;
+                self.raid_hit(object, ev);
+                // A city's stores and factories go with it.
+                if let Some(s) = self.site(object).filter(|s| s.alive() && s.kind == SiteKind::City)
+                    && let Some(side) = self.owner(s.object).filter(|&o| o != Side::Neutral)
+                {
+                    self.lose(side, CITY_LOSS);
+                }
                 if let Some(s) = self.site_mut(object).filter(|s| s.alive()) {
                     s.destroyed_at = Some(now);
                     let text = match s.kind {
@@ -30,9 +38,12 @@ impl CampaignState {
                     s.spotted = true;
                 }
             }
+            Report::AaaDestroyed { index, .. } => self.gun_lost(index, view),
             Report::FlightDestroyed { tag, .. } if tag != 0 => {
                 self.patrols.retain(|p| p.0 != tag);
                 self.cap_report(tag, true);
+                self.raider_gone(tag, ev);
+                self.awacs_gone(tag, true, ev);
                 let Some(k) = self.insertions.iter().position(|i| i.helicopters.contains(&tag))
                 else {
                     return;
@@ -42,22 +53,37 @@ impl CampaignState {
                 let h = ins.helicopters.iter().position(|&t| t == tag).expect("contains");
                 ins.alive[h] = false;
                 let left = ins.alive.iter().filter(|&&a| a).count();
-                let (id, place) = (ins.id, ins.place);
+                let (id, place, side) = (ins.id, ins.place, ins.side);
                 if ins.state == InsertionState::Enroute && left == 0 {
                     ins.state = InsertionState::Failed;
-                    self.note(format!("Insertion at {name} failed: all helicopters lost"));
-                    self.settle_escorts(id, false);
+                    self.settle_insertion(id, InsertionState::Failed);
                     ev.push(CampaignEvent::InsertionFailed { id, place });
-                    ev.push(CampaignEvent::Message(format!("Insertion at {name} failed")));
+                    if side == Side::Blue {
+                        self.note(format!("Insertion at {name} failed: all helicopters lost"));
+                        ev.push(CampaignEvent::Message(format!("Insertion at {name} failed")));
+                    } else {
+                        self.note(format!("Enemy insertion at {name} stopped"));
+                        ev.push(CampaignEvent::Message(format!(
+                            "Enemy insertion at {name} stopped!"
+                        )));
+                    }
                 } else if ins.state == InsertionState::Enroute {
-                    ev.push(CampaignEvent::Message(format!(
-                        "Helicopter lost - {left} left for {name}"
-                    )));
+                    ev.push(CampaignEvent::Message(if side == Side::Blue {
+                        format!("Helicopter lost - {left} left for {name}")
+                    } else {
+                        format!("Enemy helicopter down - {left} left for {name}")
+                    }));
                 }
             }
             Report::FlightLanded { tag, x, y } if tag != 0 => {
+                self.airframe_home(tag);
                 self.patrols.retain(|p| p.0 != tag);
                 self.cap_report(tag, false);
+                self.raider_gone(tag, ev);
+                self.awacs_gone(tag, false, ev);
+                if self.outcome.is_some() {
+                    return;
+                }
                 let Some(k) = self.insertions.iter().position(|i| {
                     i.state == InsertionState::Enroute && i.helicopters.contains(&tag)
                 }) else {
@@ -77,10 +103,14 @@ impl CampaignState {
     fn capture(&mut self, k: usize, ev: &mut Vec<CampaignEvent>) {
         let (id, place) = (self.insertions[k].id, self.insertions[k].place);
         self.insertions[k].state = InsertionState::Captured;
-        let side = Side::Blue;
+        let side = self.insertions[k].side;
         let p = &mut self.places[place as usize];
         p.owner = side;
         p.intel_until = None;
+        // The new owner's guns, at full strength.
+        p.guns_lost = 0;
+        p.guns_repair_at = None;
+        let airfield = p.airfield.is_some();
         let members = p.members.clone();
         let removed = std::mem::take(&mut p.defences);
         let name = p.name.clone();
@@ -95,23 +125,50 @@ impl CampaignState {
             }
         }
         // Other insertions against it are called off.
-        for ins in &mut self.insertions {
-            if ins.place == place && matches!(ins.state, InsertionState::Pending { .. }) {
-                ins.state = InsertionState::Failed;
-            }
+        let off: Vec<u32> = self
+            .insertions
+            .iter_mut()
+            .filter(|i| i.place == place && matches!(i.state, InsertionState::Pending { .. }))
+            .map(|i| {
+                i.state = InsertionState::CalledOff;
+                i.id
+            })
+            .collect();
+        for i in off {
+            self.settle_insertion(i, InsertionState::CalledOff);
         }
-        self.settle_escorts(id, true);
-        self.note(format!("{name} captured"));
+        self.settle_insertion(id, InsertionState::Captured);
+        // Aircraft left on a taken airfield.
+        if airfield {
+            let f = self.forces_mut(side);
+            f.fighters += CAPTURED_FIGHTERS;
+            f.helicopters += CAPTURED_HELICOPTERS;
+        }
+        if side == Side::Blue {
+            self.note(format!("{name} captured"));
+            ev.push(CampaignEvent::Message(format!("{name} captured!")));
+        } else {
+            self.note(format!("{name} lost to the enemy"));
+            ev.push(CampaignEvent::Message(format!("{name} lost to the enemy!")));
+        }
         ev.push(CampaignEvent::PlaceCaptured { place, side, members, removed });
-        ev.push(CampaignEvent::Message(format!("{name} captured!")));
     }
 
+    /// The friendly side's insertion (a player's order, or the campaign's own).
     pub(crate) fn order_insertion(
         &mut self,
         by: Option<PlayerId>,
         place: PlaceId,
     ) -> Result<Vec<CampaignEvent>, String> {
-        let side = Side::Blue;
+        self.order_insertion_for(Side::Blue, by, place)
+    }
+
+    fn order_insertion_for(
+        &mut self,
+        side: Side,
+        by: Option<PlayerId>,
+        place: PlaceId,
+    ) -> Result<Vec<CampaignEvent>, String> {
         let Some(p) = self.places.get(place as usize) else { return Err("No such place".into()) };
         if p.owner != side.enemy() {
             return Err(format!("{} is not held by the enemy", p.name));
@@ -124,24 +181,37 @@ impl CampaignState {
         let from = self
             .insertion_base(side, x, y)
             .ok_or_else(|| format!("No friendly base within helicopter range of {name}"))?;
+        // The campaign's own orders need the helicopters and pay for the operation.
+        if by.is_none() {
+            if (self.forces(side).helicopters as usize) < INSERTION_HELOS {
+                return Err("Not enough helicopters".into());
+            }
+            if !self.pay(side, INSERTION_COST, Spend::Operations) {
+                return Err("Not enough materiel".into());
+            }
+        }
         let id = self.id();
+        let lead = if side == Side::Blue { INSERTION_LEAD } else { ENEMY_INSERTION_LEAD };
         self.insertions.push(Insertion {
             id,
+            side,
             place,
             from,
             target,
             helicopters: Vec::new(),
             alive: Vec::new(),
-            state: InsertionState::Pending { launch_at: self.clock + INSERTION_LEAD },
+            state: InsertionState::Pending { launch_at: self.clock + lead },
             scrambled: false,
             ordered_by: by,
         });
         let base = self.site(from).map(|s| s.name.clone()).unwrap_or_default();
-        let who = if by.is_some() { "ordered" } else { "Command orders" };
-        let text = format!(
-            "Insertion at {name} {who}: helicopters lift off from {base} in {} min",
-            (INSERTION_LEAD / 60.0).round()
-        );
+        let mins = (lead / 60.0).round();
+        let text = if side == Side::Blue {
+            let who = if by.is_some() { "ordered" } else { "Command orders" };
+            format!("Insertion at {name} {who}: helicopters lift off from {base} in {mins} min")
+        } else {
+            format!("Intelligence: enemy helicopters lift off from {base} for {name} in {mins} min")
+        };
         self.note(text.clone());
         self.board_at = f64::MIN;
         Ok(vec![CampaignEvent::Message(text)])
@@ -165,22 +235,41 @@ impl CampaignState {
         for k in 0..self.insertions.len() {
             let ins = &self.insertions[k];
             let place = &self.places[ins.place as usize];
+            let side = ins.side;
             match ins.state {
-                InsertionState::Pending { .. } if place.owner != Side::Red => {
-                    self.insertions[k].state = InsertionState::Failed;
+                InsertionState::Pending { .. } if place.owner != side.enemy() => {
+                    let id = ins.id;
+                    self.insertions[k].state = InsertionState::CalledOff;
+                    self.settle_insertion(id, InsertionState::CalledOff);
                 }
                 InsertionState::Pending { launch_at } if self.clock >= launch_at => {
                     // The base may have been lost meanwhile: fly from the nearest one.
-                    let from = if self.bases(Side::Blue).contains(&ins.from) {
+                    let from = if self.bases(side).contains(&ins.from) {
                         Some(ins.from)
                     } else {
-                        self.insertion_base(Side::Blue, place.x, place.y)
+                        self.insertion_base(side, place.x, place.y)
                     };
                     let Some(from) = from else {
+                        let id = ins.id;
                         self.insertions[k].state = InsertionState::Failed;
+                        self.settle_insertion(id, InsertionState::Failed);
                         continue;
                     };
-                    let tags: Vec<u32> = (0..INSERTION_HELOS).map(|_| self.id()).collect();
+                    // From the side's helicopters; a player's order always gets the reserve.
+                    let left = self.forces(side).helicopters as usize;
+                    let mut n = left.min(INSERTION_HELOS);
+                    if ins.ordered_by.is_some() {
+                        n = n.max(RESERVE_HELICOPTERS);
+                    }
+                    if n == 0 {
+                        let id = ins.id;
+                        self.insertions[k].state = InsertionState::Failed;
+                        self.settle_insertion(id, InsertionState::Failed);
+                        continue;
+                    }
+                    let f = self.forces_mut(side);
+                    f.helicopters = f.helicopters.saturating_sub(n as u32);
+                    let tags: Vec<u32> = (0..n).map(|_| self.id()).collect();
                     let name = self.places[self.insertions[k].place as usize].name.clone();
                     let ins = &mut self.insertions[k];
                     ins.from = from;
@@ -188,13 +277,22 @@ impl CampaignState {
                     ins.alive = vec![true; tags.len()];
                     ins.state = InsertionState::Enroute;
                     let (id, target) = (ins.id, ins.target);
-                    self.note(format!("Helicopters on the way to {name}"));
-                    ev.push(CampaignEvent::Message(format!(
-                        "Insertion helicopters lift off for {name}"
-                    )));
-                    ev.push(CampaignEvent::InsertionLaunched { id, from, target, tags });
+                    if side == Side::Blue {
+                        self.note(format!("Helicopters on the way to {name}"));
+                        ev.push(CampaignEvent::Message(format!(
+                            "Insertion helicopters lift off for {name}"
+                        )));
+                    } else {
+                        self.note(format!("Enemy helicopters on the way to {name}"));
+                        ev.push(CampaignEvent::Message(format!(
+                            "Enemy helicopters inbound to {name}!"
+                        )));
+                    }
+                    ev.push(CampaignEvent::InsertionLaunched { id, side, from, target, tags });
                 }
-                InsertionState::Enroute if !ins.scrambled => {
+                // Friendly airfields scramble their CAP at the enemy's helicopters on their own
+                // (`friendly_cap`).
+                InsertionState::Enroute if !ins.scrambled && side == Side::Blue => {
                     // The enemy sends fighters when the helicopters come near one of its bases.
                     let helos: Vec<(i32, i32)> = view
                         .flights
@@ -207,8 +305,12 @@ impl CampaignState {
                         let s = self.site(b)?;
                         (dist(s.x - x, s.y - y) < SCRAMBLE_RANGE).then_some((b, x, y))
                     });
-                    if let Some((from, x, y)) = near {
+                    if let Some((from, x, y)) = near
+                        && self.forces(Side::Red).fighters > 0
+                        && self.pay(Side::Red, SORTIE_COST, Spend::Operations)
+                    {
                         self.insertions[k].scrambled = true;
+                        self.take_fighters(Side::Red, 1);
                         let tag = self.id();
                         self.patrols.push((tag, Side::Red, self.clock));
                         let task = FighterTask::Patrol;
@@ -224,17 +326,33 @@ impl CampaignState {
 
     pub(crate) fn repairs(&mut self, ev: &mut Vec<CampaignEvent>) {
         let now = self.clock;
+        // Due, and paid for by the owner (the neutrals' are free).
+        let due: Vec<(usize, SiteKind)> = self
+            .sites
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| !s.removed)
+            .filter(|(_, s)| {
+                let wait = if s.kind == SiteKind::Airfield { REPAIR_AIRFIELD } else { REPAIR_SITE };
+                s.destroyed_at.is_some_and(|at| now - at >= wait)
+            })
+            .map(|(k, s)| (k, s.kind))
+            .collect();
         let mut done = Vec::new();
-        for s in &mut self.sites {
-            let Some(at) = s.destroyed_at else { continue };
-            if s.removed {
+        for (k, kind) in due {
+            let cost = match kind {
+                SiteKind::Airfield => REPAIR_COST_AIRFIELD,
+                SiteKind::Sam => REPAIR_COST_SAM,
+                SiteKind::City => REPAIR_COST_CITY,
+                SiteKind::Ship | SiteKind::Carrier => REPAIR_COST_SHIP,
+            };
+            let side = self.owner(self.sites[k].object).unwrap_or(Side::Neutral);
+            if side != Side::Neutral && !self.pay(side, cost, Spend::Repairs) {
                 continue;
             }
-            let wait = if s.kind == SiteKind::Airfield { REPAIR_AIRFIELD } else { REPAIR_SITE };
-            if now - at >= wait {
-                s.destroyed_at = None;
-                done.push((s.object, s.kind, s.name.clone()));
-            }
+            let s = &mut self.sites[k];
+            s.destroyed_at = None;
+            done.push((s.object, s.kind, s.name.clone()));
         }
         for (object, kind, name) in done {
             if matches!(kind, SiteKind::Airfield | SiteKind::Sam) {
@@ -244,6 +362,38 @@ impl CampaignState {
                 ));
             }
             ev.push(CampaignEvent::Repaired { object });
+        }
+        for k in 0..self.places.len() {
+            let p = &self.places[k];
+            if p.guns_lost == 0 || !p.guns_repair_at.is_some_and(|t| now >= t) {
+                continue;
+            }
+            if !self.pay(p.owner, GUN_COST, Spend::Repairs) {
+                continue;
+            }
+            let p = &mut self.places[k];
+            p.guns_lost -= 1;
+            p.guns_repair_at = (p.guns_lost > 0).then_some(now + REPAIR_GUN);
+            ev.push(CampaignEvent::GunRepaired { place: k as PlaceId });
+        }
+    }
+
+    /// A gun or MANPADS team (AAA unit `index`) destroyed: one less at its place until it is
+    /// replaced.
+    fn gun_lost(&mut self, index: u32, view: &WorldView) {
+        let Some(a) = view.aaa.get(index as usize) else { return };
+        let near = self
+            .places
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.owner == a.side)
+            .map(|(k, p)| (k, dist(p.x - a.x, p.y - a.y)))
+            .filter(|&(_, d)| d <= AAA_RANGE)
+            .min_by_key(|&(_, d)| d);
+        if let Some((k, _)) = near {
+            let p = &mut self.places[k];
+            p.guns_lost = p.guns_lost.saturating_add(1);
+            p.guns_repair_at = Some(self.clock + REPAIR_GUN);
         }
     }
 
@@ -266,7 +416,11 @@ impl CampaignState {
             .retain(|&(tag, _, at)| now - at < 30.0 || view.flights.iter().any(|f| f.tag == tag));
         let max = PATROLS + self.setup.roe as usize;
         let red = self.patrols.iter().filter(|p| p.1 == Side::Red).count();
-        if now - self.patrol_at < PATROL_EVERY || red >= max {
+        // With its AWACS up the enemy sees more and sends patrols twice as often, at the
+        // players.
+        let awacs = self.awacs.as_ref().filter(|a| a.side == Side::Red).map(|a| (a.x, a.y));
+        let every = if awacs.is_some() { PATROL_EVERY / 2.0 } else { PATROL_EVERY };
+        if now - self.patrol_at < every || red >= max {
             return;
         }
         self.patrol_at = now;
@@ -287,18 +441,37 @@ impl CampaignState {
             return;
         }
         let from = bases[self.rng.below(bases.len() as i32) as usize].0;
-        // Towards an insertion in the air, else a friendly place near the front.
-        let goal = self
-            .insertions
-            .iter()
-            .filter(|i| i.state == InsertionState::Enroute)
-            .find_map(|i| self.site(i.target).map(|s| (s.x, s.y)))
-            .or_else(|| {
-                let p = front.first()?;
-                let (px, py) = (self.places[*p as usize].x, self.places[*p as usize].y);
-                self.blue_places().min_by_key(|b| dist(b.x - px, b.y - py)).map(|b| (b.x, b.y))
-            });
+        // Vectored by the AWACS at the player nearest it, else towards an insertion or a raid
+        // in the air, else a friendly place near the front.
+        let vectored = awacs.and_then(|(ax, ay)| {
+            view.players
+                .iter()
+                .filter(|p| p.airborne)
+                .min_by_key(|p| dist(p.x - ax, p.y - ay))
+                .map(|p| (p.x, p.y))
+        });
+        let goal = vectored.or_else(|| {
+            self.insertions
+                .iter()
+                .filter(|i| i.state == InsertionState::Enroute)
+                .map(|i| i.target)
+                .chain(
+                    self.raids.iter().filter(|r| r.state == RaidState::Enroute).map(|r| r.target),
+                )
+                .find_map(|t| self.site(t).map(|s| (s.x, s.y)))
+                .or_else(|| {
+                    let p = front.first()?;
+                    let (px, py) = (self.places[*p as usize].x, self.places[*p as usize].y);
+                    self.blue_places().min_by_key(|b| dist(b.x - px, b.y - py)).map(|b| (b.x, b.y))
+                })
+        });
         let Some((x, y)) = goal else { return };
+        if self.forces(Side::Red).fighters == 0
+            || !self.pay(Side::Red, SORTIE_COST, Spend::Operations)
+        {
+            return;
+        }
+        self.take_fighters(Side::Red, 1);
         let tag = self.id();
         self.patrols.push((tag, Side::Red, now));
         let task = FighterTask::Patrol;
@@ -340,6 +513,12 @@ impl CampaignState {
                 .collect();
             let Some(&(tx, ty, d)) = threats.iter().min_by_key(|t| t.2) else { continue };
             let n = if threats.len() >= 2 { 2 } else { 1 + self.rng.below(2) as usize };
+            // As many as the airfields have left and the materiel pays for.
+            let n = n.min(self.blue.fighters as usize);
+            if n == 0 || !self.pay(Side::Blue, SORTIE_COST * n as f64, Spend::Operations) {
+                continue;
+            }
+            self.take_fighters(Side::Blue, n as u32);
             // The orbit: out from the airfield towards the threat.
             let r = AI_CAP_STATION.min(d);
             let d = d.max(1);
@@ -415,7 +594,10 @@ impl CampaignState {
 
     /// The campaign sends an insertion of its own when a front place is (nearly) undefended.
     pub(crate) fn auto_insertion(&mut self, view: &WorldView, ev: &mut Vec<CampaignEvent>) {
-        if self.clock - self.auto_insert_at < AUTO_INSERT_EVERY {
+        // A place that just changed hands: its new guns are not in the view yet.
+        if self.clock - self.auto_insert_at < AUTO_INSERT_EVERY
+            || ev.iter().any(|e| matches!(e, CampaignEvent::PlaceCaptured { .. }))
+        {
             return;
         }
         // Guns count too: helicopters landing among them do not get through.
@@ -429,8 +611,284 @@ impl CampaignState {
         }
     }
 
+    /// The enemy's offensive: now and then an insertion against the weakest friendly place
+    /// on its front, and a raid on a friendly airfield near it (paced by its skill).
+    pub(crate) fn enemy_offensive(&mut self, view: &WorldView, ev: &mut Vec<CampaignEvent>) {
+        let skill = (self.setup.opponents as usize).min(3);
+        let now = self.clock;
+        if now - self.enemy_insert_at >= ENEMY_INSERT_EVERY[skill] {
+            let target = self
+                .front(Side::Red)
+                .into_iter()
+                .filter(|&p| {
+                    let p = &self.places[p as usize];
+                    self.insertion_base(Side::Red, p.x, p.y).is_some()
+                })
+                .filter(|&p| !self.active_insertion(p))
+                .min_by_key(|&p| self.threat_of(p, Some(view)));
+            match target.map(|p| self.order_insertion_for(Side::Red, None, p)) {
+                Some(Ok(e)) => {
+                    self.enemy_insert_at = now;
+                    ev.extend(e);
+                }
+                // Nothing in reach now: another look in a minute.
+                _ => self.enemy_insert_at = now - ENEMY_INSERT_EVERY[skill] + 60.0,
+            }
+        }
+        if now - self.raid_at >= RAID_EVERY[skill] {
+            let ready = self.forces(Side::Red).fighters as usize >= RAID_AIRCRAFT + RAID_ESCORTS
+                && self.forces(Side::Red).materiel >= RAID_COST;
+            match self.raid_target().filter(|_| ready) {
+                Some((place, target, from)) => {
+                    self.pay(Side::Red, RAID_COST, Spend::Operations);
+                    self.raid_at = now;
+                    let id = self.id();
+                    self.raids.push(Raid {
+                        id,
+                        side: Side::Red,
+                        place,
+                        target,
+                        from,
+                        aircraft: Vec::new(),
+                        alive: Vec::new(),
+                        state: RaidState::Pending { launch_at: now + RAID_LEAD },
+                        ended: None,
+                        escorted: false,
+                        drones: false,
+                    });
+                    let name = self.places[place as usize].name.clone();
+                    let text = format!(
+                        "Intelligence: enemy strike aircraft to raid {name} airfield in {} min",
+                        (RAID_LEAD / 60.0).round()
+                    );
+                    self.note(text.clone());
+                    self.board_at = f64::MIN;
+                    ev.push(CampaignEvent::Message(text));
+                }
+                None => self.raid_at = now - RAID_EVERY[skill] + 60.0,
+            }
+        }
+    }
+
+    /// The friendly airfield the enemy raids next: an intact one in reach of an enemy base
+    /// and not raided yet, one of the two nearest the enemy (place, airfield, enemy base).
+    fn raid_target(&mut self) -> Option<(PlaceId, ObjectId, ObjectId)> {
+        let mut all: Vec<(PlaceId, ObjectId, ObjectId, i32)> = self
+            .places
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.owner == Side::Blue)
+            .filter_map(|(k, p)| {
+                let a = p.airfield.filter(|&a| self.site(a).is_some_and(Site::alive))?;
+                if self.raids.iter().any(|r| r.open() && r.target == a) {
+                    return None;
+                }
+                let from = self.nearest_base(Side::Red, p.x, p.y)?;
+                let s = self.site(from)?;
+                let d = dist(s.x - p.x, s.y - p.y);
+                (d <= RAID_RANGE).then_some((k as PlaceId, a, from, d))
+            })
+            .collect();
+        all.sort_by_key(|a| a.3);
+        all.truncate(2);
+        if all.is_empty() {
+            return None;
+        }
+        let (place, target, from, _) = all[self.rng.below(all.len() as i32) as usize];
+        Some((place, target, from))
+    }
+
+    /// The raids' take-off, and the ones that cannot go any more.
+    pub(crate) fn run_raids(&mut self, ev: &mut Vec<CampaignEvent>) {
+        let now = self.clock;
+        for k in 0..self.raids.len() {
+            let r = &self.raids[k];
+            let RaidState::Pending { launch_at } = r.state else { continue };
+            let (id, side, target, base, escorted) = (r.id, r.side, r.target, r.from, r.escorted);
+            let (drones, what) = (r.drones, raid_name(r));
+            let name = self.places[r.place as usize].name.clone();
+            let gone = self.owner(target) != Some(side.enemy())
+                || !self.site(target).is_some_and(Site::alive);
+            if gone {
+                self.end_raid(k, RaidState::CalledOff);
+                continue;
+            }
+            // The escort goes first, to patrol over the target.
+            if !escorted && now >= launch_at - RAID_ESCORT_LEAD && self.bases(side).contains(&base)
+            {
+                let from = base;
+                self.raids[k].escorted = true;
+                let (x, y) = self.site(target).map_or((0, 0), |s| (s.x, s.y));
+                let n = RAID_ESCORTS.min(self.forces(side).fighters as usize);
+                self.take_fighters(side, n as u32);
+                for _ in 0..n {
+                    let tag = self.id();
+                    self.patrols.push((tag, side, now));
+                    let task = FighterTask::Patrol;
+                    ev.push(CampaignEvent::LaunchFighters { tag, side, from, x, y, task });
+                }
+            }
+            if now < launch_at {
+                continue;
+            }
+            let range = if drones { DRONE_RANGE } else { RAID_RANGE };
+            let from = if self.bases(side).contains(&base) {
+                Some(base)
+            } else {
+                let t = self.site(target).expect("target is a site");
+                let (x, y) = (t.x, t.y);
+                self.nearest_base(side, x, y)
+                    .filter(|&b| self.site(b).is_some_and(|s| dist(s.x - x, s.y - y) <= range))
+            };
+            let Some(from) = from else {
+                self.end_raid(k, RaidState::CalledOff);
+                continue;
+            };
+            // Drones are no fighters; strike aircraft come out of the side's.
+            let n = if drones { DRONE_WAVE } else { RAID_AIRCRAFT };
+            if !drones && !self.take_fighters(side, n as u32) {
+                self.end_raid(k, RaidState::CalledOff);
+                continue;
+            }
+            let tags: Vec<u32> = (0..n).map(|_| self.id()).collect();
+            let r = &mut self.raids[k];
+            r.from = from;
+            r.aircraft = tags.clone();
+            r.alive = vec![true; tags.len()];
+            r.state = RaidState::Enroute;
+            self.note(format!("{what} on the way to {name}"));
+            ev.push(CampaignEvent::Message(if side == Side::Blue {
+                format!("{what} on the way to {name}")
+            } else {
+                format!("{what} inbound to {name}!")
+            }));
+            ev.push(CampaignEvent::RaidLaunched { id, side, from, target, tags, drones });
+        }
+        self.raids.retain(|r| r.ended.is_none_or(|t| now - t < RAID_KEEP));
+    }
+
+    fn end_raid(&mut self, k: usize, state: RaidState) {
+        let r = &mut self.raids[k];
+        r.state = state;
+        r.ended = Some(self.clock);
+        let id = r.id;
+        self.settle_raid(id, state == RaidState::Repelled);
+    }
+
+    /// A world object was destroyed: the raid on it (if one is under way) hit.
+    fn raid_hit(&mut self, object: ObjectId, ev: &mut Vec<CampaignEvent>) {
+        let Some(k) =
+            self.raids.iter().position(|r| r.state == RaidState::Enroute && r.target == object)
+        else {
+            return;
+        };
+        let r = &self.raids[k];
+        let what = raid_name(r);
+        let target = self.target_name(r.target);
+        self.end_raid(k, RaidState::Hit);
+        let text = format!("{what} hit {target}");
+        self.note(text.clone());
+        ev.push(CampaignEvent::Message(format!("{text}!")));
+    }
+
+    /// A raid's target for the news: "the Rhein-Main airfield", "the city of Kiev".
+    pub(crate) fn target_name(&self, object: ObjectId) -> String {
+        let Some(s) = self.site(object) else { return "the target".into() };
+        match s.kind {
+            SiteKind::Airfield => format!("the {} airfield", s.name),
+            SiteKind::City => format!("the city of {}", s.name),
+            SiteKind::Sam => format!("the SAM site at {}", s.name),
+            _ => s.name.clone(),
+        }
+    }
+
+    /// A strike aircraft shot down or landed: once none flies on to the target, the raid is
+    /// repelled.
+    fn raider_gone(&mut self, tag: u32, ev: &mut Vec<CampaignEvent>) {
+        let Some(k) = self.raids.iter().position(|r| r.aircraft.contains(&tag)) else { return };
+        let r = &mut self.raids[k];
+        let h = r.aircraft.iter().position(|&t| t == tag).expect("contains");
+        r.alive[h] = false;
+        if r.state == RaidState::Enroute && r.alive.iter().all(|a| !a) {
+            let name = self.places[r.place as usize].name.clone();
+            let text = match (r.side, r.drones) {
+                (Side::Blue, _) => format!("{} did not get through to {name}", raid_name(r)),
+                (_, true) => format!("Drone attack on {name} stopped"),
+                _ => format!("Enemy raid on {name} repelled"),
+            };
+            self.end_raid(k, RaidState::Repelled);
+            self.note(text.clone());
+            ev.push(CampaignEvent::Message(format!("{text}!")));
+        }
+    }
+
+    /// The war is won when the enemy holds no airfield (no place, on a theater where it had
+    /// none), lost when the friendly side holds no airfield and no carrier. True: over now.
+    pub(crate) fn check_outcome(&mut self, ev: &mut Vec<CampaignEvent>) -> bool {
+        let had_airfields =
+            self.sites.iter().any(|s| s.kind == SiteKind::Airfield && s.side == Side::Red);
+        let red = self
+            .places
+            .iter()
+            .any(|p| p.owner == Side::Red && (p.airfield.is_some() || !had_airfields));
+        let blue = self.places.iter().any(|p| p.owner == Side::Blue && p.airfield.is_some())
+            || self
+                .sites
+                .iter()
+                .any(|s| s.kind == SiteKind::Carrier && s.side == Side::Blue && !s.removed);
+        let winner = match (red, blue) {
+            (false, _) => Side::Blue,
+            (true, false) => Side::Red,
+            _ => return false,
+        };
+        self.outcome = Some(Outcome { winner, at: self.clock });
+        self.board.clear();
+        let text = if winner == Side::Blue {
+            "VICTORY: the enemy holds no airfield any more"
+        } else {
+            "DEFEAT: no friendly airfield is left"
+        };
+        self.note(text);
+        ev.push(CampaignEvent::BoardChanged);
+        if self.prune_plans() {
+            ev.push(self.plans_changed());
+        }
+        ev.push(CampaignEvent::Message(text.into()));
+        ev.push(CampaignEvent::Ended { winner });
+        true
+    }
+
     fn blue_places(&self) -> impl Iterator<Item = &Place> {
         self.places.iter().filter(|p| p.owner == Side::Blue)
+    }
+
+    /// Enemy places off the front with something to strike, within deep-strike range of a
+    /// player base, nearest first.
+    fn deep_targets(&self, front: &[PlaceId]) -> Vec<PlaceId> {
+        let bases: Vec<(i32, i32)> = self
+            .player_bases()
+            .into_iter()
+            .filter_map(|b| self.site(b).map(|s| (s.x, s.y)))
+            .collect();
+        let mut all: Vec<(PlaceId, i32)> = self
+            .places
+            .iter()
+            .enumerate()
+            .filter(|(k, p)| p.owner == Side::Red && !front.contains(&(*k as PlaceId)))
+            .filter(|(_, p)| {
+                p.members.iter().any(|&m| {
+                    self.site(m).is_some_and(|s| {
+                        s.alive() && matches!(s.kind, SiteKind::City | SiteKind::Airfield)
+                    })
+                })
+            })
+            .filter_map(|(k, p)| {
+                let d = bases.iter().map(|&(x, y)| dist(p.x - x, p.y - y)).min()?;
+                (d <= DEEP_RANGE).then_some((k as PlaceId, d))
+            })
+            .collect();
+        all.sort_by_key(|a| a.1);
+        all.into_iter().take(DEEP_TARGETS).map(|a| a.0).collect()
     }
 
     /// The enemy places nearest the attacking side's (within the front range; else the
@@ -482,7 +940,7 @@ impl CampaignState {
         let mut offers: Vec<MissionOffer> = Vec::new();
         let now = self.clock;
         let mut add = |c: &mut CampaignState, kind, title: String, objective, x, y, threat| {
-            let Some(base) = c.nearest_base(side, x, y) else { return };
+            let Some(base) = c.nearest_player_base(x, y) else { return };
             let key = objective_key(&objective);
             let (id, posted) = match c.board.iter().find(|o| objective_key(&o.objective) == key) {
                 Some(o) => (o.id, o.posted),
@@ -490,6 +948,72 @@ impl CampaignState {
             };
             offers.push(MissionOffer { id, kind, title, objective, x, y, base, threat, posted });
         };
+        // The enemy's attacks first: they do not wait.
+        for ins in self.insertions.clone() {
+            if ins.side != side.enemy()
+                || !matches!(ins.state, InsertionState::Pending { .. } | InsertionState::Enroute)
+            {
+                continue;
+            }
+            let p = &self.places[ins.place as usize];
+            let (x, y, name) = (p.x, p.y, p.name.clone());
+            add(
+                self,
+                MissionKind::Intercept,
+                format!("Intercept - {name}"),
+                Objective::Intercept { insertion: ins.id },
+                x,
+                y,
+                0,
+            );
+        }
+        for r in self.raids.clone() {
+            if r.side != side.enemy() || !r.open() {
+                continue;
+            }
+            let p = &self.places[r.place as usize];
+            let (x, y, name) = (p.x, p.y, p.name.clone());
+            add(
+                self,
+                MissionKind::Defend,
+                if r.drones {
+                    format!("Drone defense - {name}")
+                } else {
+                    format!("Defend - {name} airfield")
+                },
+                Objective::Defend { raid: r.id },
+                x,
+                y,
+                0,
+            );
+        }
+        // The enemy's AWACS while it is up.
+        if let Some(a) = self.awacs.clone().filter(|a| a.side == side.enemy()) {
+            add(
+                self,
+                MissionKind::Awacs,
+                "AWACS - shoot it down".into(),
+                Objective::Awacs { tag: a.tag },
+                a.x,
+                a.y,
+                0,
+            );
+        }
+        // Pilots down behind the lines.
+        for d in self.downed.clone() {
+            if d.state != DownedState::Waiting {
+                continue;
+            }
+            add(
+                self,
+                MissionKind::Csar,
+                format!("Rescue - {}", d.name),
+                Objective::Rescue { downed: d.id },
+                d.x,
+                d.y,
+                0,
+            );
+        }
         let front = self.front(side);
         for &pid in &front {
             let p = self.places[pid as usize].clone();
@@ -560,9 +1084,44 @@ impl CampaignState {
                 );
             }
         }
+        // Deep strikes on the enemy's rear: its cities (the materiel it fights with), else its
+        // airfields.
+        for pid in self.deep_targets(&front) {
+            let p = self.places[pid as usize].clone();
+            let threat = self.threat_of(pid, Some(view));
+            let city = p
+                .members
+                .iter()
+                .copied()
+                .find(|&m| self.site(m).is_some_and(|s| s.kind == SiteKind::City && s.alive()));
+            let airfield = p.airfield.filter(|&a| self.site(a).is_some_and(Site::alive));
+            if let Some(object) = city {
+                add(
+                    self,
+                    MissionKind::Interdiction,
+                    format!("Interdiction - {}", p.name),
+                    Objective::Interdict { place: pid, object },
+                    p.x,
+                    p.y,
+                    threat,
+                );
+            } else if let Some(a) = airfield {
+                add(
+                    self,
+                    MissionKind::Interdiction,
+                    format!("Deep strike - {} airfield", p.name),
+                    Objective::Strike { place: pid, airfield: a },
+                    p.x,
+                    p.y,
+                    threat,
+                );
+            }
+        }
         // Escorts for the insertions under way.
         for ins in self.insertions.clone() {
-            if !matches!(ins.state, InsertionState::Pending { .. } | InsertionState::Enroute) {
+            if ins.side != side
+                || !matches!(ins.state, InsertionState::Pending { .. } | InsertionState::Enroute)
+            {
                 continue;
             }
             let p = &self.places[ins.place as usize];
@@ -638,11 +1197,50 @@ impl CampaignState {
         for (x, y, name) in caps {
             add(self, MissionKind::Cap, format!("CAP - {name}"), Objective::Cap { x, y }, x, y, 0);
         }
-        offers.truncate(BOARD_SIZE);
+        // Too many: the urgent ones stay, the front's furthest places go first.
+        if offers.len() > BOARD_SIZE {
+            let rank = |o: &MissionOffer| match o.kind {
+                MissionKind::Intercept
+                | MissionKind::Defend
+                | MissionKind::Csar
+                | MissionKind::Awacs => 0,
+                MissionKind::Escort => 1,
+                MissionKind::Interdiction => 2,
+                MissionKind::Cap | MissionKind::AntiShip => 3,
+                _ => 4 + front_index(&front, &o.objective),
+            };
+            let mut keep: Vec<usize> = (0..offers.len()).collect();
+            keep.sort_by_key(|&k| rank(&offers[k]));
+            keep.truncate(BOARD_SIZE);
+            keep.sort_unstable();
+            offers = keep.into_iter().map(|k| offers[k].clone()).collect();
+        }
         let changed = offers != self.board;
         self.board = offers;
         changed
     }
+}
+
+/// What flies a raid, for the news.
+fn raid_name(r: &Raid) -> &'static str {
+    match (r.side, r.drones) {
+        (Side::Blue, _) => "AI SEAD aircraft",
+        (_, true) => "Enemy drones",
+        _ => "Enemy strike aircraft",
+    }
+}
+
+/// Where an offer's place is on the front (nearest first; past the end: not on it).
+fn front_index(front: &[PlaceId], o: &Objective) -> usize {
+    let place = match *o {
+        Objective::Recon { place, .. }
+        | Objective::Sead { place, .. }
+        | Objective::Cas { place, .. }
+        | Objective::Strike { place, .. }
+        | Objective::Insertion { place } => place,
+        _ => return front.len(),
+    };
+    front.iter().position(|&p| p == place).unwrap_or(front.len())
 }
 
 /// What identifies an offer across rebuilds.
@@ -657,5 +1255,10 @@ fn objective_key(o: &Objective) -> (u8, i64) {
         Objective::Cap { x, y } => (5, ((x / 0x500) as i64) << 16 | (y / 0x500) as i64),
         Objective::Escort { insertion } => (6, insertion as i64),
         Objective::Insertion { place } => (7, place as i64),
+        Objective::Intercept { insertion } => (8, insertion as i64),
+        Objective::Defend { raid } => (9, raid as i64),
+        Objective::Interdict { object, .. } => (10, object as i64),
+        Objective::Rescue { downed } => (11, downed as i64),
+        Objective::Awacs { tag } => (12, tag as i64),
     }
 }

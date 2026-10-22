@@ -3,14 +3,16 @@
 //!
 //! The campaign is saved every minute and on stopping, and goes on from the save when the
 //! server starts again, unless the theater asked for is another one: then a new campaign
-//! starts (the old save is kept aside).
+//! starts (the old save is kept aside). The war waits while no player is connected. When it
+//! is won or lost, the result stays on the players' screens for two minutes; then the server
+//! keeps the finished campaign aside and starts the next one (unless `--no-rotate`).
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use stealth_campaign::{CampaignEvent, CampaignSetup};
+use stealth_campaign::{CampaignEvent, CampaignSetup, Side, tuning};
 use stealth_host::{Host, HostEvent, Rules, save, theater};
 
 use crate::console::{Console, Status};
@@ -45,6 +47,8 @@ pub struct Config {
     pub master: Option<String>,
     /// Plain log lines instead of the terminal screen.
     pub plain: bool,
+    /// A new campaign after one is won or lost (`--no-rotate`: the finished one stays).
+    pub rotate: bool,
 }
 
 impl Config {
@@ -52,7 +56,7 @@ impl Config {
     /// `--opponents`, `--seed`, `--sky-ratio`, `--start-hour`, `--clear-sky`, `--save <file>` and the rules
     /// `--classic-damage`, `--classic-guidance`, `--classic-time` (realistic damage and guidance
     /// and continuous time are the default), `--no-crashes`, `--realistic-weapons`,
-    /// `--friendly-fire`.
+    /// `--friendly-fire`, and `--no-rotate`.
     pub fn from_args(args: &[String]) -> Result<Self> {
         let get = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
         let has = |f: &str| args.iter().any(|a| a == f);
@@ -100,6 +104,7 @@ impl Config {
             master: (!has("--no-master"))
                 .then(|| get("--master").unwrap_or_else(|| crate::master::DEFAULT_MASTER.into())),
             plain: has("--plain"),
+            rotate: !has("--no-rotate"),
         })
     }
 }
@@ -142,26 +147,75 @@ fn campaign(cfg: &Config, data: &stealth_mission::GameData, con: &mut Console) -
                 ));
             }
             let code = cfg.theater.clone().unwrap_or_else(|| "ce".into());
-            let setup = CampaignSetup {
-                theater: theater::theater_index(&code).context("theater")?,
-                theater_code: code.clone(),
-                roe: cfg.roe,
-                opponents: cfg.opponents,
-                seed: cfg.seed.unwrap_or_else(|| {
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map_or(1, |d| d.subsec_nanos())
-                }),
-                sky_ratio: cfg.sky_ratio,
-                start_hour: cfg.start_hour,
-                dynamic_weather: !cfg.clear_sky,
-            };
-            con.say(format!("a new campaign in {}", code.to_ascii_uppercase()));
-            let host = Host::new(setup, data, cfg.rules)?;
-            save::save_to(&cfg.save, &host.state)?;
-            Ok(host)
+            new_campaign(cfg, data, con, &code, cfg.seed.unwrap_or_else(clock_seed))
         }
     }
+}
+
+fn clock_seed() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1, |d| d.subsec_nanos())
+}
+
+/// A new campaign in a theater, saved at once.
+fn new_campaign(
+    cfg: &Config,
+    data: &stealth_mission::GameData,
+    con: &mut Console,
+    code: &str,
+    seed: u32,
+) -> Result<Host> {
+    let setup = CampaignSetup {
+        theater: theater::theater_index(code).context("theater")?,
+        theater_code: code.to_string(),
+        roe: cfg.roe,
+        opponents: cfg.opponents,
+        seed,
+        sky_ratio: cfg.sky_ratio,
+        start_hour: cfg.start_hour,
+        dynamic_weather: !cfg.clear_sky,
+    };
+    con.say(format!("a new campaign in {}", code.to_ascii_uppercase()));
+    let host = Host::new(setup, data, cfg.rules)?;
+    save::save_to(&cfg.save, &host.state)?;
+    Ok(host)
+}
+
+/// The campaign is over: it is kept as `<file>.<theater>.<won|lost>-<unix time>.json` and the
+/// next one starts in the same theater.
+fn next_campaign(
+    cfg: &Config,
+    data: &stealth_mission::GameData,
+    con: &mut Console,
+    old: &Host,
+) -> Result<Host> {
+    let code = old.state.setup.theater_code.to_ascii_lowercase();
+    let won = old.state.outcome.is_some_and(|o| o.winner == Side::Blue);
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let mut aside = cfg.save.clone().into_os_string();
+    aside.push(format!(".{code}.{}-{secs}.json", if won { "won" } else { "lost" }));
+    save::save_to(std::path::Path::new(&aside), &old.state)?;
+    con.say(format!("the campaign is over; kept as {}", aside.to_string_lossy()));
+    // A fixed seed: the next one still differs (and is the same on every run).
+    let seed = match cfg.seed {
+        Some(_) => old.state.setup.seed.wrapping_add(1),
+        None => clock_seed(),
+    };
+    new_campaign(cfg, data, con, &code, seed)
+}
+
+/// The game server on its port, listed with the master server.
+fn open_server(cfg: &Config) -> Result<Server> {
+    let mut server = Server::new(&cfg.name, cfg.port, cfg.max_players, None)
+        .with_context(|| format!("listening on UDP port {}", cfg.port))?;
+    server.send_every = cfg.send_every;
+    if let Some(m) = &cfg.master {
+        server.list_on(m);
+    }
+    Ok(server)
 }
 
 /// Runs the server until `stop` is set.
@@ -173,12 +227,7 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
     let sim_data = theater::sim_data(setup.theater, &setup.theater_code)
         .context("the simulation data (assets/sim)")?;
     let mut sim = host.new_sim(&sim_data);
-    let mut server = Server::new(&cfg.name, cfg.port, cfg.max_players, None)
-        .with_context(|| format!("listening on UDP port {}", cfg.port))?;
-    server.send_every = cfg.send_every;
-    if let Some(m) = &cfg.master {
-        server.list_on(m);
-    }
+    let mut server = open_server(&cfg)?;
     con.say(format!(
         "{} listening on UDP port {} for {} players, saving to {}",
         cfg.name,
@@ -187,6 +236,9 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
         cfg.save.display()
     ));
     con.say(format!("rules: {}", rules_text(&host.rules)));
+    if host.rules != cfg.rules {
+        con.say("(the campaign's own, kept from its start: the switches apply to a new campaign)");
+    }
     con.say(format!("tick rate {:.1} updates per second", FS as f32 / cfg.send_every as f32));
     let ev = host.begin(&mut sim);
     log_events(&mut con, &ev);
@@ -194,6 +246,7 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
     let mut next = Instant::now();
     let mut last = Instant::now();
     let mut save_timer = 0.0f32;
+    let mut paused = false;
 
     while !stop.load(Ordering::Relaxed) && !con.stop_asked() {
         let now = Instant::now();
@@ -207,20 +260,47 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
         last = now;
         let ev = server.pump(&mut host, &mut sim, now);
         log_events(&mut con, &ev);
-        let inputs = server.inputs();
-        let mut events = sim.step_pilots(&inputs, FS);
-        events.extend(host.take_sim_events(&mut sim));
-        server.after_step(&events);
-        let ev = host.tick(&mut sim, dt, &events);
-        server.route(&ev);
-        log_events(&mut con, &ev);
-        let after = host.take_sim_events(&mut sim);
-        server.after_step(&after);
+        // Nobody to fight it: the war waits (the enemy does not take the map on its own).
+        let empty = server.connected().is_empty();
+        if empty != paused {
+            paused = empty;
+            con.say(if paused {
+                "no players connected: the war waits"
+            } else {
+                "a player joined: the war goes on"
+            });
+        }
+        if !paused {
+            let inputs = server.inputs();
+            let mut events = sim.step_pilots(&inputs, FS);
+            events.extend(host.take_sim_events(&mut sim));
+            server.after_step(&events);
+            let ev = host.tick(&mut sim, dt, &events);
+            server.route(&ev);
+            log_events(&mut con, &ev);
+            let after = host.take_sim_events(&mut sim);
+            server.after_step(&after);
+        }
         server.send_frame(&host, &mut sim, now);
         for line in server.log.drain(..) {
             con.say(line);
         }
-        con.draw(&status(&cfg, &host, &sim, &server));
+        con.draw(&status(&cfg, &host, &sim, &server, paused));
+
+        // The end of the war on the screens long enough (or nobody left to see it): the next.
+        if cfg.rotate
+            && host.state.ended_for().is_some_and(|t| t >= tuning::END_SCREEN_SECONDS || paused)
+        {
+            server.shutdown("The campaign is over. The next one has started: join again");
+            drop(server);
+            host = next_campaign(&cfg, &data, &mut con, &host)?;
+            sim = host.new_sim(&sim_data);
+            server = open_server(&cfg)?;
+            let ev = host.begin(&mut sim);
+            log_events(&mut con, &ev);
+            save_timer = 0.0;
+            continue;
+        }
 
         save_timer += dt as f32;
         if save_timer >= SAVE_EVERY {
@@ -258,14 +338,23 @@ fn log_events(con: &mut Console, events: &[HostEvent]) {
 }
 
 /// What the console shows.
-fn status(cfg: &Config, host: &Host, sim: &stealth_sim::Sim, server: &Server) -> Status {
+fn status(
+    cfg: &Config,
+    host: &Host,
+    sim: &stealth_sim::Sim,
+    server: &Server,
+    paused: bool,
+) -> Status {
     use crate::master::held;
-    use stealth_campaign::Side;
+    let mut clock = crate::master::clock_text(host);
+    if paused {
+        clock.push_str(" (waiting for players)");
+    }
     Status {
         name: cfg.name.clone(),
         port: server.port().unwrap_or(cfg.port),
         theater: host.state.setup.theater_code.to_ascii_uppercase(),
-        clock: crate::master::clock_text(host),
+        clock,
         places: [held(host, Side::Blue), held(host, Side::Red), held(host, Side::Neutral)],
         players: server.roster(host, sim),
         max_players: cfg.max_players,

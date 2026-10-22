@@ -88,16 +88,20 @@ pub struct Host {
 }
 
 impl Host {
-    /// A new campaign.
+    /// A new campaign under `rules` (kept with it).
     pub fn new(setup: CampaignSetup, data: &GameData, rules: Rules) -> anyhow::Result<Self> {
         let mission = glue::base_mission(&setup, data)?;
-        let state = CampaignState::new(setup, &mission.world);
+        let mut state = CampaignState::new(setup, &mission.world);
+        state.rules = Some(rules.into());
         Ok(Self::with_state(state, mission, rules))
     }
 
-    /// A saved campaign.
-    pub fn resume(state: CampaignState, data: &GameData, rules: Rules) -> anyhow::Result<Self> {
+    /// A saved campaign, under the rules it was started with (an older save without them
+    /// takes `rules` from now on).
+    pub fn resume(mut state: CampaignState, data: &GameData, rules: Rules) -> anyhow::Result<Self> {
         let mission = glue::base_mission(&state.setup, data)?;
+        let rules = state.rules.map_or(rules, Rules::from);
+        state.rules = Some(rules.into());
         Ok(Self::with_state(state, mission, rules))
     }
 
@@ -142,7 +146,10 @@ impl Host {
         }
         for p in &self.state.places {
             if p.owner != Side::Neutral {
-                sim.place_defences(p.x, p.y, p.airfield.is_some(), p.owner == Side::Blue);
+                let blue = p.owner == Side::Blue;
+                sim.place_defences(p.x, p.y, p.airfield.is_some(), blue);
+                // The guns it lost stay lost until the campaign replaces them.
+                sim.wreck_defences(p.x, p.y, blue, p.guns_lost as usize);
             }
         }
         self.place_patriots(sim);
@@ -214,6 +221,17 @@ impl Host {
             }
         }
         Ok(out)
+    }
+
+    /// A player calls in AI SEAD for an offer's place.
+    pub fn request_support(
+        &mut self,
+        sim: &mut Sim,
+        player: PlayerId,
+        offer: u32,
+    ) -> Result<Vec<HostEvent>, String> {
+        let events = self.state.apply(player, Command::RequestSupport { offer })?;
+        Ok(self.apply(sim, events))
     }
 
     /// A player orders an insertion against an enemy place.
@@ -375,9 +393,30 @@ impl Host {
         let mut out = Vec::new();
         for e in events {
             match &e {
-                CampaignEvent::InsertionLaunched { from, target, tags, .. } => {
+                CampaignEvent::InsertionLaunched { from, target, tags, side, .. } => {
+                    let blue = *side == Side::Blue;
                     for (n, &tag) in tags.iter().enumerate() {
-                        sim.spawn_insertion(*from as usize, *target as usize, tag, n);
+                        sim.spawn_insertion_for(*from as usize, *target as usize, tag, n, blue);
+                    }
+                }
+                CampaignEvent::RaidLaunched { from, target, tags, side, drones, .. } => {
+                    let (from, target) = (*from as usize, *target as usize);
+                    let blue = *side == Side::Blue;
+                    for &tag in tags {
+                        if *drones {
+                            sim.spawn_drone(from, target, tag, blue);
+                        } else {
+                            sim.spawn_striker(from, target, tag, blue);
+                        }
+                    }
+                }
+                CampaignEvent::LaunchAwacs { tag, side, from, x, y } => {
+                    sim.spawn_awacs(*from as usize, *x, *y, *tag, *side == Side::Blue);
+                }
+                CampaignEvent::Recall { tag } => sim.recall_flight(*tag),
+                CampaignEvent::GunRepaired { place } => {
+                    if let Some(p) = self.state.place(*place) {
+                        sim.restore_defence(p.x, p.y, p.owner == Side::Blue);
                     }
                 }
                 CampaignEvent::PlaceCaptured { place, side, members, removed } => {
@@ -391,6 +430,10 @@ impl Host {
                     }
                     if let Some(p) = self.state.place(*place) {
                         sim.place_defences(p.x, p.y, p.airfield.is_some(), blue);
+                    }
+                    // A battery at a place the enemy took is gone with its other defences.
+                    if !blue {
+                        self.patriots.retain(|p| p != place);
                     }
                     // The front moved: airfields now in the rear may get a battery.
                     self.place_patriots(sim);

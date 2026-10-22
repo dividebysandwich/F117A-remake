@@ -40,7 +40,7 @@ returns to it.
 |---|---|
 | SINGLE MISSION | One mission with the options below. |
 | CAREER | Pilot records and the tour of duty, with the tour's options (chapter 10). |
-| DYNAMIC CAMPAIGN | Start or continue a dynamic campaign, with the theater, situation, opponents, aircraft, realism and classic / modern options. **Weather**: *changing* (the default) or *clear sky*. Changing weather turns once or twice a day of the campaign's sky, mostly fair (clear, scattered or broken cumulus, sometimes an overcast) and now and then thunderstorms; each change takes a few minutes, the clouds building up or thinning out and the light following. The Ops screen shows the weather and the next change next to the clock, the briefing the cloud layers. |
+| DYNAMIC CAMPAIGN | Start or continue a dynamic campaign, with the theater, situation, opponents, aircraft, realism and classic / modern options. **Weather**: *changing* (the default) or *clear sky*. Changing weather turns once or twice a day of the campaign's sky, mostly fair (clear, scattered or broken cumulus, sometimes an overcast) and now and then thunderstorms; each change takes a few minutes, the clouds building up or thinning out and the light following. The Ops screen shows the weather and the next change next to the clock, the briefing the cloud layers. **The enemy fights back**: now and then it sends helicopters against the weakest friendly place on its front and raids a friendly airfield with escorted strike aircraft (more often against better opponents). Intelligence warns a few minutes ahead, and the board posts an INTERCEPT or DEFEND mission at the top. A bombed airfield launches no AI aircraft until it is repaired, but you can always take off from it. Guns and MANPADS teams destroyed stay destroyed (saves included) until they are replaced, one every 20 minutes. The war is won when the enemy holds no airfield, and lost when the friendly side holds neither an airfield nor a carrier. **Materiel and aircraft**: each side's AI fights with the war materiel its places and their cities bring in every hour and with the fighters and helicopters it has left. Every repair, AI sortie, raid and AI insertion costs materiel; aircraft shot down are gone, and new ones are bought every hour while the materiel lasts. INTERDICTION missions strike the enemy's rear: a city destroyed costs it materiel at once and its income until rebuilt. Only the AI runs short: your aircraft, bases and insertion orders never do. The **FORCES** tab shows both sides side by side: materiel, income and where it comes from, the aircraft on the ground and in the air, where the materiel went since the start, and the prices. The footer of the Ops screen shows both sides' materiel and income at all times. **CSAR**: eject over enemy territory and the board posts a rescue: any player who holds the air within 5 km of the pilot for 2 minutes gets him out. Otherwise, after 20 minutes, a rescue helicopter may still get through; if it doesn't, the pilot is captured, which costs the friendly side materiel and a fighter (never your own next sortie). **Points and ranks**: every sortie earns points: the objective's (100 to 250 by kind, once it is settled), 50 per aircraft and 20 per ground kill, and 25 for bringing the aircraft home. They earn the career's ranks over the campaign, and its medals for one sortie's points; the debrief shows them, and PLAYERS has a leaderboard of every pilot who flew in the campaign. **Packages**: objectives of two different kinds achieved at one place within 15 minutes (SEAD and STRIKE, say, or CAS and the ESCORT of an insertion) earn every sortie of the package 100 more points; the mission's details name the other missions there. Flying alone, **REQUEST AI SEAD** sends two friendly strike aircraft at one of the place's SAM sites ahead of you (15 materiel and two aircraft of the friendly side). **Opportunity**: now and then the enemy puts an AWACS up behind its front for an hour; while it flies, its patrols go up twice as often and are sent straight at you, so the board offers to shoot it down. In Ukraine the enemy also launches waves of six Geran attack drones at a friendly city or airfield (DRONE DEFENSE): the first one through destroys it. **Rules**: a campaign keeps the realism rules it was started with, whoever continues or serves it later; the realism settings apply to new campaigns. |
 | MULTIPLAYER | Coop in the dynamic campaign: join a server or host a campaign and fly in it (chapter 13). |
 | CONTROLS | The input mapping (chapter 2). |
 | QUIT | Exit to the desktop. |
@@ -989,7 +989,9 @@ or F-16) for each sortie on the briefing's LOADOUT page.
 ### On the Ops screen
 
 - **PLAYERS** lists everybody in the campaign: who is on the mission board, who flies what, the
-  sorties flown and objectives achieved, and each player's ping.
+  sorties flown and objectives achieved, points and rank, and each player's ping; under it the
+  leaderboard keeps every pilot's record, also of those who have left (a newcomer taking a free
+  slot does not take the record with it), and the line at the bottom names the campaign's rules.
 - **SAVE & EXIT** (top right, under the clock) leaves the campaign; as the host it also ends the
   game for the others. On a server that is not yours the button reads **DISCONNECT**: the war goes
   on on the server, and nothing is saved on your computer.
@@ -1039,11 +1041,22 @@ stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 289
 | `--master <url>` | The server list to be on (default `https://sm-master.playspoon.com`; reported every 30 seconds). |
 | `--no-master` | Not on the server list: players join by address. |
 | `--plain` | Log lines instead of the console screen. |
+| `--no-rotate` | When the campaign is won or lost, keep it instead of starting the next one. |
 
 The server saves the campaign (which side holds which place, what is destroyed, the players'
-records) every minute and when it stops, and goes on from the save when it starts again. Started
+records, its rules) every minute and when it stops, and goes on from the save when it starts
+again, under the rules it was started with: the rule switches apply to a new campaign. Started
 with another `--theater` than the saved campaign's, it begins a new campaign and keeps the old
 save next to it (`dedicated.json.<theater>.bak.json`).
+
+While no player is connected the war waits: the clock stops, and the enemy takes nothing while
+nobody can defend it. The first player to join sets it going again. The server list shows such
+a server as *waiting for players*.
+
+When the war is won or lost, every player sees the result with each pilot's record and a
+countdown. Two minutes later (at once, if nobody is connected) the server keeps the finished
+campaign as `dedicated.json.<theater>.won-<time>.json` (or `lost-`) and starts a new one in the
+same theater. The players are disconnected and join the new campaign again.
 
 In a terminal the server shows a console screen: its uptime, the places and airfields each side
 holds, the players and what they do, and the recent events with their times (UTC). **q**, Esc or

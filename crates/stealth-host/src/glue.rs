@@ -115,7 +115,7 @@ pub fn spotted(state: &CampaignState, sim: &Sim) -> Vec<Report> {
 /// How a sortie ended, from the simulation's end record.
 pub fn sortie_end(e: &stealth_sim::MissionEnd) -> (SortieEnd, &'static str) {
     match (e.outcome, e.landing_type) {
-        (0, 2) => (SortieEnd::Ejected, "Ejected - picked up by friendly forces"),
+        (0, 2) => (SortieEnd::Ejected, "Ejected"),
         (0, _) => (SortieEnd::Landed, "Sortie ended on the ground"),
         (6, _) => (SortieEnd::Crashed, "Ejection failed - the pilot is recovered"),
         (7, _) => (SortieEnd::Aborted, "Sortie aborted"),
@@ -130,9 +130,15 @@ pub fn stores(kind: MissionKind) -> [i16; 4] {
         MissionKind::Recon => [16, 0, 2, 0],
         MissionKind::Sead => [2, 2, 5, 0],
         MissionKind::Cas => [5, 7, 5, 0],
-        MissionKind::Strike => [6, 8, 6, 0],
+        MissionKind::Strike | MissionKind::Interdiction => [6, 8, 6, 0],
         MissionKind::AntiShip => [4, 3, 5, 0],
-        MissionKind::Cap | MissionKind::Escort | MissionKind::Insertion => [1, 0, 1, 0],
+        MissionKind::Cap
+        | MissionKind::Escort
+        | MissionKind::Insertion
+        | MissionKind::Intercept
+        | MissionKind::Defend
+        | MissionKind::Csar
+        | MissionKind::Awacs => [1, 0, 1, 0],
     }
 }
 
@@ -143,6 +149,7 @@ pub fn sim_objective(sortie: &Sortie) -> Option<(i32, usize)> {
     match sortie.offer.objective {
         Objective::Recon { object, .. } => Some((1, object as usize)),
         Objective::Strike { airfield, .. } => Some((2, airfield as usize)),
+        Objective::Interdict { object, .. } => Some((2, object as usize)),
         Objective::AntiShip { ship } => Some((2, ship as usize)),
         Objective::Sead { ref sites, .. } => sites.first().map(|&o| (2, o as usize)),
         _ => None,
@@ -214,6 +221,19 @@ pub fn describe(kind: MissionKind) -> &'static str {
         MissionKind::Insertion => {
             "Helicopters fly troops in from the nearest friendly base; one landing takes the place"
         }
+        MissionKind::Intercept => {
+            "Shoot down the enemy's troop helicopters before they land: one landing takes the place"
+        }
+        MissionKind::Defend => "Shoot down the enemy strike aircraft before they bomb the airfield",
+        MissionKind::Interdiction => {
+            "Strike the enemy's rear: a city costs it materiel at once and its income until rebuilt, an airfield its aircraft there"
+        }
+        MissionKind::Csar => {
+            "Hold the air within 5 km of the downed pilot for 2 minutes while the helicopter picks him up"
+        }
+        MissionKind::Awacs => {
+            "Shoot down the enemy AWACS: while it is up the enemy sends more patrols, and sends them at you"
+        }
     }
 }
 
@@ -222,5 +242,5 @@ pub fn default_base(state: &CampaignState) -> Option<usize> {
     let front = state.front(Side::Blue);
     let (x, y) =
         front.first().and_then(|&p| state.place(p)).map_or((0x4000, 0x4000), |p| (p.x, p.y));
-    state.nearest_base(Side::Blue, x, y).map(|b| b as usize)
+    state.nearest_player_base(x, y).map(|b| b as usize)
 }

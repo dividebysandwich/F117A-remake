@@ -190,11 +190,16 @@ pub fn fetch_list(_master: &str) -> Result<Vec<ServerEntry>, String> {
     Err("not available in the browser".into())
 }
 
-/// The campaign's clock: "day 3 14:05".
+/// The campaign's clock: "day 3 14:05", "day 9 06:30 - won".
 pub fn clock_text(host: &Host) -> String {
     let h = host.state.sky_hours();
+    let end = match host.state.outcome {
+        Some(o) if o.winner == Side::Blue => " - won",
+        Some(_) => " - lost",
+        None => "",
+    };
     format!(
-        "day {} {:02}:{:02}",
+        "day {} {:02}:{:02}{end}",
         (h / 24.0).floor() as i64 + 1,
         h.rem_euclid(24.0) as i64,
         (h.rem_euclid(1.0) * 60.0) as i64
@@ -267,7 +272,11 @@ pub fn report(server: &Server, host: &Host, sim: &Sim, dedicated: bool) -> Serve
         dedicated,
         max_players: server.max_players as u16,
         theater: stealth_host::theater::theater_name(&setup.theater_code),
-        clock: clock_text(host),
+        clock: if dedicated && server.connected().is_empty() {
+            format!("{} (waiting for players)", clock_text(host))
+        } else {
+            clock_text(host)
+        },
         situation: SITUATIONS.get(setup.roe as usize).unwrap_or(&"").to_string(),
         opponents: OPPONENTS.get(setup.opponents as usize).unwrap_or(&"").to_string(),
         rules: rules_list(&host.rules),

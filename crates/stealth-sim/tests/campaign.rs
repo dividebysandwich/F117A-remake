@@ -586,3 +586,146 @@ fn a_friendly_fighter_leaves_the_player_alone() {
         assert_ne!(sim.flights()[cap].mode, 1, "the CAP went for the player");
     }
 }
+
+#[test]
+fn an_enemy_strike_bombs_the_airfield_and_flies_home() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let from = find(&sim, 0x001, Some("Tabor"));
+    let to = find(&sim, 0x401, Some("Neuberg"));
+    let i = sim.spawn_striker(from, to, 55, false);
+    assert!(!sim.campaign_flight(i).unwrap().blue);
+    let (mut bombed, mut landed) = (false, false);
+    for _ in 0..60 * 60 {
+        for e in run(&mut sim, &idle(), 1) {
+            match e {
+                SimEvent::GroundDestroyed { object, by: None, .. } if object == to => bombed = true,
+                SimEvent::CampaignFlightLanded { tag: 55, .. } => landed = true,
+                _ => {}
+            }
+        }
+        if landed {
+            break;
+        }
+    }
+    assert!(bombed, "the airfield was not bombed");
+    assert!(sim.objects()[to].flags & oflags::DESTROYED != 0);
+    assert!(landed, "the strike aircraft did not get home");
+}
+
+#[test]
+fn an_enemy_helicopter_lands_at_a_friendly_place() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let from = find(&sim, 0x001, Some("Tabor"));
+    let to = find(&sim, 0x401, Some("Neuberg"));
+    let i = sim.spawn_insertion_for(from, to, 9, 0, false);
+    let f = sim.campaign_flight(i).unwrap();
+    assert!(!f.blue && !sim.friendly_unit(i, sim.flights()[i].spec));
+    let mut landed = false;
+    for _ in 0..40 * 60 {
+        landed |= run(&mut sim, &idle(), 1)
+            .iter()
+            .any(|e| matches!(e, SimEvent::CampaignFlightLanded { tag: 9, .. }));
+        if landed {
+            break;
+        }
+    }
+    assert!(landed, "the Hind did not land within 40 minutes");
+}
+
+#[test]
+fn lost_guns_are_wrecks_until_replaced() {
+    let (_, mut sim) = campaign();
+    sim.aaa_units_mut().clear();
+    let o = sim.objects()[find(&sim, 0x001, Some("Tabor"))];
+    sim.place_defences(o.x, o.y, true, false);
+    let alive = |sim: &Sim| sim.aaa_units().iter().filter(|u| !u.destroyed).count();
+    let n = alive(&sim);
+    assert!(n >= 2);
+    sim.wreck_defences(o.x, o.y, false, 2);
+    assert_eq!(alive(&sim), n - 2);
+    sim.restore_defence(o.x, o.y, false);
+    assert_eq!(alive(&sim), n - 1);
+}
+
+#[test]
+fn an_attack_drone_dives_into_its_target() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let from = find(&sim, 0x001, Some("Tabor"));
+    let to = find(&sim, 0x401, Some("Neuberg"));
+    sim.spawn_drone(from, to, 77, false);
+    let t = sim.objects()[to];
+    let (mut hit, mut gone) = (false, false);
+    for _ in 0..4 * 60 * 60 {
+        for e in run(&mut sim, &idle(), 1) {
+            match e {
+                SimEvent::GroundDestroyed { object, by: None, .. } if object == to => hit = true,
+                // It blows up on the target, on the ground (not short of it in the air).
+                SimEvent::Explosion { x, y, alt, kind: -6 } => {
+                    assert_eq!(alt, 0);
+                    assert!((x - t.x).abs() < 0x20 && (y - t.y).abs() < 0x20, "{x},{y}");
+                }
+                SimEvent::CampaignFlightDestroyed { tag: 77, by_player, by, .. } => {
+                    assert!(!by_player && by.is_none(), "nobody's kill");
+                    gone = true;
+                }
+                SimEvent::CampaignFlightLanded { tag: 77, .. } => panic!("a drone does not land"),
+                _ => {}
+            }
+        }
+        if hit && gone {
+            return;
+        }
+    }
+    panic!("hit {hit}, gone {gone}");
+}
+
+#[test]
+fn an_awacs_orbits_until_called_home() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let from = find(&sim, 0x001, Some("Tabor"));
+    let o = sim.objects()[from];
+    let (gx, gy) = (o.x + 0x600, o.y);
+    let i = sim.spawn_awacs(from, gx, gy, 88, false);
+    run(&mut sim, &idle(), 20 * 60);
+    let u = sim.flights()[i];
+    assert!(sim.campaign_flight(i).is_some_and(|f| f.tag == 88), "still up");
+    assert!((u.x - gx).abs() < 0x300 && (u.y - gy).abs() < 0x300, "{},{}", u.x, u.y);
+    sim.recall_flight(88);
+    let mut landed = false;
+    for _ in 0..60 * 60 {
+        landed |= run(&mut sim, &idle(), 1)
+            .iter()
+            .any(|e| matches!(e, SimEvent::CampaignFlightLanded { tag: 88, .. }));
+        if landed {
+            break;
+        }
+    }
+    assert!(landed, "the AWACS did not land");
+}
+
+#[test]
+fn a_drone_that_crashes_short_destroys_nothing() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let from = find(&sim, 0x001, Some("Tabor"));
+    let to = find(&sim, 0x401, Some("Neuberg"));
+    let i = sim.spawn_drone(from, to, 78, false);
+    // On the ground far from its target: it crashes there.
+    sim.flights_mut()[i].alt = 0;
+    let mut gone = false;
+    for _ in 0..60 {
+        for e in run(&mut sim, &idle(), 1) {
+            match e {
+                SimEvent::GroundDestroyed { object, .. } if object == to => panic!("destroyed"),
+                SimEvent::CampaignFlightDestroyed { tag: 78, .. } => gone = true,
+                _ => {}
+            }
+        }
+    }
+    assert!(gone);
+    assert_eq!(sim.objects()[to].flags & oflags::DESTROYED, 0);
+}

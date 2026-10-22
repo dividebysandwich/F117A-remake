@@ -400,6 +400,13 @@ fn multiplayer_window(
                         }
                         ui.add_space(6.0);
                         section(ui, "Host a saved campaign");
+                        ui.label(
+                            egui::RichText::new(
+                                "A saved campaign keeps the rules it was started with",
+                            )
+                            .small()
+                            .color(DIM),
+                        );
                         if w.saves.is_empty() {
                             ui.label(egui::RichText::new("No saved campaigns").color(DIM));
                         }

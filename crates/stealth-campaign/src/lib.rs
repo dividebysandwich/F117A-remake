@@ -1,8 +1,12 @@
 //! The realtime dynamic campaign: two sides hold the cities and
-//! airfields of a theater; the friendly side takes the enemy's places by landing troops with
-//! helicopters. A mission board offers sorties made from the live situation (recon, SEAD, CAP,
-//! CAS, anti-ship, strike, escort), and insertions the AI flies. Pilots never die or get
-//! captured: a sortie just ends and the next one starts from the board.
+//! airfields of a theater and take each other's places by landing troops with helicopters;
+//! the enemy also raids the friendly airfields. A mission board offers sorties made from the
+//! live situation (recon, SEAD, CAP, CAS, anti-ship, strike, escort, intercept, airfield
+//! defence), and insertions the AI flies. Pilots never die or get captured: a sortie just
+//! ends and the next one starts from the board. The war is won when the enemy holds no
+//! airfield, lost when the friendly side holds none (nor a carrier). Each side's AI runs on
+//! the war materiel its places bring in and the aircraft it has left; the players never run
+//! short of either.
 //!
 //! The crate knows nothing of the flight or the renderer. One authority (the game, or a coop
 //! host) owns a [`CampaignState`] and drives it with:
@@ -18,14 +22,18 @@
 //! reports give the same campaign, and a snapshot is all a joining client needs.
 
 mod director;
+mod events;
 mod missions;
+mod record;
 pub mod rng;
 mod state;
+mod supply;
 pub mod tuning;
 pub mod weather;
 
 use serde::{Deserialize, Serialize};
 
+pub use record::PilotRecord;
 pub use state::*;
 
 /// What the simulation sees now (sent with every tick).
@@ -120,6 +128,8 @@ pub enum Command {
     Select { offer: Option<u32>, base: ObjectId },
     /// Change the plan the player is on: its base (resets the route) and its route.
     Plan { offer: u32, base: ObjectId, route: Vec<RoutePoint> },
+    /// Call in AI SEAD against the SAM sites of an offer's place.
+    RequestSupport { offer: u32 },
 }
 
 /// What the authority has to do or show.
@@ -142,9 +152,11 @@ pub enum CampaignEvent {
         player: PlayerId,
         record: SortieRecord,
     },
-    /// Launch helicopters (tags) from a base to land at a world object.
+    /// Launch helicopters (tags) of a side from a base to land at a world object.
     InsertionLaunched {
         id: u32,
+        #[serde(default = "blue")]
+        side: Side,
         from: ObjectId,
         target: ObjectId,
         tags: Vec<u32>,
@@ -164,6 +176,37 @@ pub enum CampaignEvent {
     /// A destroyed site or airfield is back in service.
     Repaired {
         object: ObjectId,
+    },
+    /// One of a place's destroyed guns or MANPADS teams is replaced.
+    GunRepaired {
+        place: PlaceId,
+    },
+    /// Strike aircraft (tags) of a side take off from a base to bomb a world object, or
+    /// attack drones to dive into it.
+    RaidLaunched {
+        id: u32,
+        side: Side,
+        from: ObjectId,
+        target: ObjectId,
+        tags: Vec<u32>,
+        #[serde(default)]
+        drones: bool,
+    },
+    /// An AWACS of a side takes off from a base to orbit a point.
+    LaunchAwacs {
+        tag: u32,
+        side: Side,
+        from: ObjectId,
+        x: i32,
+        y: i32,
+    },
+    /// A campaign aircraft is called home (it lands at its base).
+    Recall {
+        tag: u32,
+    },
+    /// The war is over.
+    Ended {
+        winner: Side,
     },
     /// Recon: the defences of these objects see less far and the players spot them from
     /// further away, until the intelligence expires.
@@ -189,6 +232,10 @@ pub enum CampaignEvent {
     Message(String),
 }
 
+fn blue() -> Side {
+    Side::Blue
+}
+
 impl CampaignState {
     /// Carry out a player's command.
     pub fn apply(&mut self, player: PlayerId, cmd: Command) -> Result<Vec<CampaignEvent>, String> {
@@ -200,6 +247,7 @@ impl CampaignState {
             Command::EndSortie { end } => Ok(self.end_sortie(player, end)),
             Command::Select { offer, base } => self.select(player, offer, base),
             Command::Plan { offer, base, route } => self.edit_plan(player, offer, base, route),
+            Command::RequestSupport { offer } => self.request_support(player, offer),
         }
     }
 
@@ -208,15 +256,28 @@ impl CampaignState {
         let mut ev = Vec::new();
         self.clock += dt.max(0.0);
         for r in reports {
-            self.report(r, &mut ev);
+            self.report(r, view, &mut ev);
         }
         self.track_sorties(dt, view, &mut ev);
+        // Over: the sorties in the air may still finish, nothing else happens.
+        if self.outcome.is_some() {
+            return ev;
+        }
+        self.supply();
+        self.run_downed(&mut ev);
         self.run_insertions(view, &mut ev);
+        self.run_raids(&mut ev);
         self.repairs(&mut ev);
         self.expire_intel(&mut ev);
         self.enemy_air(view, &mut ev);
         self.friendly_cap(view, &mut ev);
         self.auto_insertion(view, &mut ev);
+        self.enemy_offensive(view, &mut ev);
+        self.run_awacs(&mut ev);
+        self.drone_waves(&mut ev);
+        if self.check_outcome(&mut ev) {
+            return ev;
+        }
         if self.clock - self.board_at >= tuning::BOARD_REFRESH
             || ev.iter().any(|e| matches!(e, CampaignEvent::PlaceCaptured { .. }))
         {
@@ -234,6 +295,7 @@ impl CampaignState {
     /// After loading a save: the simulation starts afresh, so whatever was in the air is gone.
     /// Insertions in flight start over, sorties end as aborted.
     pub fn after_load(&mut self) -> Vec<CampaignEvent> {
+        self.ground_everything();
         let lead = self.clock + tuning::INSERTION_LEAD;
         for ins in &mut self.insertions {
             if ins.state == InsertionState::Enroute {
@@ -243,8 +305,19 @@ impl CampaignState {
                 ins.scrambled = false;
             }
         }
+        let lead = self.clock + tuning::RAID_LEAD;
+        for r in &mut self.raids {
+            if r.state == RaidState::Enroute {
+                r.state = RaidState::Pending { launch_at: lead };
+                r.aircraft.clear();
+                r.alive.clear();
+                r.escorted = false;
+            }
+        }
         self.patrols.clear();
         self.caps.clear();
+        // The AWACS went down with the simulation: another one goes up soon.
+        self.awacs = None;
         self.board_at = f64::MIN;
         for p in &mut self.plans {
             p.crew.clear();

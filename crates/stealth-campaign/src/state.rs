@@ -106,6 +106,12 @@ pub struct Place {
     pub defences: Vec<ObjectId>,
     /// Recon intelligence valid until then (campaign time).
     pub intel_until: Option<f64>,
+    /// Its guns and MANPADS teams destroyed and not replaced yet, and when the next one is
+    /// replaced.
+    #[serde(default)]
+    pub guns_lost: u8,
+    #[serde(default)]
+    pub guns_repair_at: Option<f64>,
 }
 
 impl Place {
@@ -124,6 +130,16 @@ pub enum MissionKind {
     Strike,
     Escort,
     Insertion,
+    /// Stop an enemy insertion.
+    Intercept,
+    /// Defend an airfield against an enemy raid.
+    Defend,
+    /// Strike the enemy's rear: a city (its war materiel) or an airfield.
+    Interdiction,
+    /// Cover the rescue of a pilot down in enemy territory.
+    Csar,
+    /// Shoot down the enemy's AWACS while it is up.
+    Awacs,
 }
 
 impl MissionKind {
@@ -137,12 +153,34 @@ impl MissionKind {
             MissionKind::Strike => "STRIKE",
             MissionKind::Escort => "ESCORT",
             MissionKind::Insertion => "INSERTION",
+            MissionKind::Intercept => "INTERCEPT",
+            MissionKind::Defend => "DEFEND",
+            MissionKind::Interdiction => "INTERDICT",
+            MissionKind::Csar => "CSAR",
+            MissionKind::Awacs => "AWACS",
         }
     }
 
     /// Flown by the AI (the player orders it, he does not fly it).
     pub fn ai_flown(self) -> bool {
         self == MissionKind::Insertion
+    }
+
+    /// Points for achieving the objective.
+    pub fn points(self) -> i32 {
+        match self {
+            MissionKind::Recon | MissionKind::Cap => 100,
+            MissionKind::Cas | MissionKind::Escort => 120,
+            MissionKind::Sead
+            | MissionKind::Strike
+            | MissionKind::AntiShip
+            | MissionKind::Intercept
+            | MissionKind::Defend
+            | MissionKind::Csar => 150,
+            MissionKind::Interdiction => 200,
+            MissionKind::Awacs => 250,
+            MissionKind::Insertion => 0,
+        }
     }
 }
 
@@ -185,6 +223,27 @@ pub enum Objective {
     Insertion {
         place: PlaceId,
     },
+    /// Shoot down the enemy's insertion helicopters before they land.
+    Intercept {
+        insertion: u32,
+    },
+    /// Keep the enemy's strike aircraft off the airfield.
+    Defend {
+        raid: u32,
+    },
+    /// Destroy a city of the enemy's rear (its war materiel).
+    Interdict {
+        place: PlaceId,
+        object: ObjectId,
+    },
+    /// Hold the air over a downed pilot while the helicopter picks him up.
+    Rescue {
+        downed: u32,
+    },
+    /// Shoot down the AWACS (campaign tag).
+    Awacs {
+        tag: u32,
+    },
 }
 
 /// A mission on the board.
@@ -215,11 +274,16 @@ pub enum InsertionState {
     Enroute,
     Captured,
     Failed,
+    /// Not flown: the place changed hands before the helicopters got there.
+    CalledOff,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Insertion {
     pub id: u32,
+    /// The side taking the place.
+    #[serde(default = "blue")]
+    pub side: Side,
     pub place: PlaceId,
     /// Base the helicopters fly from.
     pub from: ObjectId,
@@ -267,6 +331,14 @@ pub struct Progress {
     pub achieved: bool,
     /// A friendly helicopter or place lost in the CAP area.
     pub losses: u32,
+    /// Where the player's aircraft was last seen in the air.
+    #[serde(default)]
+    pub last: Option<(i32, i32)>,
+    /// When the objective was achieved, and the package bonus earned.
+    #[serde(default)]
+    pub achieved_at: Option<f64>,
+    #[serde(default)]
+    pub bonus: i32,
 }
 
 /// A sortie being flown.
@@ -302,10 +374,29 @@ pub struct SortieRecord {
     pub ended: f64,
     pub air_kills: u32,
     pub ground_kills: u32,
-    /// The escorted insertion (its result settles a pending escort).
+    /// The escorted or intercepted insertion, the raid defended against (their result
+    /// settles a pending sortie).
     pub insertion: Option<u32>,
     #[serde(default)]
+    pub raid: Option<u32>,
+    /// The downed pilot a rescue covered.
+    #[serde(default)]
+    pub downed: Option<u32>,
+    #[serde(default)]
     pub aircraft: Aircraft,
+    /// The pilot's name (his record stays his when another takes his slot).
+    #[serde(default)]
+    pub pilot: String,
+    /// Points earned (the objective's once it is settled, the package bonus among them).
+    #[serde(default)]
+    pub points: i32,
+    #[serde(default)]
+    pub bonus: i32,
+    /// Where the objective was and when it was achieved (packages).
+    #[serde(default)]
+    pub place: Option<PlaceId>,
+    #[serde(default)]
+    pub achieved_at: Option<f64>,
 }
 
 /// What a route point is: a navigation point a player placed (or the mission's midpoint), or
@@ -376,6 +467,142 @@ fn yes() -> bool {
     true
 }
 
+/// The rules the campaign is fought under (kept with it: the same whoever serves it later).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct CampaignRules {
+    pub realistic_damage: bool,
+    pub realistic_guidance: bool,
+    pub no_crashes: bool,
+    pub continuous_time: bool,
+    pub realistic_weapons: bool,
+    #[serde(default)]
+    pub friendly_fire: bool,
+}
+
+fn blue() -> Side {
+    Side::Blue
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum RaidState {
+    /// Ordered; the strike aircraft take off at this time.
+    Pending {
+        launch_at: f64,
+    },
+    Enroute,
+    /// The target was hit.
+    Hit,
+    /// Every strike aircraft was shot down or turned back before it got there.
+    Repelled,
+    /// Not flown: the target changed hands or was destroyed before.
+    CalledOff,
+}
+
+/// Strike aircraft of a side on their way to bomb an airfield of the other.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Raid {
+    pub id: u32,
+    pub side: Side,
+    pub place: PlaceId,
+    /// The airfield they bomb, the base they fly from.
+    pub target: ObjectId,
+    pub from: ObjectId,
+    /// Campaign tags of the aircraft and which of them still fly to the target.
+    pub aircraft: Vec<u32>,
+    pub alive: Vec<bool>,
+    pub state: RaidState,
+    /// When it ended (campaign time).
+    pub ended: Option<f64>,
+    /// Its escort took off (ahead of it).
+    #[serde(default)]
+    pub escorted: bool,
+    /// Attack drones (they dive into the target) instead of strike aircraft.
+    #[serde(default)]
+    pub drones: bool,
+}
+
+impl Raid {
+    pub fn open(&self) -> bool {
+        matches!(self.state, RaidState::Pending { .. } | RaidState::Enroute)
+    }
+}
+
+/// A side's means of war: its materiel and the AI's aircraft on the ground.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Forces {
+    pub materiel: f64,
+    pub fighters: u32,
+    pub helicopters: u32,
+    /// Where the materiel came from and went since the start.
+    #[serde(default)]
+    pub ledger: Ledger,
+}
+
+/// A side's materiel since the start of the campaign: earned, spent (by what on), lost.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Ledger {
+    pub earned: f64,
+    pub repairs: f64,
+    pub operations: f64,
+    pub aircraft: f64,
+    pub lost: f64,
+}
+
+/// What the AI spends materiel on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spend {
+    /// Sites, airfields and guns put back in service.
+    Repairs,
+    /// Sorties, raids and insertions.
+    Operations,
+    /// New fighters and helicopters.
+    Aircraft,
+}
+
+impl Forces {
+    pub fn start(fighters: u32) -> Self {
+        Self {
+            materiel: MATERIEL_START,
+            fighters,
+            helicopters: HELICOPTERS_START,
+            ledger: Ledger::default(),
+        }
+    }
+
+    /// An older save's.
+    fn initial() -> Self {
+        Self::start(FIGHTERS_START)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DownedState {
+    Waiting,
+    Rescued,
+    Captured,
+}
+
+/// A player who ejected over enemy territory, waiting for a helicopter.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Downed {
+    pub id: u32,
+    pub player: PlayerId,
+    pub name: String,
+    /// Where he came down (map units), and until when he can hold out.
+    pub x: i32,
+    pub y: i32,
+    pub until: f64,
+    pub state: DownedState,
+}
+
+/// How the campaign ended.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Outcome {
+    pub winner: Side,
+    /// Campaign time it ended.
+    pub at: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CampaignState {
     pub setup: CampaignSetup,
@@ -405,6 +632,52 @@ pub struct CampaignState {
     pub caps: Vec<CapFlight>,
     #[serde(default)]
     pub cap_lockout: Vec<(ObjectId, f64)>,
+    /// The enemy's raids, and when its last offensive insertion and raid were ordered.
+    #[serde(default)]
+    pub raids: Vec<Raid>,
+    #[serde(default)]
+    pub enemy_insert_at: f64,
+    #[serde(default)]
+    pub raid_at: f64,
+    /// The war is over (None: still going on).
+    #[serde(default)]
+    pub outcome: Option<Outcome>,
+    /// Each side's materiel and aircraft, and when they last bought aircraft.
+    #[serde(default = "Forces::initial")]
+    pub blue: Forces,
+    #[serde(default = "Forces::initial")]
+    pub red: Forces,
+    #[serde(default)]
+    pub resupply_at: f64,
+    /// Income is settled up to then.
+    #[serde(default)]
+    pub income_at: f64,
+    /// Pilots down in enemy territory (and how their rescue went).
+    #[serde(default)]
+    pub downed: Vec<Downed>,
+    /// The rules it is fought under (None: an older save, the server's).
+    #[serde(default)]
+    pub rules: Option<CampaignRules>,
+    /// The enemy's AWACS in the air, when the last one went up, and the ones shot down.
+    #[serde(default)]
+    pub awacs: Option<Awacs>,
+    #[serde(default)]
+    pub awacs_at: f64,
+    #[serde(default)]
+    pub awacs_down: Vec<u32>,
+    /// When the last drone wave was ordered.
+    #[serde(default)]
+    pub drones_at: f64,
+}
+
+/// An AWACS orbiting a point until it is called home.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Awacs {
+    pub tag: u32,
+    pub side: Side,
+    pub x: i32,
+    pub y: i32,
+    pub until: f64,
 }
 
 /// What a campaign fighter takes off for.
@@ -499,6 +772,8 @@ impl CampaignState {
                         airfield: None,
                         defences: Vec::new(),
                         intel_until: None,
+                        guns_lost: 0,
+                        guns_repair_at: None,
                     });
                     places.len() - 1
                 }
@@ -526,6 +801,7 @@ impl CampaignState {
                 places[p].defences.push(s.object);
             }
         }
+        let skill = setup.opponents.min(3) as u32;
         let mut c = Self {
             rng: Rng::new(setup.seed ^ 0xCA4D_5EED),
             setup,
@@ -545,6 +821,20 @@ impl CampaignState {
             patrols: Vec::new(),
             caps: Vec::new(),
             cap_lockout: Vec::new(),
+            raids: Vec::new(),
+            enemy_insert_at: 0.0,
+            raid_at: 0.0,
+            outcome: None,
+            blue: Forces::start(FIGHTERS_START),
+            red: Forces::start(FIGHTERS_START + ENEMY_FIGHTERS_PER_SKILL * skill),
+            resupply_at: 0.0,
+            income_at: 0.0,
+            downed: Vec::new(),
+            rules: None,
+            awacs: None,
+            awacs_at: 0.0,
+            awacs_down: Vec::new(),
+            drones_at: 0.0,
         };
         c.note("Campaign started");
         c
@@ -596,6 +886,25 @@ impl CampaignState {
             .collect()
     }
 
+    /// Bases the players fly from: every friendly airfield and carrier, bombed or not (a raid
+    /// grounds the AI's aircraft there, never the players).
+    pub fn player_bases(&self) -> Vec<ObjectId> {
+        self.sites
+            .iter()
+            .filter(|s| !s.removed && matches!(s.kind, SiteKind::Airfield | SiteKind::Carrier))
+            .filter(|s| self.owner(s.object) == Some(Side::Blue))
+            .map(|s| s.object)
+            .collect()
+    }
+
+    /// The players' base nearest to a point.
+    pub fn nearest_player_base(&self, x: i32, y: i32) -> Option<ObjectId> {
+        self.player_bases().into_iter().min_by_key(|&b| {
+            let s = self.site(b).expect("base is a site");
+            dist(s.x - x, s.y - y)
+        })
+    }
+
     /// The side's base nearest to a point (None when it has none).
     pub fn nearest_base(&self, side: Side, x: i32, y: i32) -> Option<ObjectId> {
         self.bases(side).into_iter().min_by_key(|&b| {
@@ -616,7 +925,7 @@ impl CampaignState {
 
     /// A player joining under `name`: his slot (and record) if he played before, else a new
     /// one below `max`; with none left, the slot of a player not `busy` and not flying (his
-    /// record goes). None: no room.
+    /// record stays his, under his name). None: no room.
     pub fn join(
         &mut self,
         name: &str,
@@ -638,7 +947,11 @@ impl CampaignState {
                     .filter(|p| (p.id.0 as usize) < max && p.sortie.is_none() && !busy(p.id))
                     .map(|p| p.id)
                     .next()?;
-                self.history.retain(|r| r.player != id);
+                // The record stays with the pilot who had the slot.
+                let old = self.slot_mut(id).name.clone();
+                for r in self.history.iter_mut().filter(|r| r.player == id && r.pilot.is_empty()) {
+                    r.pilot = old.clone();
+                }
                 id
             }
         };
@@ -648,6 +961,12 @@ impl CampaignState {
 
     /// Renames a player (the local pilot's name).
     pub fn rename(&mut self, player: PlayerId, name: &str) {
+        let old = self.slot_mut(player).name.clone();
+        for r in self.history.iter_mut().filter(|r| r.player == player) {
+            if r.pilot.is_empty() || r.pilot.eq_ignore_ascii_case(&old) {
+                r.pilot = name.to_string();
+            }
+        }
         self.slot_mut(player).name = name.to_string();
     }
 
@@ -658,7 +977,10 @@ impl CampaignState {
 
     /// A player's finished sorties (oldest first).
     pub fn records(&self, player: PlayerId) -> impl Iterator<Item = &SortieRecord> {
-        self.history.iter().filter(move |r| r.player == player)
+        let name = self.player_name(player).unwrap_or("").to_string();
+        self.history.iter().filter(move |r| {
+            r.player == player && (r.pilot.is_empty() || r.pilot.eq_ignore_ascii_case(&name))
+        })
     }
 
     pub(crate) fn slot_mut(&mut self, player: PlayerId) -> &mut PlayerSlot {
@@ -685,6 +1007,28 @@ impl CampaignState {
 
     pub fn insertion(&self, id: u32) -> Option<&Insertion> {
         self.insertions.iter().find(|i| i.id == id)
+    }
+
+    /// A side's materiel and aircraft (the neutrals have none: the enemy's).
+    pub fn forces(&self, side: Side) -> &Forces {
+        if side == Side::Blue { &self.blue } else { &self.red }
+    }
+
+    pub(crate) fn forces_mut(&mut self, side: Side) -> &mut Forces {
+        if side == Side::Blue { &mut self.blue } else { &mut self.red }
+    }
+
+    pub fn downed_pilot(&self, id: u32) -> Option<&Downed> {
+        self.downed.iter().find(|d| d.id == id)
+    }
+
+    pub fn raid(&self, id: u32) -> Option<&Raid> {
+        self.raids.iter().find(|r| r.id == id)
+    }
+
+    /// Seconds the end of the campaign has been on the screen (None: the war goes on).
+    pub fn ended_for(&self) -> Option<f64> {
+        self.outcome.map(|o| (self.clock - o.at).max(0.0))
     }
 
     /// Recon intelligence on a world object (it or its place was photographed recently).

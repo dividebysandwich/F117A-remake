@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::aaa::{AaaKind, AaaUnit, M_PER_MAP, PATRIOT, SA14, STINGER, Shell, lead};
 use crate::ai_loadout::{AiLoadout, FighterTask};
-use crate::csar::BLACKHAWK;
+use crate::csar::{BLACKHAWK, HIND};
 use crate::math::{approx, s16};
 use crate::rng::Rng;
 use crate::types::*;
@@ -73,6 +73,16 @@ const MAX_SHELLS: usize = 200;
 const MAX_UNITS: usize = 400;
 /// A crashed pilot's aircraft below this (ft) leaves a burning wreck where it came down.
 const CRASH_SITE_ALT: i32 = 200;
+/// The attack drone's aircraft type (Geran-2), and the height it cruises at (~150 m).
+const DRONE_ALT: i32 = 300;
+/// A recalled AWACS this close to its base (map units, ~4 km) has landed.
+const AWACS_HOME: i32 = 0x100;
+/// The attack drone's aircraft type.
+const GERAN: usize = 29;
+/// A campaign strike aircraft this close to its target (map units, ~750 m) bombs it.
+const BOMB_RELEASE: i32 = 0x30;
+/// Altitude (world units, ~590 m) a strike aircraft flies in at.
+pub(crate) const STRIKE_ALT: i32 = 1200;
 
 /// What a campaign aircraft is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +91,11 @@ pub enum Role {
     Insertion,
     /// Fighter: patrols around its goal, goes for the other side's aircraft.
     Fighter,
+    /// Strike aircraft: flies low to its goal, bombs the object there and flies home (an
+    /// attack drone dives into it).
+    Strike,
+    /// AWACS: orbits its goal and fights nobody.
+    Awacs,
 }
 
 /// An aircraft the campaign launched.
@@ -116,6 +131,12 @@ pub struct CampaignFlight {
     /// The pilot who shot it down.
     #[serde(default)]
     pub killed_by: Option<u8>,
+    /// Strike aircraft: the object it bombs (None once its bombs are gone).
+    #[serde(default)]
+    pub strike: Option<i32>,
+    /// An attack drone: it is destroyed with its target.
+    #[serde(default)]
+    pub kamikaze: bool,
 }
 
 /// A missile of the AI against an AI aircraft (metres, x east, y north, z up).
@@ -571,6 +592,42 @@ impl Sim {
         }
     }
 
+    /// Campaign: `n` of a side's live guns and MANPADS teams around a place are wrecks (lost
+    /// before the simulation was built).
+    pub fn wreck_defences(&mut self, x: i32, y: i32, blue: bool, n: usize) {
+        let Some(c) = self.campaign.as_ref() else { return };
+        let mine: Vec<usize> = (0..self.aaa.len())
+            .filter(|&k| c.aaa_blue.get(k).copied().unwrap_or(false) == blue)
+            .filter(|&k| !self.aaa[k].kind.patriot())
+            .filter(|&k| {
+                !self.aaa[k].destroyed && approx(self.aaa[k].x - x, self.aaa[k].y - y) < 0x180
+            })
+            .collect();
+        for k in mine.into_iter().rev().take(n) {
+            self.aaa[k].destroyed = true;
+            self.aaa[k].burst = 0;
+        }
+    }
+
+    /// Campaign: one of a side's destroyed guns or MANPADS teams around a place is replaced.
+    pub fn restore_defence(&mut self, x: i32, y: i32, blue: bool) {
+        let Some(c) = self.campaign.as_ref() else { return };
+        let k = (0..self.aaa.len()).find(|&k| {
+            let u = &self.aaa[k];
+            c.aaa_blue.get(k).copied().unwrap_or(false) == blue
+                && !u.kind.patriot()
+                && u.destroyed
+                && approx(u.x - x, u.y - y) < 0x180
+        });
+        if let Some(k) = k {
+            let u = &mut self.aaa[k];
+            u.destroyed = false;
+            u.tracking = false;
+            u.cooldown = 0;
+            u.burst = 0;
+        }
+    }
+
     /// Campaign: a friendly Patriot battery at (x, y): its radar and three launchers around it.
     pub fn place_patriot(&mut self, x: i32, y: i32) {
         let Some(mut c) = self.campaign.take() else { return };
@@ -640,14 +697,27 @@ impl Sim {
         i
     }
 
-    /// Campaign: a helicopter with troops lifts off from base `from` to land at object
-    /// `target`. Returns its flight unit.
+    /// Campaign: a friendly helicopter with troops lifts off from base `from` to land at
+    /// object `target`. Returns its flight unit.
     pub fn spawn_insertion(&mut self, from: usize, target: usize, tag: u32, n: usize) -> usize {
+        self.spawn_insertion_for(from, target, tag, n, true)
+    }
+
+    /// Campaign: a helicopter of a side with troops (a UH-60, an enemy Mi-24) lifts off from
+    /// base `from` to land at object `target`. Returns its flight unit.
+    pub fn spawn_insertion_for(
+        &mut self,
+        from: usize,
+        target: usize,
+        tag: u32,
+        n: usize,
+        blue: bool,
+    ) -> usize {
         let i = self.campaign_slot();
         let o = self.objects[from];
         let t = self.objects[target];
         let mut u = FlightUnit {
-            spec: BLACKHAWK,
+            spec: if blue { BLACKHAWK } else { HIND },
             wp: target as i32,
             x: o.x + 6 + 4 * n as i32,
             y: o.y + 3 * n as i32,
@@ -664,7 +734,7 @@ impl Sim {
         c.flights[i] = Some(CampaignFlight {
             tag,
             role: Role::Insertion,
-            blue: true,
+            blue,
             goal: (t.x, t.y),
             target: None,
             cooldown: 0,
@@ -677,8 +747,119 @@ impl Sim {
             killed_by_ai: false,
             killed_by: None,
             reported: false,
+            strike: None,
+            kamikaze: false,
         });
         self.emit(SimEvent::AircraftTakeoff { unit: i, base: from });
+        i
+    }
+
+    /// Campaign: a strike aircraft of a side takes off from base `from` to bomb object
+    /// `target`, then flies home and lands.
+    pub fn spawn_striker(&mut self, from: usize, target: usize, tag: u32, blue: bool) -> usize {
+        let pick =
+            |c: &mut CampaignSim, list: &[i32]| list[c.rng.random(list.len() as i32) as usize];
+        let c = self.campaign.as_mut().expect("campaign");
+        let spec = if blue {
+            pick(c, &[22, 24])
+        } else if self.aircraft_types.len() > 32 && self.theater >= 9 {
+            31
+        } else {
+            0
+        };
+        self.spawn_strike(from, target, tag, blue, spec, false)
+    }
+
+    /// Campaign: an attack drone (a Geran-2) of a side takes off from base `from` and dives
+    /// into object `target`.
+    pub fn spawn_drone(&mut self, from: usize, target: usize, tag: u32, blue: bool) -> usize {
+        let spec = if self.aircraft_types.len() > GERAN { GERAN as i32 } else { 0 };
+        self.spawn_strike(from, target, tag, blue, spec, true)
+    }
+
+    /// Campaign: an AWACS of a side takes off from base `from` to orbit (x, y).
+    pub fn spawn_awacs(&mut self, from: usize, x: i32, y: i32, tag: u32, blue: bool) -> usize {
+        let i = self.campaign_slot();
+        self.flights[i] = FlightUnit { spec: if blue { 18 } else { 5 }, ..Default::default() };
+        self.spawn(i, from);
+        let base = self.objects.get(from).map_or((x, y), |o| (o.x, o.y));
+        let c = self.campaign.as_mut().expect("campaign");
+        c.flights[i] = Some(CampaignFlight {
+            tag,
+            role: Role::Awacs,
+            blue,
+            goal: (x, y),
+            target: None,
+            cooldown: 0,
+            loadout: AiLoadout::default(),
+            task: FighterTask::Patrol,
+            home: from as i32,
+            anchor: base,
+            quiet: 0,
+            burst: 0,
+            killed_by_ai: false,
+            killed_by: None,
+            reported: false,
+            strike: None,
+            kamikaze: false,
+        });
+        i
+    }
+
+    /// Campaign: the aircraft with campaign tag `tag` flies home and lands.
+    pub fn recall_flight(&mut self, tag: u32) {
+        let Some(c) = self.campaign.as_ref() else { return };
+        let Some(i) = c.flights.iter().position(|f| f.is_some_and(|f| f.tag == tag)) else {
+            return;
+        };
+        let home = c.flights[i].map_or(0, |f| f.home);
+        self.flights[i].flags |= fflags::RTB;
+        self.flights[i].wp = home;
+    }
+
+    fn spawn_strike(
+        &mut self,
+        from: usize,
+        target: usize,
+        tag: u32,
+        blue: bool,
+        spec: i32,
+        kamikaze: bool,
+    ) -> usize {
+        let i = self.campaign_slot();
+        self.flights[i] = FlightUnit { spec, ..Default::default() };
+        self.spawn(i, from);
+        if kamikaze {
+            // Launched at cruise height and speed, straight at the target (`fly_drone`).
+            let t = self.ac_type(spec).max_speed as i32;
+            let u = &mut self.flights[i];
+            u.wp = target as i32;
+            u.speed = t;
+            u.alt = DRONE_ALT;
+            u.flags &= !fflags::TAKEOFF;
+        }
+        let t = self.objects.get(target).map_or((0, 0), |o| (o.x, o.y));
+        let base = self.objects.get(from).map_or(t, |o| (o.x, o.y));
+        let c = self.campaign.as_mut().expect("campaign");
+        c.flights[i] = Some(CampaignFlight {
+            tag,
+            role: Role::Strike,
+            blue,
+            goal: t,
+            target: None,
+            cooldown: 0,
+            loadout: AiLoadout::default(),
+            task: FighterTask::Patrol,
+            home: from as i32,
+            anchor: base,
+            quiet: 0,
+            burst: 0,
+            killed_by_ai: false,
+            killed_by: None,
+            reported: false,
+            strike: Some(target as i32),
+            kamikaze,
+        });
         i
     }
 
@@ -731,6 +912,8 @@ impl Sim {
             killed_by_ai: false,
             killed_by: None,
             reported: false,
+            strike: None,
+            kamikaze: false,
         });
         i
     }
@@ -753,16 +936,25 @@ impl Sim {
         self.campaign_flight(i).map_or_else(|| self.friendly_aircraft(spec), |f| f.blue)
     }
 
-    /// Where a campaign fighter patrols (circling its goal), None for other aircraft.
+    /// Where a campaign fighter patrols (circling its goal) or a strike aircraft flies to,
+    /// None for other aircraft.
     pub(crate) fn campaign_goal(&self, i: usize, u: &FlightUnit) -> Option<(i32, i32)> {
-        let f = self.campaign_flight(i).filter(|f| f.role == Role::Fighter)?;
+        let f = self.campaign_flight(i).filter(|f| f.role != Role::Insertion)?;
         let (gx, gy) = f.goal;
+        if f.role == Role::Strike {
+            return Some((gx, gy));
+        }
         if approx(u.x - gx, u.y - gy) > 0x200 {
             return Some((gx, gy));
         }
         // On station: a wide circle around the point.
         let a = s16(u.heading + 0x2000);
         Some((u.x + self.trig.sin_mul(a, 0x100), u.y - self.trig.cos_mul(a, 0x100)))
+    }
+
+    /// A campaign strike aircraft on its way to the target (it comes in low).
+    pub(crate) fn campaign_striking(&self, i: usize) -> bool {
+        self.campaign_flight(i).is_some_and(|f| f.role == Role::Strike && f.strike.is_some())
     }
 
     /// The aircraft a campaign fighter chases (map x, y and altitude), None for others.
@@ -795,6 +987,7 @@ impl Sim {
         c.site_cool.resize(self.objects.len(), 0);
         self.campaign = Some(c);
         self.campaign_bookkeeping();
+        self.campaign_bombs();
         let fs = self.fs.max(1);
         if self.frame % fs == 0 {
             self.campaign_acquire();
@@ -833,6 +1026,39 @@ impl Sim {
         }
         for e in ev {
             self.emit(e);
+        }
+    }
+
+    /// Strike aircraft over their target bomb it and turn for home; a recalled AWACS over
+    /// its base lands. (Attack drones hit theirs in `drone_impact`.)
+    fn campaign_bombs(&mut self) {
+        let c = self.campaign.as_mut().expect("campaign");
+        let mut hits = Vec::new();
+        for (i, slot) in c.flights.iter_mut().enumerate() {
+            let Some(f) = slot.as_mut() else { continue };
+            let u = &mut self.flights[i];
+            // A recalled AWACS over its base is down (too heavy for the AI's tight circuit).
+            if f.role == Role::Awacs
+                && u.flags & fflags::RTB != 0
+                && approx(u.x - f.anchor.0, u.y - f.anchor.1) < AWACS_HOME
+            {
+                u.flags &= !fflags::AIRBORNE;
+                continue;
+            }
+            // Attack drones dive all the way in (`drone_impact`).
+            let Some(target) = f.strike.filter(|_| !f.kamikaze) else { continue };
+            if u.flags & fflags::DESTROYED != 0 || u.flags & fflags::AIRBORNE == 0 {
+                continue;
+            }
+            if approx(u.x - f.goal.0, u.y - f.goal.1) < BOMB_RELEASE {
+                f.strike = None;
+                u.flags |= fflags::RTB;
+                u.wp = f.home;
+                hits.push(target);
+            }
+        }
+        for t in hits {
+            self.remove_object(t as usize);
         }
     }
 

@@ -76,14 +76,25 @@ impl Sim {
         u.y = (u.wy >> 5) & 0xFFFF;
         self.flights[i] = u;
         if d < IMPACT_RANGE || u.alt <= 0 {
-            self.drone_impact(i);
+            self.drone_impact(i, d < IMPACT_RANGE);
         }
     }
 
-    /// A drone reached its target.
-    fn drone_impact(&mut self, i: usize) {
+    /// A drone reached its target (`on_target`), or the ground short of it.
+    fn drone_impact(&mut self, i: usize, on_target: bool) {
         let u = self.flights[i];
         self.flights[i].flags = 0;
+        // A campaign drone destroys its target and is gone (nobody's kill).
+        if let Some(Some(f)) = self.campaign.as_mut().and_then(|c| c.flights.get_mut(i))
+            && f.kamikaze
+        {
+            let target = f.strike.take().filter(|_| on_target);
+            f.killed_by_ai = true;
+            self.flights[i].flags = fflags::EXISTS | fflags::DESTROYED;
+            if let Some(t) = target {
+                self.remove_object(t as usize);
+            }
+        }
         if i as i32 == self.pl.air_lock {
             self.pl.air_lock = -1;
         }

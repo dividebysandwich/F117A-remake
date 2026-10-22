@@ -8,7 +8,7 @@ use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 /// Changes with every change of the messages: client and server must agree.
-pub const PROTOCOL: u16 = 8;
+pub const PROTOCOL: u16 = 11;
 pub const DEFAULT_PORT: u16 = 28989;
 /// Players a server takes at most.
 pub const MAX_PLAYERS: usize = stealth_sim::MAX_PILOTS;
@@ -37,6 +37,10 @@ pub enum ToServer {
     },
     OrderInsertion {
         place: PlaceId,
+    },
+    /// Call in AI SEAD for an offer's place.
+    RequestSupport {
+        offer: u32,
     },
     /// Plan a mission of the board with the others on it, from a base (None: plan none).
     Select {

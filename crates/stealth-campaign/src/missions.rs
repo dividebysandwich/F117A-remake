@@ -1,5 +1,6 @@
 //! The players' sorties: taking a mission, following its objective, ending it.
 
+use crate::record::{flight_points, settle};
 use crate::state::*;
 use crate::tuning::*;
 use crate::{CampaignEvent, Report, WorldView};
@@ -22,7 +23,7 @@ impl CampaignState {
             return Err("Already flying a sortie".into());
         }
         let base = base.unwrap_or(o.base);
-        if !self.bases(Side::Blue).contains(&base) {
+        if !self.player_bases().contains(&base) {
             return Err("Not a friendly base".into());
         }
         let sortie = Sortie {
@@ -53,16 +54,23 @@ impl CampaignState {
     pub(crate) fn end_sortie(&mut self, player: PlayerId, end: SortieEnd) -> Vec<CampaignEvent> {
         let Some(s) = self.slot_mut(player).sortie.take() else { return Vec::new() };
         self.leave_plans(player);
-        let insertion = match s.offer.objective {
-            Objective::Escort { insertion } => Some(insertion),
-            _ => None,
+        let (insertion, raid, downed) = match s.offer.objective {
+            Objective::Escort { insertion } | Objective::Intercept { insertion } => {
+                (Some(insertion), None, None)
+            }
+            Objective::Defend { raid } => (None, Some(raid), None),
+            Objective::Rescue { downed } => (None, None, Some(downed)),
+            _ => (None, None, None),
         };
-        let escort_open = insertion.and_then(|i| self.insertion(i)).is_some_and(|i| {
+        let open = insertion.and_then(|i| self.insertion(i)).is_some_and(|i| {
             matches!(i.state, InsertionState::Pending { .. } | InsertionState::Enroute)
-        });
+        }) || raid.and_then(|r| self.raid(r)).is_some_and(Raid::open)
+            || downed
+                .and_then(|d| self.downed_pilot(d))
+                .is_some_and(|d| d.state == DownedState::Waiting);
         let result = if s.progress.achieved {
             SortieResult::Success
-        } else if escort_open {
+        } else if open {
             SortieResult::Pending
         } else {
             SortieResult::Failed
@@ -80,16 +88,36 @@ impl CampaignState {
             ground_kills: (s.progress.sites_destroyed.len() + s.progress.aaa_destroyed.len())
                 as u32,
             insertion,
+            raid,
+            downed,
             aircraft: s.aircraft,
+            pilot: self.player_name(player).unwrap_or("").to_string(),
+            points: flight_points(
+                s.progress.air_kills,
+                (s.progress.sites_destroyed.len() + s.progress.aaa_destroyed.len()) as u32,
+                end,
+                s.progress.bonus,
+            ) + if result == SortieResult::Success { s.offer.kind.points() } else { 0 },
+            bonus: s.progress.bonus,
+            place: self.objective_place(&s.offer.objective),
+            achieved_at: s.progress.achieved_at,
         };
         let verdict = match result {
             SortieResult::Success => "objective achieved",
             SortieResult::Failed => "objective not achieved",
+            SortieResult::Pending if raid.is_some() => "waiting for the raid",
+            SortieResult::Pending if downed.is_some() => "waiting for the rescue",
             SortieResult::Pending => "waiting for the insertion",
         };
         self.note(format!("{}: {} - {verdict}", s.offer.title, end.name()));
         self.history.push(record.clone());
-        vec![CampaignEvent::SortieFinished { player, record }, self.plans_changed()]
+        let mut ev = vec![CampaignEvent::SortieFinished { player, record }, self.plans_changed()];
+        if end == SortieEnd::Ejected
+            && let Some((x, y)) = s.progress.last
+        {
+            self.ejected(player, x, y, &mut ev);
+        }
+        ev
     }
 
     /// A player joins the plan of an offer (None: leaves the plans). The plan's base stands
@@ -112,7 +140,7 @@ impl CampaignState {
             if self.sortie(player).is_some() {
                 return Err("Already flying a sortie".into());
             }
-            if !self.bases(Side::Blue).contains(&base) {
+            if !self.player_bases().contains(&base) {
                 return Err("Not a friendly base".into());
             }
         }
@@ -152,7 +180,7 @@ impl CampaignState {
         if route.len() > ROUTE_POINTS {
             return Err("Too many route points".into());
         }
-        if !self.bases(Side::Blue).contains(&base) {
+        if !self.player_bases().contains(&base) {
             return Err("Not a friendly base".into());
         }
         let Some(p) = self.plans.iter_mut().find(|p| p.offer == offer) else {
@@ -235,15 +263,27 @@ impl CampaignState {
             let id = self.players[k].id;
             let Some(s) = self.players[k].sortie.as_ref() else { continue };
             let mut p = s.progress.clone();
-            if let Objective::Cap { x, y } = s.offer.objective
-                && let Some(me) = view.players.iter().find(|p| p.id == id)
-                && me.airborne
-                && dist(me.x - x, me.y - y) < CAP_RADIUS
+            let me = view.players.iter().find(|p| p.id == id && p.airborne);
+            if let Some(me) = me {
+                p.last = Some((me.x, me.y));
+            }
+            // On station: over the CAP point, or over the downed pilot.
+            let station = match s.offer.objective {
+                Objective::Cap { x, y } => Some((x, y, CAP_RADIUS)),
+                Objective::Rescue { downed } => self
+                    .downed_pilot(downed)
+                    .filter(|d| d.state == DownedState::Waiting)
+                    .map(|d| (d.x, d.y, RESCUE_RADIUS)),
+                _ => None,
+            };
+            if let (Some((x, y, r)), Some(me)) = (station, me)
+                && dist(me.x - x, me.y - y) < r
             {
                 p.on_station += dt;
             }
             if !p.achieved && self.objective_met(&s.offer.objective, &p) {
                 p.achieved = true;
+                p.achieved_at = Some(self.clock);
                 achieved.push((id, s.offer.title.clone(), s.offer.objective.clone()));
             }
             self.players[k].sortie.as_mut().expect("checked").progress = p;
@@ -252,8 +292,12 @@ impl CampaignState {
             if let Objective::Recon { place, .. } = objective {
                 self.gain_intel(place, ev);
             }
+            if let Objective::Rescue { downed } = objective {
+                self.rescued(downed, ev);
+            }
             self.note(format!("{title}: objective achieved"));
             ev.push(CampaignEvent::ObjectiveAchieved { player, title });
+            self.package(player, ev);
         }
     }
 
@@ -278,14 +322,40 @@ impl CampaignState {
                 self.insertion(*insertion).is_some_and(|i| i.state == InsertionState::Captured)
             }
             Objective::Insertion { .. } => false,
+            Objective::Intercept { insertion } => {
+                self.insertion(*insertion).is_some_and(|i| i.state == InsertionState::Failed)
+            }
+            Objective::Defend { raid } => {
+                self.raid(*raid).is_some_and(|r| r.state == RaidState::Repelled)
+            }
+            Objective::Interdict { object, .. } => !self.site(*object).is_some_and(Site::alive),
+            Objective::Awacs { tag } => self.awacs_down.contains(tag),
+            Objective::Rescue { downed } => {
+                p.on_station >= RESCUE_SECONDS
+                    || self.downed_pilot(*downed).is_some_and(|d| d.state == DownedState::Rescued)
+            }
         }
     }
 
-    /// An escorted insertion is over: settles the escorts that already ended their sortie.
-    pub(crate) fn settle_escorts(&mut self, insertion: u32, captured: bool) {
+    /// An insertion is over (captured, failed or called off): settles the escorts and
+    /// intercepts against it that already ended their sortie.
+    pub(crate) fn settle_insertion(&mut self, insertion: u32, state: InsertionState) {
         for r in &mut self.history {
             if r.insertion == Some(insertion) && r.result == SortieResult::Pending {
-                r.result = if captured { SortieResult::Success } else { SortieResult::Failed };
+                let won = match r.kind {
+                    MissionKind::Intercept => state == InsertionState::Failed,
+                    _ => state == InsertionState::Captured,
+                };
+                settle(r, won);
+            }
+        }
+    }
+
+    /// A raid is over: settles the airfield defences against it that already ended.
+    pub(crate) fn settle_raid(&mut self, raid: u32, repelled: bool) {
+        for r in &mut self.history {
+            if r.raid == Some(raid) {
+                settle(r, repelled);
             }
         }
     }

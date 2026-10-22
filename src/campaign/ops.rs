@@ -6,8 +6,8 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, PrimaryEguiContext, egui};
 use stealth_campaign::weather::Now;
 use stealth_campaign::{
-    Aircraft as Airframe, InsertionState, MissionKind, MissionOffer, Objective, PlayerId, Side,
-    SortieResult,
+    Aircraft as Airframe, InsertionState, MissionKind, MissionOffer, Objective, PlayerId,
+    RaidState, Side, SortieResult, tuning,
 };
 use stealth_host::glue::sortie_mission;
 use stealth_mission::Sky;
@@ -23,6 +23,7 @@ pub enum Tab {
     #[default]
     Board,
     Map,
+    Forces,
     Players,
     Debrief,
     Log,
@@ -181,13 +182,14 @@ pub fn block_input(
     }
 }
 
-/// Test aids: `--campaign-tab board|map|players|debrief|log` opens a tab, `--campaign-take <n>`
+/// Test aids: `--campaign-tab board|map|forces|players|debrief|log` opens a tab, `--campaign-take <n>`
 /// takes the n-th mission of the board (0: the first) once the campaign is up.
 pub fn test_tab() -> Option<Tab> {
     let args: Vec<String> = std::env::args().collect();
     let t = args.iter().position(|a| a == "--campaign-tab").and_then(|i| args.get(i + 1))?;
     Some(match t.as_str() {
         "map" => Tab::Map,
+        "forces" => Tab::Forces,
         "debrief" => Tab::Debrief,
         "log" => Tab::Log,
         "players" => Tab::Players,
@@ -223,6 +225,9 @@ fn kind_colour(k: MissionKind) -> egui::Color32 {
         MissionKind::Recon => DIM,
         MissionKind::Insertion | MissionKind::Escort => FRIENDLY_BLUE,
         MissionKind::Cap => GREEN,
+        MissionKind::Intercept | MissionKind::Defend | MissionKind::Csar | MissionKind::Awacs => {
+            MISSILE_RED
+        }
         _ => AMBER,
     }
 }
@@ -357,6 +362,7 @@ pub fn ops_ui(
                         for (tab, label) in [
                             (Tab::Board, "MISSIONS"),
                             (Tab::Map, "WAR MAP"),
+                            (Tab::Forces, "FORCES"),
                             (Tab::Players, "PLAYERS"),
                             (Tab::Debrief, "DEBRIEF"),
                             (Tab::Log, "LOG"),
@@ -391,6 +397,10 @@ pub fn ops_ui(
             ui.separator();
             ui.allocate_ui(egui::vec2(width, height), |ui| {
                 ui.set_min_height(height);
+                if c.state().outcome.is_some() {
+                    end_screen(ui, c);
+                    return;
+                }
                 match c.ui.tab {
                     Tab::Board => board(ui, c, width),
                     Tab::Map => war_map(
@@ -401,6 +411,7 @@ pub fn ops_ui(
                         tex.as_ref(),
                         egui::vec2(width, height),
                     ),
+                    Tab::Forces => forces(ui, c),
                     Tab::Players => players(ui, c),
                     Tab::Debrief => debrief(ui, c),
                     Tab::Log => log(ui, c),
@@ -410,10 +421,16 @@ pub fn ops_ui(
             ui.horizontal(|ui| {
                 if let Some(e) = &c.ui.error {
                     ui.colored_label(AMBER, e);
+                } else {
+                    supply_line(ui, c);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add(egui::Spinner::new().color(GREEN));
-                    ui.label(egui::RichText::new("War simulation running").color(DIM));
+                    if c.state().outcome.is_some() {
+                        ui.label(egui::RichText::new("The war is over").color(DIM));
+                    } else {
+                        ui.add(egui::Spinner::new().color(GREEN));
+                        ui.label(egui::RichText::new("War simulation running").color(DIM));
+                    }
                 });
             });
         });
@@ -534,26 +551,65 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
                 },
             );
             ui.add_space(8.0);
-            section(ui, "Insertions");
+            section(ui, "Insertions and raids");
             let mut any = false;
+            let mins = |at: f64| ((at - c.state().clock) / 60.0).max(0.0).ceil();
             for ins in &c.state().insertions {
                 let name = c.state().place(ins.place).map_or(String::new(), |p| p.name.clone());
+                let enemy = ins.side != Side::Blue;
                 let (text, col) = match ins.state {
-                    InsertionState::Pending { launch_at } => (
-                        format!(
-                            "{name}: lift-off in {:.0} min",
-                            ((launch_at - c.state().clock) / 60.0).max(0.0).ceil()
-                        ),
-                        BRIGHT,
+                    InsertionState::Pending { launch_at } if enemy => (
+                        format!("ENEMY at {name}: lift-off in {:.0} min", mins(launch_at)),
+                        MISSILE_RED,
                     ),
+                    InsertionState::Pending { launch_at } => {
+                        (format!("{name}: lift-off in {:.0} min", mins(launch_at)), BRIGHT)
+                    }
                     InsertionState::Enroute => {
                         let left = ins.alive.iter().filter(|&&a| a).count();
-                        (format!("{name}: {left} helicopters on the way"), FRIENDLY_BLUE)
+                        if enemy {
+                            (format!("ENEMY at {name}: {left} helicopters inbound"), MISSILE_RED)
+                        } else {
+                            (format!("{name}: {left} helicopters on the way"), FRIENDLY_BLUE)
+                        }
                     }
                     _ => continue,
                 };
                 any = true;
                 ui.label(egui::RichText::new(text).color(col));
+            }
+            for r in &c.state().raids {
+                let name = c.state().place(r.place).map_or(String::new(), |p| p.name.clone());
+                let (what, col) = match (r.side, r.drones) {
+                    (Side::Blue, _) => (format!("AI SEAD at {name}"), FRIENDLY_BLUE),
+                    (_, true) => (format!("DRONES at {name}"), MISSILE_RED),
+                    _ => (format!("RAID on {name} airfield"), MISSILE_RED),
+                };
+                let text = match r.state {
+                    RaidState::Pending { launch_at } => {
+                        format!("{what}: launch in {:.0} min", mins(launch_at))
+                    }
+                    RaidState::Enroute => {
+                        let left = r.alive.iter().filter(|&&a| a).count();
+                        format!("{what}: {left} on the way")
+                    }
+                    _ => continue,
+                };
+                any = true;
+                ui.label(egui::RichText::new(text).color(col));
+            }
+            if let Some(a) = &c.state().awacs {
+                any = true;
+                let text = format!("ENEMY AWACS up for {:.0} min more", mins(a.until));
+                ui.label(egui::RichText::new(text).color(MISSILE_RED));
+            }
+            for d in &c.state().downed {
+                if d.state != stealth_campaign::DownedState::Waiting {
+                    continue;
+                }
+                any = true;
+                let text = format!("DOWN: {} - rescue within {:.0} min", d.name, mins(d.until));
+                ui.label(egui::RichText::new(text).color(MISSILE_RED));
             }
             if !any {
                 ui.label(egui::RichText::new("None under way").color(DIM));
@@ -568,7 +624,7 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
             };
             section(ui, o.kind.name());
             ui.label(egui::RichText::new(&o.title).size(20.0).color(BRIGHT));
-            ui.label(egui::RichText::new(describe(o.kind)).color(DIM));
+            ui.label(egui::RichText::new(describe_offer(c, &o)).color(DIM));
             group_label(ui, c, o.id);
             ui.add_space(6.0);
             if let Some(p) = place_of(&o.objective).and_then(|p| c.state().place(p)) {
@@ -583,6 +639,7 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
                     if intel { "  -  RECON INTEL" } else { "" }
                 ));
             }
+            package_info(ui, c, &o);
             if o.kind.ai_flown() {
                 ui.add_space(10.0);
                 if ui.add(big_button("ORDER INSERTION")).clicked()
@@ -597,7 +654,7 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
             // From which base.
             let mut bases: Vec<(u16, String, i32)> = c
                 .state()
-                .bases(Side::Blue)
+                .player_bases()
                 .into_iter()
                 .filter_map(|b| {
                     let site = c.state().site(b)?;
@@ -651,6 +708,7 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
             let m = sortie_mission(&c.mission, c.state(), &sortie);
             let loadout = crate::loadout::PlannedLoadout::of(&m, kind_of(c.aircraft));
             ui.label(egui::RichText::new(format!("Stores: {}", loadout.summary())).color(DIM));
+            support_button(ui, c, &o);
             ui.add_space(10.0);
             if ui.add(big_button("ACCEPT MISSION").fill(DIM)).clicked() {
                 c.ui.error = None;
@@ -705,9 +763,219 @@ fn place_of(o: &Objective) -> Option<u16> {
         | Objective::Sead { place, .. }
         | Objective::Cas { place, .. }
         | Objective::Strike { place, .. }
+        | Objective::Interdict { place, .. }
         | Objective::Insertion { place } => Some(place),
         _ => None,
     }
+}
+
+/// What an offer asks for (a drone wave is no air raid).
+fn describe_offer(c: &ActiveCampaign, o: &MissionOffer) -> &'static str {
+    match o.objective {
+        Objective::Defend { raid } if c.state().raid(raid).is_some_and(|r| r.drones) => {
+            "Shoot down the attack drones before they dive into the target: one getting through destroys it"
+        }
+        _ => describe(o.kind),
+    }
+}
+
+/// The other offers at an offer's place: flown together, they are a package.
+fn package_info(ui: &mut egui::Ui, c: &ActiveCampaign, o: &MissionOffer) {
+    use stealth_campaign::tuning::{PACKAGE_BONUS, PACKAGE_WINDOW};
+    let st = c.state();
+    let Some(place) = st.objective_place(&o.objective) else { return };
+    let mut kinds: Vec<&str> = st
+        .board
+        .iter()
+        .filter(|x| x.id != o.id && !x.kind.ai_flown() && x.kind != o.kind)
+        .filter(|x| st.objective_place(&x.objective) == Some(place))
+        .map(|x| x.kind.name())
+        .collect();
+    kinds.dedup();
+    if kinds.is_empty() {
+        return;
+    }
+    ui.label(
+        egui::RichText::new(format!(
+            "PACKAGE with {}: achieve two kinds here within {:.0} min, +{PACKAGE_BONUS} points each",
+            kinds.join(", "),
+            PACKAGE_WINDOW / 60.0
+        ))
+        .small()
+        .color(GREEN),
+    );
+}
+
+/// Calling in AI SEAD for an offer's place (the friendly side's materiel and fighters).
+fn support_button(ui: &mut egui::Ui, c: &mut ActiveCampaign, o: &MissionOffer) {
+    use stealth_campaign::tuning::{RAID_AIRCRAFT, SUPPORT_COST};
+    let st = c.state();
+    let Some(place) = st.objective_place(&o.objective) else { return };
+    let Some(p) = st.place(place).filter(|p| p.owner == Side::Red) else { return };
+    let sams = p.defences.iter().filter(|&&d| st.site(d).is_some_and(|s| s.alive())).count();
+    if sams == 0 {
+        return;
+    }
+    let busy = st.raids.iter().any(|r| r.side == Side::Blue && r.open() && r.place == place);
+    if busy {
+        ui.label(egui::RichText::new("AI SEAD is on its way").small().color(FRIENDLY_BLUE));
+        return;
+    }
+    let can = st.blue.materiel >= SUPPORT_COST && st.blue.fighters as usize >= RAID_AIRCRAFT;
+    let label = format!("REQUEST AI SEAD ({SUPPORT_COST:.0} materiel, {RAID_AIRCRAFT} aircraft)");
+    let offer = o.id;
+    if ui
+        .add_enabled(can, egui::Button::new(egui::RichText::new(label).color(FRIENDLY_BLUE)))
+        .on_hover_text("Friendly strike aircraft go for a SAM site of this place ahead of you")
+        .on_disabled_hover_text("Not enough materiel or aircraft on the ground (see FORCES)")
+        .clicked()
+    {
+        c.ui.error = None;
+        c.actions.push(Action::RequestSupport { offer });
+    }
+}
+
+/// A rank for campaign points (the career's ranks).
+fn rank_of(points: i32) -> &'static str {
+    let k = crate::career::RANKS.iter().rposition(|r| points >= r.2).unwrap_or(0);
+    crate::career::RANKS[k].1
+}
+
+/// The medal a sortie's points earn (the career's), if any.
+fn medal_of(points: i32) -> Option<&'static str> {
+    crate::career::MEDALS.iter().rev().find(|m| points >= m.1).map(|m| m.0)
+}
+
+/// The campaign's rules in words.
+fn rules_text(r: &stealth_host::Rules) -> String {
+    let on: Vec<&str> = [
+        (r.realistic_damage, "realistic damage"),
+        (r.realistic_guidance, "realistic guidance"),
+        (r.no_crashes, "no crashes"),
+        (r.continuous_time, "continuous time"),
+        (r.realistic_weapons, "realistic F-117A weapons"),
+        (r.friendly_fire, "friendly fire"),
+    ]
+    .iter()
+    .filter(|x| x.0)
+    .map(|x| x.1)
+    .collect();
+    if on.is_empty() { "classic".into() } else { on.join(", ") }
+}
+
+/// Both sides' materiel and income at a glance (the footer).
+fn supply_line(ui: &mut egui::Ui, c: &ActiveCampaign) {
+    let st = c.state();
+    ui.label(egui::RichText::new("MATERIEL").color(DIM));
+    for (side, name, col) in [(Side::Blue, "BLUE", FRIENDLY_BLUE), (Side::Red, "RED", MISSILE_RED)]
+    {
+        ui.label(
+            egui::RichText::new(format!(
+                "{name} {:.0} (+{:.0}/h)",
+                st.forces(side).materiel.floor(),
+                st.income(side)
+            ))
+            .color(col),
+        );
+    }
+}
+
+/// The two sides' means of war side by side: materiel, income and where it comes from, the
+/// AI's aircraft, where the materiel went, and what everything costs.
+fn forces(ui: &mut egui::Ui, c: &ActiveCampaign) {
+    use stealth_campaign::tuning::*;
+    let st = c.state();
+    let sides = [(Side::Blue, "FRIENDLY", FRIENDLY_BLUE), (Side::Red, "ENEMY", MISSILE_RED)];
+    egui::ScrollArea::vertical().id_salt("forces").show(ui, |ui| {
+        section(ui, "Forces");
+        egui::Grid::new("forces").num_columns(3).spacing(egui::vec2(40.0, 6.0)).striped(true).show(
+            ui,
+            |ui| {
+                let row = |ui: &mut egui::Ui, label: &str, f: &dyn Fn(Side) -> String| {
+                    ui.label(egui::RichText::new(label).color(DIM));
+                    for (side, _, col) in sides {
+                        ui.label(egui::RichText::new(f(side)).monospace().color(col));
+                    }
+                    ui.end_row();
+                };
+                ui.label("");
+                for (_, name, col) in sides {
+                    ui.label(egui::RichText::new(name).strong().color(col));
+                }
+                ui.end_row();
+                row(ui, "Places held", &|s| st.held(s).to_string());
+                row(ui, "Materiel", &|s| {
+                    format!("{:.0} / {MATERIEL_MAX:.0}", st.forces(s).materiel.floor())
+                });
+                row(ui, "Income per hour", &|s| format!("+{:.0}", st.income(s)));
+                row(ui, "  from", &|s| {
+                    let (places, cities) = st.producers(s);
+                    format!(
+                        "{INCOME_BASE:.0} + {places} places x {INCOME_PLACE:.0} + {cities} cities x {INCOME_CITY:.0}"
+                    )
+                });
+                row(ui, "Fighters on the ground", &|s| {
+                    format!("{} / {}", st.forces(s).fighters, st.aircraft_limits(s).0)
+                });
+                row(ui, "Helicopters on the ground", &|s| {
+                    format!("{} / {}", st.forces(s).helicopters, st.aircraft_limits(s).1)
+                });
+                row(ui, "In the air", &|s| {
+                    let (f, strike, h) = st.airborne(s);
+                    format!("{f} fighters, {strike} strike, {h} helicopters")
+                });
+                ui.label(egui::RichText::new("Since the start").color(AMBER));
+                ui.end_row();
+                let l = |s: Side| st.forces(s).ledger.clone();
+                let out = |v: f64| if v < 0.5 { "0".to_string() } else { format!("-{v:.0}") };
+                row(ui, "  earned", &|s| format!("+{:.0}", l(s).earned));
+                row(ui, "  repairs", &|s| out(l(s).repairs));
+                row(ui, "  sorties, raids, insertions", &|s| out(l(s).operations));
+                row(ui, "  new aircraft", &|s| out(l(s).aircraft));
+                row(ui, "  lost (cities, pilots)", &|s| out(l(s).lost));
+            },
+        );
+        ui.add_space(10.0);
+        section(ui, "How it works");
+        for line in [
+            "Each side earns materiel every hour: a base amount, more for every place it holds and for \
+             every intact city among them. Bomb the enemy's cities (INTERDICTION) to cut its income.",
+            "The AI pays for everything it does: repairs, every fighter sortie, raids and its own \
+             insertions. Short of materiel, its damage stays unrepaired and its aircraft stay home.",
+            "The AI flies only the aircraft it has; shot down they are gone, landed they fly again. \
+             Every hour each side buys new ones while its materiel lasts.",
+            "You never run short: your aircraft, your bases (bombed or not) and the helicopters of \
+             your own insertion orders are always there.",
+        ] {
+            ui.label(egui::RichText::new(line).color(BRIGHT));
+            ui.add_space(2.0);
+        }
+        ui.add_space(8.0);
+        section(ui, "Prices");
+        egui::Grid::new("prices").num_columns(4).spacing(egui::vec2(28.0, 4.0)).show(ui, |ui| {
+            let prices = [
+                ("Airfield repair", REPAIR_COST_AIRFIELD),
+                ("SAM site repair", REPAIR_COST_SAM),
+                ("City rebuilt", REPAIR_COST_CITY),
+                ("Ship repair", REPAIR_COST_SHIP),
+                ("Gun or MANPADS team", GUN_COST),
+                ("Fighter sortie", SORTIE_COST),
+                ("Raid", RAID_COST),
+                ("AI insertion", INSERTION_COST),
+                ("New fighter", FIGHTER_COST),
+                ("New helicopter", HELICOPTER_COST),
+                ("City destroyed (lost)", CITY_LOSS),
+                ("Pilot captured (lost)", CAPTURE_COST),
+            ];
+            for pair in prices.chunks(2) {
+                for (name, cost) in pair {
+                    ui.label(egui::RichText::new(*name).color(DIM));
+                    ui.label(egui::RichText::new(format!("{cost:.0}")).monospace().color(BRIGHT));
+                }
+                ui.end_row();
+            }
+        });
+    });
 }
 
 /// The war map: who holds which place, the insertions, the aircraft in the air.
@@ -878,6 +1146,7 @@ fn debrief(ui: &mut egui::Ui, c: &ActiveCampaign) {
     let (text, col) = match r.result {
         SortieResult::Success => ("OBJECTIVE ACHIEVED", GREEN),
         SortieResult::Failed => ("OBJECTIVE NOT ACHIEVED", AMBER),
+        SortieResult::Pending if r.raid.is_some() => ("WAITING FOR THE RAID", FRIENDLY_BLUE),
         SortieResult::Pending => ("WAITING FOR THE INSERTION", FRIENDLY_BLUE),
     };
     // An escort settled after the sortie shows its final result.
@@ -895,6 +1164,23 @@ fn debrief(ui: &mut egui::Ui, c: &ActiveCampaign) {
     let mins = ((r.ended - r.started) / 60.0).round();
     ui.label(format!("Flight time {mins:.0} min"));
     ui.label(format!("Kills: {} aircraft, {} on the ground", r.air_kills, r.ground_kills));
+    let points = c.state().history.iter().find(|h| h.id == r.id).map_or(r.points, |h| h.points);
+    let bonus = c.state().history.iter().find(|h| h.id == r.id).map_or(r.bonus, |h| h.bonus);
+    ui.label(
+        egui::RichText::new(format!(
+            "{points} points{}",
+            if bonus > 0 { format!(" (package bonus +{bonus})") } else { String::new() }
+        ))
+        .color(BRIGHT),
+    );
+    if let Some(m) = medal_of(points) {
+        ui.label(egui::RichText::new(format!("Awarded the {m}")).color(AMBER));
+    }
+    let me = c.state().pilot_record(c.me);
+    ui.label(
+        egui::RichText::new(format!("{} - {} campaign points", rank_of(me.points), me.points))
+            .color(DIM),
+    );
     let done = c.state().history.iter().filter(|h| h.player == c.me).count();
     let won = c
         .state()
@@ -913,6 +1199,53 @@ fn debrief(ui: &mut egui::Ui, c: &ActiveCampaign) {
             ui.label(egui::RichText::new(n).color(BRIGHT));
         }
     });
+}
+
+/// The war is won or lost: the result, every pilot's record, and (on a server) the time left
+/// before the next campaign starts.
+fn end_screen(ui: &mut egui::Ui, c: &ActiveCampaign) {
+    let st = c.state();
+    let Some(o) = st.outcome else { return };
+    let won = o.winner == Side::Blue;
+    ui.vertical_centered(|ui| {
+        ui.add_space(16.0);
+        let (title, col) = if won { ("VICTORY", GREEN) } else { ("DEFEAT", MISSILE_RED) };
+        ui.label(egui::RichText::new(title).size(44.0).strong().color(col));
+        ui.label(
+            egui::RichText::new(if won {
+                "The enemy holds no airfield any more: the theater is ours."
+            } else {
+                "No friendly airfield is left: the theater is lost."
+            })
+            .size(18.0)
+            .color(BRIGHT),
+        );
+        let day = (st.sky_hours() / 24.0).floor() as i64 + 1;
+        ui.label(
+            egui::RichText::new(format!(
+                "Day {day}. Friendly places {}, enemy places {}.",
+                st.held(Side::Blue),
+                st.held(Side::Red)
+            ))
+            .color(DIM),
+        );
+        ui.add_space(10.0);
+        if c.role == Role::Client {
+            let left = (tuning::END_SCREEN_SECONDS - st.ended_for().unwrap_or(0.0)).max(0.0);
+            let text = if left > 0.0 {
+                let s = left.ceil() as i64;
+                format!("THE NEXT CAMPAIGN STARTS IN {}:{:02}", s / 60, s % 60)
+            } else {
+                "THE NEXT CAMPAIGN IS STARTING".to_string()
+            };
+            ui.label(egui::RichText::new(text).size(20.0).color(AMBER));
+        } else {
+            ui.label(egui::RichText::new("Start the next campaign from the main menu.").color(DIM));
+        }
+        ui.add_space(12.0);
+    });
+    section(ui, "Pilots");
+    egui::ScrollArea::vertical().id_salt("pilots").show(ui, |ui| leaderboard(ui, c, "end"));
 }
 
 fn log(ui: &mut egui::Ui, c: &ActiveCampaign) {
@@ -974,7 +1307,7 @@ fn briefing(
                 });
             });
             ui.label(egui::RichText::new(&o.title).size(20.0).color(BRIGHT));
-            ui.label(egui::RichText::new(describe(o.kind)).color(DIM));
+            ui.label(egui::RichText::new(describe_offer(c, &o)).color(DIM));
             let d = km(dist(m.takeoff.position.x, m.takeoff.position.y, o.x, o.y));
             ui.label(format!(
                 "From {} - {d:.0} km to the target - {} - stores: {}",
@@ -1205,15 +1538,15 @@ fn exit_button(role: Role) -> egui::Button<'static> {
 fn players(ui: &mut egui::Ui, c: &ActiveCampaign) {
     section(ui, "Players");
     let list = c.players();
-    // Up to 64 of them: the list scrolls.
-    let height = (ui.available_height() - 60.0).max(120.0);
+    // Up to 64 of them: the list scrolls; the leaderboard under it.
+    let height = (ui.available_height() * 0.45).max(120.0);
     egui::ScrollArea::vertical().max_height(height).auto_shrink([false, true]).show(ui, |ui| {
         egui::Grid::new("players")
-            .num_columns(5)
+            .num_columns(6)
             .spacing(egui::vec2(24.0, 8.0))
             .striped(true)
             .show(ui, |ui| {
-                for h in ["#", "NAME", "STATUS", "SORTIES", "PING"] {
+                for h in ["#", "NAME", "STATUS", "SORTIES", "POINTS", "PING"] {
                     ui.label(egui::RichText::new(h).color(DIM));
                 }
                 ui.end_row();
@@ -1260,11 +1593,21 @@ fn players(ui: &mut egui::Ui, c: &ActiveCampaign) {
                         .filter(|r| r.result == SortieResult::Success)
                         .count();
                     ui.label(format!("{flown} ({won} achieved)"));
+                    let points = c.state().pilot_record(p.id).points;
+                    ui.label(format!("{points} {}", rank_of(points)));
                     ui.label(if p.ping > 0 { format!("{} ms", p.ping) } else { "-".into() });
                     ui.end_row();
                 }
             });
     });
+    ui.add_space(8.0);
+    section(ui, "Leaderboard");
+    let height = (ui.available_height() - 70.0).max(100.0);
+    egui::ScrollArea::vertical()
+        .id_salt("leaders")
+        .max_height(height)
+        .auto_shrink([false, true])
+        .show(ui, |ui| leaderboard(ui, c, "leaders"));
     if c.role == Role::Local {
         ui.add_space(10.0);
         ui.label(
@@ -1273,5 +1616,48 @@ fn players(ui: &mut egui::Ui, c: &ActiveCampaign) {
             )
             .color(DIM),
         );
+    }
+    ui.add_space(10.0);
+    ui.label(
+        egui::RichText::new(format!(
+            "Rules of this campaign (kept from its start): {}",
+            rules_text(&c.rules)
+        ))
+        .color(DIM),
+    );
+}
+
+/// Every pilot of the campaign (who has left too), the most points first.
+fn leaderboard(ui: &mut egui::Ui, c: &ActiveCampaign, id: &str) {
+    let rows: Vec<_> = c.state().pilot_records().into_iter().filter(|p| p.sorties > 0).collect();
+    egui::Grid::new(id).num_columns(7).spacing(egui::vec2(22.0, 6.0)).striped(true).show(
+        ui,
+        |ui| {
+            for h in
+                ["PILOT", "RANK", "POINTS", "SORTIES", "OBJECTIVES", "KILLS AIR/GND", "BEST MEDAL"]
+            {
+                ui.label(egui::RichText::new(h).color(DIM));
+            }
+            ui.end_row();
+            for p in &rows {
+                let me =
+                    c.state().player_name(c.me).is_some_and(|n| n.eq_ignore_ascii_case(&p.name));
+                let mut name = egui::RichText::new(&p.name).color(BRIGHT);
+                if me {
+                    name = name.strong();
+                }
+                ui.label(name);
+                ui.label(rank_of(p.points));
+                ui.label(egui::RichText::new(p.points.to_string()).color(BRIGHT));
+                ui.label(p.sorties.to_string());
+                ui.label(p.achieved.to_string());
+                ui.label(format!("{}/{}", p.air_kills, p.ground_kills));
+                ui.label(egui::RichText::new(medal_of(p.best).unwrap_or("-")).color(AMBER));
+                ui.end_row();
+            }
+        },
+    );
+    if rows.is_empty() {
+        ui.label(egui::RichText::new("No sorties flown yet").color(DIM));
     }
 }

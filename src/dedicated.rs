@@ -26,10 +26,11 @@ stealth-mission-89 --dedicated [switches]
   --no-master            not on the server list (players join by address)
   --save <file>          the campaign file (default: campaigns/dedicated.json in the
                          game's data directory), saved every minute and on stopping
-  --realistic-damage     realistic missile damage
-  --realistic-guidance   realistic missile guidance
+  --classic-damage       classic missile damage (default: realistic)
+  --classic-guidance     classic missile guidance (default: realistic)
+  --classic-time         fixed time of day (default: moving sun and moon; moonlight
+                         sets the enemy's visual range)
   --no-crashes           collisions bounce, crashes do not end the flight
-  --continuous-time      moving sun and moon; moonlight sets the enemy's visual range
   --realistic-weapons    the F-117A as it was: no cannon, two bays
   --friendly-fire        the players' missiles and gunfire damage each other
   --plain                log lines instead of the console screen (UTC timestamps; the screen is shown

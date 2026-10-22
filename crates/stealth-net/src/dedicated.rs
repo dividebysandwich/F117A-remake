@@ -50,8 +50,9 @@ pub struct Config {
 impl Config {
     /// From the command line: `--name`, `--port`, `--max-players`, `--theater`, `--roe`,
     /// `--opponents`, `--seed`, `--sky-ratio`, `--start-hour`, `--clear-sky`, `--save <file>` and the rules
-    /// `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`,
-    /// `--realistic-weapons`, `--friendly-fire`.
+    /// `--classic-damage`, `--classic-guidance`, `--classic-time` (realistic damage and guidance
+    /// and continuous time are the default), `--no-crashes`, `--realistic-weapons`,
+    /// `--friendly-fire`.
     pub fn from_args(args: &[String]) -> Result<Self> {
         let get = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
         let has = |f: &str| args.iter().any(|a| a == f);
@@ -84,10 +85,10 @@ impl Config {
             start_hour: num(get("--start-hour"), "--start-hour", 8.0f32)?.rem_euclid(24.0),
             clear_sky: has("--clear-sky"),
             rules: Rules {
-                realistic_damage: has("--realistic-damage"),
-                realistic_guidance: has("--realistic-guidance"),
+                realistic_damage: !has("--classic-damage"),
+                realistic_guidance: !has("--classic-guidance"),
                 no_crashes: has("--no-crashes"),
-                continuous_time: has("--continuous-time"),
+                continuous_time: !has("--classic-time"),
                 realistic_weapons: has("--realistic-weapons"),
                 friendly_fire: has("--friendly-fire"),
             },

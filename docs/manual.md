@@ -1020,7 +1020,7 @@ under the same name and fly on. After that the sortie ends as aborted.
 The game's executable runs a server without a window with `--dedicated`:
 
 ```
-stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 28989 --realistic-guidance
+stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 28989 --friendly-fire
 ```
 
 | Switch | |
@@ -1032,7 +1032,8 @@ stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 289
 | `--roe <0..2>`, `--opponents <0..3>`, `--seed <n>`, `--start-hour <h>` | A new campaign's options. |
 | `--sky-ratio <x>` | The sky runs x times faster than real time (default 24: a day per hour). |
 | `--clear-sky` | A new campaign without weather (else it changes once or twice a day). |
-| `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`, `--realistic-weapons`, `--friendly-fire` | The rules. |
+| `--classic-damage`, `--classic-guidance`, `--classic-time` | Classic damage, guidance and a fixed time of day instead of the default realistic damage, realistic guidance and moving sun and moon. |
+| `--no-crashes`, `--realistic-weapons`, `--friendly-fire` | The other rules. |
 | `--save <file>` | The campaign file (default `campaigns/dedicated.json` in the game's data directory). |
 | `--send-rate <hz>` | How often the moving world goes to the players, 1 to 15 times a second (default 7.5). More is smoother; less leaves bandwidth for more players. |
 | `--master <url>` | The server list to be on (default `https://sm-master.playspoon.com`; reported every 30 seconds). |

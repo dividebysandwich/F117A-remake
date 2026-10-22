@@ -1,4 +1,4 @@
-//! Aircraft exterior lights (not in the original game): position and anti-collision lights
+//! Aircraft exterior lights: position and anti-collision lights
 //! are on around the aircraft's own airfields, where traffic has to see each other, and off
 //! elsewhere (in combat they would give the aircraft away).
 

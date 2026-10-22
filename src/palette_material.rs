@@ -162,7 +162,7 @@ impl Material for PaletteMaterial {
         }
         let vertex_layout = layout.0.get_layout(&attributes)?;
         descriptor.vertex.buffers = vec![vertex_layout];
-        // Back faces are culled like the original's plane visibility test (the converter
+        // Back faces are culled like the classic plane visibility test (the converter
         // winds polygons towards their plane's visible side; dot billboards face the camera).
         descriptor.primitive.cull_mode = Some(bevy::render::render_resource::Face::Back);
         Ok(())

@@ -423,8 +423,8 @@ impl Sim {
                     self.destroy_aircraft(hit as usize);
                     let n = self.ac_type(u.spec).name.clone();
                     self.msg(format!("{n} hit by {}", mt.name));
-                    if self.opts.fix_original_bugs {
-                        // Original: the missile sits on the wreck for 2 s, still locked, and
+                    if self.opts.fix_classic_bugs {
+                        // Classic: the missile sits on the wreck for 2 s, still locked, and
                         // repeats the hit every frame. Fixed: it is spent.
                         self.proj[s].ttl = 0;
                     }
@@ -455,7 +455,7 @@ impl Sim {
     fn fall_bomb(&mut self, s: usize) {
         let m = self.proj[s];
         let Some(f) = m.fall else { return };
-        let Some(k) = ballistics::drag(m.spec, self.opts.fix_original_bugs) else { return };
+        let Some(k) = ballistics::drag(m.spec, self.opts.fix_classic_bugs) else { return };
         let fine = ROUND_FINE as f64;
         let before = [f.x as f64 / fine, f.y as f64 / fine, f.alt as f64 / fine];
         let (mut p, mut v) = (before, [f.vx as f64 / fine, f.vy as f64 / fine, f.vz as f64 / fine]);
@@ -502,8 +502,8 @@ impl Sim {
             String::new()
         };
         let mut kind = -6;
-        if self.opts.fix_original_bugs && s >= 8 && m.spec == 38 {
-            // Intended airdrop rule, unreachable in the original.
+        if self.opts.fix_classic_bugs && s >= 8 && m.spec == 38 {
+            // Intended airdrop rule, unreachable in classic mode.
             let mut delivered = false;
             for k in 0..2 {
                 let t = self.pl.targets[k];
@@ -539,7 +539,7 @@ impl Sim {
             self.msg(text);
             let d = approx(self.pl.p.mx - ex, self.pl.p.my - ey) + (self.pl.p.view_z >> 5);
             if self.diff * 32 > d {
-                // The original builds a "Blast damage" message after the miss text but never shows it.
+                // Classic builds a "Blast damage" message after the miss text but never shows it.
                 self.player_hit(false);
             }
         } else if s >= 8 {

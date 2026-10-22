@@ -1,8 +1,8 @@
 //! Right-MFD tracking camera: a second 3D camera at the aircraft looking at the locked target,
 //! or along the camera direction keys (`/ , . m`) with the photo lens depression, rendered into
-//! a small texture with the original focal length `256 << zoom` over the 77x60 MFD rectangle.
+//! a small texture with the classic focal length `256 << zoom` over the 77x60 MFD rectangle.
 //! The cockpit shows the texture behind the right MFD screen (the page's text is drawn over it);
-//! it is rendered at the screen's resolution (2x the original for the classic panel, 6x for the
+//! it is rendered at the screen's resolution (2x the MFD's pixels for the classic panel, 6x for the
 //! modern one's 231x180 display).
 
 use bevy::camera::RenderTarget;
@@ -32,7 +32,7 @@ impl Plugin for TrackCamPlugin {
     }
 }
 
-/// Render scale over the original MFD pixels (77x60).
+/// Render scale over the classic MFD pixels (77x60).
 fn scale(settings: &crate::settings::Settings) -> u32 {
     if settings.hires_displays() { 6 } else { 2 }
 }

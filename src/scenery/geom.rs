@@ -1,6 +1,6 @@
 //! Mesh building for the scenery: triangles per palette colour byte (faces shaded a few ramp
-//! steps by their direction to the sun, like the original's per-face colours), lines, and lamp
-//! dots, in block-local Bevy metres (x east, y up, z south).
+//! steps by their direction to the sun), lines, and lamp dots, in block-local Bevy metres
+//! (x east, y up, z south).
 
 use std::collections::BTreeMap;
 use std::f32::consts::TAU;

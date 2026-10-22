@@ -1,6 +1,6 @@
-//! Realistic missile guidance (`SimOptions::realistic_guidance`, not in the original game).
+//! Realistic missile guidance (`SimOptions::realistic_guidance`).
 //!
-//! The original steers a missile's heading and pitch straight at its target, a fixed angle per
+//! Classic guidance steers a missile's heading and pitch straight at its target, a fixed angle per
 //! frame, at a speed that only grows, from positions kept in whole map units (32 world units):
 //! its flight path zigzags in steps of several degrees and it rolls back and forth with every
 //! correction. Here a missile flies in 3D with exact positions:
@@ -50,7 +50,7 @@ const fn cruise(smoke: f64, g: f64) -> Profile {
 }
 
 /// The profile of a missile table entry; None for bombs and the other projectiles (they keep
-/// the original's flight).
+/// the classic flight).
 pub fn profile(spec: i32) -> Option<Profile> {
     Some(match spec {
         1 => rocket(25.0, 4.0, 12.0), // SA-2: booster, then a long sustainer
@@ -166,7 +166,7 @@ pub(crate) struct Target {
 }
 
 impl Projectile {
-    /// The motor is burning, trailing smoke (always under the original's guidance).
+    /// The motor is burning, trailing smoke (always under classic guidance).
     pub fn motor_visible(&self) -> bool {
         self.flight.is_none_or(|f| f.smoke > 0)
     }

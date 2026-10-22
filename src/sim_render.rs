@@ -92,7 +92,7 @@ const SIGNAL_FLARE_LIFE: f32 = 25.0;
 /// STFLT model of the falling wreck.
 const WRECK_MODEL: i32 = 11;
 /// The Mi-24's aircraft type points at STFLT 15, a missile shape with a motor flame (the
-/// original data has no Hind model); drawn as the only helicopter model, the UH-60 (25).
+/// data has no Hind model); drawn as the only helicopter model, the UH-60 (25).
 const HIND_DATA_MODEL: i32 = 15;
 const HELICOPTER_MODEL: i32 = 25;
 
@@ -251,7 +251,7 @@ const SMOOTH_RESET: f64 = 300.0;
 const TRUE_ALT_FROM: f64 = 8000.0;
 const TRUE_ALT_TO: f64 = 1000.0;
 
-/// Missiles under the original's guidance are drawn smoothed.
+/// Missiles under classic guidance are drawn smoothed.
 fn smoothed(m: &stealth_sim::Projectile) -> bool {
     m.flight.is_none() && m.fall.is_none() && crate::trails::is_missile(m.spec)
 }
@@ -1152,7 +1152,7 @@ fn world_model_state(
     mut own: Query<&mut ModelState, (Or<(With<OwnModel>, With<OwnLights>)>, Without<TileObject>)>,
     player: Query<&Aircraft, With<Player>>,
 ) {
-    // Slot 15 += 1152 and slot 16 += 1024 per original frame time unit, ~15 per second.
+    // Slot 15 += 1152 and slot 16 += 1024 per sim frame time unit, ~15 per second.
     let dt = time.delta_secs() * crate::combat::FS as f32;
     angles[0] = (angles[0] + 1152.0 * dt).rem_euclid(65536.0);
     angles[1] = (angles[1] + 1024.0 * dt).rem_euclid(65536.0);
@@ -1215,7 +1215,7 @@ fn world_model_state(
 #[derive(Component)]
 pub struct OwnShadow;
 
-/// Colour of the original's shadow model (STFLT 17).
+/// Colour of the shadow model (STFLT 17).
 const SHADOW_COLOUR: u8 = 239;
 
 #[allow(clippy::type_complexity)]

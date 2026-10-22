@@ -1,4 +1,4 @@
-//! Fires and smoke (not in the original). Everything destroyed on the ground burns for the rest
+//! Fires and smoke. Everything destroyed on the ground burns for the rest
 //! of the flight: a plume of smoke rising into the sky over a fire, small ones for vehicles and
 //! aircraft wrecks, big ones for buildings, installations and ships. In a conventional war
 //! (ROE 2) towns and roads are burning from the start. Theaters with a front line (the

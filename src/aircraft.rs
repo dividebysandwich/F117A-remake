@@ -18,7 +18,7 @@ pub enum AircraftKind {
 /// How the aircraft's shadow is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shadow {
-    /// A flat outline model of the STFLT file (the original's F-117A shadow is model 17).
+    /// A flat outline model of the STFLT file (the classic F-117A shadow is model 17).
     Model(u16),
     /// The exterior model squashed flat onto the ground.
     Flattened,

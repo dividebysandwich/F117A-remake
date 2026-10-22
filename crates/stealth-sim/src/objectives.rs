@@ -66,7 +66,7 @@ impl Sim {
         self.emit(SimEvent::MissionEnd(e));
     }
 
-    /// End the mission from outside (Alt-Q = 7: nothing written, like the original).
+    /// End the mission from outside (Alt-Q = 7: nothing written).
     pub fn quit(&mut self) {
         if self.ended.is_none() {
             let e = MissionEnd {
@@ -217,7 +217,7 @@ impl Sim {
                         && self.mark_target_reached(k)
                     {
                         self.msg("Cargo delivered");
-                        // The original empties bay k (the generator loads the target's
+                        // Empty bay k (the generator loads the target's
                         // equipment there).
                         if let Some(b) =
                             self.pl.bays.iter_mut().find(|b| b.0 == SPECIAL_EQUIPMENT && b.1 != 0)

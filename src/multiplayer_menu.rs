@@ -41,7 +41,7 @@ pub struct MultiplayerWindow {
     saves: Vec<(String, String, f64)>,
     sky_ratio: f32,
     start_hour: f32,
-    /// No weather: the original's clear sky.
+    /// No weather: the classic clear sky.
     clear_sky: bool,
     /// `--host`: host a new campaign at once.
     auto_host: bool,

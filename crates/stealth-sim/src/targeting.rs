@@ -15,7 +15,7 @@ impl Sim {
     }
 
     /// Projection to the 320x200 cockpit HUD (focal length 256, boresight (160, 52); assumed to
-    /// match the original's HUD projection closely). Returns
+    /// match the classic HUD projection closely). Returns
     /// (screen x, screen y, depth = -forward/8); screen None when off screen or behind.
     pub(crate) fn project(&self, x: i32, y: i32, alt: i32) -> (Option<(i32, i32)>, i32) {
         let t = &self.trig;
@@ -194,7 +194,7 @@ impl Sim {
         }
     }
 
-    /// Nearest enemy ahead (`Commands::nearest_target`, not in the original), once the HUD mode
+    /// Nearest enemy ahead (`Commands::nearest_target`), once the HUD mode
     /// matches the selected weapon: same window, range and sight rules as the 'B' selection,
     /// but only hostile targets (no friendly or neutral objects, no friendly aircraft).
     fn nearest_target(&mut self) {
@@ -253,7 +253,7 @@ impl Sim {
                 self.pl.gnd_lock = best;
             }
         }
-        // Nothing hostile: whatever the original's camera-ahead acquisition locked stays.
+        // Nothing hostile: whatever the camera-ahead acquisition locked stays.
         let locked = if air { self.pl.air_lock >= 0 } else { self.valid_gnd().is_some() };
         if !locked {
             self.msg("No target ahead");
@@ -395,7 +395,7 @@ impl Sim {
     /// Where the selected bomb would land if released now (map units with fractions; None
     /// without a ballistic bomb selected or on the ground).
     pub(crate) fn bomb_impact(&self) -> Option<(f64, f64)> {
-        let k = ballistics::drag(self.selected_spec(), self.opts.fix_original_bugs)?;
+        let k = ballistics::drag(self.selected_spec(), self.opts.fix_classic_bugs)?;
         let v =
             ballistics::release_velocity(self.pl.p.heading, self.pl.p.velocity, self.pl.p.climb);
         let (d, _) = ballistics::impact(
@@ -410,9 +410,9 @@ impl Sim {
         ))
     }
 
-    /// Bombsights: CCIP and ranging bar for free-fall / retarded bombs. The original estimated
-    /// the impact point from the release altitude and pitch; it is where the bomb's path
-    /// meets the ground ([`ballistics`]).
+    /// Bombsights: CCIP and ranging bar for free-fall / retarded bombs. The impact
+    /// point is where the bomb's path meets the ground ([`ballistics`]), not an estimate from
+    /// the release altitude and pitch.
     fn bombsight(&mut self, ccrp: bool) {
         self.pl.targeting.ccip = None;
         self.pl.targeting.ranging_bar = None;

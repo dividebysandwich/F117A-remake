@@ -24,12 +24,12 @@ Command-line options:
 | `--weather random\|clear\|scattered\|broken\|overcast\|storm` | the mission's weather (default: rolled from the seed, odds by theater) |
 | `--cloud-cover <percent>` | coverage of the weather's main cloud layer (default: rolled) |
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
-| `--aircraft f117\|f16` | the flown aircraft: the F-117A (default) or the F-16C, which has its own cockpit (with an RWR scope instead of the radar bar graph) and flight model |
-| `--classic-avionics` | the original's MFD pages instead of the F-16 style formats (HSD, HARM, targeting pod, map, stores on either MFD, with a slewable cursor) |
-| `--classic-hud` | the original low-resolution HUD instead of the green F-16 style one |
-| `--classic-cockpit` | the original instrument panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons); F-117A only |
+| `--aircraft f117\|f16` | the aircraft to fly: the F-117A (default) or the F-16C, which has its own cockpit (with an RWR scope instead of the radar bar graph) and flight model |
+| `--classic-avionics` | DOS era MFD pages instead of the F-16 style formats (HSD, HARM, targeting pod, map, stores on either MFD, with a slewable cursor) |
+| `--classic-hud` | DOS era low-resolution HUD instead of the green F-16 style one |
+| `--classic-cockpit` | DOS era panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons); F-117A only |
 | `--shadows` / `--local-lights` | sun shadows; local lights (cockpit lamps, explosions, flares, missile motors, runway lights) |
-| `--classic-flight` | the original game's flight model instead of the modern one (aerodynamic model with fly-by-wire: the stick commands pitch and roll rate, released the nose stays where it was left and the settled flight path is held); `--script` runs default to it, `--modern-flight` overrides |
+| `--classic-flight` | DOS era flight model instead of the modern one (aerodynamic model with fly-by-wire: the stick commands pitch and roll rate, released the nose stays where it was left and the settled flight path is held); `--script` runs default to it, `--modern-flight` overrides |
 | `--realistic-guidance` | realistic missile guidance: proportional navigation, motors that burn out (the missiles glide on, smoke only while burning), lofted SAM shots, the AIM-120 flying straight for 3 s so it can be lobbed |
 | `--realistic-damage` | realistic weapon damage: missile hits can destroy the aircraft, start fires that burn out or blow it up, and bend control surfaces (out of trim, oscillating) |
 | `--no-crashes` | crash protection: automatic pull-up near the ground with the gear up, ground contact and collisions are not fatal |
@@ -89,14 +89,14 @@ missions follow Central Europe's rules (`--theater ua`).
 | Cockpit / look ahead, rear, left, right | F1 / Shift `/` `.` `,` M |
 | External views | Shift F1 .. Shift F6 |
 | HUD mode / declutter | F2 / V |
-| Night vision goggles (not in the original) | F4 |
+| Night vision goggles | F4 |
 | Maps / ordnance / FLIR (tracking camera in black and white thermal: aircraft, vehicles and buildings bright) | F3 / F5 / F6 |
 | Waypoints | F7 / F8 / PgUp / PgDn |
 | Mission orders | F10 |
 | Tracking camera ahead, rear, right, left | `/` / `.` / `,` / M |
 | Designate / next target | N / B |
-| Nearest enemy target ahead (AIR or GND mode by the selected weapon; not in the original) | T |
-| Clear target (no automatic acquisition until the next target or camera key; not in the original) | Shift B |
+| Nearest enemy target ahead (AIR or GND mode by the selected weapon) | T |
+| Clear target (no automatic acquisition until the next target or camera key) | Shift B |
 | Zoom / unzoom / wide angle | Z / X / C |
 | Map zoom in / out, north up / heading up (modern panel) | Alt Z / Alt X / Alt F3 |
 | Time acceleration / normal | Shift Z / Shift X |

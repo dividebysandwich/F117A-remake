@@ -1,4 +1,4 @@
-//! The realtime dynamic campaign (not in the original game): two sides hold the cities and
+//! The realtime dynamic campaign: two sides hold the cities and
 //! airfields of a theater; the friendly side takes the enemy's places by landing troops with
 //! helicopters. A mission board offers sorties made from the live situation (recon, SEAD, CAP,
 //! CAS, anti-ship, strike, escort), and insertions the AI flies. Pilots never die or get

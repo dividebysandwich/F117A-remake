@@ -1,6 +1,6 @@
 //! The theater world: coordinate systems, floating origin and tile-object streaming.
 //!
-//! Original coordinates:
+//! Sim coordinates:
 //! - world units (wu): x east, y north, 0..2^20; altitude in the same unit. 1 wu = 0.488 m
 //!   (the 2^20 wu theater is 512 "km" on the HUD).
 //! - map units = wu >> 5, map y grows southward: wy = (0x8000 - map_y) << 5.
@@ -8,9 +8,8 @@
 //! Bevy: metres, X = east, Y = up, Z = -north. Positions are kept in f64 (`WorldPos`) and
 //! rendered relative to a floating origin near the camera to avoid f32 jitter.
 //!
-//! The ground is made of theater models placed per tile (.3DG grid + .3DT lists). Like the
-//! original, each detail level (LOD 1..4) shows the cells around the camera; finer levels
-//! draw over coarser ones.
+//! The ground is made of theater models placed per tile (.3DG grid + .3DT lists). Each detail
+//! level (LOD 1..4) shows the cells around the camera; finer levels draw over coarser ones.
 
 use std::collections::HashMap;
 
@@ -142,7 +141,7 @@ impl TileOverrides {
     }
 }
 
-/// Metres per original world unit.
+/// Metres per world unit.
 pub const WU: f64 = 512_000.0 / 1_048_576.0;
 
 /// Longitude and latitude of a theater's south-west corner, the map laid on the globe at game
@@ -203,12 +202,12 @@ impl Plugin for WorldPlugin {
     }
 }
 
-/// Converts an original world position (wu east, wu north, wu altitude) to Bevy metres.
+/// Converts a world position (wu east, wu north, wu altitude) to Bevy metres.
 pub fn wu_to_bevy(east: f64, north: f64, alt: f64) -> DVec3 {
     DVec3::new(east * WU, alt * WU, -north * WU)
 }
 
-/// Bevy metres -> original world units (east, north, alt).
+/// Bevy metres -> world units (east, north, alt).
 pub fn bevy_to_wu(p: DVec3) -> (f64, f64, f64) {
     (p.x / WU, -p.z / WU, p.y / WU)
 }
@@ -242,7 +241,7 @@ pub struct Theater {
     pub world: World,
     pub model_count: usize,
     /// Model attribute bytes (.3DX attr) by shape, for the simulation's wreck test. Only the
-    /// remake's theaters carry them (the originals' are in the exported sim data).
+    /// remake's theaters carry them (the others' are in the exported sim data).
     #[serde(default)]
     pub model_attr: Vec<u8>,
     /// Remake theaters: the front line, where the fighting goes on: points (metres east,
@@ -509,7 +508,7 @@ fn stream_tiles(
                 o.z as f64 * unit,
             );
             // Painter's order for coplanar ground overlays: finer levels and later list
-            // entries were drawn on top in the original; lift them by a few centimetres.
+            // entries go on top; lift them by a few centimetres.
             if o.z == 0 {
                 pos.y += (4 - lod) as f64 * LAYER_STEP_M * 8.0 + k as f64 * LAYER_STEP_M;
             }
@@ -540,7 +539,7 @@ fn stream_tiles(
 #[allow(dead_code)] // lod / order: for debugging and tools
 pub struct TileObject {
     pub lod: u8,
-    /// Position in the tile's object list (original draw order for flat ground patches).
+    /// Position in the tile's object list (draw order for flat ground patches).
     pub order: u16,
     /// Drawn as wreck or rubble (lights off).
     pub destroyed: bool,

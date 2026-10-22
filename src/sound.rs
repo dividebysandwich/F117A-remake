@@ -1,4 +1,4 @@
-//! Original sounds, recorded from the AdLib driver into assets/sounds/.
+//! Sound effects, recorded from the AdLib driver into assets/sounds/.
 //!
 //! - Effects are requested by id with a priority (`makeSound(id, prio)`); they play when
 //!   `prio >= 3 - level` (level 3 = all sounds, 2 = no engine, 1 = firing and explosions only,
@@ -9,7 +9,7 @@
 //!   as wind noise), and only plays at level 3.
 //! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.flac) register under id NN, and a
 //!   requested id with no sample stays silent, so speech can be added later by dropping files in.
-//! - Radar warning tones come from `sounds/rwr/` instead of the original sounds 8 and 9.
+//! - Radar warning tones come from `sounds/rwr/` instead of sounds 8 and 9.
 //! - A fire on board sounds the fire warning siren (`fire_siren.flac`, tools/gen_fire_siren.py)
 //!   without a break until the fire is out (or the pilot has ejected).
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
@@ -56,7 +56,7 @@ impl Plugin for SoundPlugin {
     }
 }
 
-/// Request to play an original sound id. `priority` 255 = direct (bypasses the level).
+/// Request to play a sound id. `priority` 255 = direct (bypasses the level).
 #[derive(Message, Debug, Clone, Copy)]
 pub struct PlaySound {
     pub id: u8,
@@ -65,7 +65,7 @@ pub struct PlaySound {
 
 pub const DIRECT: u8 = 255;
 
-/// Sound ids of the radar warning tones (above the original's ids).
+/// Sound ids of the radar warning tones (above the AdLib sound ids).
 pub fn rwr_id(tone: stealth_sim::RwrTone) -> u8 {
     use stealth_sim::RwrTone::*;
     match tone {
@@ -166,7 +166,7 @@ struct EngineDrone {
     sample_knots: f32,
 }
 
-/// Sound id of an anti-aircraft shell burst nearby (not an original sound).
+/// Sound id of an anti-aircraft shell burst nearby (not an AdLib sound).
 pub const AIRBURST: u8 = 110;
 
 fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
@@ -268,7 +268,7 @@ fn play_sounds(
     }
 }
 
-/// Sounds the original triggers from the flight step and frame update.
+/// Sounds triggered from the flight step and frame update.
 #[allow(clippy::too_many_arguments)]
 fn flight_sounds(
     mut out: MessageWriter<PlaySound>,
@@ -301,7 +301,7 @@ fn flight_sounds(
     if a.on_ground && !was_on_ground && a.in_landing_corridor {
         out.write(PlaySound { id: 10, priority: 2 });
     }
-    // Stall horn while stalled (the original repeats it every frame).
+    // Stall horn while stalled (repeated every frame).
     if !a.on_ground && a.velocity < a.stall_speed {
         out.write(PlaySound { id: 14, priority: 1 });
     }
@@ -324,7 +324,7 @@ fn flight_sounds(
         let (be, bn) = crate::world::map_to_wu(base.x as u16, base.y as u16);
         let (e, n, _) = crate::world::bevy_to_wu(pos.0);
         // On approach: back within range 5000 of the landing base, descending with the gear
-        // down (the original also waits for the AOA indexer to show on-speed).
+        // down.
         let d = (e - be).hypot(n - bn);
         if d > 10_000.0 {
             *been_away = true;
@@ -359,7 +359,7 @@ fn engine_drone(
         }
         return;
     }
-    // Nearest recording at or below the airspeed, pitched to the exact original frequency.
+    // Nearest recording at or below the airspeed, pitched to the exact frequency.
     let (sample_knots, handle) =
         bank.engine.iter().rev().find(|(k, _)| *k <= knots).unwrap_or(&bank.engine[0]).clone();
     let freq = |k: f32| 0x83 as f32 + ((k as u32) & !1) as f32;

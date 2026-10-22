@@ -193,7 +193,7 @@ fn roads(net: &Network, f: &Frame, g: &mut Geom) {
         }
         let half = road.width * 0.5;
         strip(g, f, &road.pts, s, half, ROAD_Y, ROAD);
-        // Centre line: keeps distant roads visible as in the original's line roads.
+        // Centre line: keeps distant roads visible like the theaters' line roads.
         g.line(ROAD, f.at(a, ROAD_Y + 0.05), f.at(b, ROAD_Y + 0.05));
 
         let (s0, s1) = (road.arc[s], road.arc[s + 1]);

@@ -1,7 +1,7 @@
 //! Attack drone (Geran) raids of the remake's Ukraine theater: the drone defense mission
 //! (intercept a wave heading for a city or a nuclear plant, then bomb a launch site) and
 //! drones crossing the theater during strike missions. Applied to a generated mission; the
-//! original theaters never get any.
+//! classic theaters never get any.
 
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ pub struct DroneWave {
     pub allowance: u8,
 }
 
-/// Small LCG for the drone choices (the original generator's RNG is not touched).
+/// Small LCG for the drone choices (the mission generator's RNG is not touched).
 struct R(u32);
 
 impl R {

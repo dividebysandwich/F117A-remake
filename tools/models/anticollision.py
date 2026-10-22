@@ -7,7 +7,7 @@
 # Lights sit on the skin: a ray down or up the centreline at a station (`top`, `bottom`), the
 # front of a fin tip (`fin`), or just aft of the wingtip navigation lights (`wingtips`).
 # Model units, Blender axes: +x right, +y forward, +z up.
-# Also removes the original models' steady white tail lights (colour 149 on the navigation-light
+# Also removes the stock models' steady white tail lights (colour 149 on the navigation-light
 # slot 12), leaving the red/green wingtip lights and the flashing anti-collision lights.
 import bmesh
 import bpy

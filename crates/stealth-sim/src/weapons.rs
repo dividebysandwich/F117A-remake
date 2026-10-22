@@ -137,7 +137,7 @@ impl Sim {
     }
 
     /// Space: the next weapon carried, then the cannon (stations with the selected weapon are
-    /// skipped; the original steps through its 2 or 4 bays, the same with a different weapon in
+    /// skipped; classic mode steps through the 2 or 4 bays, the same with a different weapon in
     /// each).
     fn next_weapon(&mut self) {
         // Entries: the first station of each weapon, then the cannon (index n).
@@ -245,7 +245,7 @@ impl Sim {
         }
         let ccrp = ps.ccrp
             && self.pl.hud_mode == HudMode::Gnd
-            && ballistics::drag(self.selected_spec(), self.opts.fix_original_bugs).is_some();
+            && ballistics::drag(self.selected_spec(), self.opts.fix_classic_bugs).is_some();
         if ps.cmd.fire && self.pl.fire_cooldown == 0 && self.pl.eject == 0 {
             if !ccrp {
                 self.fire_missile();
@@ -378,9 +378,9 @@ impl Sim {
                 pr.target = -1;
             }
         }
-        if ballistics::drag(spec, self.opts.fix_original_bugs).is_some() {
-            // Free-fall and retarded bombs (and, fixed, supply pods) fall ballistically. The
-            // original flew free-fall bombs at half speed, turning down to a floor set by the
+        if ballistics::drag(spec, self.opts.fix_classic_bugs).is_some() {
+            // Free-fall and retarded bombs (and, fixed, supply pods) fall ballistically.
+            // Classic flew free-fall bombs at half speed, turning down to a floor set by the
             // release altitude, and dropped retarded ones straight down at speed 1.
             let f = ROUND_FINE as f64;
             let v = ballistics::release_velocity(
@@ -491,7 +491,7 @@ impl Sim {
     pub(crate) fn update_own_rounds(&mut self, ps: &PlayerState) {
         let fs = self.fs;
         let nb = self.n_bullets;
-        // A round every frame while the trigger is held (the original fired every other frame);
+        // A round every frame while the trigger is held (classic mode fired every other frame);
         // each slot is reused after `nb` frames, which ends the round there.
         if !self.pl.lockheed {
             let slot = (self.frame as usize) % nb;
@@ -523,7 +523,7 @@ impl Sim {
             }
             return;
         }
-        // Hit tests (the original only tests rounds that project on screen). A player round
+        // Hit tests (all rounds, not only those that project on screen). A player round
         // hits what passes within the hit radius of its path over this frame.
         self.credit = Some(self.pl.id);
         for i in 0..nb {

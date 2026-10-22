@@ -14,7 +14,7 @@ use super::geom::{Geom, PapiLight, rect};
 use super::ground::{Ground, Runway};
 use super::network::{Building, Kind, Rng, Roof, dist_to_segment};
 
-/// Heights of the ground surfaces above the original's overlays (metres).
+/// Heights of the ground surfaces above the theater's overlays (metres).
 const TAXI_Y: f32 = 0.95;
 const PAD_Y: f32 = 0.92;
 const TAXI: u8 = 0xEC;

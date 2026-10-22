@@ -1,5 +1,5 @@
 //! The theater-wide layout, generated once per theater from a fixed seed: towns with street
-//! grids, roads between them (and along the original highway lines), transmission lines
+//! grids, roads between them (and along the theater's highway lines), transmission lines
 //! between the larger towns, pole lines along some roads, and the buildings of towns,
 //! industrial sites and farms. Ground positions are metres (x east, y north).
 
@@ -103,7 +103,7 @@ pub struct Town {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RoadKind {
-    /// Along a road line of the original terrain.
+    /// Along a road line of the theater terrain.
     Highway,
     Road,
     Street,

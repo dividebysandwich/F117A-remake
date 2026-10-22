@@ -1,4 +1,4 @@
-//! Missile smoke trails and contrails (not in the original). Each trail is a ribbon mesh of
+//! Missile smoke trails and contrails. Each trail is a ribbon mesh of
 //! segments along the emitter's path, rebuilt every frame; the trail shader
 //! (assets/shaders/trail.wgsl) turns every segment to face the view drawing it. Segments widen
 //! with age and start fading after `fade_after` seconds; a trail whose emitter is gone stays

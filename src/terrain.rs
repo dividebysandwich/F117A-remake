@@ -1,4 +1,4 @@
-//! Terrain upgrade (not in the original). Once a theater's model file is loaded, its ground
+//! Terrain upgrade. Once a theater's model file is loaded, its ground
 //! models are refined in place, before the tile streaming, the MFD map and the scenery layout
 //! read them, so all three see the same geometry:
 //!
@@ -8,8 +8,8 @@
 //!   a model's outline (tile seams) and the original vertices stay where they were.
 //! - Mountains: the large raised terrain models are subdivided two or three times with their
 //!   edge midpoints pushed along the surface normal (the ground outline stays), and the new
-//!   faces step a little along their colour ramp by their slope to the sun, like the
-//!   original's per-face shading. The refined surface replaces their plane hull for collisions.
+//!   faces step a little along their colour ramp by their slope to the sun, like the theater
+//!   models' per-face shading. The refined surface replaces their plane hull for collisions.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

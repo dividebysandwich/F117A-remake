@@ -72,7 +72,7 @@ struct MirrorLight(usize);
 /// Point lights mirrored for the cockpit.
 const MIRRORED: usize = 4;
 
-/// Direction to the sun: the original's (unused) light vector (-36, 36, 36), as in modern mode.
+/// Direction to the sun: the sim data's (unused) light vector (-36, 36, 36), as in modern mode.
 pub fn sun_direction() -> Vec3 {
     Vec3::new(-36.0, 36.0, 36.0).normalize()
 }
@@ -159,7 +159,7 @@ fn update_sun(
     let lum = 0.2126 * sky.red + 0.7152 * sky.green + 0.0722 * sky.blue;
     let daylight = ((lum - 0.02) / 0.25).clamp(0.0, 1.0);
     state.daylight = daylight;
-    // World shader: ambient + sun keeps sunlit faces near the original brightness and
+    // World shader: ambient + sun keeps sunlit faces near the classic brightness and
     // darkens shadowed ones. Under an overcast the sun is hidden.
     let shade = weather.shade.max(weather.whiteout);
     let strength = 0.45 * daylight * (1.0 - 0.85 * shade);

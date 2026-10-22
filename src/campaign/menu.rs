@@ -18,7 +18,7 @@ pub struct CampaignWindow {
     /// Sky speed: game time per real time.
     sky_ratio: f32,
     start_hour: f32,
-    /// No weather: the original's clear sky.
+    /// No weather: the classic clear sky.
     clear_sky: bool,
     error: Option<String>,
     /// The save whose DELETE was clicked: (name, label), awaiting confirmation.

@@ -1,10 +1,10 @@
 //! Instrument panel, MFD screens, HUD and the fixed cockpit structure.
 //!
 //! The panel is modelled from a `layout::PanelLayout`: the face and solid parts take their
-//! colours from a 16x16 palette swatch texture (so they follow the flight palette like the
-//! original art did); lamp, LED, gauge, label and bezel button faces are slots of one
-//! instrument atlas canvas redrawn every frame (with a glow twin for the lit ones); each MFD
-//! and the attitude ball have their own canvas.
+//! colours from a 16x16 palette swatch texture (so they follow the flight palette); lamp,
+//! LED, gauge, label and bezel button faces are slots of one instrument atlas canvas redrawn
+//! every frame (with a glow twin for the lit ones); each MFD and the attitude ball have their
+//! own canvas.
 
 use std::collections::HashMap;
 
@@ -104,8 +104,8 @@ fn pack(sizes: &[(i32, i32)]) -> Vec<[i32; 4]> {
     out
 }
 
-/// Atlas size of a face: `k` texels per layout unit (the classic panel keeps the original's
-/// tall pixels).
+/// Atlas size of a face: `k` texels per layout unit (the classic panel keeps its tall 320x200
+/// pixels).
 fn texels(r: &PxRect, k: i32) -> (i32, i32) {
     ((r.w * k as f32).ceil() as i32, (r.h * k as f32).ceil() as i32)
 }

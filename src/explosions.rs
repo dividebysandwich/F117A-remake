@@ -1,4 +1,4 @@
-//! Explosions (replacing the original's expanding balls): a mix of translucent puffs (fireball,
+//! Explosions (replacing the classic expanding balls): a mix of translucent puffs (fireball,
 //! flash, smoke, dust) drawn as one camera-facing particle batch (assets/shaders/particle.wgsl),
 //! and small solid meshes (sparks streaking along their flight, tumbling debris) drawn with the
 //! palette material. Each impact kind of the simulation has its own recipe.

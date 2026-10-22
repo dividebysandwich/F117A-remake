@@ -1,4 +1,4 @@
-//! The original HUD, drawn into the cockpit picture (320x200 original screen coordinates).
+//! The classic HUD, drawn into the cockpit picture (320x200 screen coordinates).
 //! Two layers: the overlay (texts, flight path marker, bars, sights, readouts) and the
 //! instruments (tapes, heading scale, frame, G, pitch ladder).
 
@@ -93,9 +93,10 @@ fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8,
     }
     if st.mode == HudMode::Air || f.gun_selected {
         // Gun sight: atlas (38,76) 13x11, colour 15 (with the gun selected, also outside AIR
-        // and at the pipper: not in the original).
-        let x = CX + (f.gun_lead.0 >> 4);
-        let y = CY + (f.gun_lead.1 >> 4);
+        // and at the pipper).
+        let k = super::classic_zoom(f.scale);
+        let x = CX + ((f.gun_lead.0 as f32 * k) as i32 >> 4);
+        let y = CY + ((f.gun_lead.1 as f32 * k) as i32 >> 4);
         if x > 10 && x < 309 && y > 8 && y < 86 {
             c.blit(atlas, 38, 76, 13, 11, x - 6, y - 5, Some(0), Some(15));
         }
@@ -203,11 +204,18 @@ fn ils_cross(c: &mut Canvas, f: &HudFrame, loc: f32, gs: f32, col: u8) {
 /// its fall line, ranging bar and flight-path guide diamond.
 fn weapon_cues(c: &mut Canvas, f: &HudFrame, col: u8) {
     let cues = &f.cues;
+    // Cues projected at the classic focal length, moved out as the glass shrinks the HUD so
+    // they stay on what they mark.
+    let k = super::classic_zoom(f.scale);
+    let at = |(x, y): (i32, i32)| {
+        (CX + ((x - CX) as f32 * k).round() as i32, CY + ((y - CY) as f32 * k).round() as i32)
+    };
     if let Some(b) = cues.target_box {
         let colour = if b.colour == 0 { col } else { b.colour };
-        target_box(c, b.x, b.y, b.size, b.oval, b.red, colour);
+        let (x, y) = at((b.x, b.y));
+        target_box(c, x, y, b.size, b.oval, b.red, colour);
     }
-    if let Some((x, y)) = cues.ccip {
+    if let Some((x, y)) = cues.ccip.map(at) {
         let fpm_y = CY + (f.fpm >> 6);
         c.line(0xA0, fpm_y, x, y, col);
         target_box(c, x, y, 5, true, true, 0x29);
@@ -219,7 +227,7 @@ fn weapon_cues(c: &mut Canvas, f: &HudFrame, col: u8) {
         c.line(0xA0 + bar, 0x21, 0xA0 + bar, 0x1E, 0x29);
         c.line(0x9F - bar, 0x1E, 0xA0 + bar, 0x1E, 0x29);
     }
-    if let Some((x, y)) = cues.diamond {
+    if let Some((x, y)) = cues.diamond.map(at) {
         diamond(c, x, y, col);
     }
 }
@@ -339,7 +347,7 @@ fn alt_tape(c: &mut Canvas, fonts: &Fonts, alt: i32, col: u8) {
         tick0 = labels.first().map_or(CY, |l| l.0 + 2);
     } else {
         let mut y = r * 2 / 100 + 90;
-        // The slot for the lowest label shows "900" when it is the 0 ft mark (original quirk).
+        // The slot for the lowest label shows "900" when it is the 0 ft mark (classic quirk).
         for k in 0..5 {
             y -= 20;
             let v = q - 1 + k;
@@ -412,7 +420,7 @@ fn pitch_ladder(c: &mut Canvas, fonts: &Fonts, pitch: i16, roll: i16, col: u8) {
     }
     let mut y = frac + 104;
     let mut dl = tens - 2;
-    // Rotation by roll with the original's Q15 maths (sin of -roll):
+    // Rotation by roll in Q15 fixed point (sin of -roll):
     // x' = cos*x - s*y (truncated), y' = 0.75*(cos*y + s*x) as (3*a*b >> 16) >> 1.
     let (cf, sf) = (bcos(-(roll as i32)), bsin(-(roll as i32)));
     let (cq, sq) = ((cf * 32767.0).round() as i64, (sf * 32767.0).round() as i64);

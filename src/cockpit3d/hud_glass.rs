@@ -30,11 +30,11 @@ pub struct HudGlassMaterial {
 
 impl HudGlassMaterial {
     /// Canvas size, projection and style of the classic or the modern HUD (`scale`: the modern
-    /// HUD's canvas pixels per unit).
+    /// HUD's canvas pixels per unit; the classic HUD is shrunk alike, `hud::classic_zoom`).
     pub fn layout(classic: bool, scale: f32) -> ((usize, usize), Vec4, Vec4) {
         use crate::hud::modern;
         if classic {
-            let f = crate::cockpit::FOCAL;
+            let f = crate::cockpit::FOCAL * crate::hud::classic_zoom(scale);
             (
                 (320, 200),
                 Vec4::new(159.5, 52.0, f, f * crate::cockpit::VSCALE),

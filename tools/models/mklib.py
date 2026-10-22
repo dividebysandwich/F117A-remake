@@ -1,6 +1,6 @@
 """Low-poly modelling helpers for generated models (run inside Blender; used by tools/theater_ua).
 
-Model space is the original's: x right, y forward (nose), z up, in model units. Every face
+Model space is the sim's: x right, y forward (nose), z up, in model units. Every face
 carries a palette colour byte; a `Ramp` picks a shade along one of the palette's 16-colour ramps
 from the face normal, so the flat-coloured classic renderer still shows the form.
 """

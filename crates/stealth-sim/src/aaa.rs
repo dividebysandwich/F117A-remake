@@ -1,11 +1,11 @@
-//! Low-level air defences (`SimOptions::air_defence`, not in the original): radar-laid
+//! Low-level air defences (`SimOptions::air_defence`): radar-laid
 //! ZSU-23-4 Shilkas and optically laid S-60 batteries around the hostile airfields and the
 //! targets, and MANPADS teams (SA-14) in the towns. They make flying low over defended places
 //! dangerous: the Shilka's Gun Dish radar sees the player like any other radar (EMV), the S-60
 //! and the MANPADS need to see him (day or moonlight, clouds).
 //!
 //! The units live outside the world object list and draw from their own random stream, so the
-//! original's behaviour is untouched while the option is off. Shells fly in metres (x east,
+//! classic behaviour is untouched while the option is off. Shells fly in metres (x east,
 //! y north, z up from the ground) with gravity and no drag.
 
 use serde::{Deserialize, Serialize};

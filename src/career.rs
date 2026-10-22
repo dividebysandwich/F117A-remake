@@ -1,4 +1,4 @@
-//! Pilot careers (not in the original game): the service record, ranks and medals, and the
+//! Pilot careers: the service record, ranks and medals, and the
 //! tour of duty, a run of sorties in one theater where what the pilot destroys stays destroyed.
 //! Pilots are saved in `<data dir>/stealth-mission-89/pilots/<name>.json`.
 

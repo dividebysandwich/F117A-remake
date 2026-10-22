@@ -1,5 +1,5 @@
 //! Where scenery may go, from the theater's own tile objects: the flat ground overlays (water,
-//! fields, concrete, woods) decide land and water like the original's painter's order, the
+//! fields, concrete, woods) decide land and water by painter's order, the
 //! footprints of raised geometry (mountains, buildings, airbases, targets) are kept clear, and
 //! the flat road lines of the coarse levels are picked up as highways. Overlays in a node named
 //! `..._forest` (the remake's own theaters) are woods, which the scenery fills with trees.
@@ -141,7 +141,7 @@ struct ShapeGeom {
     runways: Vec<Rect>,
 }
 
-/// A runway of the theater (metres, axis-aligned like all the original runways).
+/// A runway of the theater (metres, axis-aligned).
 #[derive(Clone, Copy, Debug)]
 pub struct Runway {
     pub c: DVec2,
@@ -157,7 +157,7 @@ pub struct Ground {
     /// Areas kept clear (metres); `true` for raised objects, `false` for concrete margins.
     boxes: Vec<(Rect, bool)>,
     box_index: Index,
-    /// Road lines of the original terrain (polylines, metres).
+    /// Road lines of the theater terrain (polylines, metres).
     pub highways: Vec<Vec<DVec2>>,
     pub runways: Vec<Runway>,
 }

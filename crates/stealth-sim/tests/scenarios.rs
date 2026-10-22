@@ -350,7 +350,7 @@ fn aim9_kills_fighter() {
     assert!(aim9_shot(d, Weather::default()));
 }
 
-/// An overcast deck: weather is not part of the original game.
+/// An overcast deck.
 fn deck(base_ft: i32, top_ft: i32) -> Weather {
     Weather::stratus_layer(base_ft, top_ft, 100, 1)
 }
@@ -678,16 +678,16 @@ fn classic_state_golden() {
     assert_eq!(got, GOLDEN, "new hashes: [{}]", hex.join(", "));
 }
 
-/// Supply drop: unreachable in the original (spec vs class test), fixed behind `fix_original_bugs`.
+/// Supply drop: unreachable in classic mode (spec vs class test), fixed behind `fix_classic_bugs`.
 #[test]
-fn supply_drop_fixed_and_original() {
+fn supply_drop_fixed_and_classic() {
     let d = data();
     let m = mission(d, 3, 0x1234, 1);
     for fix in [true, false] {
         let mut sim = Sim::with_options(
             &d.sim,
             &m,
-            SimOptions { fix_original_bugs: fix, ..Default::default() },
+            SimOptions { fix_classic_bugs: fix, ..Default::default() },
         );
         sim.set_training(true);
         let o = sim.objects()[5];
@@ -1130,8 +1130,8 @@ fn sa2_hit(opts: SimOptions) -> Option<(Sim, PlayerState)> {
 }
 
 /// Realistic damage: some missile hits destroy the aircraft (it explodes seconds later, ending
-/// the mission), some start fires, control hits bend the controls; the original's damage never
-/// ends the mission.
+/// the mission), some start fires, control hits bend the controls; classic damage never ends
+/// the mission.
 #[test]
 fn realistic_missile_damage() {
     let (mut destroyed, mut exploded, mut bent, mut survived) = (0, 0, 0, 0);
@@ -1180,7 +1180,7 @@ fn realistic_missile_damage() {
         for _ in 0..15 * 90 {
             sim.step(&p, 15);
         }
-        assert!(sim.mission_end().is_none(), "the original's damage is never fatal in the air");
+        assert!(sim.mission_end().is_none(), "classic damage is never fatal in the air");
     }
 }
 

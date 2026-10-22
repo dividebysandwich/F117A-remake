@@ -1,5 +1,5 @@
-//! Missions: the original START generator (crate stealth-mission, byte-exact with the original)
-//! running on data exported from the original game (assets/mission/*.json).
+//! Missions: the START generator (crate stealth-mission, byte-exact) running on the exported
+//! mission data (assets/mission/*.json).
 
 use std::sync::Arc;
 

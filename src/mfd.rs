@@ -1,11 +1,11 @@
 //! Multi-function displays. Each MFD draws into its own canvas:
-//! 77x60 like the original with the classic cockpit panel, 231x180 (`HIRES`) with the modern one.
+//! 77x60 with the classic cockpit panel, 231x180 (`HIRES`) with the modern one.
 //!
 //! Left MFD, F3 toggles:
 //! - MAP: top-down render of the theater tile models through the 16-colour map remap table,
 //!   CPU-rasterised straight into palette indices from the theater model meshes. Classic: north
 //!   up, centred ahead of the aircraft, re-rendered on zoom or mode changes and when the aircraft
-//!   leaves the display (like the original). Modern: a larger north-up buffer resampled every
+//!   leaves the display. Modern: a larger north-up buffer resampled every
 //!   frame into a north-up or heading-up view, with the route, airbases and a heading-true
 //!   aircraft symbol.
 //! - TAC: heading-up tactical display with a 1024-map-unit grid.
@@ -59,7 +59,7 @@ impl Plugin for MfdPlugin {
     }
 }
 
-/// MFD canvas size: the original screen, and the modern cockpit's (3x).
+/// MFD canvas size: the classic screen, and the modern cockpit's (3x).
 pub const CLASSIC: (usize, usize) = (77, 60);
 pub const HIRES: (usize, usize) = (231, 180);
 /// Texels per `HIRES` pixel on the modern screens: the layout stays 231x180, lines, rings and
@@ -114,7 +114,7 @@ pub struct MfdState {
     pub flir: bool,
     /// Modern map: heading up instead of north up.
     pub map_heading_up: bool,
-    /// Modern (high-resolution) displays; classic cockpit = the original 77x60 ones.
+    /// Modern (high-resolution) displays; classic cockpit = the 77x60 ones.
     pub hires: bool,
     /// F9: ILS on. The camera page then shows the runway with its PAPI on an approach.
     pub ils: bool,
@@ -418,7 +418,7 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
 }
 
 /// Mission orders shown on the ORD page: (colour, text) lines, upper-cased when drawn.
-/// Original colours: primary target 17, secondary 41, return-to-base 10. Set from the mission.
+/// Colours: primary target 17, secondary 41, return-to-base 10. Set from the mission.
 #[derive(Resource, Debug, Clone)]
 pub struct MissionOrders {
     pub lines: Vec<(u8, String)>,
@@ -719,7 +719,7 @@ impl MapView {
     }
 }
 
-/// Map units per pixel of the modern map at a zoom level (same ground as the original's
+/// Map units per pixel of the modern map at a zoom level (same ground as the classic
 /// display at each level, over three times the pixels).
 fn hires_scale(zoom: i32) -> f64 {
     (1i32 << (10 - zoom)) as f64 / 3.0
@@ -905,8 +905,8 @@ fn build_map_geometry(
     raster.valid = false;
 }
 
-/// Classic map projection: map units -> MFD pixels (the original
-/// centre (112, 139) on the 320x200 screen is (38, 29) in the display).
+/// Classic map projection: map units -> MFD pixels (the centre (112, 139) on the
+/// 320x200 screen is (38, 29) in the display).
 pub fn map_to_screen(centre: (i32, i32), zoom: i32, x: f64, y: f64) -> Vec2 {
     let s = (1i32 << (10 - zoom)) as f64;
     Vec2::new(
@@ -1020,7 +1020,7 @@ fn bevy_to_map(pos: &WorldPos) -> (f64, f64) {
 }
 
 /// Renders the theater top-down: LOD4, LOD3, LOD2 tiles (a level only if
-/// its tiles are larger than 16 units on screen at the original scale), then LOD4 and LOD3
+/// its tiles are larger than 16 units on screen at the classic scale), then LOD4 and LOD3
 /// again for the models flagged 0x80 (drawn on top). Only ground-level objects (z = 0) are
 /// drawn. `to_px` maps world units (east, north) to canvas pixels; `visible` is the world
 /// rectangle to cover (centre east, centre north, half width, half height).
@@ -1146,7 +1146,7 @@ pub(crate) fn hms(seconds: f32) -> (u32, u32, u32) {
     (s / 3600, s / 60 % 60, s % 60)
 }
 
-/// Pixels of a modern TAC display per original one.
+/// Pixels of a modern TAC display per classic one.
 const K: i32 = 3;
 
 impl MfdParams<'_, '_> {
@@ -1170,7 +1170,7 @@ impl MfdParams<'_, '_> {
         }
     }
 
-    /// The third MFD: the HSI page with the original pages, any format with the modern
+    /// The third MFD: the HSI page with the classic avionics, any format with the modern
     /// avionics.
     pub fn draw_third(&self, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
         c.reset_clip();
@@ -1200,7 +1200,7 @@ impl MfdParams<'_, '_> {
         }
     }
 
-    // --- Classic (original 77x60) pages -------------------------------------------------------
+    // --- Classic (77x60) pages ----------------------------------------------------------------
 
     fn draw_map(&self, c: &mut Canvas, ac: Option<(&Aircraft, &WorldPos)>) {
         if !self.raster.valid {
@@ -1257,7 +1257,7 @@ impl MfdParams<'_, '_> {
         self.tac(c, art, ac, 1);
     }
 
-    /// The TAC display at `k` display pixels per original pixel.
+    /// The TAC display at `k` display pixels per classic pixel.
     fn tac(&self, c: &mut Canvas, art: &CockpitArt, ac: Option<(&Aircraft, &WorldPos)>, k: i32) {
         c.clear(0);
         let Some((a, pos)) = ac else { return };
@@ -1267,7 +1267,7 @@ impl MfdParams<'_, '_> {
         let zoom = self.state.tac_zoom;
         let shift = 7 - zoom;
         let kf = k as f32;
-        // Heading-up projection (own aircraft at (38, 42) of the original display);
+        // Heading-up projection (own aircraft at (38, 42) of the classic display);
         // also returns whether an icon is inside the display.
         let proj = |x: i32, y: i32| -> (i32, i32, bool) {
             let (dx, dy) = if k == 1 {
@@ -1542,7 +1542,7 @@ impl MfdParams<'_, '_> {
     fn draw_ord(&self, c: &mut Canvas, fonts: &Fonts) {
         c.clear(0);
         for (row, (colour, line)) in self.orders.lines.iter().enumerate().take(10) {
-            // Colour-change byte + text, as the original order strings.
+            // Colour-change byte + text.
             let mut s = vec![ink(*colour)];
             s.extend(upper(line));
             fonts.text(c, 4, 6 * row as i32, &s, 15);

@@ -670,7 +670,7 @@ impl CampaignState {
     }
 }
 
-/// The original's distance approximation is not needed here: plain Euclid in map units.
+/// Plain Euclidean distance in map units (no integer approximation needed here).
 pub fn dist(dx: i32, dy: i32) -> i32 {
     ((dx as f64).hypot(dy as f64)) as i32
 }

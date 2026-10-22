@@ -1,11 +1,11 @@
 //! Continuous time of day (the "Time of day" switch, `--continuous-time`): the sun and the moon
 //! move with the mission clock, the palette blends between the theater's night, dusk and day
 //! palettes by the sun's elevation, the moon shows the phase of the briefing date, stars come
-//! out, and moonlight sets how far enemy pilots see at night. Off, the original's palette drift
+//! out, and moonlight sets how far enemy pilots see at night. Off, the classic palette drift
 //! and fixed sun stay (`palette::step_time_of_day`).
 //!
 //! The sun keeps to the equinox (it rises at 06:00 and sets at 18:00 local time everywhere), so
-//! day missions still start at dawn and night missions at dusk, as in the original.
+//! day missions still start at dawn and night missions at dusk.
 
 use std::f64::consts::TAU;
 
@@ -27,7 +27,7 @@ impl Plugin for SkyPlugin {
 /// Synodic month (days).
 const SYNODIC: f64 = 29.530_588;
 /// Light level for visual identification under a full moon high in the sky (4 km, as the
-/// original's night).
+/// classic night).
 const FULL_MOON_LIGHT: f32 = 85.0;
 
 /// Sun, moon and stars as drawn.

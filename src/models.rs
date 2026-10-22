@@ -39,7 +39,7 @@ impl Plugin for ModelsPlugin {
 /// (the word array passed to the model renderer). Known slots: 1 = destroyed variant,
 /// 10 = night lights on, 12 = aircraft navigation lights on, 16 = radar antenna angle,
 /// 17 = rotor angle, 18/19/20 = aircraft anti-collision lights lit (`sim_render::anticollision`).
-/// Angles use the original 16-bit binary angle (0x10000 = 360 degrees).
+/// Angles use a 16-bit binary angle (0x10000 = 360 degrees).
 #[derive(Component, Debug, Clone)]
 pub struct ModelState(pub [i16; 32]);
 
@@ -62,7 +62,7 @@ impl ModelGlobals {
     }
 }
 
-/// Original model attributes (.3DX attr byte: low 3 bits = size class, 0x10 = target).
+/// Model attributes (.3DX attr byte: low 3 bits = size class, 0x10 = target).
 #[derive(Component, Clone, Copy)]
 #[allow(dead_code)] // for tools and future size-class haze
 pub struct ModelInfo {
@@ -98,7 +98,7 @@ pub struct LodShown {
 #[derive(Component)]
 pub struct LodMesh(pub Entity);
 
-/// Convex hull of a detail level from the original's plane list (Q14 normal, 32-bit d, model
+/// Convex hull of a detail level from the model's plane list (Q14 normal, 32-bit d, model
 /// units): a point is inside when `n·p + d < 0` for every plane.
 #[derive(Component)]
 pub struct CollisionHull {
@@ -145,13 +145,13 @@ pub struct CondNode {
 pub struct ArticulatedPart {
     pub root: Entity,
     pub slot: usize,
-    /// Original axis code: 0 = yaw (around up), 1 = pitch, 2 = roll.
+    /// Axis code: 0 = yaw (around up), 1 = pitch, 2 = roll.
     pub axis: u8,
     pub rest: Quat,
 }
 
 /// Jet exhaust (nozzle exits `..._exhaust`, airborne flames `..._s13v1`, missile motors `..._s14v1`): alternates
-/// between red and yellow like the original's flickering afterburners.
+/// between red and yellow like flickering afterburners.
 #[derive(Component)]
 pub struct ExhaustGlow;
 
@@ -246,8 +246,8 @@ pub fn tile_model_scale(name: &str, unit: f64) -> f32 {
 
 /// Range multiplier for a model's last (coarsest) detail level.
 const LAST_LOD_RANGE: f32 = 4.0;
-/// Range multiplier for the other detail levels: the original switched to its coarse levels
-/// (often just a box or a dot) at a few hundred pixels' worth of distance.
+/// Range multiplier for the other detail levels: the coarse levels (often just a box or a dot)
+/// are meant for a few hundred pixels' worth of distance.
 const NEAR_LOD_RANGE: f32 = 4.0;
 
 /// On a model root: its own range multiplier for the last detail level (instead of
@@ -500,7 +500,7 @@ impl ModelAssets<'_> {
         if let Some(mesh) = node.mesh.as_ref().and_then(|m| self.meshes.get(m)) {
             let node_color = index_from_name(name);
             if name.contains("_dots_pal_") {
-                // Original single-pixel lights -> fullbright billboards.
+                // Single-pixel lights -> fullbright billboards.
                 let color = node_color.unwrap_or(15);
                 for prim in &mesh.primitives {
                     for p in self.positions(&prim.mesh) {
@@ -632,7 +632,7 @@ impl ModelAssets<'_> {
         }
     }
 
-    /// Whether all of a mesh's vertices lie in the model's ground plane (original coordinates
+    /// Whether all of a mesh's vertices lie in the model's ground plane (.3DX coordinates
     /// are integers; the converter lifts coplanar polygons by fractions of a unit).
     /// (flat ground overlay, warm in the FLIR picture) for a mesh of a model at a haze level:
     /// aircraft, vehicles and missiles are warm; of the tile objects the raised ones of
@@ -674,7 +674,7 @@ mod tests {
     /// Plane hulls from the converted CE models: inside a mountain collides, above it doesn't,
     /// and flat airbase surfaces never contain points above the ground.
     #[test]
-    fn hulls_from_original_planes() {
+    fn hulls_from_model_planes() {
         let Ok(data) = std::fs::read(crate::asset_path::asset("models/ce.glb")) else { return };
         let n = u32::from_le_bytes(data[12..16].try_into().unwrap()) as usize;
         let j: serde_json::Value = serde_json::from_slice(&data[20..20 + n]).unwrap();

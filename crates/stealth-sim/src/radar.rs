@@ -2,7 +2,7 @@ use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, u16v};
 use crate::types::*;
 use crate::{ENEMY_SLOTS, Sim};
 
-/// Pure EMV function, bit-exact with the original game.
+/// Pure EMV function, bit-exact.
 /// `flags` = player flags, `view_z` = compressed altitude, `velocity` = knots*27.
 pub fn emv(view_z: i32, velocity: i32, roll: i32, flags: i32, diff: i32, lockheed: bool) -> i32 {
     let mut r = hi8s(roll).abs();
@@ -42,7 +42,7 @@ pub struct DetectCtx<'a> {
     pub grid: &'a [u8],
 }
 
-/// Pure radar signal, bit-exact with the original game.
+/// Pure radar signal, bit-exact.
 /// `threat` = (lethality, tier, flags) of the radar type. Returns (score, bearing, range).
 pub fn detect(
     sx: i32,
@@ -672,7 +672,7 @@ impl Sim {
 mod tests {
     use super::*;
 
-    /// Case captured from the original game (alt 2842, velocity 14935, roll 489, diff 1 -> 44).
+    /// Captured reference case (alt 2842, velocity 14935, roll 489, diff 1 -> 44).
     #[test]
     fn emv_confirmed_case() {
         assert_eq!(emv(2842, 14935, 489, 0x01, 1, false), 44);
@@ -742,7 +742,7 @@ mod tests {
         assert_eq!(detect(0x4000, 0x3000, 0, -1, Some((200, 3, 0)), &c).0, 0);
     }
 
-    /// Doppler vs pulse aspect (reference values matching the original game).
+    /// Doppler vs pulse aspect (reference values).
     #[test]
     fn detect_doppler_aspect() {
         let grid = vec![12u8; 256];
@@ -751,11 +751,11 @@ mod tests {
         assert_eq!(d(0x4000, 4, (320, 7, 1)), (106, 0x8000, 1));
         assert_eq!(d(0x4000, 1, (320, 7, 0)), (177, 0x8000, 1));
         assert_eq!(d(0x100, 1, (320, 7, 0)), (59, 0x8000, 1));
-        // Exact tail-on keeps a = -128 (negative score, the original's quirk).
+        // Exact tail-on keeps a = -128 (negative score, a classic quirk).
         assert_eq!(d(0, 1, (320, 7, 0)).0, -177);
     }
 
-    /// Random reference vectors matching the original game (grid value at the player's cell).
+    /// Random reference vectors (grid value at the player's cell).
     #[test]
     #[allow(clippy::type_complexity)]
     fn detect_reference_vectors() {

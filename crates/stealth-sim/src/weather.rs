@@ -1,5 +1,5 @@
-//! Weather (not in the original game): clouds block optical lines of sight. Radar sees
-//! through them. With a clear sky (the original) every check passes.
+//! Weather: clouds block optical lines of sight. Radar sees
+//! through them. With a clear sky (classic) every check passes.
 
 use crate::Sim;
 

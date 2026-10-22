@@ -351,7 +351,7 @@ impl Sim {
         let h = self.trig.cos_mul(u.pitch, v);
         let vx = self.trig.sin_mul(u.heading, h);
         let vy = -self.trig.cos_mul(u.heading, h);
-        // The original's map units, in a round's fine units.
+        // Map units, in a round's fine units.
         let (f, m) = (ROUND_FINE, 32 * ROUND_FINE);
         if let Some(b) = self.bullets.get_mut(slot) {
             *b = Bullet {

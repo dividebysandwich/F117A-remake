@@ -1,5 +1,5 @@
-//! Weather: not part of the original game. Rolled from its own RNG stream after the
-//! generator has run, so the original generation (and its RNG state) is untouched.
+//! Weather: rolled from its own RNG stream after the generator has run, so the classic
+//! generation (and its RNG state) is untouched.
 //!
 //! The sky is a mix of up to three cloud layers, each with its own coverage:
 //! - cumulus: puffs on a [`CELL`] grid, each square holding a cloud with the layer's
@@ -297,7 +297,7 @@ impl Weather {
             && self.stratus_field(x, y) * 65535.0 >= self.stratus_threshold as f32
     }
 
-    /// Any clouds at all (a clear sky is the original game).
+    /// Any clouds at all (a clear sky is classic).
     pub fn any(&self) -> bool {
         self.cumulus.present() || self.stratus.present() || self.cumulonimbus.present()
     }

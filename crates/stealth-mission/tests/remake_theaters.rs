@@ -106,7 +106,7 @@ fn ukraine_drone_defense() {
     }
     assert!(nuclear > 0, "never a nuclear plant");
     assert!(sizes.len() >= 4, "wave sizes {sizes:?}");
-    // The original theaters have no launch sites.
+    // The classic theaters have no launch sites.
     let s = MissionSettings { theater: 3, kind: MissionKind::DroneDefense, ..Default::default() };
     assert!(generate(&data, &s, Seed::Srand(1)).is_err());
     let s = MissionSettings { theater: 3, kind: MissionKind::Strike, ..Default::default() };

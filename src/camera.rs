@@ -592,7 +592,7 @@ fn update_rig(
             *cam_tf = orbited(Vec3::new(0.0, d * 0.5, d), Vec3::ZERO, &orbit, world_rot, floor);
         }
     }
-    // Projection (FOV, off-centre frustum) is set by the cockpit module from the original
+    // Projection (FOV, off-centre frustum) is set by the cockpit module from the classic
     // focal length.
 }
 

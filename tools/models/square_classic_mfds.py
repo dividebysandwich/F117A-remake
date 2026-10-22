@@ -1,7 +1,7 @@
 # Makes the classic cockpit's MFDs rectangular and saves the .blend master:
 #   blender -b assets-src/blend/cockpit_classic.blend --python-exit-code 1 \
 #       --python tools/models/square_classic_mfds.py
-# The panel was built on the original's pixels projected onto the tilted panel, so each screen
+# The panel was built on the classic screen's pixels projected onto the tilted panel, so each screen
 # came out a trapezoid: its inner edge upright, its outer edge leaning in towards the bottom.
 # Each MFD is narrowed to its bottom width: the screen (with the camera picture and the rim)
 # squeezed towards its inner edge, the bezel, its buttons and the panel's edge along it moved in

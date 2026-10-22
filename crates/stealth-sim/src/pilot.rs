@@ -1,7 +1,7 @@
 //! One player's part of the simulation. The simulation holds the active pilot in `Sim::pl`
 //! and the others parked; [`Sim::activate`] swaps a parked pilot in. Code that runs for "the
 //! player" works on whichever pilot is active, so with one pilot the simulation is the
-//! original's.
+//! classic one.
 
 use serde::{Deserialize, Serialize};
 
@@ -52,7 +52,7 @@ pub struct Pilot {
     pub(crate) bays: Vec<(i32, i32)>,
     /// Selected station: the first one carrying the selected weapon.
     pub(crate) cur_bay: usize,
-    /// The cannon is the selected weapon (not in the original: Space steps to it after the
+    /// The cannon is the selected weapon (Space steps to it after the
     /// stores, and the fire button fires it).
     #[serde(default)]
     pub(crate) gun_selected: bool,

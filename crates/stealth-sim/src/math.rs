@@ -16,7 +16,7 @@ pub fn hi8s(v: i32) -> i32 {
     ((v as u16 >> 8) as u8 as i8) as i32
 }
 
-/// `abs` of a 16-bit word (abs(-0x8000) stays -0x8000 as in the original).
+/// `abs` of a 16-bit word (abs(-0x8000) stays -0x8000).
 #[inline]
 pub fn abs16(v: i32) -> i32 {
     s16(s16(v).abs())
@@ -36,7 +36,7 @@ pub fn approx(dx: i32, dy: i32) -> i32 {
 }
 
 /// Bearing of (x, y): x = east, y = north, returns a u16 BAM. Integer arctangent
-/// approximation, bit-exact with the original game.
+/// approximation (bit-exact).
 pub fn bearing(x: i32, y: i32) -> i32 {
     let x = s16(x);
     let y = s16(y);
@@ -69,7 +69,7 @@ pub fn bearing(x: i32, y: i32) -> i32 {
     res & 0xFFFF
 }
 
-/// Clamp with the original's quirk: `v > hi → hi; v >= lo → v;
+/// Clamp with a quirk: `v > hi → hi; v >= lo → v;
 /// v <= -0x4000 → hi; else lo`. All compares are signed 16-bit.
 pub fn clamp_q(v: i32, lo: i32, hi: i32) -> i32 {
     let (v, lo, hi) = (s16(v), s16(lo), s16(hi));
@@ -112,7 +112,7 @@ pub fn fixed_mul(a: i32, b: i32) -> i32 {
 }
 
 /// C integer division truncating toward zero, with a zero divisor giving 0
-/// (a divide fault in the original; never reached on the ported paths).
+/// (never reached on the ported paths).
 #[inline]
 pub fn cdiv(a: i32, b: i32) -> i32 {
     if b == 0 { 0 } else { a.wrapping_div(b) }
@@ -142,7 +142,7 @@ pub fn view_z_f(alt: f64) -> f64 {
     }
 }
 
-/// Sine table (Q15, 256 steps per turn + 1 guard entry) with the original's
+/// Sine table (Q15, 256 steps per turn + 1 guard entry) with an
 /// interpolating lookup and fixed-point `x·sin` / `x·cos` products.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Trig {
@@ -175,7 +175,7 @@ impl Trig {
     }
 
     /// Analytic table, used only when no game data is available (tests). Equal to the
-    /// original table to within rounding.
+    /// game data's table to within rounding.
     pub fn analytic() -> Self {
         let lut = (0..257)
             .map(|i| {
@@ -201,7 +201,7 @@ mod tests {
         assert_eq!(bearing(0, -10), 0x8000);
         assert_eq!(bearing(10, 0), 0x4000);
         assert_eq!(bearing(-10, 0), 0xC000);
-        // Reference values matching the original game's bearing().
+        // Bit-exact reference values.
         assert_eq!(bearing(100, 100), 0x204D);
         assert_eq!(bearing(100, -100), 0x5FB3);
         assert_eq!(bearing(-100, -100), 0xA04D);

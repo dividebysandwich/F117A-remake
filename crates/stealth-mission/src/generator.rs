@@ -1,4 +1,4 @@
-//! All arithmetic follows the original int16 wrap-around; `s16()` marks every place where the
+//! All arithmetic follows int16 wrap-around; `s16()` marks every place where the
 //! 16-bit truncation matters (or may matter).
 
 use crate::rng::MscRand;
@@ -109,7 +109,7 @@ pub(crate) struct GenResult {
     pub night: bool,
     /// Clock hour at tod 0: 6 or 18, or the chosen start hour.
     pub base_hour: i32,
-    /// A chosen start hour: the clock wraps at 24 h (the original's does not).
+    /// A chosen start hour: the clock wraps at 24 h (the classic clock does not).
     pub clock_wraps: bool,
     pub depart: String,
     pub deadline: String,
@@ -379,7 +379,7 @@ impl<'a> Gen<'a> {
     }
 
     /// Random pick among the best-suited available weapons for a class. `None` when no weapon
-    /// qualifies (a divide fault in the original, unreachable with the shipped tables).
+    /// qualifies (a division by zero, unreachable with the shipped tables).
     fn choose_weapon(&mut self, cat: usize) -> Option<i32> {
         let mut best = 0;
         let mut lst = Vec::new();
@@ -471,7 +471,7 @@ impl<'a> Gen<'a> {
                         found = c;
                         break;
                     }
-                    // A single candidate draws no random number: the original would retry the
+                    // A single candidate draws no random number, so a retry would pick the
                     // same object forever. Treat it as "nothing found" instead.
                     if count <= 1 && last == Some(c) {
                         break;

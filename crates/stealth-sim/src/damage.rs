@@ -1,5 +1,5 @@
-//! Realistic weapon damage (`SimOptions::realistic_damage`, not in the original game, where hits
-//! only add up: damaged systems, a fuel leak, a weaker engine, but the aircraft never goes down).
+//! Realistic weapon damage (`SimOptions::realistic_damage`; in classic mode hits only
+//! add up: damaged systems, a fuel leak, a weaker engine, but the aircraft never goes down).
 //!
 //! - A missile's warhead can destroy the airframe outright (more often against better
 //!   opponents): the engine dies, the controls go and the aircraft breaks up within seconds,
@@ -49,7 +49,7 @@ impl Sim {
         self.sound(4, 2);
     }
 
-    /// What this hit's damage `bits` do beyond the original's effects (`before`: the damage
+    /// What this hit's damage `bits` do beyond the classic effects (`before`: the damage
     /// bits before the hit).
     pub(crate) fn new_damage(&mut self, bits: u8, before: u8) {
         if bits & dmg::FIRE != 0 && before & dmg::FIRE == 0 && self.pl.breakup_frames == 0 {

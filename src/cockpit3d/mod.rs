@@ -1,8 +1,8 @@
 //! The modelled 3D cockpit (desktop and VR).
 //!
 //! The cockpit is a Blender model (`model`: `assets-src/blend/cockpit_modern.blend` and
-//! `cockpit_classic.blend`, exported to `assets/models/cockpit_*.glb`): the original panel
-//! arrangement (classic) or a modern one with high-resolution MFDs and bezel buttons. Lamps,
+//! `cockpit_classic.blend`, exported to `assets/models/cockpit_*.glb`): the classic panel
+//! arrangement or a modern one with high-resolution MFDs and bezel buttons. Lamps,
 //! readouts and labels are faces of a live instrument atlas whose contents come from the panel
 //! layouts (`layout`); the MFD screens, the attitude ball and the HUD are live canvases.
 //! The HUD is shown through the combiner glass collimated to infinity, so it overlays the
@@ -257,7 +257,7 @@ fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<CockpitM
     });
 }
 
-/// Whether the cockpit is drawn lit (otherwise flat, like the original pictures).
+/// Whether the cockpit is drawn lit (otherwise flat, like the classic panel pictures).
 pub fn lighting_on(s: &Settings) -> bool {
     s.shadows || s.local_lights
 }

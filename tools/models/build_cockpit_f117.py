@@ -20,7 +20,7 @@
 # top corners, as the real one's), the canopy bow behind the seat and outside the sills the
 # fuselage's faceted shoulders (the exterior model is not drawn from this cockpit).
 #
-# The F-117A's cockpit is the original's, larger than life (`AircraftSpec::vr_scale`): the
+# The F-117A's cockpit is the classic one, larger than life (`AircraftSpec::vr_scale`): the
 # new parts are built life size, the F-16's millimetres, and scaled by SCALE about the eye at the
 # end. Blender frame: eye at the origin, x right, y forward, z up, metres. A control's face
 # points along its local -Y (towards the pilot), local Z is up the panel.

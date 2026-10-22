@@ -1,4 +1,4 @@
-//! Realtime dynamic campaign (`SimOptions::campaign`, not in the original). One simulation
+//! Realtime dynamic campaign (`SimOptions::campaign`). One simulation
 //! runs for the whole session:
 //!
 //! * The player comes and goes: between sorties he is absent (nothing sees him, nothing
@@ -10,11 +10,11 @@
 //!   tagged with its own ids; their losses and landings come back as events.
 //! * The AI fights the AI: enemy SAM sites, guns and fighters engage the friendly helicopters,
 //!   friendly guns and launchers the enemy aircraft, with missiles and tracers of their own
-//!   (the original's projectile slots stay the player's business).
+//!   (the classic projectile slots stay the player's business).
 //! * Recon intelligence ([`Sim::set_intel`]) shortens a site's detection range and lets the
 //!   player spot the object from twice as far.
 //!
-//! Everything lives in [`CampaignSim`] and draws from its own random stream, so the original's
+//! Everything lives in [`CampaignSim`] and draws from its own random stream, so the classic
 //! behaviour is untouched while the option is off.
 
 use serde::{Deserialize, Serialize};
@@ -240,7 +240,7 @@ impl Sim {
     }
 
     /// Campaign: ends the player's sortie from outside (abort, or the flight model's crash) with
-    /// the original's outcome codes; nothing if he is not flying.
+    /// the mission outcome codes; nothing if he is not flying.
     pub fn end_sortie(&mut self, outcome: u8) {
         self.end_sortie_pilot(self.pl.id, outcome);
     }

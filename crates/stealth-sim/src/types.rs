@@ -64,7 +64,7 @@ pub mod dmg {
     pub const AV: u8 = 0x08;
     /// Bay doors jammed open.
     pub const BD: u8 = 0x10;
-    /// Fuel leak (lights the FIRE lamp in the original).
+    /// Fuel leak (classic: lights the FIRE lamp).
     pub const FIRE: u8 = 0x20;
     /// Jammers dead, decoys blocked.
     pub const JAM: u8 = 0x40;
@@ -116,7 +116,8 @@ pub struct FlightUnit {
     pub reserved: i32,
     /// Radar track strength 0..255.
     pub heat: i32,
-    /// AI mode of the last frame (1 intercept, 2 RTB, 3 patrol; 0 inactive). Not in the original record.
+    /// AI mode of the last frame (1 intercept, 2 RTB, 3 patrol; 0 inactive). Not in the classic
+    /// record.
     pub mode: i32,
 }
 
@@ -143,15 +144,15 @@ pub struct Projectile {
     pub launcher: i32,
     pub tgt_x: i32,
     pub tgt_y: i32,
-    /// Locked on its target this frame (not in the original record).
+    /// Locked on its target this frame (not in the classic record).
     pub locked: bool,
-    /// Ballistic bombs (not in the original record): their exact flight.
+    /// Ballistic bombs (not in the classic record): their exact flight.
     #[serde(default)]
     pub fall: Option<BombFall>,
-    /// Missiles under realistic guidance (not in the original record): their exact flight.
+    /// Missiles under realistic guidance (not in the classic record): their exact flight.
     #[serde(default)]
     pub flight: Option<MissileFlight>,
-    /// An air-to-air missile fired at another pilot (not in the original): his id.
+    /// An air-to-air missile fired at another pilot: his id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_pilot: Option<u8>,
 }
@@ -213,11 +214,11 @@ pub enum EmitterSource {
     Site(usize),
     /// Aircraft (flight unit index).
     Aircraft(usize),
-    /// ZSU-23-4 Gun Dish radar (`Sim::aaa_units` index; not in the original).
+    /// ZSU-23-4 Gun Dish radar (`Sim::aaa_units` index).
     Gun(usize),
 }
 
-/// A radar painting the player, for a radar warning receiver (not in the original).
+/// A radar painting the player, for a radar warning receiver.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Emitter {
     pub source: EmitterSource,
@@ -286,9 +287,9 @@ impl Bullet {
     }
 }
 
-/// The player's cannon (not the original's, whose rounds flew straight along the nose at a
-/// fixed speed): muzzle speed (m/s, added to the aircraft's speed along the nose), gravity
-/// (m/s^2) and metres per world unit.
+/// The player's cannon (classic rounds flew straight along the nose at a fixed speed):
+/// muzzle speed (m/s, added to the aircraft's speed along the nose), gravity (m/s^2) and
+/// metres per world unit.
 pub const GUN_MUZZLE_SPEED: f64 = 1050.0;
 pub const GUN_GRAVITY: f64 = 9.81;
 pub const WU_METRES: f64 = 512_000.0 / 1_048_576.0;
@@ -368,7 +369,7 @@ pub struct Commands {
     pub fire: bool,
     /// Backspace / button 0 held: cannon.
     pub gun: bool,
-    /// The fire button held (not in the original): fires the cannon when it is selected.
+    /// The fire button held: fires the cannon when it is selected.
     #[serde(default)]
     pub trigger: bool,
     /// Key 1.
@@ -389,13 +390,13 @@ pub struct Commands {
     pub designate: bool,
     /// 'b': next target.
     pub next_target: bool,
-    /// Lock the nearest enemy ahead (not in the original): turns the tracking camera ahead, and
+    /// Lock the nearest enemy ahead: turns the tracking camera ahead, and
     /// once the HUD is in the selected weapon's mode (AIR for air-to-air missiles, else GND)
     /// picks the nearest hostile flight or ground object in sight.
     #[serde(default)]
     pub nearest_target: bool,
     /// Drop both locks and hold off the automatic acquisition until the next target or camera
-    /// key (not in the original).
+    /// key.
     #[serde(default)]
     pub clear_target: bool,
     /// Camera keys `/` `,` `.` `m`: 0 / 0x4000 / 0x8000 / 0xC000.
@@ -406,7 +407,7 @@ pub struct Commands {
     pub toggle_training: bool,
     /// Alt-R (training only): resupply.
     pub resupply: bool,
-    /// Lock this world object (a display's cursor lock, not in the original): kept until
+    /// Lock this world object (a display's cursor lock): kept until
     /// another target key.
     #[serde(default)]
     pub lock_object: Option<u16>,
@@ -416,7 +417,7 @@ pub struct Commands {
     /// Lock this other pilot's aircraft (airborne; an air-to-air missile goes for him).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock_pilot: Option<u8>,
-    /// Lock what is at this map point (the targeting pod's point track, not in the original):
+    /// Lock what is at this map point (the targeting pod's point track):
     /// the object there, or the plain ground as object 0.
     #[serde(default)]
     pub designate_at: Option<(i32, i32)>,
@@ -444,7 +445,7 @@ pub struct PlayerState {
     pub autopilot: bool,
     /// Climb rate in altitude units per second, for the touchdown test.
     pub climb_rate: i32,
-    /// Fuel (original game units).
+    /// Fuel (sim units).
     pub fuel: i32,
     /// The renderer found the eye inside an object.
     pub collided: bool,
@@ -455,7 +456,7 @@ pub struct PlayerState {
     pub external_view: bool,
     /// Cockpit / HUD drawn.
     pub hud_visible: bool,
-    /// Bombing in CCRP (else CCIP; not in the original): with a ground target locked, holding
+    /// Bombing in CCRP (else CCIP): with a ground target locked, holding
     /// the fire button releases the bomb when the target passes the release point.
     #[serde(default)]
     pub ccrp: bool,
@@ -475,37 +476,37 @@ pub enum LandingMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SimOptions {
     pub landing: LandingMode,
-    /// Implement the intended rule where the original is evidently broken: the unreachable
+    /// Implement the intended rule where classic behaviour is evidently broken: the unreachable
     /// supply-drop test, and an air-to-air missile that keeps hitting the wreck it just downed.
-    pub fix_original_bugs: bool,
+    pub fix_classic_bugs: bool,
     /// RNG seed override; default is the mission generator's final RNG state.
     pub seed: Option<u32>,
-    /// Damage done in earlier missions of a campaign (not in the original game).
+    /// Damage done in earlier missions of a campaign.
     #[serde(default)]
     pub prior_damage: Option<WorldDamage>,
     /// The aircraft carries its weapons outside (no bay): the "doors" are always open, with
-    /// their radar signature (not in the original).
+    /// their radar signature.
     #[serde(default)]
     pub external_stores: bool,
-    /// Realistic weapon damage (not in the original): a missile hit can destroy the aircraft
+    /// Realistic weapon damage: a missile hit can destroy the aircraft
     /// outright, damages more systems, starts fires more often (a fire burns out or the aircraft
     /// explodes) and damaged control surfaces put the aircraft out of trim.
     #[serde(default)]
     pub realistic_damage: bool,
-    /// Realistic missile guidance (not in the original): proportional navigation, motors that
+    /// Realistic missile guidance: proportional navigation, motors that
     /// burn out (the missile glides on), lofted SAM shots, the AIM-120 flying straight for 3 s.
     #[serde(default)]
     pub realistic_guidance: bool,
-    /// Low-level air defences (not in the original): ZSU-23-4 and S-60 guns around airfields
+    /// Low-level air defences: ZSU-23-4 and S-60 guns around airfields
     /// and targets, MANPADS in the towns ([`crate::aaa`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub air_defence: bool,
-    /// Realtime dynamic campaign (not in the original, [`crate::campaign`]): the simulation
+    /// Realtime dynamic campaign ([`crate::campaign`]): the simulation
     /// runs for the whole session, the player comes and goes between sorties, places change
     /// hands and the AI fights the AI.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub campaign: bool,
-    /// Friendly fire (multiplayer, not in the original): the pilots' missiles and gunfire
+    /// Friendly fire (multiplayer): the pilots' missiles and gunfire
     /// damage each other (without it they burst on the other aircraft harmlessly).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub friendly_fire: bool,
@@ -515,7 +516,7 @@ impl Default for SimOptions {
     fn default() -> Self {
         Self {
             landing: LandingMode::Easy,
-            fix_original_bugs: true,
+            fix_classic_bugs: true,
             seed: None,
             prior_damage: None,
             external_stores: false,
@@ -602,7 +603,7 @@ pub enum Launcher {
     Site(usize),
     Aircraft(usize),
     Player,
-    /// A MANPADS team (`Sim::aaa_units` index; not in the original).
+    /// A MANPADS team (`Sim::aaa_units` index).
     Manpads(usize),
 }
 
@@ -624,14 +625,14 @@ pub enum RwrTone {
 /// Output events of one frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SimEvent {
-    /// HUD message line, as printed by the original.
+    /// HUD message line.
     Message(String),
     /// Sound effect `id` at `priority`.
     Sound {
         id: u8,
         priority: u8,
     },
-    /// Radar warning receiver tone (replaces the original's sounds 8 and 9).
+    /// Radar warning receiver tone (replaces the classic sounds 8 and 9).
     Rwr(RwrTone),
     /// Time acceleration must be cancelled.
     CancelTimeAccel,
@@ -653,7 +654,7 @@ pub enum SimEvent {
         alt: i32,
         kind: i32,
     },
-    /// An S-60 shell burst (map position, altitude ft; not in the original).
+    /// An S-60 shell burst (map position, altitude ft).
     Flak {
         x: i32,
         y: i32,

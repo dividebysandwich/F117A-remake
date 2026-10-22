@@ -1,4 +1,4 @@
-//! Main menu: theater selector and mission generation (replaces the original game's start menus).
+//! Main menu: theater selector and mission generation.
 
 use bevy::prelude::*;
 use bevy_egui::{
@@ -52,7 +52,7 @@ impl Plugin for MenuPlugin {
     }
 }
 
-/// Theaters in the original's order, then the remake's own (file prefix, display name).
+/// The classic theaters, then the newer ones (file prefix, display name).
 pub use stealth_host::theater::THEATERS;
 
 #[derive(Resource)]
@@ -440,7 +440,7 @@ const RANDOM_SKY_FACTS: &[&str] = &[
 
 fn sky_facts(sky: Sky) -> &'static [&'static str] {
     match sky {
-        Sky::Clear => &["No clouds", "Visibility 40 km", "The original game's sky"],
+        Sky::Clear => &["No clouds", "Visibility 40 km", "The classic DOS era sky"],
         Sky::Scattered => &[
             "Cumulus 20-45%, base 2500-6000 ft",
             "Sometimes a thin altostratus high above",

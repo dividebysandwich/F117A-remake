@@ -1,4 +1,4 @@
-//! Helicopters and combat search and rescue (not in the original game).
+//! Helicopters and combat search and rescue.
 //!
 //! Helicopters lift off vertically, fly low, slow down to a hover at their goal and turn on
 //! the spot. After a good ejection over enemy territory the mission goes on: a UH-60 comes

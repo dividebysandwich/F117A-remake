@@ -1,4 +1,4 @@
-//! Modern flight model (not in the original): a point-mass aerodynamic model with a fly-by-wire
+//! Modern flight model: a point-mass aerodynamic model with a fly-by-wire
 //! control system. The airframe constants come per aircraft type (`Aero`); the F-117A's are
 //! tuned to the classic model's performance (about 560 kt at sea level, 120 kt clean stall, 7 g).
 //!

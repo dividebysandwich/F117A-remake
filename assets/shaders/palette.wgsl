@@ -1,4 +1,4 @@
-// Palette-indexed rendering that reproduces the original's MCGA drawing:
+// Palette-indexed rendering that reproduces classic MCGA drawing:
 // colour words (high byte = fill mode), per-object distance haze down 16-colour ramps,
 // and the sky/ground band gradient (background sphere and AND/OR terrain overlays).
 
@@ -30,7 +30,7 @@ const CLOUD_RAMP: u32 = 0xE0u;
 struct Globals {
     // Live palette (linear RGB).
     palette: array<vec4<f32>, 256>,
-    // Sky band boundaries (16, packed 4 per vec4), in original screen units at f = 256.
+    // Sky band boundaries (16, packed 4 per vec4), in 320x200 screen units at f = 256.
     sky_ring: array<vec4<f32>, 4>,
     // Ground band boundaries below the horizon (16), same units; depend on altitude.
     ground_g: array<vec4<f32>, 4>,
@@ -115,7 +115,7 @@ struct VertexOutput {
 #endif
 };
 
-// Dot lights: size relative to one original pixel (320x200 screen) and lower bound in pixels.
+// Dot lights: size relative to one 320x200 screen pixel and lower bound in pixels.
 const DOT_SIZE: f32 = 0.6;
 const DOT_MIN_PIXELS: f32 = 2.0;
 // Aircraft lights (level code 5) up close: drawn as a lamp this many metres across, up to
@@ -179,7 +179,7 @@ fn vertex(v: Vertex) -> VertexOutput {
 
     // Dot lights (dots.rs `dot_batch`: four vertices at each dot's centre) spread by their quad
     // corner to a constant size in this view's pixels (so the tracking camera's zoom doesn't
-    // magnify them); in XR at most the original pixel's angular size.
+    // magnify them); in XR at most a 320x200 pixel's angular size.
 #ifdef DOT_BATCH
     if (((tag >> 7u) & 1u) == 1u) {
         var center = world.xyz;
@@ -257,7 +257,7 @@ fn ring(arr: array<vec4<f32>, 4>, i: u32) -> f32 {
 }
 
 // Band index (0..15) of the sky (elevation >= 0) or ground (below the horizon) for a view
-// direction, using the original's screen-unit band boundaries: R = 256 * tan(angle).
+// direction, using the classic screen-unit band boundaries: R = 256 * tan(angle).
 fn band(dir: vec3<f32>) -> vec2<u32> {
     let horiz = max(length(dir.xz), 1e-6);
     let r = 256.0 * abs(dir.y) / horiz;
@@ -320,7 +320,7 @@ fn haze_smooth(idx: u32, fog: f32) -> vec3<f32> {
     return mix(pal(lo), pal(hi), fract(fog));
 }
 
-// Modern mode: subtle flat shading from the original's (unused) light vector (-36, 36, 36).
+// Modern mode: subtle flat shading from the sim data's (unused) light vector (-36, 36, 36).
 fn shade(world: vec3<f32>, dir: vec3<f32>) -> f32 {
     var n = normalize(cross(dpdx(world), dpdy(world)));
     if (dot(n, dir) > 0.0) { n = -n; }
@@ -329,7 +329,7 @@ fn shade(world: vec3<f32>, dir: vec3<f32>) -> f32 {
 }
 
 // Lighting options: the palette colour lit by the sun (with shadow maps) and local lights,
-// using the flat face normal. Unlit parts keep roughly the original brightness.
+// using the flat face normal. Unlit parts keep roughly the classic brightness.
 fn lit(rgb: vec3<f32>, world: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32) -> vec3<f32> {
     var n = normalize(cross(dpdx(world), dpdy(world)));
     if (dot(n, dir) > 0.0) { n = -n; }

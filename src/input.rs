@@ -1,5 +1,5 @@
-//! Input: original key bindings (docs/keys.md) mapped to semantic actions, plus the
-//! original keyboard "virtual stick" (also gamepad stick). Game logic only reads
+//! Input: key bindings (docs/keys.md) mapped to semantic actions, plus the
+//! keyboard "virtual stick" (also gamepad stick). Game logic only reads
 //! `FlightControls` and `ActionEvent`s, so other sources (HOTAS, VR controllers) can be added.
 
 use bevy::prelude::*;
@@ -52,11 +52,11 @@ pub enum Action {
     Brakes,
     Eject,
     HudMode,
-    /// Bombing mode CCIP / CCRP (not in the original; also the A-G button again in AG).
+    /// Bombing mode CCIP / CCRP (also the A-G button again in AG).
     BombMode,
     HudDeclutter,
     Maps,
-    /// Night vision goggles (F4; replaces the original's day/night HUD colours).
+    /// Night vision goggles (F4).
     #[serde(alias = "DayNightHud")]
     Nvg,
     Ordnance,
@@ -69,11 +69,9 @@ pub enum Action {
     CamLeft,
     DesignateTarget,
     SelectTarget,
-    /// Locks the nearest target ahead: AIR mode with an air-to-air missile selected, else GND
-    /// (not in the original; it is HUD mode + camera ahead, which re-acquires the nearest).
+    /// Locks the nearest target ahead: AIR mode with an air-to-air missile selected, else GND.
     NearestTarget,
-    /// Drops both target locks and stops the automatic acquisition until a target key (not
-    /// in the original).
+    /// Drops both target locks and stops the automatic acquisition until a target key.
     ClearTarget,
     SelectWaypoint,
     ChangeWaypoint,
@@ -111,23 +109,22 @@ pub enum Action {
     Training,
     Resupply,
     DayNight,
-    /// Modern avionics: lock what is under the sensor of interest's cursor (not in the
-    /// original).
+    /// Modern avionics: lock what is under the sensor of interest's cursor.
     LockCursor,
-    /// Modern avionics: the sensor of interest moves to the other MFD (not in the original).
+    /// Modern avionics: the sensor of interest moves to the other MFD.
     SwapSoi,
     /// Kneeboard: desktop, shows it over the view and turns its pages; VR, shows or hides the
-    /// board on the thigh (not in the original).
+    /// board on the thigh.
     Kneeboard,
-    /// Tracking camera / targeting pod zoom (not in the original: it zoomed by range).
+    /// Tracking camera / targeting pod zoom.
     CameraZoomIn,
     CameraZoomOut,
-    /// Keyboard stick (held, not a discrete action): the original's arrow keys.
+    /// Keyboard stick (held, not a discrete action): the arrow keys.
     PitchDown,
     PitchUp,
     RollLeft,
     RollRight,
-    /// Rudder keys (not in the original; unbound by default).
+    /// Rudder keys (unbound by default).
     YawLeft,
     YawRight,
 }
@@ -148,7 +145,7 @@ impl Action {
     }
 }
 
-/// Stick deflection of a held key or button: 0x5A of 0x7F, as in the original.
+/// Stick deflection of a held key or button: 0x5A of 0x7F.
 pub const KEY_DEFLECTION: f32 = 0x5A as f32 / 0x7F as f32;
 
 #[derive(Message, Debug, Clone, Copy)]
@@ -210,18 +207,17 @@ pub fn default_key_mappings() -> Vec<crate::hotas::KeyMapping> {
     .collect()
 }
 
-/// Continuous controls, in the original's stick units.
+/// Continuous controls, in the sim's stick units.
 #[derive(Resource, Debug, Default, Clone)]
 pub struct FlightControls {
     /// Stick roll, -1 (left) .. 1 (right).
     pub roll: f32,
     /// Stick pitch, -1 (push, nose down) .. 1 (pull, nose up).
     pub pitch: f32,
-    /// Rudder, -1 (nose left) .. 1 (nose right). Not in the original (yaw came from the bank
-    /// only); 0 keeps the original behaviour.
+    /// Rudder, -1 (nose left) .. 1 (nose right); 0 = yaw from the bank only.
     pub yaw: f32,
     /// Absolute throttle 0..1 while an analog throttle is held (VR throttle lever); None = the
-    /// throttle keys set the thrust as in the original.
+    /// throttle keys set the thrust.
     pub throttle: Option<f32>,
     /// Gun trigger held.
     pub gun: bool,
@@ -335,7 +331,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
     ]
 };
 
-/// Keyboard stick, as in the original: a direction key deflects the stick (0x5A of 0x7F);
+/// Keyboard stick: a direction key deflects the stick (0x5A of 0x7F);
 /// tapping the same key again quickly gives full deflection; releasing re-centres.
 /// Ins cycles the sensitivity (tiny, small, medium).
 #[derive(Resource)]
@@ -435,7 +431,7 @@ fn read_keyboard(
         }
     }
     let deflection = if stick.full { 1.0 } else { KEY_DEFLECTION };
-    // Sensitivity scales the deflection like the original: (sens+1)/3.
+    // Sensitivity scales the deflection: (sens+1)/3.
     let scale = deflection * (stick.sensitivity as f32 + 1.0) / 3.0;
     controls.roll = roll.clamp(-1.0, 1.0) * scale;
     controls.pitch = pitch.clamp(-1.0, 1.0) * scale;

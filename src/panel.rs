@@ -84,7 +84,7 @@ fn reset_panel(mut cm: ResMut<Countermeasures>, mut emv: ResMut<Emv>, mut w: Res
 /// The approach indexer's canvas (a 5:14 strip: chevron, circle, chevron).
 pub const INDEXER_CANVAS: (usize, usize) = (40, 112);
 
-/// Panel lamps (the original's lights). The index is the original light number.
+/// Panel lamps (the classic panel's lights). The index is the classic light number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LampId {
     Nav,
@@ -268,7 +268,7 @@ pub fn draw_led(c: &mut Canvas, sprites: &Canvas, r: [i32; 4], s: &str, k: i32) 
     }
 }
 
-/// EMV / EGR / EAR gauge (originally 51x11 at (86, 187)) scaled into the
+/// EMV / EGR / EAR gauge (51x11 at (86, 187) on the classic panel) scaled into the
 /// rectangle: EMV blue from the left and red from the right, EGR (upper) and EAR (lower) bars.
 pub fn draw_gauge(c: &mut Canvas, r: [i32; 4], emv: i32, egr: i32, ear: i32) {
     let (sx, sy) = (r[2] as f32 / 51.0, r[3] as f32 / 11.0);
@@ -312,7 +312,7 @@ pub fn draw_led_bars(c: &mut Canvas, glow: &mut Canvas, r: [i32; 4], emv: i32, e
     c.fill_rect(x, y, w, h, 38);
     let n = LED_MODULES * LED_SEGMENTS;
     // Lit segment counts on the 0..99 scale (any signal lights one; EMV 0 still lights the
-    // rightmost segment, as the original's gauge fills its rightmost column).
+    // rightmost segment, as the classic gauge fills its rightmost column).
     let count = |v: i32| if v > 0 { ((v * n + 50) / 99).clamp(1, n) } else { 0 };
     let right = count(emv).max(1);
     let gap = (h / 12).max(1);
@@ -357,7 +357,7 @@ pub fn draw_led_bars(c: &mut Canvas, glow: &mut Canvas, r: [i32; 4], emv: i32, e
 pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
     let (s, co) = roll.sin_cos();
     let n = c.w.min(c.h) as f32;
-    // Ball units: the original's 32 px wide window is 16 units.
+    // Ball units: the classic 32 px wide window is 16 units.
     let unit = n / 16.0;
     let off = 16.0 * pitch.clamp(-1.5, 1.5).tan();
     let r2 = (n / 2.0) * (n / 2.0);
@@ -374,7 +374,7 @@ pub fn adi(c: &mut Canvas, pitch: f32, roll: f32) {
             c.set(px as i32, py as i32, if ground { 1 } else { 9 });
         }
     }
-    // Aircraft symbol: wings and a centre chevron (the original bezel's "W").
+    // Aircraft symbol: wings and a centre chevron (the classic bezel's "W").
     let (cx, cy, u) = (c.w as i32 / 2, c.h as i32 / 2, (n / 16.0).max(1.0) as i32);
     c.fill_rect(cx - 6 * u, cy - u / 2, 4 * u, u.max(1), 15);
     c.fill_rect(cx + 2 * u, cy - u / 2, 4 * u, u.max(1), 15);
@@ -402,7 +402,7 @@ pub fn adi_ball(c: &mut Canvas, pitch: f32, roll: f32) {
     // The ball's axes on the canvas: along the horizon and towards the ground.
     let along = Vec2::new(co, -s);
     let down = Vec2::new(s, co);
-    // Same sense as the original ball (`adi`): the horizon sits at -h along `down`.
+    // Same sense as the classic ball (`adi`): the horizon sits at -h along `down`.
     let h = pitch.clamp(-1.5, 1.5).to_degrees() * k;
     for py in 0..c.h {
         for px in 0..c.w {
@@ -691,7 +691,7 @@ impl PanelParams<'_, '_> {
     }
 
     /// The attitude ball into its own canvas: the F-16's ADI (`ball`, the modern cockpits) or the
-    /// original's (the classic cockpit).
+    /// classic ball (the classic cockpit).
     pub fn draw_adi(&self, c: &mut Canvas, ball: bool) {
         let (p, r) = self.aircraft.single().map_or((0.0, 0.0), |a| {
             let (_, p, r) = a.euler();

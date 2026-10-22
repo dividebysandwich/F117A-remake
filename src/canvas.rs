@@ -1,4 +1,4 @@
-//! Palette-indexed pixel canvases (the original's 320x200 mode 13h drawing model), uploaded to
+//! Palette-indexed pixel canvases (a 320x200 mode 13h drawing model), uploaded to
 //! textures through the active palette. Cockpit panel, HUD and MFDs draw into canvases; the
 //! textures are shown on world-space quads (so they also work in VR).
 
@@ -71,7 +71,7 @@ pub struct Canvas {
     pub h: usize,
     /// `scale` x `scale` texels per drawing unit, row by row (`pw` x `ph`).
     pub px: Vec<u8>,
-    /// Drawing clip rectangle (x0, y0, x1, y1), inclusive, like the original's page
+    /// Drawing clip rectangle (x0, y0, x1, y1), inclusive, like the sim's page
     /// descriptors. `set` (and everything built on it) only writes inside it.
     pub clip: [i32; 4],
     /// Texels per drawing unit: pixel-art drawing (`set`, `line`, fonts, sprites) fills blocks,
@@ -186,7 +186,7 @@ impl Canvas {
         }
     }
 
-    /// Bresenham line, as the original draws HUD lines.
+    /// Bresenham line, as classic HUD lines are drawn.
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: u8) {
         let (dx, dy) = ((x1 - x0).abs(), -(y1 - y0).abs());
         let (sx, sy) = (if x0 < x1 { 1 } else { -1 }, if y0 < y1 { 1 } else { -1 });

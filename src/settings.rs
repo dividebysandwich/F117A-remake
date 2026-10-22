@@ -45,25 +45,25 @@ pub struct Settings {
     /// Local lights: cockpit flood/display lights, explosions, plumes, runway lights.
     pub local_lights: bool,
     /// `--continuous-time`: the sun and moon move with the mission clock, the palette follows
-    /// the sun, moonlight sets the enemy's night sight (sky.rs); off, the original's drift.
+    /// the sun, moonlight sets the enemy's night sight (sky.rs); off, the classic drift.
     pub continuous_time: bool,
-    /// `--classic-cockpit`: the original instrument panel layout and 77x60 displays instead
+    /// `--classic-cockpit`: the classic instrument panel layout and 77x60 displays instead
     /// of the modern panel with high-resolution displays and bezel buttons.
     pub classic_cockpit: bool,
-    /// `--classic-avionics`: the original's MFD pages (MAP/TAC left, camera/WAY/WPN/ORD right)
+    /// `--classic-avionics`: the classic MFD pages (MAP/TAC left, camera/WAY/WPN/ORD right)
     /// instead of the modern formats (HSD, HARM, targeting pod, MAP, SMS on either MFD).
     pub classic_avionics: bool,
-    /// `--classic-hud`: the original's low-resolution HUD instead of the F-16 style one.
+    /// `--classic-hud`: the classic low-resolution HUD instead of the F-16 style one.
     pub classic_hud: bool,
-    /// `--classic-flight`: the original's flight model instead of the modern aerodynamic one
+    /// `--classic-flight`: the classic flight model instead of the modern aerodynamic one
     /// (the default for `--script` runs unless `--modern-flight` is given).
     pub classic_flight: bool,
     /// `--no-crashes`: crash protection (auto pull-up, no ground crashes, collisions bounce).
     pub no_crashes: bool,
-    /// `--realistic-damage`: realistic weapon damage instead of the original's
+    /// `--realistic-damage`: realistic weapon damage instead of the classic
     /// (`stealth_sim::SimOptions::realistic_damage`).
     pub realistic_damage: bool,
-    /// `--realistic-guidance`: realistic missile guidance instead of the original's
+    /// `--realistic-guidance`: realistic missile guidance instead of the classic
     /// (`stealth_sim::SimOptions::realistic_guidance`).
     pub realistic_guidance: bool,
     /// `--tacview`: the flight is saved as a Tacview ACMI file when it ends.
@@ -111,7 +111,7 @@ pub struct MissionSetup {
     pub cloud_cover: Option<u8>,
 }
 
-/// Aircraft start position and heading (original world units, radians clockwise from north).
+/// Aircraft start position and heading (world units, radians clockwise from north).
 #[derive(Debug, Clone, Copy)]
 pub struct StartPose {
     pub east_wu: f64,

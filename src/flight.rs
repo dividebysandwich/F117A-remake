@@ -1,13 +1,13 @@
-//! Player flight models. The classic one is the original's F-117A flight step, integrated per
+//! Player flight models. The classic one is a frame-based F-117A flight step, integrated per
 //! second instead of per frame; the modern one (`modern`) is a point-mass aerodynamic model with
 //! fly-by-wire control laws, tuned to the same performance. Both share the engine, fuel and
 //! ground contact rules below.
 //!
-//! Classic model: State is kept in the original units so the constants can be compared directly:
+//! Classic model: State is kept in the classic units so the table constants apply directly:
 //! velocity = knots * 27, angles in BAM
 //! (0x10000 = 360 degrees), altitude and positions in world units ("feet"), thrust 0..100,
-//! g in 1/16 g. Per-frame terms that the original does not divide by fs (stall nose drop) are
-//! scaled with the original's nominal 15 frames per sim second.
+//! g in 1/16 g. Per-frame terms that the classic step does not divide by fs (stall nose drop) are
+//! scaled with a nominal 15 frames per sim second.
 
 use std::f32::consts::TAU;
 
@@ -70,7 +70,7 @@ pub fn to_bam(r: f32) -> f32 {
     r / TAU * 65536.0
 }
 
-/// Flight tables from the original game (assets/sim/tables.ron).
+/// Flight tables (assets/sim/tables.ron).
 #[derive(Resource, Deserialize)]
 pub struct SimTables {
     pub roll_gee: Vec<u8>,
@@ -104,7 +104,7 @@ pub struct FlightConstants {
     pub spool_div: f32,
     /// Fuel burn every 2 s: set^2 / fuel_div + 2 (F-15: 750).
     pub fuel_div: f32,
-    /// Original frames per sim second, for per-frame terms.
+    /// Nominal frames per sim second, for per-frame terms.
     pub fs: f32,
     /// Landing skill L: 0 no crashes, 1 easy, 2 realistic.
     pub landing: u8,
@@ -376,7 +376,7 @@ fn handle_actions(
     }
 }
 
-/// Stick axis -1..1 to the original's -7..7 steps (joy = 0x80 + deflection).
+/// Stick axis -1..1 to the classic -7..7 steps (joy = 0x80 + deflection).
 fn stick_steps(axis: f32) -> f32 {
     let joy = (128.0 + axis.clamp(-1.0, 1.0) * 127.0).round() as i32;
     let mut r = (joy >> 4) - 8;
@@ -484,7 +484,7 @@ fn step_one(
             pitch_input += (rand::random_range(0.0..turb) - turb / 2.0) / 2.0;
         }
 
-        // --- auto pull-up ("barometric altimeter"; the original's no-crash and easy skills, here
+        // --- auto pull-up ("barometric altimeter"; the no-crash and easy skills, here
         // crash protection only, so the ground can always be hit otherwise)
         if !a.gear_down
             && pitch_input <= 0.0
@@ -552,7 +552,7 @@ fn step_one(
         let rudder = controls.yaw.clamp(-1.0, 1.0);
         yaw += rudder * 1820.0;
         if !air {
-            // Nosewheel steering: by the stick as in the original, or by the rudder.
+            // Nosewheel steering: by the stick (classic), or by the rudder.
             yaw = if rudder != 0.0 { rudder * 8064.0 } else { roll_input * 64.0 };
             roll_input = 0.0;
             if a.knots() < cs {
@@ -568,7 +568,7 @@ fn step_one(
             * Quat::from_rotation_z(-d_roll))
         .normalize();
 
-        // Stall: the nose drops (per original frame, scaled with fs).
+        // Stall: the nose drops (per classic frame, scaled with fs).
         if air && a.stall_speed > a.velocity {
             let shift = (if k.landing == 2 { 2.0 } else { 4.0 })
                 / if a.damage.heavy_stall { 2.0 } else { 1.0 };
@@ -596,7 +596,7 @@ fn step_one(
 
         a.roll_input = roll_input;
         a.pitch_input = pitch_input;
-        // The 3D view uses the compressed altitude, like the original.
+        // The 3D view uses the compressed altitude.
         pos.0 = wu_to_bevy(east, north, a.view_z() as f64);
         tf.rotation = a.orientation;
     }
@@ -855,7 +855,7 @@ mod tests {
             let (a, _) =
                 fly_with(k(), classic, level(airborne(36000.0, 600.0, 100.0)), 400.0, |_, _| {});
             println!("F-16 {name}: max speed at 36000 ft: {:.0} kt", a.knots());
-            // The classic model's altitude gain is the original's (about +27% at 36000 ft).
+            // The classic model's altitude gain is about +27% at 36000 ft.
             assert!(
                 a.knots() > if classic { 900.0 } else { 1050.0 },
                 "{name} at altitude {}",

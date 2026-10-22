@@ -54,10 +54,10 @@ Aircraft and rules
   --cloud-cover <percent>      coverage of the main cloud layer (default: rolled)
 
 Cockpit and graphics
-  --classic-cockpit            the original instrument panel (F-117A only)
-  --classic-hud                the original low-resolution HUD
-  --classic-avionics           the original MFD pages
-  --classic-flight             the original flight model (default for --script runs)
+  --classic-cockpit            DOS era instrument panel (F-117A only)
+  --classic-hud                DOS era low-resolution HUD
+  --classic-avionics           DOS era MFD pages
+  --classic-flight             DOS era flight model (default for --script runs)
   --modern-flight              the modern flight model also in --script runs
   --modern                     modern rendering (smooth gradients and haze, shading, MSAA)
   --shadows                    sun shadows

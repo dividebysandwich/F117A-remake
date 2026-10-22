@@ -1,8 +1,8 @@
 //! Palettes and colours.
 //!
-//! - Three flight palettes per theater (day, dusk, night) from the original game; the live
-//!   palette steps between them over the mission (one 6-bit unit per channel per step, one
-//!   colour range every 16 ticks).
+//! - Three flight palettes per theater (day, dusk, night); the live palette steps between
+//!   them over the mission (one 6-bit unit per channel per step, one colour range every 16
+//!   ticks).
 //! - Model colour bytes map through a remap table (by detail level) to colour words; one
 //!   `PaletteMaterial` per colour byte (polygons) plus one per colour byte for lines/dots.
 //! - Shared shader globals: live palette, sky ring and altitude-dependent ground band offsets.
@@ -176,7 +176,7 @@ impl TimeOfDay {
 /// The eye position used for the sky/ground gradient (set by the camera rig).
 #[derive(Resource, Default)]
 pub struct Viewpoint {
-    /// Altitude in original world units.
+    /// Altitude in world units.
     pub altitude_wu: f32,
 }
 
@@ -304,7 +304,7 @@ fn msaa_override() -> Option<Msaa> {
     })
 }
 
-/// Faithful mode renders without anti-aliasing like the original; modern mode uses 4x MSAA,
+/// Faithful mode renders without anti-aliasing; modern mode uses 4x MSAA,
 /// 2x in VR (4x cost the Steam Frame 2 ms per frame, over its 72 Hz budget).
 fn apply_msaa(
     settings: Res<Settings>,
@@ -323,7 +323,7 @@ fn apply_msaa(
     }
 }
 
-/// Sky band boundaries, original screen units at f = 256.
+/// Sky band boundaries, 320x200 screen units at f = 256.
 pub(crate) const SKY_RING: [f32; 16] =
     [0., 2., 3., 4., 6., 8., 11., 15., 20., 27., 36., 48., 64., 87., 119., 164.];
 
@@ -350,7 +350,7 @@ fn update_globals(
         g.palette[i] = Vec4::new(c.red, c.green, c.blue, 1.0);
     }
     g.sky_ring = pack16(SKY_RING);
-    // Ground bands: g[k] = alt/((16-k)*32) - alt/512 (integer maths as in the original).
+    // Ground bands: g[k] = alt/((16-k)*32) - alt/512 (integer maths).
     let alt = viewpoint.altitude_wu.max(0.0) as i32;
     let mut ground = [0f32; 16];
     for (k, v) in ground.iter_mut().enumerate().skip(1) {
@@ -392,9 +392,9 @@ fn update_globals(
     buf.set_data(g);
 }
 
-/// Original detail level 0..3 and the model LOD range reduction 0..3. Alt-D first halves the
-/// models' detail level ranges three times, then cycles the original level 3 -> 2 -> 1 -> 0 (at
-/// the shortest range), then back to full detail. Below 3 the original uses the simpler remap
+/// Detail level 0..3 and the model LOD range reduction 0..3. Alt-D first halves the models'
+/// detail level ranges three times, then cycles the detail level 3 -> 2 -> 1 -> 0 (at the
+/// shortest range), then back to full detail. Below 3 the colours use the simpler remap
 /// table (solid terrain colours instead of gradient AND/OR overlays).
 #[derive(Resource)]
 pub struct DetailLevel(pub u8, pub u8);

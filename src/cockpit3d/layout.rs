@@ -2,9 +2,8 @@
 //! labels, bezel buttons), which of them are buttons, and the displays.
 //!
 //! The cockpit model (`model`, the Blender files) places the faces; their rectangles here set
-//! each face's size in the atlas. The classic panel's (`classic`, the original 256PIT
-//! arrangement with the 77x60 MFDs) are in the original 320x200 screen's pixels, where the
-//! faces were in its picture.
+//! each face's size in the atlas. The classic panel's (`classic`, the 256PIT arrangement
+//! with the 77x60 MFDs) are in 320x200 screen pixels, where the faces were in its picture.
 //!
 //! The F-117A's modern panel (`modern`) and the F-16's (`f16`) are not on that plane: their
 //! rectangles are millimetres on their own panels (x right, y down from the panel's centre).
@@ -165,12 +164,12 @@ impl PanelLayout {
             .collect()
     }
 
-    /// The original arrangement (256PIT).
+    /// The classic arrangement (256PIT).
     pub fn classic() -> Self {
         use Effect as E;
         use LampId::*;
         let mut items = Vec::new();
-        // Lamps at the original light rectangles ; rect = (x,y)-(x+w,y+h).
+        // Lamps at the classic light rectangles ; rect = (x,y)-(x+w,y+h).
         const LIGHTS: [(f32, f32, f32, f32); 37] = [
             (119.0, 94.0, 18.0, 8.0),
             (139.0, 94.0, 18.0, 8.0),
@@ -283,8 +282,8 @@ impl PanelLayout {
         }));
 
         let screens = [rect(74.0, 110.0, 77.0, 60.0), rect(169.0, 110.0, 77.0, 60.0)];
-        // The top two squares outside each screen are buttons (not in the original): map zoom
-        // on the left MFD, waypoint selection on the right one.
+        // The top two squares outside each screen are buttons: map zoom on the left MFD,
+        // waypoint selection on the right one.
         for (x, y, label, action) in [
             (65.0, 110.0, "+", Action::MapZoomIn),
             (65.0, 123.0, "-", Action::MapZoomOut),

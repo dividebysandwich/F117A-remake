@@ -119,8 +119,8 @@ pub(crate) struct Candidate {
 /// Everything the generator loads for one theater.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TheaterData {
-    /// Original theater whose generator rules apply (mission table rows, dates, grid references):
-    /// its own index for the original theaters.
+    /// Classic theater whose generator rules apply (mission table rows, dates, grid references):
+    /// its own index for the classic theaters.
     pub index: usize,
     /// Briefing start date (month, day, year) of a remake theater.
     #[serde(default)]

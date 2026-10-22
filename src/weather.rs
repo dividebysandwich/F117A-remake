@@ -1,4 +1,4 @@
-//! Weather (not in the original game): the mission's clouds (stealth_mission::weather) as
+//! Weather: the mission's clouds (stealth_mission::weather) as
 //! flat-shaded geometry, the overcast sky, the whiteout inside clouds and storm effects.
 //!
 //! - Deck (overcast, storm): two huge planes at the deck's base and top following the
@@ -802,7 +802,7 @@ fn lightning(
         *t > 0.0
     });
     if state.thunder.len() < len {
-        // No thunder among the original sounds: the explosion rumble stands in.
+        // No thunder among the game's sounds: the explosion rumble stands in.
         sounds.write(crate::sound::PlaySound { id: 5, priority: 0 });
     }
     // The running strikes.

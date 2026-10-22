@@ -6,7 +6,7 @@ use stealth_formats::{THEATERS, terrain};
 
 use crate::math::Trig;
 
-/// Table sizes of the original data (the remake appends its own entries after them).
+/// Table sizes of the classic data (the remake appends its own entries after them).
 pub const N_THREATS: usize = 23;
 pub const N_AIRCRAFT: usize = 29;
 pub const N_MISSILES: usize = 41;
@@ -21,8 +21,8 @@ pub struct ThreatType {
     pub tier: i16,
     /// bit 0 Doppler, bit 1 omni-directional airborne (AWACS).
     pub flags: i16,
-    /// Missile a site of this type fires (the remake's own sites, appended after the original
-    /// table); None: the missile with the same index, as in the original.
+    /// Missile a site of this type fires (the remake's own sites, appended after the classic
+    /// table); None: the missile with the same index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missile: Option<i16>,
 }
@@ -42,7 +42,7 @@ pub struct AircraftType {
     pub unknown: i16,
     /// Initial kill counter.
     pub kills: i16,
-    /// How the AI flies it (not in the original data: all fixed-wing).
+    /// How the AI flies it (absent from the classic data: all fixed-wing).
     #[serde(default, skip_serializing_if = "AircraftKind::is_plane")]
     pub kind: AircraftKind,
 }
@@ -116,7 +116,7 @@ pub struct SimData {
     pub gun_ammo_init: i16,
     /// Runway direction per theater: +1 start south heading north, -1 the reverse.
     pub start_dir: [i16; 9],
-    /// One per original theater, stored in `theaters/<code>.json` beside `sim.json`.
+    /// One per classic theater, stored in `theaters/<code>.json` beside `sim.json`.
     #[serde(skip)]
     pub theaters: Vec<TheaterTiles>,
 }
@@ -186,7 +186,7 @@ impl SimData {
 }
 
 impl TheaterTiles {
-    /// A theater's tile data from its terrain (remake theaters, which the exported original
+    /// A theater's tile data from its terrain (remake theaters, which the exported classic
     /// data does not have).
     pub fn from_tilesets(
         grid: &terrain::Grid,

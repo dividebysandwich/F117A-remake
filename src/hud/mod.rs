@@ -1,6 +1,6 @@
 //! Head-up display state and the per-frame [`HudFrame`] (gathered from the ECS by
 //! [`HudParams`]). Two looks draw it, each a pure function of the frame:
-//! * [`classic`]: the original's HUD in 320x200 screen pixels;
+//! * [`classic`]: the classic low-resolution HUD in 320x200 screen pixels;
 //! * [`modern`]: a high-resolution F-16 style HUD (NAV / AA / AG), drawn as a monochrome
 //!   mask that the combiner glass shows in HUD green.
 
@@ -39,6 +39,13 @@ impl Plugin for HudPlugin {
 /// HUD centre (boresight) in screen pixels.
 pub const CX: i32 = 159;
 pub const CY: i32 = 52;
+
+/// How much smaller the classic HUD is drawn on the combiner glass than at full 320x200 size
+/// (focal length factor) at the modern HUD's `scale`: it fits the F-16's small combiner and the VR
+/// symbology size as the modern HUD does.
+pub fn classic_zoom(scale: f32) -> f32 {
+    scale / modern::SCALE
+}
 
 /// F2: NAV / AIR / GND.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -93,7 +100,7 @@ impl HudMessages {
 /// One weapon bay.
 #[derive(Debug, Clone)]
 pub struct Bay {
-    /// Original weapon name, e.g. "IN Cluster".
+    /// Classic weapon name, e.g. "IN Cluster".
     pub name: String,
     pub count: u32,
     /// Index of the weapon's side view picture (WPN page).
@@ -137,7 +144,7 @@ impl Default for Stores {
     }
 }
 
-/// A navigation waypoint in original world units.
+/// A navigation waypoint in world units.
 #[derive(Debug, Clone, Copy)]
 pub struct Waypoint {
     pub east: f64,
@@ -344,7 +351,7 @@ fn advance_waypoints(
     }
 }
 
-/// Everything the HUD shows, in the original's units.
+/// Everything the HUD shows, in the sim's units.
 #[derive(Debug, Clone, Default)]
 pub struct HudFrame {
     /// Modern HUD: canvas pixels per unit of the tangent plane (`modern`).
@@ -428,7 +435,7 @@ fn speed_of_sound(h: f32) -> (f32, f32) {
     (theta, 1116.4 * theta.sqrt())
 }
 
-/// Blink frame parity, ticking at about the original frame rate.
+/// Blink frame parity, flipping 8 times a second.
 pub fn blink(time: &Time) -> bool {
     (time.elapsed_secs() * 8.0) as u32 & 1 == 1
 }

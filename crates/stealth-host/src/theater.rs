@@ -24,7 +24,7 @@ pub fn load_tiles(code: &str) -> Result<TheaterTiles> {
 }
 
 /// The simulation's tables, with the tiles of theater `index` (`code`) if they are not among
-/// the original's.
+/// the sim data's.
 pub fn sim_data(index: usize, code: &str) -> Result<SimData> {
     let d = SimData::load_json(&crate::assets::asset("sim"))?;
     if d.theaters.get(index).is_some() {
@@ -49,7 +49,7 @@ pub fn codes() -> Vec<String> {
     stealth_formats::ALL_THEATERS.iter().map(|t| t.to_ascii_lowercase()).collect()
 }
 
-/// Theaters in the original's order, then the remake's own (file prefix, display name).
+/// The classic theaters first, then the remake's own (file prefix, display name).
 pub const THEATERS: [(&str, &str); 10] = [
     ("lb", "Libya (1986)"),
     ("pg", "Persian Gulf (1984)"),

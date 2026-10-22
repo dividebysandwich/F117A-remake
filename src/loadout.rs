@@ -1,4 +1,4 @@
-//! Loadout editor (not in the original, whose generator picks the stores): the stores on each
+//! Loadout editor (otherwise the mission generator picks the stores): the stores on each
 //! hardpoint, the F-117A's bays (two real ones, two more inside the wings without realistic
 //! weapons) or the F-16's nine pylon stations.
 
@@ -10,7 +10,7 @@ use stealth_mission::{Mission, Plane};
 use crate::aircraft::AircraftKind;
 use crate::menu::{AMBER, BRIGHT, DIM, GREEN, MenuState, big_button, facts, section};
 
-/// The original's weapons (index = weapon type): name, what it is for.
+/// The weapons (index = weapon type): name, what it is for.
 pub const WEAPONS: [(&str, &str); 19] = [
     ("AIM-9M Sidewinder", "Air-to-air, infrared homing, short range"),
     ("AIM-120A AMRAAM", "Air-to-air, radar homing, medium range"),
@@ -32,9 +32,9 @@ pub const WEAPONS: [(&str, &str); 19] = [
     ("1900 lbs fuel", "Extra fuel, transferred when released"),
     ("Special equipment", "Supplies or cargo for the mission"),
 ];
-/// Weapon types the original keeps out of the real F-117A's bays (realistic weapons).
+/// Weapon types kept out of the real F-117A's bays (realistic weapons).
 const AIR_TO_AIR: [u8; 2] = [0, 1];
-/// Rounds of each weapon a bay holds (the original's table).
+/// Rounds of each weapon a bay holds.
 const BAY_QTY: [u8; 19] = [4, 3, 1, 2, 1, 2, 2, 2, 2, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1];
 /// Rounds on a pylon (with a triple ejector rack for the 500 lb bombs).
 const PYLON_QTY: [u8; 19] = [1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3, 2, 2, 1, 2, 1, 1, 1, 1];
@@ -183,7 +183,7 @@ static F117_REAL: [Hardpoint; 2] = [
     bay("Left bay", "L", -0.5, 8.0, false, 1, &NO_AIR_TO_AIR),
     bay("Right bay", "R", 0.5, 8.0, false, 0, &NO_AIR_TO_AIR),
 ];
-/// The original's F-117A: two more bays, inside the wing roots.
+/// The fantasy F-117A: two more bays, inside the wing roots.
 static F117_FANTASY: [Hardpoint; 4] = [
     bay("Left bay", "L", -0.5, 8.0, false, 1, &ALL),
     bay("Right bay", "R", 0.5, 8.0, false, 0, &ALL),
@@ -223,7 +223,7 @@ pub fn layout(aircraft: AircraftKind, realistic: bool) -> &'static Layout {
     }
 }
 
-/// Weapon types the mission has none of (the original's random shortages).
+/// Weapon types the mission has none of (random shortages).
 fn out_of_stock(m: &Mission, w: u8) -> bool {
     !AIR_TO_AIR.contains(&w) && m.weapon_unavailable.get(w as usize).is_some_and(|&u| u != 0)
 }
@@ -585,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn weapon_tables_match_the_original() {
+    fn weapon_tables_match_the_sim_data() {
         let data = crate::mission::MissionData::load().expect("mission data");
         let t = &data.0.tables;
         for (w, &qty) in BAY_QTY.iter().enumerate() {

@@ -48,7 +48,7 @@ pub enum MissionKind {
 }
 
 impl MissionKind {
-    /// The original game's kinds.
+    /// The classic mission kinds.
     pub const ALL: [MissionKind; 4] =
         [Self::Air, Self::Strike, Self::AirTraining, Self::StrikeTraining];
     /// Generator kind (bit 0 strike, bit 1 training).
@@ -101,15 +101,14 @@ pub struct MissionSettings {
     pub sorties: u16,
     /// Pilot name (with rank) for the briefing.
     pub pilot: String,
-    /// Sky to fly in; `None` rolls it from the seed. Not part of the original game, so the
-    /// default is clear (the original behaviour).
+    /// Sky to fly in; `None` rolls it from the seed. The default is a clear sky (classic).
     #[serde(default = "clear_sky")]
     pub weather: Option<Sky>,
     /// Coverage (percent) of the weather's main cloud layer; `None` rolls it.
     #[serde(default)]
     pub cloud_cover: Option<u8>,
-    /// Hour (0-23) the mission starts at; `None`: the original's 06:00-08:00 by day or
-    /// 18:00-20:00 by night, rolled from the seed. Not part of the original game.
+    /// Hour (0-23) the mission starts at; `None`: 06:00-08:00 by day or 18:00-20:00 by night,
+    /// rolled from the seed.
     #[serde(default)]
     pub start_hour: Option<u8>,
 }
@@ -155,9 +154,9 @@ pub struct GenInput {
     pub stale_special_start: i16,
 }
 
-/// Mission generator tables plus the theaters, loaded once from the game directory (the original nine)
-/// and shipped as JSON in `assets/mission` (`tables.json`, `theaters/<code>.json`, with the
-/// remake's own theaters after the original ones).
+/// Mission generator tables plus the theaters, loaded once from the game directory (the nine
+/// classic theaters) and shipped as JSON in `assets/mission` (`tables.json`,
+/// `theaters/<code>.json`, with the remake's own theaters after the classic ones).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameData {
     pub tables: StartTables,
@@ -353,7 +352,7 @@ pub struct Mission {
     /// The edited theater world handed to the flight.
     pub world: MissionWorld,
     pub night: bool,
-    /// Not part of the original game (rolled from its own RNG stream).
+    /// Rolled from its own RNG stream.
     #[serde(default)]
     pub weather: Weather,
     pub time: MissionTime,
@@ -367,7 +366,7 @@ pub struct Mission {
     pub exit_code: u8,
     pub briefing: Briefing,
     pub orders: Orders,
-    /// Attack drones in the air (not in the original game).
+    /// Attack drones in the air.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drones: Option<DroneWave>,
 }
@@ -629,7 +628,7 @@ pub fn handoff_block(m: &Mission) -> Vec<u8> {
 }
 
 /// Byte offset of the name block inside [`handoff_block`] (bytes past the end of the theater's
-/// name data are stale memory in the original and are not compared).
+/// name data are stale memory and are not compared).
 pub fn handoff_names_offset(m: &Mission) -> usize {
     8 + 16 * m.world.objects.len() + 2 + 36 * m.world.flights.len() + 256
 }

@@ -1,12 +1,12 @@
 //! Cockpit art and display drawing shared by the 3D cockpit.
 //!
-//! The original projects with `sx = cx + f*x/z`, `sy = cy - 0.75*f*y/z`, f = 256, so each pixel
+//! The classic view projects with `sx = cx + f*x/z`, `sy = cy - 0.75*f*y/z`, f = 256, so each pixel
 //! of the 320x200 screen is a fixed direction from the eye. The 3D cockpit keeps that mapping
 //! for its panel picture and HUD (`cockpit3d::geometry`).
 //!
 //! The instrument panel itself is built from meshes (`cockpit3d`); HUD symbols, LED digits, TAC
 //! map icons, the approach indexer and the weapon side views come from a sprite atlas,
-//! `images/sprites.png`, at the positions of the original 256PIT atlas (drawn by
+//! `images/sprites.png`, at the positions of the 256PIT atlas (drawn by
 //! `tools/gen_images.py`).
 
 use bevy::prelude::*;
@@ -25,7 +25,7 @@ impl Plugin for CockpitPlugin {
     }
 }
 
-/// Original focal length (pixels) and vertical squash.
+/// Classic focal length (pixels) and vertical squash.
 pub const FOCAL: f32 = 256.0;
 pub const VSCALE: f32 = 0.75;
 

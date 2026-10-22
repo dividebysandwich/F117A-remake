@@ -1,4 +1,4 @@
-//! Radar warning receiver (not in the original): the radars painting the player
+//! Radar warning receiver: the radars painting the player
 //! (`Sim::emitters`), published every frame, and the circular threat display of the F-16's RWR.
 //! The HARM display (modern avionics) shows the same picture.
 //!

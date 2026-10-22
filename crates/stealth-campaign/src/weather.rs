@@ -1,4 +1,4 @@
-//! Campaign weather (not in the original game): a sequence of phases of 10-22 hours of the
+//! Campaign weather: a sequence of phases of 10-22 hours of the
 //! sky's clock, each a weather preset rolled from the campaign seed alone. Every computer of
 //! a session derives the same weather from the setup and the campaign clock, so none of it is
 //! sent or saved.

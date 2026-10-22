@@ -1,7 +1,7 @@
 """Geography of the Ukraine theater: projection, coasts, rivers, the front line and the places.
 
 The theater squeezes 31.0-42.6 E, 44.1-52.0 N (about 860 km square) into the 512 km of a
-theater, like the original's compressed theaters. Coordinates here are (lon, lat) degrees;
+theater, like the other compressed theaters. Coordinates here are (lon, lat) degrees;
 `ll` turns them into theater metres (x east, y north, 0..512000).
 
 Front line: roughly the line of contact in 2026, from the Sumy and Kharkiv border areas through

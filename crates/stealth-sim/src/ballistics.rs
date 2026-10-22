@@ -1,6 +1,6 @@
-//! Bomb ballistics (not the original's: its free-fall bombs flew on at half the aircraft's
-//! speed, turning down at a fixed rate to a floor set by the release altitude, and its
-//! retarded bombs fell straight down). A bomb leaves with the aircraft's velocity and falls
+//! Bomb ballistics (classic free-fall bombs flew on at half the aircraft's speed, turning
+//! down at a fixed rate to a floor set by the release altitude, and classic retarded bombs
+//! fell straight down). A bomb leaves with the aircraft's velocity and falls
 //! under gravity against air drag (proportional to the speed squared), integrated in steps of
 //! one simulation frame. The bombsights (CCIP, CCRP) predict the impact by flying the same
 //! steps, so a bomb lands where they show.
@@ -23,12 +23,12 @@ const MAX_FALL: f64 = 300.0;
 
 /// Drag constant (1/ft: deceleration = drag * speed²) of a projectile type that falls
 /// ballistically: free-fall (30) and retarded (29) bombs, and the supply pod (38, under a
-/// chute) when the original's bugs are fixed.
-pub fn drag(spec: i32, fix_original_bugs: bool) -> Option<f64> {
+/// chute) when classic bugs are fixed.
+pub fn drag(spec: i32, fix_classic_bugs: bool) -> Option<f64> {
     let terminal = match spec {
         30 => SLICK_TERMINAL,
         29 => RETARDED_TERMINAL,
-        38 if fix_original_bugs => RETARDED_TERMINAL,
+        38 if fix_classic_bugs => RETARDED_TERMINAL,
         _ => return None,
     };
     Some(GRAVITY / (terminal * terminal))

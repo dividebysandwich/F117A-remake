@@ -1,13 +1,13 @@
-//! The combat simulation (crate stealth-sim, the original game logic: radar and EMV, threats, AI,
+//! The combat simulation (crate stealth-sim, the game logic: radar and EMV, threats, AI,
 //! missiles, weapons, damage, objectives) driving the flight.
 //!
 //! * On entering the flight a [`Sim`] is built from the active mission (`mission.rs` makes sure
 //!   there is one) and the static tables in `assets/sim/sim.json`. The player starts at the
 //!   simulation's start state.
-//! * The simulation runs on original frames at a fixed `fs` = 15 frames per (virtual) second:
+//! * The simulation runs on sim frames at a fixed `fs` = 15 frames per (virtual) second:
 //!   every tick gets a [`PlayerState`] built from the flight model and the one-shot commands
 //!   (keys) collected since the previous tick. Time acceleration (Shift-Z) doubles the virtual
-//!   clock, like the original's sim time = real time x accel.
+//!   clock: sim time = real time x accel.
 //! * Its outputs are published every frame into the cockpit resources (HUD messages, stores,
 //!   waypoints, cues, lights, EMV gauge, MFD contacts and camera data) and into the flight model
 //!   (bay doors, damage effects, fuel transfers). World changes (destroyed tile objects) go to
@@ -75,7 +75,7 @@ impl Plugin for CombatPlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CombatSystems;
 
-/// Original frames per sim second (as on a fast machine).
+/// Sim frames per (virtual) second.
 pub const FS: u8 = 15;
 /// At most this many sim frames per rendered frame (slow frames are dropped beyond it).
 const MAX_STEPS: u32 = 30;
@@ -250,7 +250,7 @@ fn start_combat(
             }
         },
     };
-    // Remake theaters have no tiles in the exported original data: take them from the theater file.
+    // Remake theaters have no tiles in the exported classic data: take them from the theater file.
     let data = if data.theaters.get(m.settings.theater).is_none() {
         let mut d = (*data).clone();
         let theater = crate::world::Theater::load(&m.theater_code.to_ascii_lowercase());
@@ -455,7 +455,7 @@ fn is_cockpit_view(v: View) -> bool {
     matches!(v, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear)
 }
 
-/// The flight model's state in the original variables.
+/// The flight model's state in the sim's variables.
 #[allow(clippy::too_many_arguments)]
 fn player_state(
     a: &Aircraft,
@@ -518,8 +518,8 @@ struct StepParams<'w, 's> {
 #[derive(Resource, Default)]
 pub struct PlayerCollision(pub bool);
 
-/// Tests the pilot's eye (the original tests the camera point) against the original plane hulls of
-/// visible tile objects.
+/// Tests the pilot's eye (not the camera point) against the models' plane hulls of visible tile
+/// objects.
 fn detect_collision(
     mut collision: ResMut<PlayerCollision>,
     player: Query<&GlobalTransform, With<crate::camera::HeadAnchor>>,
@@ -945,7 +945,7 @@ fn on_hud(p: Option<(i32, i32)>) -> Option<(i32, i32)> {
 }
 
 /// Tracking-camera zoom shift (focal 256 << z) for a range in map units.
-/// ASSUMED (the original's zoom rule is not decoded): the target stays a few pixels to a
+/// ASSUMED: the target stays a few pixels to a
 /// quarter of the MFD wide, i.e. zoom up one step per doubling of the range beyond 2 km.
 pub fn camera_zoom(range: i32) -> u8 {
     let mut z = 0u8;
@@ -1384,7 +1384,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                 pos,
                 eye,
                 spec,
-                sim.opts.fix_original_bugs,
+                sim.opts.fix_classic_bugs,
                 hud.ccrp,
                 t.ground.and_then(|g| objects.get(g)),
                 &mut new_cues,
@@ -1488,13 +1488,13 @@ fn bomb_cue(
     pos: &WorldPos,
     eye: Vec3,
     spec: i32,
-    fix_original_bugs: bool,
+    fix_classic_bugs: bool,
     ccrp: bool,
     target: Option<&stealth_sim::GroundObject>,
     cues: &mut HudCues,
 ) -> Option<crate::hud::BombCue> {
     use stealth_sim::ballistics;
-    let k = ballistics::drag(spec, fix_original_bugs)?;
+    let k = ballistics::drag(spec, fix_classic_bugs)?;
     let heading = to_bam(a.euler().0) as i32;
     let v = ballistics::release_velocity(heading, a.velocity as i32, a.climb_rate as i32);
     let (d, fall) =

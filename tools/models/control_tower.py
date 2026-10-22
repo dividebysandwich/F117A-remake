@@ -6,10 +6,10 @@ an overhanging roof, antenna masts and an operations building at the foot.
     tools/models/export.sh <file>
 
 Runs on the open master and saves it. Each detail level with geometry is rebuilt in place (its
-`max_dist`, `radius` and collision `planes` stay the original's); the last level (a dot) is
+`max_dist`, `radius` and collision `planes` stay as they were); the last level (a dot) is
 kept. Structure: unconditional shaft and building, `_s1v0` (intact: operations floor, cab,
 roof, masts, red obstacle lights), `_s1v1` (destroyed: broken shaft top) and `_s10v1` (lights
-on: white floodlights). Colour 150 is the original's window colour: dark glass by day, amber
+on: white floodlights). Colour 150 is the classic window colour: dark glass by day, amber
 at night. Model space: x east, y north, z up, in LOD1 units (WU, about 0.49 m).
 """
 

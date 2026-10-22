@@ -1,8 +1,8 @@
-//! Extra scenery (not in the original). Every theater's airfields get taxiways, aprons,
-//! shelters, support buildings and airfield lighting (`airfield`). The green theaters also get
-//! towns with street grids and street lamps, roads between them and along the original road
-//! lines, farms, industry, transmission and pole lines, radio masts, forests and lone trees;
-//! the desert theaters otherwise keep their original look.
+//! Extra scenery. Every theater's airfields get taxiways, aprons, shelters, support buildings
+//! and airfield lighting (`airfield`). The green theaters also get towns with street grids and
+//! street lamps, roads between them and along the theater's road lines, farms, industry,
+//! transmission and pole lines, radio masts, forests and lone trees; the desert theaters get
+//! only the airfields.
 //!
 //! The steppe theaters' open land is farmland: fields and shelterbelts (`fields`), streamed in
 //! larger blocks further out.
@@ -11,7 +11,7 @@
 //! theater's own objects (`ground`). Around the viewpoint, 1 km blocks are built into one mesh
 //! per palette colour (`content`), drawn with the palette materials and haze like the theater
 //! models; airfields are built whole at the start. Lamps are batched dots, lit when the
-//! original's lights come on.
+//! palette's lights come on.
 
 mod airfield;
 
@@ -119,7 +119,7 @@ impl Scenery {
     }
 
     /// Where a conventional war burns (fires.rs): in and around the towns and along the roads
-    /// and the original road lines, on open ground. Positions in metres (east, north) and
+    /// and the theater's road lines, on open ground. Positions in metres (east, north) and
     /// whether the fire is a big one.
     pub fn war_sites(&self, seed: u64) -> Vec<(DVec2, bool)> {
         let mut rng = network::Rng::new(seed);
@@ -412,7 +412,7 @@ fn spawn_geom(
     tier: Tier,
     lamp_tag: u32,
 ) -> Vec<Entity> {
-    // Haze like the original's LOD1 objects, starting a little further out (whole blocks share
+    // Haze like the theater's LOD1 objects, starting a little further out (whole blocks share
     // their centre's haze level); farmland is ground and hazes like the coarse terrain levels.
     let tag = MeshTag(match tier {
         Tier::Fields => mesh_tag(3, 4, false),
@@ -498,7 +498,7 @@ fn spawn_geom(
     children
 }
 
-/// Lamps come on with the original's lights (sky dark enough); the approach flashers run
+/// Lamps come on with the palette's lights (sky dark enough); the approach flashers run
 /// their sequence twice a second.
 fn lamps_at_night(
     time: Res<Time>,

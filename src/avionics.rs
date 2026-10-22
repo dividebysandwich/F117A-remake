@@ -1,5 +1,5 @@
-//! Modern avionics (not in the original; on unless `--classic-avionics`): F-16 style MFD
-//! formats on either MFD instead of the original's fixed pages.
+//! Modern avionics (on unless `--classic-avionics`): F-16 style MFD
+//! formats on either MFD instead of the classic fixed pages.
 //!
 //! - Formats: HSD (horizontal situation display: route, threat rings, air and ground contacts),
 //!   HARM (the radars painting the aircraft, placed by danger like the RWR), TGP (the tracking
@@ -574,7 +574,7 @@ pub fn draw(p: &MfdParams, side: MfdSide, c: &mut Canvas, art: &CockpitArt, font
         Format::Harm => draw_harm(p, c, soi),
         Format::Hsi => draw_hsi_page(p, c, fonts),
         _ => {
-            // The original pages, between the label bands.
+            // The classic pages, between the label bands.
             let mut page = Canvas::scaled(c.w, c.h - 2 * BAND as usize, c.scale);
             match f {
                 Format::Tgp => p.draw_camera_hires(&mut page, fonts),
@@ -629,7 +629,7 @@ fn draw_labels(c: &mut Canvas, fonts: &Fonts, side: MfdSide, s: &MfdState) {
 /// HSI course deviation at full scale (km off the course, two dots).
 const HSI_FULL_SCALE_KM: f64 = 5.0;
 
-/// The HSI format (and the third MFD's page with the original pages): a heading-up compass
+/// The HSI format (and the third MFD's page with the classic pages): a heading-up compass
 /// rose with the digital heading over it; the course arrow along the leg to the steerpoint
 /// (from the previous one; to the first one, from the aircraft) with its deviation bar, two
 /// dots either side (`HSI_FULL_SCALE_KM`) and the TO / FROM arrow; the bearing pointer to the

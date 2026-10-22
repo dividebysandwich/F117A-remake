@@ -28,7 +28,7 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-/// Distance from the base reference point to the runway start (original: 1800 wu).
+/// Distance from the base reference point to the runway start (classic: 1800 wu).
 const RUNWAY_OFFSET_WU: f64 = 1800.0;
 
 #[allow(clippy::too_many_arguments)]

@@ -44,7 +44,7 @@ pub const PILOT_SLOTS: usize = N_PROJ - ENEMY_SLOTS;
 /// Pilots a simulation takes at most (coop players).
 pub const MAX_PILOTS: usize = 64;
 
-/// Player-derived values of the current frame (in the original game's units).
+/// Player-derived values of the current frame (in the sim's units).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayerView {
     /// World units, y north.
@@ -173,7 +173,7 @@ pub struct Sim {
     #[serde(default)]
     pub(crate) destroyed_at: Vec<(i32, i32)>,
     /// Light for visual identification, 0 (moonless night) .. 255 (day), from the renderer's
-    /// continuous time of day; None: the mission's day or night, as in the original.
+    /// continuous time of day; None: the mission's day or night.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) visual_light: Option<u8>,
     /// Low-level air defences (`SimOptions::air_defence`), their shells and random stream.
@@ -183,8 +183,8 @@ pub struct Sim {
     pub(crate) aaa_shells: Vec<aaa::Shell>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) aaa_rng: Option<Rng>,
-    /// Apron parking spots for the parked base traffic (not in the original): world x, y and
-    /// heading; empty = parked on the base object as in the original.
+    /// Apron parking spots for the parked base traffic: world x, y and heading;
+    /// empty = parked on the base object (classic).
     #[serde(default)]
     pub(crate) parking: Vec<(i32, i32, i32)>,
     /// Realtime dynamic campaign (`SimOptions::campaign`).
@@ -198,7 +198,7 @@ pub struct Sim {
 
     // ---- objectives / end ----
     pub(crate) ended: Option<MissionEnd>,
-    /// Clouds (not in the original; clear = original behaviour).
+    /// Clouds (clear = classic behaviour).
     #[serde(default)]
     pub(crate) weather: stealth_mission::Weather,
 
@@ -331,7 +331,7 @@ impl Sim {
             roe: s.roe.min(2) as i32,
             night: m.night,
             theater,
-            // Remake theaters use the original airbase models, laid out like Central Europe's.
+            // Remake theaters use the classic airbase models, laid out like Central Europe's.
             ns: data.start_dir.get(theater).copied().unwrap_or(1) as i32,
             rng: Rng::new(seed),
             frame: 0,
@@ -760,7 +760,7 @@ impl Sim {
 
     /// Advance one frame with every pilot in the world: `inputs` are their flight models'
     /// reports (a pilot without one this frame flies on with his last). Each pilot takes his
-    /// turn in each phase, so with one pilot this is the original's frame.
+    /// turn in each phase, so with one pilot this is the classic frame.
     pub fn step_pilots(&mut self, inputs: &[(u8, PlayerState)], fs: u8) -> Vec<PilotEvent> {
         self.events.clear();
         self.event_pilot.clear();
@@ -1231,7 +1231,7 @@ impl Sim {
     }
 
     /// Range (km) at which enemy pilots identify the player by sight: 8 km by day, 4 by
-    /// night (the original), or with a light level from 2 km on a moonless night to 8 by day;
+    /// night (classic), or with a light level from 2 km on a moonless night to 8 by day;
     /// halved in a storm.
     pub fn visual_range(&self) -> i32 {
         let base = match self.visual_light {

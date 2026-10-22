@@ -149,7 +149,7 @@ pub fn campaign_window(
             });
             ui.horizontal(|ui| {
                 ui.label("Weather:");
-                for (clear, label) in [(false, "changing"), (true, "clear sky")] {
+                for (clear, label) in [(false, "dynamic"), (true, "clear sky")] {
                     if ui.selectable_label(w.clear_sky == clear, label).clicked() {
                         w.clear_sky = clear;
                     }

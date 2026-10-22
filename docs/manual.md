@@ -954,7 +954,8 @@ server without a game of its own. The others join it over UDP.
 The MULTIPLAYER screen asks for your name first; the other players know you by it, and the
 campaign keeps your sorties under it: join again under the same name and they are yours again. In
 the headset, click a text field with the laser pointer and a keyboard opens under it; press its
-keys with the trigger and DONE when finished. The career's pilot name uses the same field.
+keys with the trigger and DONE when finished. Keys type at the blinking cursor: click in the text
+to place it, or move it with ← and →. The career's pilot name uses the same field.
 
 ### Joining
 

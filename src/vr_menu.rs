@@ -232,6 +232,9 @@ fn feed_egui(
             o.input_options.max_click_duration = 2.0;
         });
     }
+    // The headset, not the desktop window, has the user's attention: text fields show their
+    // cursor.
+    input.0.focused = true;
     let ev = &mut input.0.events;
     let modifiers = egui::Modifiers::default();
     // Held at the press point (also for the release) until the aim moves PRESS_HOLD away.

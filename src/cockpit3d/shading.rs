@@ -44,7 +44,8 @@ pub struct CockpitShading {
     /// only the sun and the ambient light.
     pub full: bool,
     /// x: darkness of a night without moonlight 0..1 (`crate::sky::Sky::dark`): everything
-    /// but the emissive parts and the cockpit lamps' light goes dark.
+    /// but the emissive parts and the cockpit lamps' light goes dark; y: night vision goggles,
+    /// z: daylight 0..1 (their gain).
     #[uniform(100)]
     pub night: Vec4,
     /// Never darkened.

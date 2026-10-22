@@ -292,13 +292,20 @@ fn sync_materials(
 fn sync_shading(
     settings: Res<Settings>,
     sky: Res<crate::sky::Sky>,
+    hud: Option<Res<crate::hud::HudState>>,
+    lighting: Res<crate::lighting::LightingState>,
     mut materials: ResMut<Assets<CockpitMaterial>>,
 ) {
     let full = lighting_on(&settings);
+    // Night vision goggles: the cockpit in green too, and as well seen on a moonless night.
+    let nvg = hud.is_some_and(|h| h.nvg);
     // In 1/64 steps: a change re-uploads every cockpit material.
-    let dark = if sky.on { (sky.dark * 64.0).round() / 64.0 } else { 0.0 };
-    let night =
-        |m: &CockpitMaterial| Vec4::new(if m.extension.bright { 0.0 } else { dark }, 0.0, 0.0, 0.0);
+    let q = |v: f32| (v * 64.0).round() / 64.0;
+    let dark = if sky.on && !nvg { q(sky.dark) } else { 0.0 };
+    let daylight = if nvg { q(lighting.daylight.clamp(0.0, 1.0)) } else { 0.0 };
+    let night = |m: &CockpitMaterial| {
+        Vec4::new(if m.extension.bright { 0.0 } else { dark }, nvg as u32 as f32, daylight, 0.0)
+    };
     let stale: Vec<_> = materials
         .iter()
         .filter(|(_, m)| {

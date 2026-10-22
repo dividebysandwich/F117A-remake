@@ -5,6 +5,7 @@
 // lighting (point lights, shadows).
 
 #import bevy_pbr::{
+    mesh_view_bindings::globals,
     pbr_fragment::pbr_input_from_standard_material,
     pbr_functions::{alpha_discard, main_pass_post_lighting_processing},
     forward_io::{VertexOutput, FragmentOutput},
@@ -29,7 +30,8 @@
 }
 #endif
 
-// x: darkness of a night without moonlight 0..1 (shading.rs `CockpitShading::night`).
+// x: darkness of a night without moonlight 0..1, y: night vision goggles, z: daylight 0..1
+// (shading.rs `CockpitShading::night`).
 @group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> night: vec4<f32>;
 
 #ifdef COCKPIT_SIMPLE_LIT
@@ -68,6 +70,21 @@ fn simple_lighting(in: PbrInput) -> vec4<f32> {
 }
 #endif
 
+// Night vision goggles: `nvg` in palette.wgsl, the cockpit as the goggles show it.
+fn nvg(rgb: vec3<f32>, frag: vec4<f32>) -> vec3<f32> {
+    if (night.y == 0.0) { return rgb; }
+    let lum = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let gain = mix(14.0, 2.5, clamp(night.z, 0.0, 1.0));
+    var v = sqrt(1.0 - exp(-lum * gain));
+    v = smoothstep(0.12, 0.95, v);
+    let p = vec2<u32>(frag.xy);
+    var h = p.x * 0x27d4eb2du ^ p.y * 0x165667b1u ^ u32(globals.time * 60.0) * 0x9e3779b9u;
+    h = (h ^ (h >> 15u)) * 0x2c1b3c6du;
+    v = clamp(v + (f32(h >> 8u) / 16777216.0 - 0.5) * 0.06, 0.0, 1.0);
+    let c = mix(vec3<f32>(0.0, 0.04, 0.01), vec3<f32>(0.3, 0.85, 0.2), v) + vec3<f32>(0.5, 0.15, 0.4) * v * v * v;
+    return pow(min(c, vec3<f32>(1.0)), vec3<f32>(2.2));
+}
+
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     var pbr_input = pbr_input_from_standard_material(in, is_front);
@@ -98,6 +115,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         out.color = pbr_input.material.base_color;
     }
 #endif
+    out.color = vec4<f32>(nvg(out.color.rgb, in.position), out.color.a);
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
     return out;
 }

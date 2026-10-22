@@ -231,10 +231,13 @@ async fn fetch_json(url: &str) -> Result<Vec<ServerEntry>, String> {
     serde_json::from_str(&text.as_string().unwrap_or_default()).map_err(|e| e.to_string())
 }
 
-/// The relay at `master` to the server with this id: a WebSocket URL.
+/// The relay at `master` (or a "ws://" or "wss://" URL of its own) to the server with this id:
+/// a WebSocket URL.
 pub fn relay_url(master: &str, id: &str) -> String {
     let master = master.trim_end_matches('/');
-    let ws = if let Some(rest) = master.strip_prefix("https://") {
+    let ws = if master.starts_with("ws://") || master.starts_with("wss://") {
+        master.to_string()
+    } else if let Some(rest) = master.strip_prefix("https://") {
         format!("wss://{rest}")
     } else if let Some(rest) = master.strip_prefix("http://") {
         format!("ws://{rest}")
@@ -361,5 +364,6 @@ mod tests {
         let url = super::relay_url("https://sm-master.playspoon.com/", "0123456789abcdef");
         assert_eq!(url, "wss://sm-master.playspoon.com/relay/0123456789abcdef");
         assert_eq!(super::relay_url("http://127.0.0.1:8090", "ab"), "ws://127.0.0.1:8090/relay/ab");
+        assert_eq!(super::relay_url("ws://127.0.0.1:8090/", "ab"), "ws://127.0.0.1:8090/relay/ab");
     }
 }

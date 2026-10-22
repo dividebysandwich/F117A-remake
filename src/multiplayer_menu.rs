@@ -98,14 +98,20 @@ pub fn master_url() -> String {
 /// The public server list's master server (`?master=<url>` on the page for tests).
 #[cfg(target_arch = "wasm32")]
 pub fn master_url() -> String {
-    let search = web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default();
+    page_parameter("master").unwrap_or_else(|| stealth_net::master::DEFAULT_MASTER.to_string())
+}
+
+/// A parameter in the page's URL ("?master=...&relay=...").
+#[cfg(target_arch = "wasm32")]
+fn page_parameter(name: &str) -> Option<String> {
+    let search = web_sys::window().and_then(|w| w.location().search().ok())?;
+    let prefix = format!("{name}=");
     search
         .trim_start_matches('?')
         .split('&')
-        .find_map(|kv| kv.strip_prefix("master="))
+        .find_map(|kv| kv.strip_prefix(prefix.as_str()))
         .and_then(|v| js_sys::decode_uri_component(v).ok())
         .map(String::from)
-        .unwrap_or_else(|| stealth_net::master::DEFAULT_MASTER.to_string())
 }
 
 pub struct MultiplayerMenuPlugin;
@@ -195,7 +201,9 @@ fn open(w: &MultiplayerWindow, addr: &str, name: &str) -> std::io::Result<Client
         .ok_or_else(|| {
             std::io::Error::other("only servers on the public list can be joined from the browser")
         })?;
-    Client::relayed(&stealth_net::master::relay_url(&master_url(), &entry.id), name)
+    // `?relay=ws://...` for a relay on a port of its own (tests without a proxy).
+    let relay = page_parameter("relay").unwrap_or_else(master_url);
+    Client::relayed(&stealth_net::master::relay_url(&relay, &entry.id), name)
 }
 
 #[allow(clippy::too_many_arguments)]

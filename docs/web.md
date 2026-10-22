@@ -1,7 +1,7 @@
 # The browser build
 
-Single missions, careers and the dynamic campaign run in the browser, built to WebAssembly with
-[Trunk](https://trunkrs.dev).
+Single missions, careers, the dynamic campaign and joining coop servers run in the browser,
+built to WebAssembly with [Trunk](https://trunkrs.dev).
 
 ## Building and playing
 
@@ -34,13 +34,13 @@ and site. Clearing the site's data deletes them.
 **Not in the browser build:**
 
 - VR
-- multiplayer (see below)
+- hosting a coop game, and joining a server that isn't on the public list (see below)
 - Tacview export and real-time telemetry
 - head tracking
 - the command line options
 - the `SM89_*` environment variables
 
-The main menu shows DOWNLOAD instead of MULTIPLAYER and QUIT. It opens `web/download.html`,
+The main menu shows DOWNLOAD instead of QUIT. It opens `web/download.html`,
 which offers the desktop releases. The page links to the GitHub release of the version in
 `Cargo.toml`, which a Trunk hook writes to `version.js` at build time. So a build of a version
 that has no release yet links to files that don't exist yet.
@@ -60,55 +60,36 @@ that has no release yet links to files that don't exist yet.
   returned on a per-pixel value. `palette.wgsl` takes its derivatives at the top of `fragment`
   (`Deriv`) for this reason. A mistake shows as an invalid render pipeline in the browser's
   console, and the game stops.
-- **Native-only code.** `stealth-net`'s console, dedicated server and master server HTTP client
+- **Native-only code.** `stealth-net`'s console, dedicated server and master server reports
   are left out of the wasm build, along with `--dedicated`. So are the head-tracking and Tacview
   real-time systems.
+- **Networking.** The coop transport sends through `stealth_net::transport::Datagrams`: a UDP
+  socket on the desktop, a WebSocket to the relay in the browser (`stealth-net/src/websocket.rs`).
+  The server list comes from the browser's `fetch`. `Instant` in `stealth-net` is `web_time`'s.
 
-## Multiplayer in the browser: feasibility
+## Multiplayer in the browser
 
-It is feasible, but not without new infrastructure. Today's protocol can't reach a browser.
+Browsers can't open UDP sockets, and a page served over HTTPS may only connect with `wss://`
+(WebSocket over TLS), WebTransport or WebRTC, all with a certificate the browser trusts. Game
+servers are hosted by players, by IP address, without certificates. So the browser joins
+through a relay on the master server, which has a certificate:
 
-### Why it doesn't work as it is
+1. MULTIPLAYER lists the public servers (`GET /api/servers`, the master server answers with
+   `Access-Control-Allow-Origin: *`).
+2. JOIN, or CONNECT with a listed server's address or name, opens
+   `wss://sm-master.playspoon.com/relay/<server id>` (`master::relay_url`).
+3. The relay (`crates/stealth-master/src/relay.rs`) opens a UDP socket for this browser and
+   passes each binary WebSocket message on as one datagram to the server listed under that id,
+   and each datagram back as one message.
+4. The game server sees an ordinary UDP client at the master server's address. Game servers
+   need nothing new, and older ones work too.
 
-- **No UDP.** The coop transport (`crates/stealth-net/src/transport.rs`) is a reliability layer
-  over a raw UDP socket. Browsers can't open UDP sockets.
-- **Certificates.** A page served over HTTPS may only connect with `wss://` (WebSocket over TLS),
-  WebTransport (HTTP/3) or WebRTC. The first two need a certificate the browser trusts.
-  Servers are hosted by players, by IP address, without certificates.
-- **No hosting.** A browser can't listen for connections, so it could only join. It could not
-  host a listen server.
+The relay only reaches servers on the list, passes only the game's packets, and takes a few
+browsers per address (limits in `crates/stealth-master/README.md`). So:
 
-The rest is ready:
-
-- The sim, the campaign host and the protocol (CBOR plus lz4) build for wasm.
-- The master server sends `Access-Control-Allow-Origin: *`, so a browser can `fetch` the server
-  list directly.
-
-### Recommended: a WebSocket-to-UDP relay on the master server
-
-The master server (sm-master.playspoon.com) already has TLS through Caddy. A relay there would
-work like this:
-
-1. The browser opens `wss://sm-master.playspoon.com/relay/<server id>` (through Caddy).
-2. The relay opens one UDP socket per browser and passes each WebSocket message on as one UDP
-   datagram to the game server listed under that id, and back.
-3. The game server sees an ordinary UDP client at the relay's address. **No change on game
-   servers, and old servers work too.**
-
-Work needed:
-
-- **stealth-net.**
-  - A datagram trait under `Endpoint`. The socket is only touched in `bind`, `poll`
-    (`recv_from`), `transmit` (`send_to`) and `local_addr`. A UDP implementation and a
-    WebSocket implementation (`web-sys` `WebSocket`, binary messages) would sit under it.
-  - `Instant` replaced by `web-time` in `transport.rs`, `server.rs` and `client.rs`.
-  - The connect salt seeded without `SystemTime`.
-- **stealth-master.** The relay endpoint: a WebSocket server (for example `tungstenite`) next to
-  `tiny_http`, limited to listed servers and with per-IP caps, so it can't be used to send UDP
-  anywhere.
-- **The game.**
-  - The multiplayer menu back in the browser build: join only, the list fetched with `fetch`.
-  - A "join by address" field that only offers listed servers.
+- **Join only.** A browser can't listen for connections, so HOST A GAME is left out.
+- **Listed servers only.** A server off the list (HOST A GAME's switch, `--no-master`, or on a
+  LAN) can't be joined from the browser.
 
 Costs:
 
@@ -119,14 +100,17 @@ Costs:
 - **Relay bandwidth.** The server console shows each player's kB/s, and that much goes through the
   relay twice per browser player.
 
-Effort: a few days for the transport trait, the relay and the menu, plus testing with the
-dedicated server and two browser clients.
+**Testing locally.** Run the master server with `--relay-internal` (it relays to this machine),
+a dedicated server with `--master http://127.0.0.1:8089`, and `trunk serve`. Then open
+`http://127.0.0.1:8080/?master=http://127.0.0.1:8089&relay=ws://127.0.0.1:8090`. The page's
+`master` parameter replaces the public master server. `relay` is where the relay listens, since
+without a proxy in front it has a port of its own. It defaults to the master server's address.
 
-### Alternatives
+### Alternatives for later
 
 - **WebTransport on the relay** (`wtransport` or `quinn`). Unreliable datagrams, so no
   head-of-line blocking and less latency. Caddy can't pass it through, so the relay needs the
-  certificate itself. A later step for the same relay.
+  certificate itself.
 - **WebSocket or WebTransport on every game server.** Needs a trusted certificate per server.
   WebTransport's `serverCertificateHashes` works with self-signed certificates, but only those
   valid for at most 14 days, whose hash the master server would have to publish. Too much for

@@ -25,7 +25,7 @@ const TAG_DOT_SPOT: u32 = 32768u;
 const TAG_DOT_FAR: u32 = 2147483648u;
 const DOT_FAR_MIN: f32 = 3000.0;
 // Share of a moonless night's darkness on aircraft and their spotting dots: barely visible.
-const AIRCRAFT_NIGHT: f32 = 0.9;
+const AIRCRAFT_NIGHT: f32 = 0.95;
 // Cloud colours: the grey ramp (its base entry is the horizon haze colour).
 const CLOUD_RAMP: u32 = 0xE0u;
 

@@ -557,6 +557,7 @@ const BLACK: u8 = 5;
 const DARK: u8 = 8;
 const GREY: u8 = 7;
 const NAVY: u8 = 2;
+const BLUE: u8 = 9;
 const GREEN: u8 = 10;
 const CYAN: u8 = 11;
 const RED: u8 = 13;
@@ -916,17 +917,18 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
         let q = view.to_screen(k.east, k.north);
         match k.kind {
             ContactKind::GroundRadar => {
+                let colour = if k.friendly { BLUE } else { RED };
                 if let Some((km, label)) = k.threat {
-                    c.ring(q, km * px_per_km, 1.0, RED);
+                    c.ring(q, km * px_per_km, 1.0, colour);
                     let text = String::from_utf8_lossy(&label).trim_end_matches('\0').to_string();
-                    stroke_text_at(c, q.x, q.y, &text, 9.0, 1.3, RED, Align::Centre);
+                    stroke_text_at(c, q.x, q.y, &text, 9.0, 1.3, colour, Align::Centre);
                 } else {
-                    c.fill_rect(q.x as i32 - 2, q.y as i32 - 2, 4, 4, RED);
+                    c.fill_rect(q.x as i32 - 2, q.y as i32 - 2, 4, 4, colour);
                 }
             }
             ContactKind::Ship => {
                 // A hull with its superstructure.
-                let colour = if k.friendly { GREEN } else { RED };
+                let colour = if k.friendly { BLUE } else { RED };
                 c.polyline(
                     &[
                         q + Vec2::new(-7.0, -1.0),
@@ -968,8 +970,8 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
             ContactKind::Aircraft => {
                 let d = view.dir(k.heading as f64 / 65536.0 * std::f64::consts::TAU);
                 if k.friendly {
-                    c.ring(q, 4.0, 1.3, GREEN);
-                    c.stroke(q + d * 4.0, q + d * 9.0, 1.3, GREEN);
+                    c.ring(q, 4.0, 1.3, BLUE);
+                    c.stroke(q + d * 4.0, q + d * 9.0, 1.3, BLUE);
                 } else {
                     let side = Vec2::new(-d.y, d.x);
                     c.polyline(
@@ -991,7 +993,7 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
             }
             ContactKind::Missile => {
                 let d = view.dir(k.heading as f64 / 65536.0 * std::f64::consts::TAU);
-                c.stroke(q - d * 3.0, q + d * 3.0, 1.5, RED);
+                c.stroke(q - d * 3.0, q + d * 3.0, 1.5, if k.friendly { BLUE } else { RED });
             }
         }
         if k.target.is_some() && k.target == p.contacts.locked {

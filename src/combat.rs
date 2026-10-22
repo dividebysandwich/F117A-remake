@@ -1073,6 +1073,10 @@ impl ZoneDisplay {
     }
 }
 
+/// How near a friendly ship (map units) a theater ship counts as its escort (the theaters
+/// place a carrier's escorts some 200 units out, other ships over 900).
+const ESCORT_REACH: i32 = 512;
+
 /// What a launch zone was found for: the HUD mode, the locks and the selected store.
 type ZoneKey = (Option<HudMode>, Option<usize>, Option<usize>, Option<u8>, Option<usize>, bool);
 
@@ -1312,10 +1316,11 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
     let objects = sim.objects();
     for (i, ob) in objects.iter().enumerate().take(sim.ground_unit_count()).skip(3) {
         if ob.unit_type > 0
-            && ob.flags & (oflags::DESTROYED | oflags::FRIENDLY | oflags::NEUTRAL) == 0
+            && ob.flags & (oflags::DESTROYED | oflags::NEUTRAL) == 0
             && i < objects.len()
             && !sim.object_is_ship(i)
         {
+            let friendly = ob.flags & oflags::FRIENDLY != 0;
             let (east, north) = map_wu(ob.x, ob.y);
             let label = crate::rwr::rwr_label(sim.threat_name(ob.unit_type), false);
             let mut sym = [0u8; 3];
@@ -1330,7 +1335,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                 north,
                 alt: 0.0,
                 heading: 0,
-                friendly: false,
+                friendly,
                 target: Some(ContactRef::Object(i)),
                 threat,
             });
@@ -1367,10 +1372,12 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         {
             continue;
         }
-        // Friendly where the world has a friendly or neutral object (a carrier).
-        let friendly = objects.iter().any(|o| {
-            (o.x - x).abs() < 2
-                && (o.y - y).abs() < 2
+        // Friendly where the world has a friendly or neutral object (a carrier), or near a
+        // friendly or neutral ship (a carrier's escorts).
+        let friendly = objects.iter().enumerate().any(|(i, o)| {
+            let reach = if sim.object_is_ship(i) { ESCORT_REACH } else { 2 };
+            (o.x - x).abs() < reach
+                && (o.y - y).abs() < reach
                 && o.flags & (oflags::FRIENDLY | oflags::NEUTRAL) != 0
         });
         let target = Some(ContactRef::Point(x, y));

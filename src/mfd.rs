@@ -1217,7 +1217,7 @@ impl MfdParams<'_, '_> {
                 ContactKind::Aircraft => c.fill_rect(x, y, 2, 2, if k.friendly { 9 } else { 41 }),
                 ContactKind::Drone => c.fill_rect(x, y, 2, 1, 13),
                 ContactKind::Missile => c.set(x, y, 17),
-                ContactKind::GroundRadar => c.fill_rect(x, y, 2, 2, 0),
+                ContactKind::GroundRadar => c.fill_rect(x, y, 2, 2, if k.friendly { 9 } else { 0 }),
                 ContactKind::Ship => c.fill_rect(x, y, 3, 1, if k.friendly { 9 } else { 13 }),
                 ContactKind::Target if blink => c.fill_rect(x - 1, y - 1, 3, 3, 15),
                 ContactKind::Target => {}
@@ -1651,7 +1651,9 @@ impl MfdParams<'_, '_> {
                     c.line(x - 2, y + 2, x + 2, y - 2, 13);
                 }
                 ContactKind::Missile => c.fill_rect(x - 1, y - 1, 2, 2, 17),
-                ContactKind::GroundRadar => c.fill_rect(x - 2, y - 2, 4, 4, 0),
+                ContactKind::GroundRadar => {
+                    c.fill_rect(x - 2, y - 2, 4, 4, if k.friendly { 9 } else { 0 })
+                }
                 ContactKind::Ship => {
                     let colour = if k.friendly { 9 } else { 13 };
                     c.fill_rect(x - 4, y, 9, 2, colour);

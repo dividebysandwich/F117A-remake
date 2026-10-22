@@ -332,8 +332,10 @@ pub struct Progress {
     pub photo: bool,
     /// Objective achieved (stays achieved).
     pub achieved: bool,
-    /// A friendly helicopter or place lost in the CAP area.
+    /// Friendly aircraft lost in the CAP area, and enemy aircraft the pilot shot down there.
     pub losses: u32,
+    #[serde(default)]
+    pub cap_kills: u32,
     /// Where the player's aircraft was last seen in the air.
     #[serde(default)]
     pub last: Option<(i32, i32)>,

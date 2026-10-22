@@ -1208,3 +1208,50 @@ fn a_sortie_nobody_flew_is_not_settled() {
     let r = c.history.last().unwrap();
     assert_eq!((r.result, r.points), (SortieResult::Failed, 0));
 }
+
+/// A destroyed target leaves the board at once: nobody takes a mission that is already done.
+#[test]
+fn a_destroyed_target_leaves_the_board_at_once() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let o = c.board.iter().find(|o| o.kind == MissionKind::Strike).unwrap().clone();
+    let Objective::Strike { airfield, .. } = o.objective else { unreachable!() };
+    c.tick(1.0, &WorldView::default(), &[Report::ObjectDestroyed { object: airfield, by: None }]);
+    assert!(c.board.iter().all(|b| b.id != o.id));
+    let take = Command::TakeMission { offer: o.id, base: None, aircraft: Aircraft::F117 };
+    assert!(c.apply(P0, take).is_err());
+}
+
+/// A friendly loss over the CAP point starts its clock again; kills there still count.
+#[test]
+fn a_cap_survives_a_friendly_loss() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let (_, obj) = take(&mut c, P0, MissionKind::Cap);
+    let Objective::Cap { x, y } = obj else { unreachable!() };
+    let me = WorldView {
+        players: vec![PlayerPos { id: P0, x, y, airborne: true }],
+        ..Default::default()
+    };
+    c.tick(300.0, &me, &[]);
+    let lost = Report::FlightDestroyed { tag: 4242, side: Side::Blue, x, y, by: None };
+    c.tick(1.0, &me, &[lost]);
+    assert!(c.sortie(P0).unwrap().progress.on_station < 2.0, "the clock starts again");
+    let kills: Vec<Report> = (1..=2)
+        .map(|k| Report::FlightDestroyed { tag: 5000 + k, side: Side::Red, x, y, by: Some(P0) })
+        .collect();
+    let ev = c.tick(1.0, &me, &kills);
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { .. })));
+}
+
+/// The players order insertions on the front only (what the board offers).
+#[test]
+fn insertions_go_where_the_board_offers_them() {
+    let mut c = campaign("ce", 3);
+    let front = c.front(Side::Blue);
+    let far = (0..c.places.len() as PlaceId)
+        .find(|&p| c.places[p as usize].owner == Side::Red && !front.contains(&p))
+        .unwrap();
+    assert!(c.apply(P0, Command::OrderInsertion { place: far }).is_err());
+    assert!(c.apply(P0, Command::OrderInsertion { place: front[0] }).is_ok());
+}

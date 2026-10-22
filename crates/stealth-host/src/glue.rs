@@ -308,7 +308,7 @@ pub fn describe(kind: MissionKind) -> &'static str {
         }
         MissionKind::Sead => "Destroy the SAM sites and radars defending the place",
         MissionKind::Cap => {
-            "Hold the air over the point for 10 minutes or shoot down two enemy aircraft"
+            "Hold the air over the point for 10 minutes or shoot down two enemy aircraft there; a friendly aircraft lost there starts the clock again"
         }
         MissionKind::Cas => "Destroy the guns and MANPADS teams around the place",
         MissionKind::AntiShip => "Sink the enemy ship",

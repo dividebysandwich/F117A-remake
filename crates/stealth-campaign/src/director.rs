@@ -31,6 +31,8 @@ impl CampaignState {
                     if let Some(t) = text {
                         self.note(t);
                     }
+                    // Its offers go from the board at once.
+                    self.board_at = f64::MIN;
                 }
             }
             Report::SiteSpotted { object } => {
@@ -172,6 +174,10 @@ impl CampaignState {
         let Some(p) = self.places.get(place as usize) else { return Err("No such place".into()) };
         if p.owner != side.enemy() {
             return Err(format!("{} is not held by the enemy", p.name));
+        }
+        // The players order what the board offers: the places on the front.
+        if by.is_some() && !self.front(side).contains(&place) {
+            return Err(format!("{} is not on the front", p.name));
         }
         if self.active_insertion(place) {
             return Err(format!("An insertion at {} is already under way", p.name));

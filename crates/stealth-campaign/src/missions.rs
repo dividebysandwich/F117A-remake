@@ -22,6 +22,9 @@ impl CampaignState {
         if self.sortie(player).is_some() {
             return Err("Already flying a sortie".into());
         }
+        if self.objective_met(&o.objective, &Progress::default()) {
+            return Err("That target is already destroyed".into());
+        }
         let base = base.unwrap_or(o.base);
         if !self.player_bases().contains(&base) {
             return Err("Not a friendly base".into());
@@ -237,14 +240,19 @@ impl CampaignState {
                     if let Objective::Cap { x: cx, y: cy } = obj
                         && dist(x - cx, y - cy) < CAP_RADIUS
                     {
+                        s.progress.cap_kills += 1;
                         s.progress.on_station += CAP_SECONDS / CAP_KILLS as f64;
                     }
                 }
+                // A friendly aircraft lost there: the time on station starts again (the kills
+                // there stand).
                 (
                     Report::FlightDestroyed { side: Side::Blue, x, y, .. },
                     Objective::Cap { x: cx, y: cy },
                 ) if dist(x - cx, y - cy) < CAP_RADIUS => {
                     s.progress.losses += 1;
+                    s.progress.on_station =
+                        s.progress.cap_kills as f64 * CAP_SECONDS / CAP_KILLS as f64;
                 }
                 (Report::PhotoTaken { player, object }, Objective::Recon { object: o, .. })
                     if *player == slot.id && object == o =>
@@ -325,7 +333,7 @@ impl CampaignState {
             }
             Objective::Strike { airfield, .. } => !self.site(*airfield).is_some_and(Site::alive),
             Objective::AntiShip { ship } => !self.site(*ship).is_some_and(Site::alive),
-            Objective::Cap { .. } => p.on_station >= CAP_SECONDS && p.losses == 0,
+            Objective::Cap { .. } => p.on_station >= CAP_SECONDS,
             Objective::Escort { insertion } => {
                 p.present()
                     && self

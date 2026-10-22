@@ -45,6 +45,7 @@ mod palette_material;
 mod panel;
 mod planner;
 mod player;
+mod player_notices;
 mod prefs;
 mod profile;
 mod recon;
@@ -208,6 +209,7 @@ fn main() {
             stage::StagePlugin,
             campaign::CampaignPlugin,
             net::NetPlugin,
+            player_notices::PlayerNoticesPlugin,
             multiplayer_menu::MultiplayerMenuPlugin,
         ));
     mission::from_args(&mut app);

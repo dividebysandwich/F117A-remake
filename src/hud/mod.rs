@@ -386,8 +386,6 @@ pub struct HudFrame {
     pub gun_rounds: Option<u32>,
     pub gun_selected: bool,
     pub message: Option<String>,
-    /// A coop player's join or leave (lower right).
-    pub player_notice: Option<String>,
     pub accel: bool,
     pub training: bool,
     /// Tracking camera selected on the right MFD: camera sight cross.
@@ -419,7 +417,6 @@ pub struct HudParams<'w, 's> {
     pub aircraft: Query<'w, 's, (&'static Aircraft, &'static WorldPos), With<Player>>,
     pub state: Res<'w, HudState>,
     pub messages: Res<'w, HudMessages>,
-    pub players: Res<'w, crate::net::PlayerNotices>,
     pub stores: Res<'w, Stores>,
     pub waypoints: Res<'w, Waypoints>,
     pub lead: Res<'w, GunLead>,
@@ -500,7 +497,6 @@ impl HudParams<'_, '_> {
             gun_rounds: self.stores.gun_rounds,
             gun_selected: self.stores.gun_selected,
             message: (self.messages.timer > 0.0).then(|| self.messages.text.clone()),
-            player_notice: self.players.latest().map(str::to_uppercase),
             accel: self.messages.accel,
             training: self.messages.training,
             camera_sight,

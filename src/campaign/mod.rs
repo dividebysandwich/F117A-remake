@@ -446,7 +446,7 @@ pub struct Session<'w, 's> {
     inbox: ResMut<'w, NetInbox>,
     next: ResMut<'w, NextState<AppState>>,
     notice: ResMut<'w, crate::net::Notice>,
-    players: ResMut<'w, crate::net::PlayerNotices>,
+    players: ResMut<'w, crate::player_notices::PlayerNotices>,
 }
 
 /// First frame of the session: the simulation is made to match the campaign.

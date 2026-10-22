@@ -152,6 +152,10 @@ impl Hand {
     }
 }
 
+/// The HUD combiner glass (things are placed next to it).
+#[derive(Component)]
+pub struct HudGlass;
+
 /// Root of the cockpit model (child of the aircraft at the design eye point), with the panel
 /// layout it was built with, whether it has its lamps (local lights option) and whether its MFDs
 /// are the high-resolution ones.

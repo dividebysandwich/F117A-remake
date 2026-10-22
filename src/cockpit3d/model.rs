@@ -329,7 +329,14 @@ impl<'a> Spawner<'a> {
                     self.classic_hud,
                     self.hud_scale,
                 );
-                ec.insert((CanvasRole::Hud, tex, Mesh3d(mesh), MeshMaterial3d(m), NotShadowCaster));
+                ec.insert((
+                    CanvasRole::Hud,
+                    super::HudGlass,
+                    tex,
+                    Mesh3d(mesh),
+                    MeshMaterial3d(m),
+                    NotShadowCaster,
+                ));
                 return;
             }
             n if n.starts_with("label_") => {

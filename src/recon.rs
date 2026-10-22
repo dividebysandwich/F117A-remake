@@ -37,6 +37,11 @@ impl Plugin for ReconPlugin {
 pub const PHOTO_W: usize = 352;
 pub const PHOTO_H: usize = 264;
 const SUPERSAMPLE: usize = 2;
+
+/// The recon cameras' viewport size (the world shader keeps them out of the night's darkness).
+pub fn render_size() -> (usize, usize) {
+    (PHOTO_W * SUPERSAMPLE, PHOTO_H * SUPERSAMPLE)
+}
 /// Slant range (m) to a point target and to an area target, depression below the horizon and
 /// horizontal field of view.
 const RANGE_M: f64 = 650.0;
@@ -133,7 +138,7 @@ fn start(
     }
     let (Some(m), Some(_), Some(palette)) = (mission, theater, palette) else { return };
     recon.started = true;
-    let (w, h) = (PHOTO_W * SUPERSAMPLE, PHOTO_H * SUPERSAMPLE);
+    let (w, h) = render_size();
     let tan_half_w = (FOV_DEG.to_radians() / 2.0).tan();
     let fov = 2.0 * (tan_half_w * h as f32 / w as f32).atan();
     let dep = DEPRESSION_DEG.to_radians();

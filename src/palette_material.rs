@@ -208,8 +208,10 @@ pub struct Globals {
     /// Direction to the moon (xyz), star visibility 0..1 (w).
     pub sky_moon: Vec4,
     /// x: darkness of a night without moonlight 0..1 (0 under night vision goggles), y: the
-    /// strength of its red horizon glow.
+    /// strength of its red horizon glow, zw: the recon cameras' picture size (`recon.rs`).
     pub sky_night: Vec4,
+    /// The recon cameras' palette (linear RGB): the day's, as in the near infrared.
+    pub recon_palette: [Vec4; 256],
 }
 
 /// Lighting flags in `Globals.ambient.w`.
@@ -239,6 +241,7 @@ impl Default for Globals {
             sky_sun: Vec4::ZERO,
             sky_moon: Vec4::ZERO,
             sky_night: Vec4::ZERO,
+            recon_palette: [Vec4::ONE; 256],
         }
     }
 }

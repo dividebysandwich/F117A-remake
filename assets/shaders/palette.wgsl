@@ -69,8 +69,10 @@ struct Globals {
     sky_sun: vec4<f32>,
     sky_moon: vec4<f32>,
     // x: darkness of a night without moonlight 0..1 (0 under night vision goggles), y: the
-    // strength of its red horizon glow.
+    // strength of its red horizon glow, zw: the recon cameras' viewport size.
     sky_night: vec4<f32>,
+    // The recon cameras' palette (linear RGB): the day's, as in the near infrared.
+    recon_palette: array<vec4<f32>, 256>,
 };
 
 struct PaletteMaterial {
@@ -307,7 +309,15 @@ fn band_f(dir: vec3<f32>) -> vec3<f32> {
 }
 
 fn pal(i: u32) -> vec3<f32> {
+    if (recon_view()) {
+        return globals.recon_palette[i & 0xFFu].rgb;
+    }
     return globals.palette[i & 0xFFu].rgb;
+}
+
+// A recon camera's view (recon.rs): it sees by day and night alike, like a near infrared camera.
+fn recon_view() -> bool {
+    return all(abs(view.viewport.zw - globals.sky_night.zw) < vec2<f32>(0.5));
 }
 
 fn haze(idx: u32, fog: u32) -> u32 {
@@ -596,7 +606,11 @@ fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>, px: f32) -> vec3<f32> {
 
 // A night without moonlight (continuous time of day): sky, ground and clouds go black, only
 // lights and stars show, aircraft barely; the horizon keeps a deep red glow. 0 (moonlit) .. 1.
+// Never for the recon cameras.
 fn night_dark() -> f32 {
+    if (recon_view()) {
+        return 0.0;
+    }
     return globals.sky_night.x;
 }
 

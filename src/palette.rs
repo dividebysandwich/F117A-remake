@@ -339,6 +339,8 @@ fn update_globals(
     for i in 0..256 {
         let c = palette.active.color(i as u8).to_linear();
         g.palette[i] = Vec4::new(c.red, c.green, c.blue, 1.0);
+        let c = palette.theater.day.color(i as u8).to_linear();
+        g.recon_palette[i] = Vec4::new(c.red, c.green, c.blue, 1.0);
     }
     g.sky_ring = pack16(SKY_RING);
     // Ground bands: g[k] = alt/((16-k)*32) - alt/512 (integer maths).
@@ -383,6 +385,9 @@ fn update_globals(
         // Night vision goggles see as well on a moonless night.
         g.sky_night = Vec4::new(if nvg { 0.0 } else { sky.dark }, sky.glow, 0.0, 0.0);
     }
+    // The recon cameras see by day and night alike.
+    let (rw, rh) = crate::recon::render_size();
+    (g.sky_night.z, g.sky_night.w) = (rw as f32, rh as f32);
     buf.set_data(g);
 }
 

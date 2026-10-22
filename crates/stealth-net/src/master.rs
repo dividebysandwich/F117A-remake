@@ -21,10 +21,13 @@ use crate::server::Server;
 
 pub use stealth_master_proto::DEFAULT_MASTER;
 
-/// Seconds a request to the master server may take.
-const TIMEOUT: u64 = 10;
-/// After a failed report, the next try.
-const RETRY: u64 = 60;
+/// Seconds a request to the master server may take (off the simulation's thread: a slow
+/// network costs nothing but the wait), and its name lookup and connection each.
+const TIMEOUT: u64 = 20;
+const PHASE_TIMEOUT: u64 = 5;
+/// After a failed report, the next try (doubling with each failure, up to `REPORT_EVERY`): one
+/// lost request must not keep the server away longer than the master's `EXPIRE_AFTER`.
+const RETRY: u64 = 5;
 /// Seconds at least between reports when the players change (or move: the live map).
 const SOON: u64 = 10;
 
@@ -84,9 +87,15 @@ impl Drop for Reporter {
 
 /// A reporting server's agent speaks IPv4 to the master server: the address it sees is the
 /// one listed, and game servers listen on IPv4 only.
+/// A fresh connection each time: at a report every half minute a kept one saves nothing, and
+/// one a NAT box forgot would only hang the next report.
 fn new_agent(timeout: u64, ip: IpFamily) -> ureq::Agent {
+    let phase = Some(Duration::from_secs(PHASE_TIMEOUT.min(timeout)));
     ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(timeout)))
+        .timeout_resolve(phase)
+        .timeout_connect(phase)
+        .max_idle_connections(0)
         .ip_family(ip)
         .user_agent(concat!("stealth-mission-89/", env!("CARGO_PKG_VERSION")))
         .build()
@@ -104,6 +113,7 @@ fn run(url: &str, rx: &Receiver<Msg>, log: &Mutex<Vec<String>>) {
     let mut next = Instant::now();
     let mut every = REPORT_EVERY;
     let mut listed = false;
+    let mut fails = 0u32;
     // The players as last reported, and when.
     let mut sent_players = Vec::new();
     let mut sent_at = Instant::now();
@@ -128,6 +138,7 @@ fn run(url: &str, rx: &Receiver<Msg>, log: &Mutex<Vec<String>>) {
         sent_players = r.players.clone();
         match agent.post(format!("{url}/api/servers")).send_json(r) {
             Ok(mut resp) => {
+                fails = 0;
                 if let Ok(reg) = resp.body_mut().read_json::<Registered>() {
                     every = reg.every.clamp(10, 300);
                 }
@@ -138,9 +149,11 @@ fn run(url: &str, rx: &Receiver<Msg>, log: &Mutex<Vec<String>>) {
                 next = Instant::now() + Duration::from_secs(every);
             }
             Err(e) => {
-                say(format!("the server list ({url}): {e}"));
+                let retry = (RETRY << fails.min(3)).min(REPORT_EVERY);
+                fails += 1;
+                say(format!("the server list ({url}): {e} (again in {retry} s)"));
                 listed = false;
-                next = Instant::now() + Duration::from_secs(RETRY);
+                next = Instant::now() + Duration::from_secs(retry);
             }
         }
     }

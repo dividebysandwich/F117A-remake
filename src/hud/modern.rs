@@ -229,6 +229,10 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     if !status.is_empty() {
         text(c, CX, 131.0, &status.join("  "), Align::Centre);
     }
+    // Bottom right, under the steerpoint data: a coop player joined or left.
+    if let Some(n) = &f.player_notice {
+        small(c, 1010.0, 470.0, n, Align::Right);
+    }
 }
 
 fn flight_path_marker(c: &mut Canvas, p: Vec2, h: Vec2, down: Vec2, caged: bool) {

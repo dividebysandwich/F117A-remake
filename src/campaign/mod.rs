@@ -446,6 +446,7 @@ pub struct Session<'w, 's> {
     inbox: ResMut<'w, NetInbox>,
     next: ResMut<'w, NextState<AppState>>,
     notice: ResMut<'w, crate::net::Notice>,
+    players: ResMut<'w, crate::net::PlayerNotices>,
 }
 
 /// First frame of the session: the simulation is made to match the campaign.
@@ -729,7 +730,9 @@ fn host_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEvent
         if combat.steps > 0 {
             server.send_frame(host, sim, web_time::Instant::now());
         }
-        c.roster = server.roster(host, sim);
+        let roster = server.roster(host, sim);
+        s.players.roster_changed(&c.roster, &roster, me);
+        c.roster = roster;
     }
     out.extend(ev);
     out
@@ -784,7 +787,10 @@ fn client_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEve
                 c.copy = Some(st);
             }
             E::Error(e) => c.ui.error = Some(e),
-            E::Roster(r) => c.roster = r,
+            E::Roster(r) => {
+                s.players.roster_changed(&c.roster, &r, c.me);
+                c.roster = r;
+            }
             E::Closed(why) => {
                 s.notice.0 = Some(format!("Disconnected: {why}"));
                 c.exit = true;

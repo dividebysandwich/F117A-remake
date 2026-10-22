@@ -79,6 +79,8 @@ pub struct MenuState {
     pub career: Option<String>,
     /// Takeoff hour (0-23); None: rolled with the mission.
     pub start_hour: Option<u8>,
+    /// Moon phase in eighths of its cycle (0 new, 4 full); None: the briefing date's.
+    pub moon: Option<u8>,
     /// The mission screen (single mission or career sortie) instead of the main menu.
     pub mission_screen: bool,
     /// Multiplayer: the player's name, the last server joined ("host[:port]"), and how this
@@ -131,6 +133,7 @@ impl Default for MenuState {
             loadout: None,
             career: None,
             start_hour: Some(8),
+            moon: None,
             // `--open-mission`: start in the mission screen (screenshots), also where
             // `--open-planner` and `--open-loadout` return to.
             mission_screen: std::env::args()
@@ -199,6 +202,9 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
     .args(["--weather", state.weather.map_or("random", Sky::name)]);
     if let Some(c) = state.cloud_cover {
         cmd.args(["--cloud-cover", &c.to_string()]);
+    }
+    if let Some(m) = state.moon {
+        cmd.args(["--moon", &m.to_string()]);
     }
     // Career sorties start at the rolled time.
     if let Some(h) = state.start_hour.filter(|_| state.career.is_none()) {
@@ -644,6 +650,33 @@ fn mission_options(ui: &mut egui::Ui, state: &mut MenuState) {
             facts(ui.radio_value(&mut state.kind, kind, name), f);
         }
     }
+}
+
+/// The moon phases to choose from, in eighths of the cycle.
+const MOON_PHASES: [(u8, &str, &[&str]); 8] = [
+    (0, "New moon", &["No moonlight: a black night, lights and stars only", "Enemy pilots see you at 2 km"]),
+    (1, "Waxing crescent", &["A thin moon in the evening sky, set before midnight"]),
+    (2, "First quarter", &["Half lit, up in the evening, sets around midnight"]),
+    (3, "Waxing gibbous", &["Bright, up from the afternoon until after midnight"]),
+    (4, "Full moon", &["Up all night, high at midnight", "Enemy pilots see you at 4 km"]),
+    (5, "Waning gibbous", &["Bright, rises in the evening, up until the morning"]),
+    (6, "Last quarter", &["Half lit, rises around midnight"]),
+    (7, "Waning crescent", &["A thin moon rising before dawn"]),
+];
+
+/// The moon's phase (with the time of day switch on).
+pub(crate) fn moon_options(ui: &mut egui::Ui, moon: &mut Option<u8>) {
+    section(ui, "Moon");
+    facts(
+        ui.radio_value(moon, None, "Mission date"),
+        &["The real moon of the briefing date", "Needs the time of day switch (modern)"],
+    );
+    let name = moon.map_or("Choose phase", |m| MOON_PHASES[m as usize % 8].1);
+    egui::ComboBox::from_id_salt("moon").selected_text(name).width(170.0).show_ui(ui, |ui| {
+        for (m, name, f) in MOON_PHASES {
+            facts(ui.selectable_value(moon, Some(m), name), f);
+        }
+    });
 }
 
 fn start_time_options(ui: &mut egui::Ui, state: &mut MenuState) {
@@ -1135,6 +1168,7 @@ fn menu_ui(
                 state.cloud_cover,
             );
             settings.start_hour = state.start_hour;
+            settings.moon = state.moon;
             state.mission = Some(
                 crate::mission::generate(&data, &settings, state.seed)
                     .map_err(|e| format!("{e:#}")),
@@ -1168,6 +1202,7 @@ fn menu_ui(
         state.weather,
         state.cloud_cover,
         state.start_hour,
+        state.moon,
     );
     let realistic_before = state.realistic(settings.aircraft);
     // One window at a time: the open dialog replaces the screen it was opened from.
@@ -1209,6 +1244,7 @@ fn menu_ui(
                         theater_options(ui, &mut state.theater);
                         opponent_options(ui, &mut state.opponents);
                         start_time_options(ui, &mut state);
+                        moon_options(ui, &mut state.moon);
                     });
                     ui.vertical(|ui| {
                         ui.set_width(190.0);
@@ -1328,6 +1364,7 @@ fn menu_ui(
             state.weather,
             state.cloud_cover,
             state.start_hour,
+            state.moon,
         )
     {
         // Changing the mission's options leaves career mode.

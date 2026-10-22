@@ -366,11 +366,7 @@ impl Host {
         }
         if self.rules.continuous_time {
             let hours = self.state.sky_hours();
-            sim.set_visual_light(Some(crate::sky::visual_light(
-                self.days + (hours / 24.0).floor(),
-                hours.rem_euclid(24.0),
-                self.lat,
-            )));
+            sim.set_visual_light(Some(crate::sky::visual_light(self.days, hours, self.lat)));
         } else {
             sim.set_visual_light(None);
         }

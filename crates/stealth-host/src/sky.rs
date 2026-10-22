@@ -5,6 +5,8 @@ use std::f64::consts::TAU;
 
 /// Synodic month (days).
 const SYNODIC: f64 = 29.530_588;
+/// The campaign's moon moves on this much of its cycle a day (as `src/sky.rs`'s).
+const PHASE_PER_DAY: f64 = 0.3;
 /// Light level under a full moon high in the sky.
 const FULL_MOON_LIGHT: f64 = 85.0;
 
@@ -61,11 +63,12 @@ fn sun_up(hours: f64, lat: f64) -> f64 {
     h.cos() * lat.to_radians().cos()
 }
 
-/// The light for the simulation's visual identification (0 moonless night .. 255 day) at
-/// `hours` of day `days` (since 1970) at latitude `lat`.
+/// The light for the simulation's visual identification (0 moonless night .. 255 day)
+/// `hours` into a campaign that began on day `days` (since 1970), at latitude `lat`. The moon
+/// starts at the date's phase and moves on 30% of its cycle a day.
 pub fn visual_light(days: f64, hours: f64, lat: f64) -> u8 {
     let new_moon = 10_962.0 + 18.23 / 24.0;
-    let phase = ((days + hours / 24.0 - new_moon) / SYNODIC).rem_euclid(1.0);
+    let phase = ((days - new_moon) / SYNODIC + PHASE_PER_DAY * hours / 24.0).rem_euclid(1.0);
     let elev = sun_up(hours, lat).asin().to_degrees();
     let lit = (1.0 - (phase * TAU).cos()) / 2.0;
     let moonlight = lit * smoothstep(0.0, 0.25, sun_up(hours - phase * 24.0, lat));

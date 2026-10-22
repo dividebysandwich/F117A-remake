@@ -111,6 +111,10 @@ pub struct MissionSettings {
     /// rolled from the seed.
     #[serde(default)]
     pub start_hour: Option<u8>,
+    /// Moon phase in eighths of the cycle (0 new, 4 full); `None`: the briefing date's. Only
+    /// the renderer's sky uses it.
+    #[serde(default)]
+    pub moon: Option<u8>,
 }
 
 fn clear_sky() -> Option<Sky> {
@@ -130,6 +134,7 @@ impl Default for MissionSettings {
             weather: clear_sky(),
             cloud_cover: None,
             start_hour: None,
+            moon: None,
         }
     }
 }

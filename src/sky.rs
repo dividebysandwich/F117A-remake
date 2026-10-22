@@ -1,7 +1,7 @@
 //! Continuous time of day (the "Time of day" switch, `--continuous-time`): the sun and the moon
 //! move with the mission clock, the palette blends between the theater's night, dusk and day
-//! palettes by the sun's elevation, the moon shows the phase of the briefing date, stars come
-//! out, and moonlight sets how far enemy pilots see at night. Off, the classic palette drift
+//! palettes by the sun's elevation, the moon shows the phase of the briefing date (or the one
+//! chosen; in a campaign it moves on 30% of its cycle a day), stars come out, and moonlight sets how far enemy pilots see at night. Off, the classic palette drift
 //! and fixed sun stay (`palette::step_time_of_day`).
 //!
 //! The sun keeps to the equinox (it rises at 06:00 and sets at 18:00 local time everywhere), so
@@ -26,6 +26,9 @@ impl Plugin for SkyPlugin {
 
 /// Synodic month (days).
 const SYNODIC: f64 = 29.530_588;
+/// A campaign's moon moves on this much of its cycle a day, so the nights differ and a full or
+/// new moon comes round only every few cycles (`stealth_host::sky`).
+pub const CAMPAIGN_PHASE_PER_DAY: f64 = 0.3;
 /// Light level for visual identification under a full moon high in the sky (4 km, as the
 /// classic night).
 const FULL_MOON_LIGHT: f32 = 85.0;
@@ -51,6 +54,10 @@ pub struct Sky {
     /// Mission date: days since 1970-01-01 (the moon's phase), and the theater's latitude.
     days: f64,
     lat: f64,
+    /// The moon phase chosen for the mission (else the date's).
+    chosen: Option<f64>,
+    /// A campaign's sky (its moon moves on faster).
+    campaign: bool,
     /// The golden hour palette in use and its look.
     golden: Option<(Look, VgaPalette)>,
 }
@@ -68,6 +75,8 @@ impl Default for Sky {
             glow: 0.0,
             days: 0.0,
             lat: 45.0,
+            chosen: None,
+            campaign: false,
             golden: None,
         }
     }
@@ -79,6 +88,17 @@ impl Sky {
     pub fn visual_light(&self) -> u8 {
         let night = self.moonlight * FULL_MOON_LIGHT;
         (night + (255.0 - night) * self.day).round().clamp(0.0, 255.0) as u8
+    }
+
+    /// The moon's phase `hours` into the mission date.
+    pub fn phase_at(&self, hours: f64) -> f64 {
+        match self.chosen {
+            Some(p) => p,
+            None if self.campaign => {
+                (moon_phase(self.days) + CAMPAIGN_PHASE_PER_DAY * hours / 24.0).rem_euclid(1.0)
+            }
+            None => moon_phase(self.days + hours / 24.0),
+        }
     }
 }
 
@@ -298,12 +318,13 @@ fn reset_sky(
     mission: Option<Res<crate::mission::ActiveMission>>,
 ) {
     let (_, lat0) = crate::world::geo_origin(&setup.theater);
-    let days = mission.map_or(0.0, |m| {
+    let days = mission.as_ref().map_or(0.0, |m| {
         let (y, mo, d) = crate::tacview::briefing_date(&m.0.briefing.date);
         crate::tacview::days_from_civil(y, mo, d) as f64
     });
+    let chosen = mission.and_then(|m| m.0.settings.moon).map(|e| (e % 8) as f64 / 8.0);
     // The middle of the theater, 256 km north of its corner.
-    *sky = Sky { lat: lat0 + 256.0 / 111.2, days, ..default() };
+    *sky = Sky { lat: lat0 + 256.0 / 111.2, days, chosen, ..default() };
 }
 
 fn update_sky(
@@ -315,6 +336,7 @@ fn update_sky(
     combat: Option<ResMut<crate::combat::Combat>>,
 ) {
     let on = settings.continuous_time;
+    sky.campaign = combat.as_ref().is_some_and(|c| c.sky_seconds.is_some());
     if !on {
         if sky.on {
             sky.on = false;
@@ -330,7 +352,7 @@ fn update_sky(
     let seconds = clock.start_seconds as f64 + clock.elapsed.unwrap_or(0.0) as f64;
     // Test aids: `--sky-hours <h>` sets the local time, `--sky-phase <0..1>` the moon's phase.
     let hours = test_hours().unwrap_or(seconds / 3600.0);
-    let phase = test_phase().unwrap_or_else(|| moon_phase(sky.days + hours / 24.0));
+    let phase = test_phase().unwrap_or_else(|| sky.phase_at(hours));
     let sun = sun_dir(hours, sky.lat);
     let moon = moon_dir(hours, sky.lat, phase);
     let elev = (sun.y as f64).asin().to_degrees();
@@ -395,6 +417,21 @@ mod tests {
         assert!(m.y > 0.6 && m.z > 0.0);
         assert_eq!(phase_name(0.5), "Full moon");
         assert_eq!(phase_name(0.98), "New moon");
+    }
+
+    #[test]
+    fn campaign_moon() {
+        // 30% of the cycle a night; full and new only after more than a cycle; the client's
+        // 30-day wrap of the sky clock is 9 whole cycles.
+        let sky = Sky { days: 10_962.76, campaign: true, ..default() };
+        let nights: Vec<f64> = (0..11).map(|n| sky.phase_at(24.0 * n as f64)).collect();
+        assert!(nights[0] < 1e-3);
+        assert!((nights[1] - 0.3).abs() < 1e-3 && (nights[5] - 0.5).abs() < 1e-3);
+        assert!(nights[1..5].iter().all(|p| phase_name(*p) != "Full moon"));
+        assert!(nights[1..10].iter().all(|p| phase_name(*p) != "New moon"));
+        assert!((sky.phase_at(30.0 * 24.0 + 5.0) - sky.phase_at(5.0)).abs() < 1e-9);
+        let chosen = Sky { chosen: Some(0.5), campaign: true, ..default() };
+        assert_eq!(chosen.phase_at(100.0), 0.5);
     }
 
     #[test]

@@ -179,6 +179,8 @@ pub fn from_args(app: &mut App) {
     let mut settings = settings(theater, roe, kind, opponents, lockheed, weather, cloud_cover);
     // `--start-hour <0-23>`: takeoff time.
     settings.start_hour = get("--start-hour").and_then(|s| s.parse::<u8>().ok()).map(|h| h.min(23));
+    // `--moon <0-7>`: the moon's phase in eighths (0 new, 4 full).
+    settings.moon = get("--moon").and_then(|s| s.parse::<u8>().ok()).map(|m| m % 8);
     let mut m = generate(&data, &settings, seed).expect("mission");
     // `--start-base <name>`: take off from another airfield (also an enemy one; for tests).
     if let Some(name) = get("--start-base") {

@@ -43,6 +43,7 @@ pub struct Prefs {
     pub weather: Option<Sky>,
     pub cloud_cover: Option<u8>,
     pub start_hour: Option<u8>,
+    pub moon: Option<u8>,
     pub no_crashes: bool,
     pub realistic_damage: bool,
     pub realistic_guidance: bool,
@@ -89,6 +90,7 @@ impl Default for Prefs {
             weather: menu.weather,
             cloud_cover: menu.cloud_cover,
             start_hour: menu.start_hour,
+            moon: menu.moon,
             no_crashes: false,
             realistic_damage: false,
             realistic_guidance: false,
@@ -147,6 +149,7 @@ impl Prefs {
             weather: menu.weather,
             cloud_cover: menu.cloud_cover,
             start_hour: menu.start_hour,
+            moon: menu.moon,
             no_crashes: s.no_crashes,
             realistic_damage: s.realistic_damage,
             realistic_guidance: s.realistic_guidance,
@@ -185,6 +188,7 @@ impl Prefs {
         menu.weather = self.weather;
         menu.cloud_cover = self.cloud_cover.map(|c| c.min(100));
         menu.start_hour = self.start_hour.map(|h| h.min(23));
+        menu.moon = self.moon.map(|m| m % 8);
         menu.player_name = self.player_name.clone();
         menu.server_addr = self.server_addr.clone();
         menu.server_name = self.server_name.clone();

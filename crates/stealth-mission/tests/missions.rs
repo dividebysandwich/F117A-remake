@@ -79,6 +79,7 @@ fn random_missions_do_not_panic() {
                 weather: if i % 3 == 0 { None } else { Some(stealth_mission::Sky::Clear) },
                 cloud_cover: None,
                 start_hour: None,
+                moon: None,
             };
             let seed = if i % 2 == 0 { Seed::Srand(next() as u16) } else { Seed::Holdrand(next()) };
             let m = generate(data, &s, seed).unwrap_or_else(|e| panic!("{s:?} {seed:?}: {e}"));

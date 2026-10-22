@@ -258,6 +258,7 @@ pub fn next_sortie(
             menu.weather,
             menu.cloud_cover,
         );
+        settings.moon = menu.moon;
         settings.pilot = pilot.title();
         settings.sorties = pilot.sorties as u16;
         let Ok(m) = stealth_mission::generate(&data.0, &settings, Seed::Srand(s)) else { continue };
@@ -346,6 +347,7 @@ pub fn career_ui(
             ui.vertical(|ui| {
                 ui.set_width(200.0);
                 crate::menu::weather_options(ui, &mut state.weather, &mut state.cloud_cover);
+                crate::menu::moon_options(ui, &mut state.moon);
                 crate::menu::classic_modern_options(ui, settings, head);
             });
             ui.vertical(|ui| {

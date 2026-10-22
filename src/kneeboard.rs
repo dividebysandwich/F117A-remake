@@ -515,6 +515,7 @@ fn draw(
     player: Query<&WorldPos, With<Player>>,
     combat: Option<Res<crate::combat::Combat>>,
     recon: Res<ReconPhotos>,
+    sky: Res<crate::sky::Sky>,
 ) {
     kb.timer += time.delta_secs();
     if recon.is_changed() {
@@ -576,9 +577,7 @@ fn draw(
             if !b.weather_line.is_empty() {
                 w.para(&b.weather_line, WHITE);
             }
-            let (y, mo, d) = crate::tacview::briefing_date(&b.date);
-            let days = crate::tacview::days_from_civil(y, mo, d) as f64 + now / 86_400.0;
-            let phase = crate::sky::moon_phase(days);
+            let phase = sky.phase_at(now / 3600.0);
             w.para(
                 &format!(
                     "MOON: {} ({:.0}% LIT)",

@@ -14,6 +14,7 @@ Starting
     --roe <0..2>               cold war .. conventional war (default 1)
     --opponents <0..3>         enemy skill (default 1)
     --start-hour <0..23>       takeoff time
+    --moon <0..7>              moon phase in eighths (0 new, 4 full; default: the date's)
     --start-base <name>        take off from another airfield
     --career <pilot>           a tour sortie of that pilot
     --route <file>             a route planned in the menu (JSON)

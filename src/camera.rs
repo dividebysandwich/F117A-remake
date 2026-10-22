@@ -98,6 +98,10 @@ const PULL_BACK: (f32, f32) = (140.0, 45.0);
 /// Where the camera goes first after the impact, out of the fireball (m back and up).
 const IMPACT_CAM: (f32, f32) = (30.0, 8.0);
 
+/// The external views zoom out this many steps (each doubles the distance: some 10 km behind
+/// the aircraft at the most, to see how it looks from far away).
+pub const MAX_UNZOOM: i32 = 8;
+
 #[derive(Resource)]
 pub struct ViewState {
     pub view: View,
@@ -314,7 +318,7 @@ fn switch_view(
             Action::ViewTactical | Action::ViewInverseTactical => state.view = View::Tactical,
             Action::ViewMissile => follow_next_weapon(&mut state, &mut weapon, combat.as_deref()),
             Action::Zoom => state.zoom = (state.zoom + 1).min(3),
-            Action::Unzoom => state.zoom = (state.zoom - 1).max(-3),
+            Action::Unzoom => state.zoom = (state.zoom - 1).max(-MAX_UNZOOM),
             Action::WideAngle => state.wide = !state.wide,
             _ => {}
         }

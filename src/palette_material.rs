@@ -264,6 +264,16 @@ pub fn dot_scale(scale: u32) -> u32 {
     (scale.clamp(1, 8) - 1) << 8
 }
 
+/// Dot size in tenths of the plain dot's (1..127) in mesh tag bits 24..30, for sizes the
+/// multiplier of [`dot_scale`] can't give; overrides it.
+pub fn dot_size_tenths(tenths: u32) -> u32 {
+    tenths.clamp(1, 127) << 24
+}
+
+/// Mesh tag bit of a dot only drawn far away (the shader's `DOT_FAR_MIN`): gun rounds, whose
+/// tracer lines show them up close.
+pub const TAG_DOT_FAR: u32 = 1 << 31;
+
 /// Switches every palette material to the shader variant with or without the lighting options
 /// (also materials created later).
 pub fn sync_lighting(

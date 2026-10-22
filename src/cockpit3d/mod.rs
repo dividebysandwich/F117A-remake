@@ -570,7 +570,7 @@ fn mouse_look(
             state.magnify = (state.magnify * 1.2f32.powf(notches)).clamp(1.0, MAX_MAGNIFY);
         } else {
             state.wheel_zoom = (state.wheel_zoom + notches * 0.25)
-                .clamp(-3.0 - state.zoom as f32, 4.0 - state.zoom as f32);
+                .clamp(-(crate::camera::MAX_UNZOOM + state.zoom) as f32, 4.0 - state.zoom as f32);
         }
     }
     if cockpit {

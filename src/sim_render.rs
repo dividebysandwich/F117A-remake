@@ -16,7 +16,8 @@ use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player, bam};
 use crate::models::{ModelAssets, ModelGlobals, ModelLibrary, ModelState};
 use crate::palette_material::{
-    FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, dot_scale, mesh_tag, spot_size,
+    FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, TAG_DOT_FAR, dot_size_tenths,
+    mesh_tag, spot_size,
 };
 use crate::player::{AIRCRAFT_MODEL_SCALE, OwnLights, OwnModel};
 use crate::settings::AppState;
@@ -36,6 +37,7 @@ impl Plugin for SimRenderPlugin {
                     sync_objects.run_if(resource_exists::<Combat>),
                     sync_aaa.run_if(resource_exists::<Combat>),
                     sync_remote_pilots.run_if(resource_exists::<Combat>),
+                    own_muzzle_flash.run_if(resource_exists::<Combat>),
                     world_model_state,
                     own_shadow,
                 )
@@ -564,16 +566,16 @@ fn spawn_dot(
     material: Handle<PaletteMaterial>,
     offsets: &[Vec3],
 ) -> Entity {
-    spawn_dot_scaled(commands, assets, material, offsets, 1)
+    spawn_dot_scaled(commands, assets, material, offsets, 0)
 }
 
-/// [`spawn_dot`] `scale` times the size.
+/// [`spawn_dot`] with more mesh tag bits (`dot_scale`, `dot_size_tenths`, `TAG_DOT_FAR`).
 fn spawn_dot_scaled(
     commands: &mut Commands,
     assets: &ModelAssets,
     material: Handle<PaletteMaterial>,
     offsets: &[Vec3],
-    scale: u32,
+    tag: u32,
 ) -> Entity {
     let parent = commands
         .spawn((SimObject, WorldPos::default(), Transform::default(), Visibility::Hidden))
@@ -584,7 +586,7 @@ fn spawn_dot_scaled(
                 crate::dots::DotLight::bundle(
                     o,
                     &assets.dots,
-                    mesh_tag(LEVEL_AIRCRAFT, 0, true) | dot_scale(scale),
+                    mesh_tag(LEVEL_AIRCRAFT, 0, true) | tag,
                 ),
                 MeshMaterial3d(material.clone()),
             ))
@@ -1020,7 +1022,8 @@ fn sync_objects(
     while vis.bullets.len() < bullets.len() {
         let colour = if vis.bullets.len() < n { TRACER } else { ENEMY_TRACER };
         let material = vis.material(&mut materials, &globals, colour);
-        let dot = spawn_dot(&mut commands, &assets, material.clone(), &[Vec3::ZERO]);
+        let dot =
+            spawn_dot_scaled(&mut commands, &assets, material.clone(), &[Vec3::ZERO], TAG_DOT_FAR);
         let line = spawn_tracer(&mut commands, material);
         vis.bullets.push((dot, line));
     }
@@ -1039,7 +1042,7 @@ fn sync_objects(
             &assets,
             material.clone(),
             &[Vec3::ZERO],
-            OTHER_ROUND_DOT_SCALE,
+            dot_size_tenths(OTHER_GUN_DOT_TENTHS) | TAG_DOT_FAR,
         );
         let line = spawn_tracer(&mut commands, material);
         vis.other_bullets.push((dot, line));
@@ -1291,6 +1294,8 @@ fn own_shadow(
 pub struct RemoteVisuals {
     planes: HashMap<u8, (Entity, &'static str, SpotDot, Entity)>,
     missiles: HashMap<(u8, u8), RemoteMissileVisual>,
+    /// The own cannon's muzzle flash, as the others see it (external views only).
+    own_muzzle: Option<Entity>,
     /// Solid palette-colour materials (word 0xFF00 | index).
     materials: HashMap<u8, Handle<PaletteMaterial>>,
 }
@@ -1298,12 +1303,59 @@ pub struct RemoteVisuals {
 /// Another pilot's weapon in flight: its model, its spec, and its dot with the dot's look.
 type RemoteMissileVisual = (Entity, i32, Option<(Entity, u8)>);
 
-/// The muzzle flash of another pilot's cannon: a big glowing dot at the nose (metres ahead of
-/// the aircraft's middle), seen from far away; its size multiplier.
+/// The muzzle flash of another pilot's cannon: a glowing dot at the nose (metres ahead of the
+/// aircraft's middle), seen from far away.
 const MUZZLE_AHEAD: f32 = 9.0;
-const MUZZLE_DOT_SCALE: u32 = 4;
-/// The other pilots' gun rounds are drawn this much bigger than the own.
-const OTHER_ROUND_DOT_SCALE: u32 = 2;
+/// The other pilots' gun rounds and muzzle flashes are drawn this much bigger than the own
+/// rounds (in tenths).
+const OTHER_GUN_DOT_TENTHS: u32 = 14;
+
+/// The muzzle flash flickers while the cannon fires: shown in this frame.
+fn muzzle_flash_on(time: &Time, id: u8) -> bool {
+    !((time.elapsed_secs() * 25.0) as u32 + id as u32).is_multiple_of(3)
+}
+
+/// The own cannon's muzzle flash in the external views, as the other pilots see it.
+#[allow(clippy::too_many_arguments)]
+fn own_muzzle_flash(
+    mut commands: Commands,
+    combat: Res<Combat>,
+    mut vis: ResMut<RemoteVisuals>,
+    assets: ModelAssets,
+    mut materials: ResMut<Assets<PaletteMaterial>>,
+    time: Res<Time>,
+    view: Res<crate::camera::ViewState>,
+    settings: Res<crate::settings::Settings>,
+    player: Query<(&Aircraft, &WorldPos), (With<Player>, Without<SimObject>)>,
+    mut q: Query<(&mut WorldPos, &mut Visibility), With<SimObject>>,
+) {
+    let vis = &mut *vis;
+    let sim = &combat.sim;
+    let Ok((a, pos)) = player.single() else { return };
+    let e = *vis.own_muzzle.get_or_insert_with(|| {
+        let globals = assets.palette.globals.clone();
+        let material = solid_material(&mut vis.materials, &mut materials, &globals, TRACER);
+        let e = spawn_dot_scaled(
+            &mut commands,
+            &assets,
+            material,
+            &[Vec3::ZERO],
+            dot_size_tenths(OTHER_GUN_DOT_TENTHS),
+        );
+        commands
+            .entity(e)
+            .insert(crate::lighting::LightEmitter { color: Vec3::new(2.0, 1.5, 0.8), range: 80.0 });
+        e
+    });
+    let firing = sim.gun_firing() && sim.has_gun() && !view.first_person();
+    let flash = firing && muzzle_flash_on(&time, sim.active_pilot());
+    if let Ok((mut wp, mut v)) = q.get_mut(e) {
+        // At the nose of the model as drawn (lifted off the flight model's point).
+        let nose = Vec3::new(0.0, settings.aircraft.spec().model_lift, -MUZZLE_AHEAD);
+        wp.0 = pos.0 + (a.orientation * nose).as_dvec3();
+        v.set_if_neq(if flash { Visibility::Inherited } else { Visibility::Hidden });
+    }
+}
 
 /// Another pilot's aircraft as drawn: its middle and attitude between the samples around the
 /// time shown (carried on a little past the last).
@@ -1392,7 +1444,7 @@ fn sync_remote_pilots(
                 crate::models::LodRange(FRIENDLY_LOD_RANGE),
             ));
             let dot = spawn_spot_dot(&mut commands, &assets, e, SPOT_METRES);
-            let tag = mesh_tag(LEVEL_AIRCRAFT, 0, true) | dot_scale(MUZZLE_DOT_SCALE);
+            let tag = mesh_tag(LEVEL_AIRCRAFT, 0, true) | dot_size_tenths(OTHER_GUN_DOT_TENTHS);
             let nose = Vec3::NEG_Z * MUZZLE_AHEAD / AIRCRAFT_MODEL_SCALE as f32;
             let material = solid_material(&mut vis.materials, &mut materials, &globals, TRACER);
             let muzzle = commands
@@ -1413,8 +1465,7 @@ fn sync_remote_pilots(
         });
         // The muzzle flash flickers while the cannon fires.
         let firing = p.gun_firing && !p.lockheed;
-        let flash =
-            firing && !((time.elapsed_secs() * 25.0) as u32 + p.id as u32).is_multiple_of(3);
+        let flash = firing && muzzle_flash_on(&time, p.id);
         if let Ok(mut m) = muzzles.get_mut(v.3) {
             m.set_if_neq(if flash { Visibility::Inherited } else { Visibility::Hidden });
         }

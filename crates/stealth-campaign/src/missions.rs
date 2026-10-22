@@ -70,7 +70,7 @@ impl CampaignState {
                 .is_some_and(|d| d.state == DownedState::Waiting);
         let result = if s.progress.achieved {
             SortieResult::Success
-        } else if open {
+        } else if open && s.progress.present() {
             SortieResult::Pending
         } else {
             SortieResult::Failed
@@ -281,6 +281,14 @@ impl CampaignState {
             {
                 p.on_station += dt;
             }
+            if let Some(me) = me
+                && self
+                    .presence_points(&s.offer.objective, view)
+                    .iter()
+                    .any(|&(x, y)| dist(me.x - x, me.y - y) < PRESENCE_RADIUS)
+            {
+                p.near_secs += dt;
+            }
             if !p.achieved && self.objective_met(&s.offer.objective, &p) {
                 p.achieved = true;
                 p.achieved_at = Some(self.clock);
@@ -319,21 +327,66 @@ impl CampaignState {
             Objective::AntiShip { ship } => !self.site(*ship).is_some_and(Site::alive),
             Objective::Cap { .. } => p.on_station >= CAP_SECONDS && p.losses == 0,
             Objective::Escort { insertion } => {
-                self.insertion(*insertion).is_some_and(|i| i.state == InsertionState::Captured)
+                p.present()
+                    && self
+                        .insertion(*insertion)
+                        .is_some_and(|i| i.state == InsertionState::Captured)
             }
             Objective::Insertion { .. } => false,
             Objective::Intercept { insertion } => {
-                self.insertion(*insertion).is_some_and(|i| i.state == InsertionState::Failed)
+                p.present()
+                    && self.insertion(*insertion).is_some_and(|i| i.state == InsertionState::Failed)
             }
             Objective::Defend { raid } => {
-                self.raid(*raid).is_some_and(|r| r.state == RaidState::Repelled)
+                p.present() && self.raid(*raid).is_some_and(|r| r.state == RaidState::Repelled)
             }
             Objective::Interdict { object, .. } => !self.site(*object).is_some_and(Site::alive),
             Objective::Awacs { tag } => self.awacs_down.contains(tag),
             Objective::Rescue { downed } => {
                 p.on_station >= RESCUE_SECONDS
-                    || self.downed_pilot(*downed).is_some_and(|d| d.state == DownedState::Rescued)
+                    || p.present()
+                        && self
+                            .downed_pilot(*downed)
+                            .is_some_and(|d| d.state == DownedState::Rescued)
             }
+        }
+    }
+
+    /// Where the pilot has to be for an objective that depends on others (helicopters, raiders,
+    /// a downed pilot) while it goes on; empty when it does not, or is over.
+    fn presence_points(&self, o: &Objective, view: &WorldView) -> Vec<(i32, i32)> {
+        let flying = |tags: &[u32]| -> Vec<(i32, i32)> {
+            view.flights.iter().filter(|f| tags.contains(&f.tag)).map(|f| (f.x, f.y)).collect()
+        };
+        let at = |k: ObjectId| self.site(k).map(|s| (s.x, s.y));
+        match *o {
+            Objective::Escort { insertion } | Objective::Intercept { insertion } => {
+                let Some(i) = self.insertion(insertion).filter(|i| {
+                    matches!(i.state, InsertionState::Pending { .. } | InsertionState::Enroute)
+                }) else {
+                    return Vec::new();
+                };
+                let mut v = flying(&i.helicopters);
+                v.extend(at(i.target));
+                if matches!(o, Objective::Intercept { .. }) {
+                    v.push(self.intercept_point(i));
+                } else {
+                    v.extend(at(i.from));
+                }
+                v
+            }
+            Objective::Defend { raid } => {
+                let Some(r) = self.raid(raid).filter(|r| r.open()) else { return Vec::new() };
+                let mut v = flying(&r.aircraft);
+                v.extend(at(r.target));
+                v
+            }
+            Objective::Rescue { downed } => self
+                .downed_pilot(downed)
+                .filter(|d| d.state == DownedState::Waiting)
+                .map(|d| vec![(d.x, d.y)])
+                .unwrap_or_default(),
+            _ => Vec::new(),
         }
     }
 

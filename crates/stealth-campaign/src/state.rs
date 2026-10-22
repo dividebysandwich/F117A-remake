@@ -342,6 +342,17 @@ pub struct Progress {
     pub achieved_at: Option<f64>,
     #[serde(default)]
     pub bonus: i32,
+    /// Seconds airborne near what the objective is about while it was going on (escorts,
+    /// intercepts, defences, rescues: only who was there earns them).
+    #[serde(default)]
+    pub near_secs: f64,
+}
+
+impl Progress {
+    /// The pilot took part: was there long enough, or shot something down.
+    pub fn present(&self) -> bool {
+        self.near_secs >= PRESENCE_SECONDS || self.air_kills > 0
+    }
 }
 
 /// A sortie being flown.

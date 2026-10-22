@@ -24,6 +24,16 @@ fn campaign(code: &str, index: usize) -> CampaignState {
 
 const P0: PlayerId = PlayerId(0);
 
+/// Player `p` flies over object `at` long enough to count as there.
+fn be_there(c: &mut CampaignState, p: PlayerId, at: ObjectId) {
+    let s = c.site(at).unwrap();
+    let me = WorldView {
+        players: vec![PlayerPos { id: p, x: s.x, y: s.y, airborne: true }],
+        ..Default::default()
+    };
+    c.tick(tuning::PRESENCE_SECONDS + 1.0, &me, &[]);
+}
+
 fn place_named(c: &CampaignState, name: &str) -> PlaceId {
     c.places.iter().position(|p| p.name == name).expect(name) as PlaceId
 }
@@ -194,6 +204,9 @@ fn an_escort_is_settled_by_its_insertion() {
     let escort = c.board.iter().find(|o| o.kind == MissionKind::Escort).unwrap().clone();
     c.apply(P0, Command::TakeMission { offer: escort.id, base: None, aircraft: Aircraft::F117 })
         .unwrap();
+    let Objective::Escort { insertion } = escort.objective else { unreachable!() };
+    let from = c.insertion(insertion).unwrap().from;
+    be_there(&mut c, P0, from);
     // The escort lands before the helicopters get there: pending.
     let ev = c.apply(P0, Command::EndSortie { end: SortieEnd::Landed }).unwrap();
     let CampaignEvent::SortieFinished { record, .. } = &ev[0] else { panic!() };
@@ -637,6 +650,7 @@ fn a_defence_ended_early_is_settled_by_the_raid() {
     let offer = c.board.iter().find(|o| o.objective == Objective::Defend { raid: id }).unwrap();
     c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F16 })
         .unwrap();
+    be_there(&mut c, P0, target);
     let ev = c.apply(P0, Command::EndSortie { end: SortieEnd::Landed }).unwrap();
     let CampaignEvent::SortieFinished { record, .. } = &ev[0] else { panic!() };
     assert_eq!(record.result, SortieResult::Pending);
@@ -992,7 +1006,10 @@ fn a_pending_sortie_earns_its_points_when_settled() {
     let place = c.front(Side::Blue)[0];
     c.apply(P0, Command::OrderInsertion { place }).unwrap();
     c.tick(1.0, &WorldView::default(), &[]);
-    take(&mut c, P0, MissionKind::Escort);
+    let (_, obj) = take(&mut c, P0, MissionKind::Escort);
+    let Objective::Escort { insertion } = obj else { unreachable!() };
+    let from = c.insertion(insertion).unwrap().from;
+    be_there(&mut c, P0, from);
     let r = finished(&c.apply(P0, Command::EndSortie { end: SortieEnd::Crashed }).unwrap());
     assert_eq!(r.points, 0);
     let ev = c.tick(tuning::INSERTION_LEAD, &WorldView::default(), &[]);
@@ -1166,4 +1183,28 @@ fn drone_waves_hit_ukraine() {
     let mut c = campaign("ce", 3);
     c.tick(tuning::DRONES_EVERY[1] + 1.0, &WorldView::default(), &[]);
     assert!(c.raids.iter().all(|r| !r.drones));
+}
+
+/// Taking an escort and aborting on the runway earns nothing, however the insertion goes.
+#[test]
+fn a_sortie_nobody_flew_is_not_settled() {
+    let mut c = campaign("ce", 3);
+    let place = c.front(Side::Blue)[0];
+    c.apply(P0, Command::OrderInsertion { place }).unwrap();
+    c.tick(1.0, &WorldView::default(), &[]);
+    take(&mut c, P0, MissionKind::Escort);
+    let r = finished(&c.apply(P0, Command::EndSortie { end: SortieEnd::Aborted }).unwrap());
+    assert_eq!(r.result, SortieResult::Failed);
+    let ev = c.tick(tuning::INSERTION_LEAD, &WorldView::default(), &[]);
+    let (tags, target) = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::InsertionLaunched { tags, target, .. } => Some((tags.clone(), *target)),
+            _ => None,
+        })
+        .unwrap();
+    let t = c.site(target).unwrap().clone();
+    c.tick(1.0, &WorldView::default(), &[Report::FlightLanded { tag: tags[0], x: t.x, y: t.y }]);
+    let r = c.history.last().unwrap();
+    assert_eq!((r.result, r.points), (SortieResult::Failed, 0));
 }

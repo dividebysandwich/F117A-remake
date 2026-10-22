@@ -100,6 +100,11 @@ pub const SUPPRESS_SHARE: f32 = 0.5;
 pub const CAP_SECONDS: f64 = 600.0;
 pub const CAP_KILLS: u32 = 2;
 pub const CAP_RADIUS: i32 = 0x500;
+/// Escorts, intercepts, airfield defences and rescues need the pilot there: this long airborne
+/// within this radius (20 km) of the helicopters, raiders or pilot while it goes on (an air
+/// kill counts too).
+pub const PRESENCE_SECONDS: f64 = 120.0;
+pub const PRESENCE_RADIUS: i32 = 0x500;
 
 /// Campaign log entries kept.
 pub const LOG_SIZE: usize = 200;

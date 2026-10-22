@@ -2,6 +2,9 @@
 //! or host a campaign here and fly in it (a listen server). A dedicated server is started
 //! from the command line (`--dedicated`, `dedicated.rs`).
 //!
+//! The browser build only joins, and only servers on the public list: it has no UDP, so it goes
+//! through the master server's relay (docs/web.md).
+//!
 //! The host's rules (realism, missile guidance, crashes, time of day, realistic weapons,
 //! friendly fire) are
 //! everybody's; each player keeps his own cockpit, flight model, avionics, HUD and graphics,
@@ -82,12 +85,26 @@ impl MultiplayerWindow {
 }
 
 /// The public server list's master server (`--master <url>` for tests).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn master_url() -> String {
     let args: Vec<String> = std::env::args().collect();
     args.iter()
         .position(|a| a == "--master")
         .and_then(|i| args.get(i + 1))
         .cloned()
+        .unwrap_or_else(|| stealth_net::master::DEFAULT_MASTER.to_string())
+}
+
+/// The public server list's master server (`?master=<url>` on the page for tests).
+#[cfg(target_arch = "wasm32")]
+pub fn master_url() -> String {
+    let search = web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default();
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("master="))
+        .and_then(|v| js_sys::decode_uri_component(v).ok())
+        .map(String::from)
         .unwrap_or_else(|| stealth_net::master::DEFAULT_MASTER.to_string())
 }
 
@@ -152,13 +169,33 @@ fn host_rules(settings: &crate::settings::Settings, state: &MenuState) -> stealt
 
 fn connect(w: &mut MultiplayerWindow, addr: &str, name: &str) {
     w.error = None;
-    match Client::connect(addr, name.trim()) {
+    match open(w, addr, name.trim()) {
         Ok(c) => {
             w.status = Some(format!("Connecting to {addr}..."));
             w.joining = Some((c, addr.to_string()));
         }
         Err(e) => w.error = Some(format!("{addr}: {e}")),
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn open(_w: &MultiplayerWindow, addr: &str, name: &str) -> std::io::Result<Client> {
+    Client::connect(addr, name)
+}
+
+/// Through the master server's relay to a server on the list: by its address or name.
+#[cfg(target_arch = "wasm32")]
+fn open(w: &MultiplayerWindow, addr: &str, name: &str) -> std::io::Result<Client> {
+    let want = addr.trim();
+    let with_port = format!("{want}:{}", stealth_net::DEFAULT_PORT);
+    let entry = w
+        .servers
+        .iter()
+        .find(|s| s.addr == want || s.addr == with_port || s.report.name.eq_ignore_ascii_case(want))
+        .ok_or_else(|| {
+            std::io::Error::other("only servers on the public list can be joined from the browser")
+        })?;
+    Client::relayed(&stealth_net::master::relay_url(&master_url(), &entry.id), name)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -249,7 +286,13 @@ fn multiplayer_window(
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            for (page, label) in [(Page::Join, "JOIN A GAME"), (Page::Host, "HOST A GAME")] {
+            // A browser can't host (no UDP).
+            let pages: &[(Page, &str)] = if cfg!(target_arch = "wasm32") {
+                &[(Page::Join, "JOIN A GAME")]
+            } else {
+                &[(Page::Join, "JOIN A GAME"), (Page::Host, "HOST A GAME")]
+            };
+            for &(page, label) in pages {
                 if ui.selectable_label(w.page == page, egui::RichText::new(label).size(18.0)).clicked() {
                     w.page = page;
                     w.error = None;
@@ -273,14 +316,19 @@ fn multiplayer_window(
                     settings.vr,
                     "address or name[:port]",
                 );
-                ui.label(
-                    egui::RichText::new(format!(
+                let how = if cfg!(target_arch = "wasm32") {
+                    format!(
+                        "The address or name of a server on the public list (the browser joins \
+                         through it), port {} if none is given",
+                        stealth_net::DEFAULT_PORT
+                    )
+                } else {
+                    format!(
                         "An IP address or host name, port {} if none is given",
                         stealth_net::DEFAULT_PORT
-                    ))
-                    .small()
-                    .color(DIM),
-                );
+                    )
+                };
+                ui.label(egui::RichText::new(how).small().color(DIM));
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if w.joining.is_some() {

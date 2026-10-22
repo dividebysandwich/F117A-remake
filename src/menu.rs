@@ -1016,17 +1016,13 @@ fn main_screen(
             {
                 campaign.show();
             }
-            // Browsers cannot send UDP (docs/web.md).
-            if !cfg!(target_arch = "wasm32")
-                && facts(
-                    ui.add(wide("MULTIPLAYER")),
-                    &[
-                        "Coop in the dynamic campaign",
-                        "Join a server, or host a campaign and fly in it",
-                    ],
-                )
-                .clicked()
-            {
+            // Browsers only join, through the master server's relay (docs/web.md).
+            let how = if cfg!(target_arch = "wasm32") {
+                "Join a server on the public list"
+            } else {
+                "Join a server, or host a campaign and fly in it"
+            };
+            if facts(ui.add(wide("MULTIPLAYER")), &["Coop in the dynamic campaign", how]).clicked() {
                 multiplayer.show();
             }
             if facts(

@@ -19,6 +19,8 @@ const TAG_SMOKE_FIRE: u32 = 16384u;
 // Warm object (palette_material.rs `TAG_WARM`).
 const TAG_WARM: u32 = 2048u;
 const TAG_DOT_NEAR: u32 = 4096u;
+// Aircraft spotting dot (palette_material.rs `TAG_DOT_SPOT`).
+const TAG_DOT_SPOT: u32 = 32768u;
 // Cloud colours: the grey ramp (its base entry is the horizon haze colour).
 const CLOUD_RAMP: u32 = 0xE0u;
 
@@ -122,6 +124,10 @@ const AIRCRAFT_DOT_MAX: f32 = 5.0;
 const DOT_RANGE: f32 = 30000.0;
 const DOT_VIS_FACTOR: f32 = 1.5;
 const DOT_NEAR: f32 = 0.4;
+// Spotting dots (TAG_DOT_SPOT) vanish once their aircraft (its size in metres in tag bits
+// 16..) spans more than SPOT_PIXELS in the view, and sit that size towards the eye so its
+// model can't hide them.
+const SPOT_PIXELS: f32 = 12.0;
 
 // World units per model unit, by level code in the mesh tag (bits 0..2):
 // 0: LOD0 (0.5), 1: LOD1 (1), 2: LOD2 (4), 3: LOD3 (16), 4: LOD4 (64), 5: aircraft (1/8)
@@ -172,7 +178,12 @@ fn vertex(v: Vertex) -> VertexOutput {
     // magnify them); in XR at most the original pixel's angular size.
 #ifdef DOT_BATCH
     if (((tag >> 7u) & 1u) == 1u) {
-        let center = world.xyz;
+        var center = world.xyz;
+        let spot = (tag & TAG_DOT_SPOT) != 0u;
+        let spot_m = f32((tag >> 16u) & 0xFFu);
+        if (spot) {
+            center = center + normalize(view.world_position - center) * spot_m;
+        }
         let corner = v.corner;
         let clip = position_world_to_clip(center);
         let vp = view.viewport.zw;
@@ -195,8 +206,10 @@ fn vertex(v: Vertex) -> VertexOutput {
         if ((tag & TAG_DOT_NEAR) != 0u) {
             range = range * DOT_NEAR;
         }
-        if (distance(center, view.world_position) > range) {
-            // Out of range: a degenerate quad outside the clip volume.
+        let span = spot_m * 0.5 * vp.y * view.clip_from_view[1][1] / max(clip.w, 0.01);
+        if (distance(center, view.world_position) > range || (spot && span > SPOT_PIXELS)) {
+            // Out of range (or a spotted aircraft close enough to see): a degenerate quad
+            // outside the clip volume.
             out.clip_position = vec4<f32>(0.0, 0.0, -1.0, 1.0);
         }
     }

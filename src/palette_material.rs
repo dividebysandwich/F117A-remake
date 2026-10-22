@@ -38,6 +38,14 @@ pub const TAG_DOT_NEAR: u32 = 1 << 12;
 pub const TAG_SMOKE: u32 = 1 << 13;
 /// Smoke plume over a fire: its base glows.
 pub const TAG_SMOKE_FIRE: u32 = 1 << 14;
+/// Mesh tag bit of an aircraft's spotting dot: drawn only while the aircraft is too small on
+/// screen to make out (the shader's `SPOT_PIXELS`), a little in front of it. Bits 16.. carry
+/// the aircraft's size in metres (`spot_size`).
+pub const TAG_DOT_SPOT: u32 = 1 << 15;
+/// Mesh tag bits of a spotting dot on an aircraft of this size (metres, 1..255).
+pub fn spot_size(metres: f32) -> u32 {
+    TAG_DOT_SPOT | ((metres.round().clamp(1.0, 255.0) as u32) << 16)
+}
 
 #[derive(Clone, Copy, Debug, Default, ShaderType)]
 pub struct PaletteParams {

@@ -16,7 +16,7 @@ use crate::combat::{Combat, CombatSystems, unit_position};
 use crate::flight::{Aircraft, Player, bam};
 use crate::models::{ModelAssets, ModelGlobals, ModelLibrary, ModelState};
 use crate::palette_material::{
-    FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, mesh_tag,
+    FLAG_LINE, LEVEL_AIRCRAFT, PaletteMaterial, PaletteParams, mesh_tag, spot_size,
 };
 use crate::player::{AIRCRAFT_MODEL_SCALE, OwnLights, OwnModel};
 use crate::settings::AppState;
@@ -66,6 +66,18 @@ const FRIENDLY_TRACER: u8 = TRACER;
 /// palette), so it stands out against the sky.
 const COASTING: u8 = 5;
 const COASTING_NIGHT: u8 = 15;
+/// The spotting dot of another aircraft far away: dark grey by day, light grey at night (a
+/// little fainter than a coasting missile's). `SPOT_OFF`: hidden while its lights are on.
+const SPOT: u8 = 8;
+const SPOT_NIGHT: u8 = 7;
+const SPOT_OFF: u8 = 0;
+/// Size in metres of the aircraft a spotting dot stands for: a fighter, a helicopter's rotor,
+/// a Geran drone.
+const SPOT_METRES: f32 = 12.0;
+const SPOT_HELICOPTER_METRES: f32 = 17.0;
+const SPOT_DRONE_METRES: f32 = 3.0;
+/// A spotting dot and its current look.
+type SpotDot = (Entity, u8);
 /// A tracer's streak behind the round: this many sim frames of its travel.
 const TRACER_FRAMES: f64 = 0.6;
 const CHUTE: u8 = 15;
@@ -120,7 +132,8 @@ struct Cartridge {
 
 #[derive(Resource, Default)]
 struct SimVisuals {
-    aircraft: HashMap<usize, (Entity, (i32, bool))>,
+    /// Aircraft model, its key and its spotting dot with the dot's current look.
+    aircraft: HashMap<usize, (Entity, (i32, bool), SpotDot)>,
     /// Projectile model, spec and missile dot with its current look: the motor's glow
     /// (`TRACER`), black by day (`COASTING`) or white at night (`COASTING_NIGHT`).
     proj: [Option<(Entity, i32, Option<(Entity, u8)>)>; N_PROJ],
@@ -145,20 +158,26 @@ impl SimVisuals {
         globals: &Handle<bevy::render::storage::ShaderBuffer>,
         idx: u8,
     ) -> Handle<PaletteMaterial> {
-        self.materials
-            .entry(idx)
-            .or_insert_with(|| {
-                materials.add(PaletteMaterial {
-                    params: PaletteParams {
-                        word: 0xFF00 | idx as u32,
-                        flags: FLAG_LINE,
-                        ..default()
-                    },
-                    globals: globals.clone(),
-                })
-            })
-            .clone()
+        solid_material(&mut self.materials, materials, globals, idx)
     }
+}
+
+/// The solid palette-colour material (word 0xFF00 | index) of `cache`, made on first use.
+fn solid_material(
+    cache: &mut HashMap<u8, Handle<PaletteMaterial>>,
+    materials: &mut Assets<PaletteMaterial>,
+    globals: &Handle<bevy::render::storage::ShaderBuffer>,
+    idx: u8,
+) -> Handle<PaletteMaterial> {
+    cache
+        .entry(idx)
+        .or_insert_with(|| {
+            materials.add(PaletteMaterial {
+                params: PaletteParams { word: 0xFF00 | idx as u32, flags: FLAG_LINE, ..default() },
+                globals: globals.clone(),
+            })
+        })
+        .clone()
 }
 
 fn cleanup(
@@ -560,6 +579,41 @@ fn spawn_dot(
     parent
 }
 
+/// A spotting dot on an aircraft model, so it can be seen far away without its lights (the
+/// shader drops it once the model is big enough to make out); its look is set by `spot_look`.
+fn spawn_spot_dot(
+    commands: &mut Commands,
+    assets: &ModelAssets,
+    aircraft: Entity,
+    metres: f32,
+) -> SpotDot {
+    let tag = mesh_tag(LEVEL_AIRCRAFT, 0, true) | spot_size(metres);
+    let dot = commands
+        .spawn((crate::dots::DotLight::bundle(Vec3::ZERO, &assets.dots, tag), Visibility::Hidden))
+        .id();
+    commands.entity(aircraft).add_child(dot);
+    (dot, SPOT_OFF)
+}
+
+/// Gives a spotting dot its look (`SPOT`, `SPOT_NIGHT` or hidden: `SPOT_OFF`) when it changes.
+fn spot_look(
+    commands: &mut Commands,
+    (dot, cur): &mut SpotDot,
+    look: u8,
+    material: impl FnOnce(u8) -> Handle<PaletteMaterial>,
+) {
+    if *cur == look {
+        return;
+    }
+    *cur = look;
+    let mut d = commands.entity(*dot);
+    if look == SPOT_OFF {
+        d.insert(Visibility::Hidden);
+    } else {
+        d.insert((Visibility::Inherited, MeshMaterial3d(material(look))));
+    }
+}
+
 /// Puts a round's dot and tracer line where the round is, `gap` sim frames (the last step's)
 /// behind (hidden for a free slot).
 fn place_tracer(
@@ -734,8 +788,8 @@ fn sync_objects(
         }
         let friendly = sim.friendly_aircraft(u.spec);
         let key = (model, friendly);
-        if vis.aircraft.get(&i).is_some_and(|&(_, k)| k != key) {
-            if let Some((e, _)) = vis.aircraft.remove(&i) {
+        if vis.aircraft.get(&i).is_some_and(|&(_, k, _)| k != key) {
+            if let Some((e, ..)) = vis.aircraft.remove(&i) {
                 commands.entity(e).try_despawn();
             }
         }
@@ -747,10 +801,30 @@ fn sync_objects(
             if friendly {
                 commands.entity(e).insert(crate::models::LodRange(FRIENDLY_LOD_RANGE));
             }
-            vis.aircraft.insert(i, (e, key));
+            let metres = if model == HELICOPTER_MODEL {
+                SPOT_HELICOPTER_METRES
+            } else if model >= REMAKE_MODELS {
+                SPOT_DRONE_METRES
+            } else {
+                SPOT_METRES
+            };
+            let dot = spawn_spot_dot(&mut commands, &assets, e, metres);
+            vis.aircraft.insert(i, (e, key, dot));
         }
         seen.insert(i);
-        let (e, _) = vis.aircraft[&i];
+        let nav = sim.aircraft_lights(i);
+        let look = if nav {
+            SPOT_OFF
+        } else if lights {
+            SPOT_NIGHT
+        } else {
+            SPOT
+        };
+        let Some((e, _, dot)) = vis.aircraft.get_mut(&i) else { continue };
+        let e = *e;
+        spot_look(&mut commands, dot, look, |c| {
+            solid_material(&mut vis.materials, &mut materials, &globals, c)
+        });
         let prev = combat.prev_flights.get(i);
         let (east, north, alt) = unit_position(prev, &u, alpha);
         let rot = attitude(u.heading, u.pitch, u.bank);
@@ -762,7 +836,6 @@ fn sync_objects(
                 // Slots 12 (nav lights), 13 (airborne, gear up), 14 (STFLT 1/10/15) and
                 // 18-20 (anti-collision lights, with the nav lights near home airfields).
                 let special = matches!(model, 1 | 10 | 15);
-                let nav = sim.aircraft_lights(i);
                 let [s18, s19, s20] =
                     anticollision(time.elapsed_secs(), (i as f32 * 0.618).fract(), nav);
                 let v = [
@@ -783,7 +856,7 @@ fn sync_objects(
             }
         }
     }
-    vis.aircraft.retain(|i, (e, _)| {
+    vis.aircraft.retain(|i, (e, ..)| {
         let keep = seen.contains(i);
         if !keep {
             commands.entity(*e).try_despawn();
@@ -1194,8 +1267,10 @@ fn own_shadow(
 /// view before the latest one (for the interpolation); their weapons in flight.
 #[derive(Resource, Default)]
 pub struct RemoteVisuals {
-    planes: HashMap<u8, (Entity, &'static str)>,
+    planes: HashMap<u8, (Entity, &'static str, SpotDot)>,
     missiles: Vec<(Entity, i32)>,
+    /// Solid palette-colour materials (word 0xFF00 | index).
+    materials: HashMap<u8, Handle<PaletteMaterial>>,
 }
 
 /// The other pilots' aircraft, interpolated between the simulation's frames like the AI's,
@@ -1208,10 +1283,12 @@ fn sync_remote_pilots(
     mut library: ResMut<ModelLibrary>,
     server: Res<AssetServer>,
     assets: ModelAssets,
+    mut materials: ResMut<Assets<PaletteMaterial>>,
     mut q: Query<(&mut WorldPos, &mut Transform, Option<&mut ModelState>), With<SimObject>>,
 ) {
     let sim = &combat.sim;
     let lights = assets.palette.lights_on();
+    let globals = assets.palette.globals.clone();
     let me = sim.active_pilot();
     let others: Vec<_> = sim.remote_pilots().into_iter().filter(|p| p.id != me).collect();
     let file = library.load(&server, "stflt");
@@ -1249,9 +1326,15 @@ fn sync_remote_pilots(
                 Visibility::Inherited,
                 crate::models::LodRange(FRIENDLY_LOD_RANGE),
             ));
-            vis.planes.insert(p.id, (e, spec.model));
+            let dot = spawn_spot_dot(&mut commands, &assets, e, SPOT_METRES);
+            vis.planes.insert(p.id, (e, spec.model, dot));
         }
-        let Some(v) = vis.planes.get(&p.id) else { continue };
+        let look = if lights { SPOT_NIGHT } else { SPOT };
+        let vis = &mut *vis;
+        let Some(v) = vis.planes.get_mut(&p.id) else { continue };
+        spot_look(&mut commands, &mut v.2, look, |c| {
+            solid_material(&mut vis.materials, &mut materials, &globals, c)
+        });
         // Between the samples around the time shown (carried on a little past the last).
         let (old, cur, t) = combat.remote_track.at(p.id, combat.remote_time, p.view);
         let lerp = |a: i32, b: i32| a as f64 + (b - a) as f64 * t;

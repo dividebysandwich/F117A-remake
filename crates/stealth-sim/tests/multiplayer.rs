@@ -134,6 +134,18 @@ fn one_pilot_leaving_keeps_the_others_threats() {
 }
 
 #[test]
+fn the_steps_go_on_with_nobody_flying() {
+    let (mut sim, _) = two_pilots();
+    sim.end_sortie_pilot(0, 7);
+    sim.end_sortie_pilot(1, 7);
+    let before = sim.step_count();
+    for _ in 0..10 {
+        sim.step_pilots(&[], 15);
+    }
+    assert_eq!(sim.step_count(), before + 10, "a server sends the world by its steps");
+}
+
+#[test]
 fn a_kill_is_the_shooters() {
     let (mut sim, base) = two_pilots();
     let b = sim.objects()[base];

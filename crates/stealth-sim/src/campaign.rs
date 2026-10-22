@@ -1038,6 +1038,8 @@ impl Sim {
             self.mission_tick += 1;
         }
         self.frame = (self.frame + 1) & 0xFFFF;
+        // A server sends the world by its steps (its players on the Ops screen see it move).
+        self.steps = self.steps.wrapping_add(1);
     }
 }
 

@@ -39,6 +39,11 @@ const FIGHTER_SEARCH: i32 = 0x1400;
 /// A SAM site engages a helicopter this close at most (8 km): low and slow, it hides in the
 /// terrain and the ground clutter from a far radar.
 const HELO_SAM_REACH: i32 = 0x200;
+/// A fighter's gun: muzzle velocity (m/s), reach (m), and how far off its nose (rad) the
+/// target may be for it to fire.
+const FIGHTER_GUN_V0: f64 = 1000.0;
+const FIGHTER_GUN_REACH: f64 = 900.0;
+const FIGHTER_GUN_CONE: f64 = 0.1;
 /// A missile's fuse (m) and the chance (per mille) it kills what it reaches.
 const FUSE: f64 = 25.0;
 const MISSILE_PK: i32 = 700;
@@ -72,6 +77,9 @@ pub struct CampaignFlight {
     pub target: Option<usize>,
     pub cooldown: i32,
     pub missiles: i32,
+    /// Gun: frames left of a burst, or (negative) until the next.
+    #[serde(default)]
+    pub burst: i32,
     /// Shot down by the AI (else by the player), and reported.
     pub killed_by_ai: bool,
     pub reported: bool,
@@ -597,6 +605,7 @@ impl Sim {
             target: None,
             cooldown: 0,
             missiles: 0,
+            burst: 0,
             killed_by_ai: false,
             killed_by: None,
             reported: false,
@@ -635,6 +644,7 @@ impl Sim {
             target: None,
             cooldown: 0,
             missiles: FIGHTER_MISSILES,
+            burst: 0,
             killed_by_ai: false,
             killed_by: None,
             reported: false,
@@ -700,6 +710,7 @@ impl Sim {
             self.campaign_acquire();
         }
         self.campaign_guns();
+        self.campaign_fighter_guns();
         self.campaign_missiles();
         self.campaign_shells();
     }
@@ -900,10 +911,7 @@ impl Sim {
                 continue;
             }
             let sigma = 0.008 * skill;
-            let g = |rng: &mut Rng| {
-                (0..3).map(|_| rng.random(1000) as f64 / 1000.0).sum::<f64>() * 1.15 - 1.73
-            };
-            let (a, e) = (az + g(&mut rng) * sigma, el + g(&mut rng) * sigma);
+            let (a, e) = (az + jitter(&mut rng) * sigma, el + jitter(&mut rng) * sigma);
             let dir = [a.sin() * e.cos(), a.cos() * e.cos(), e.sin()];
             let ttl = if flak { time } else { reach * 1.3 / v0 };
             if c.shells.len() < MAX_SHELLS {
@@ -919,6 +927,70 @@ impl Sim {
                 }
                 c.shells.push(AiShell { shell, target: j });
             }
+        }
+        c.rng = rng;
+        self.campaign = Some(c);
+    }
+
+    /// Fighters with their target close ahead fire bursts of their guns at it.
+    fn campaign_fighter_guns(&mut self) {
+        let fs = self.fs.max(1);
+        let Some(mut c) = self.campaign.take() else { return };
+        let mut rng = c.rng;
+        let sigma = 0.006 * (1.6 - 0.2 * self.diff as f64);
+        for i in 0..c.flights.len() {
+            let Some(mut f) = c.flights[i] else { continue };
+            if f.role != Role::Fighter {
+                continue;
+            }
+            if f.burst < 0 {
+                f.burst += 1;
+                c.flights[i] = Some(f);
+                continue;
+            }
+            let u = self.flights[i];
+            let t = f.target.and_then(|j| self.flights.get(j).copied()).unwrap_or_default();
+            let alive = u.flags & fflags::DESTROYED == 0
+                && t.flags & fflags::DESTROYED == 0
+                && t.flags & fflags::AIRBORNE != 0;
+            let from = flight_metres(&u);
+            let to = flight_metres(&t);
+            let nose = direction(u.heading, u.pitch);
+            let own = mul(nose, u.speed as f64 * 0.514);
+            // Lead against the target's motion relative to the fighter.
+            let rel = sub(mul(direction(t.heading, t.pitch), t.speed as f64 * 0.514), own);
+            let (az, el, _) = lead(from, to, rel, FIGHTER_GUN_V0);
+            let aim = [az.sin() * el.cos(), az.cos() * el.cos(), el.sin()];
+            let cos = aim[0] * nose[0] + aim[1] * nose[1] + aim[2] * nose[2];
+            let sight =
+                alive && len(sub(to, from)) < FIGHTER_GUN_REACH && cos > FIGHTER_GUN_CONE.cos();
+            if f.burst == 0 && sight {
+                f.burst = fs + rng.random(fs);
+            }
+            if f.burst > 0 {
+                let fire = sight && f.burst & 1 == 0;
+                f.burst -= 1;
+                if f.burst == 0 {
+                    f.burst = -(fs * 2 + rng.random(fs * 2));
+                }
+                if fire && c.shells.len() < MAX_SHELLS {
+                    let (a, e) = (az + jitter(&mut rng) * sigma, el + jitter(&mut rng) * sigma);
+                    let dir = [a.sin() * e.cos(), a.cos() * e.cos(), e.sin()];
+                    let ttl = FIGHTER_GUN_REACH * 1.5 / FIGHTER_GUN_V0;
+                    let shell = Shell {
+                        pos: add(from, mul(nose, 10.0)),
+                        vel: add(mul(dir, FIGHTER_GUN_V0), own),
+                        ttl: ((ttl * fs as f64) as i32).max(1),
+                        flak: false,
+                        pilot: 0,
+                    };
+                    if self.record_shells {
+                        self.new_ai_shells.push(shell);
+                    }
+                    c.shells.push(AiShell { shell, target: f.target.unwrap_or(0) });
+                }
+            }
+            c.flights[i] = Some(f);
         }
         c.rng = rng;
         self.campaign = Some(c);
@@ -1065,6 +1137,11 @@ impl Sim {
 fn direction(heading: i32, pitch: i32) -> [f64; 3] {
     let (h, p) = (bam(heading), bam(pitch));
     [h.sin() * p.cos(), h.cos() * p.cos(), p.sin()]
+}
+
+/// A gun's aiming error: roughly normal, about unit spread.
+fn jitter(rng: &mut Rng) -> f64 {
+    (0..3).map(|_| rng.random(1000) as f64 / 1000.0).sum::<f64>() * 1.15 - 1.73
 }
 
 fn bam(a: i32) -> f64 {

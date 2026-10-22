@@ -262,6 +262,32 @@ fn a_far_sam_site_leaves_helicopters_alone() {
 }
 
 #[test]
+fn fighters_use_their_guns() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let from = find(&sim, 0x401, Some("Neuberg"));
+    let to = find(&sim, 0x001, Some("Tabor"));
+    let enemy = find(&sim, 0x001, Some("Konmarno"));
+    sim.spawn_insertion(from, to, 7, 0);
+    run(&mut sim, &idle(), 20 * 60);
+    let t = sim.objects()[to];
+    let f = sim.spawn_fighter(enemy, t.x, t.y, 8, false);
+    // No missiles: only its gun.
+    sim.flights_mut()[f].missile = 0;
+    let mut lost = false;
+    for _ in 0..15 * 60 {
+        if run(&mut sim, &idle(), 1)
+            .iter()
+            .any(|e| matches!(e, SimEvent::CampaignFlightDestroyed { tag: 7, .. }))
+        {
+            lost = true;
+            break;
+        }
+    }
+    assert!(lost, "the fighter never gunned down the helicopter");
+}
+
+#[test]
 fn places_change_hands_and_get_repaired() {
     let (_, mut sim) = campaign();
     let tabor = find(&sim, 0x001, Some("Tabor"));

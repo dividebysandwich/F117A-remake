@@ -293,6 +293,25 @@ impl Sim {
         k != self.pl.id && p.id == k && !p.absent && !p.on_ground && p.eject == 0
     }
 
+    /// The other pilots flying in the world and where they are: a host's pilots, the ones a
+    /// mirror shows.
+    pub(crate) fn other_pilots(&self) -> Vec<(u8, PlayerView)> {
+        if self.mirror {
+            return self
+                .remote
+                .iter()
+                .filter(|p| p.id != self.pl.id && !p.on_ground && p.chute.is_none())
+                .map(|p| (p.id, p.view))
+                .collect();
+        }
+        self.present()
+            .into_iter()
+            .map(|k| k as u8)
+            .filter(|&k| self.pilot_airborne(k))
+            .map(|k| (k, self.pilot_ref(k as usize).p))
+            .collect()
+    }
+
     /// Pilot `id`'s view of the world (position, attitude) while he is in it.
     pub fn pilot_view(&self, id: u8) -> Option<PlayerView> {
         let p = self.pilot_ref(id as usize);

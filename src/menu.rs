@@ -63,6 +63,8 @@ pub struct MenuState {
     pub kind: MissionKind,
     pub opponents: u8,
     pub lockheed: bool,
+    /// A hosted coop campaign's friendly fire.
+    pub friendly_fire: bool,
     /// None: rolled from the seed.
     pub weather: Option<Sky>,
     /// Coverage of the main cloud layer; None: rolled.
@@ -120,6 +122,7 @@ impl Default for MenuState {
             kind: MissionKind::Strike,
             opponents: 1,
             lockheed: false,
+            friendly_fire: false,
             weather: None,
             cloud_cover: None,
             seed: rand::random(),

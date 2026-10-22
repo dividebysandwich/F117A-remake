@@ -49,7 +49,7 @@ impl Config {
     /// From the command line: `--name`, `--port`, `--max-players`, `--theater`, `--roe`,
     /// `--opponents`, `--seed`, `--sky-ratio`, `--start-hour`, `--save <file>` and the rules
     /// `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`,
-    /// `--realistic-weapons`.
+    /// `--realistic-weapons`, `--friendly-fire`.
     pub fn from_args(args: &[String]) -> Result<Self> {
         let get = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
         let has = |f: &str| args.iter().any(|a| a == f);
@@ -86,6 +86,7 @@ impl Config {
                 no_crashes: has("--no-crashes"),
                 continuous_time: has("--continuous-time"),
                 realistic_weapons: has("--realistic-weapons"),
+                friendly_fire: has("--friendly-fire"),
             },
             save,
             send_every: {

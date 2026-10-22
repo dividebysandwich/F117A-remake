@@ -229,15 +229,31 @@ pub struct Sim {
     pub(crate) flight_history: std::collections::VecDeque<(u32, Vec<(i32, i32, i32)>)>,
     #[serde(skip)]
     pub(crate) pending_claims: Vec<(u8, claims::GunHit)>,
-    /// A mirror's: the own gun rounds' next slot, and the units already reported hit.
+    /// A mirror's: the own gun rounds' next slot, and the units and pilots already reported hit.
     #[serde(skip)]
     pub(crate) local_round: usize,
     #[serde(skip)]
     pub(crate) claimed: Vec<(u16, u32)>,
+    #[serde(skip)]
+    pub(crate) claimed_pilots: Vec<(u8, u32)>,
     /// Crash sites of pilots whose sortie ended, for the next step's events (a sortie can end
     /// between steps, whose events only the campaign host sees).
     #[serde(skip)]
     pub(crate) crash_sites: Vec<(i32, i32)>,
+    /// The pilots' weapons' hits on other pilots this step, applied with each shooter's
+    /// weapons back in their slots: victim, missile type (None: gunfire).
+    #[serde(skip)]
+    pub(crate) pilot_hits: Vec<(u8, Option<i32>)>,
+    /// Pilots a missile of another pilot homes on this frame (for their warning lights), and
+    /// whether it is close.
+    #[serde(skip)]
+    pub(crate) pilot_threats: Vec<(u8, bool)>,
+    /// A host's: when a pilot's gunfire last damaged another (shooter, victim, step).
+    #[serde(skip)]
+    pub(crate) gun_damage_steps: Vec<(u8, u8, u32)>,
+    /// A host's: where the pilots were in the last steps (`claims`).
+    #[serde(skip)]
+    pub(crate) pilot_history: std::collections::VecDeque<(u32, claims::PilotsAt)>,
     /// A host's: the shells fired since they were last taken.
     #[serde(skip)]
     pub(crate) record_shells: bool,
@@ -485,6 +501,11 @@ impl Sim {
             pending_claims: Vec::new(),
             local_round: 0,
             claimed: Vec::new(),
+            claimed_pilots: Vec::new(),
+            pilot_hits: Vec::new(),
+            pilot_threats: Vec::new(),
+            gun_damage_steps: Vec::new(),
+            pilot_history: Default::default(),
             crash_sites: Vec::new(),
             record_shells: false,
             new_shells: Vec::new(),
@@ -820,6 +841,7 @@ impl Sim {
             self.update_own_rounds(&ps);
         }
         self.apply_claims(&present);
+        self.apply_pilot_hits();
         self.update_enemy_rounds(&present);
         if self.aaa_rng.is_some() {
             self.aaa_damage();

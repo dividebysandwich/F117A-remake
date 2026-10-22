@@ -518,3 +518,161 @@ fn a_crashed_pilot_leaves_a_burning_wreck_for_everyone() {
     let events = sim.step_pilots(&[], 15);
     assert!(!events.iter().any(|e| matches!(e.event, SimEvent::Explosion { .. })));
 }
+
+/// Pilot 1 behind pilot 0 (`ahead` map units), both flying north: pilot 1 locks him and fires
+/// an air-to-air missile (or holds the cannon's trigger, his `client` flying his rounds) under
+/// friendly fire `ff`; the bursts at pilot 0 and his hits.
+fn shot_at_pilot(ff: bool, guided: bool, gun: bool, client: bool, ahead: i32) -> (usize, usize) {
+    let (mut sim, base) = two_pilots();
+    sim.opts.friendly_fire = ff;
+    sim.opts.realistic_guidance = guided;
+    let b = sim.objects()[base];
+    let (mx, my) = (b.x + 0x1000, b.y - 0x800);
+    sim.set_pilot_loadout(1, &[(0, 4), (-1, 0), (-1, 0), (-1, 0)], 0);
+    sim.set_client_rounds(1, client);
+    let mut inputs =
+        vec![(0, flying(mx, my - ahead, 5000, 0, 200)), (1, flying(mx, my, 5000, 0, 300))];
+    inputs[1].1.cmd.toggle_bay = !gun;
+    inputs[1].1.cmd.lock_pilot = Some(0);
+    sim.step_pilots(&inputs, 15);
+    inputs[1].1.cmd = Commands::default();
+    assert_eq!(sim.as_pilot(1, |s| s.targeting().pilot), Some(0));
+    for _ in 0..5 {
+        sim.step_pilots(&inputs, 15);
+    }
+    let mut mirror = None;
+    if client {
+        let d = data();
+        let s = MissionSettings {
+            theater: 3,
+            roe: 2,
+            opponents: 1,
+            kind: MissionKind::Strike,
+            ..Default::default()
+        };
+        let mut m = stealth_mission::generate(&d.gdata, &s, Seed::Srand(77)).unwrap();
+        m.world = d.gdata.theaters[3].world.clone();
+        let mut sm =
+            Sim::with_options(&d.sim, &m, SimOptions { campaign: true, ..Default::default() });
+        sm.make_mirror(1);
+        mirror = Some(sm);
+    }
+    if gun {
+        inputs[1].1.cmd.gun = true;
+    } else {
+        inputs[1].1.cmd.fire = true;
+    }
+    let (mut bursts, mut hits) = (0, 0);
+    for i in 0..15 * 20 {
+        for e in sim.step_pilots(&inputs, 15) {
+            match e.event {
+                SimEvent::Explosion { x, y, kind, .. }
+                    if (kind == 0x10 || kind == -1)
+                        && (x - mx).abs() <= 2
+                        && (y - (my - ahead)).abs() <= 2 =>
+                {
+                    bursts += 1
+                }
+                SimEvent::PlayerHit { .. } => {
+                    assert_eq!(e.pilot, 0, "the hit is pilot 0's news");
+                    hits += 1
+                }
+                _ => {}
+            }
+        }
+        if !gun && i == 0 {
+            inputs[1].1.cmd = Commands::default();
+        }
+        if gun && i == 15 {
+            inputs[1].1.cmd.gun = false;
+        }
+        if let Some(m) = mirror.as_mut() {
+            m.apply_world_fast(&sim.world_fast());
+            m.set_host_step(sim.step_count());
+            m.apply_pilot_snap(&sim.pilot_snap(1));
+            m.set_local_player(&inputs[1].1);
+            for hit in m.fly_own_rounds(&inputs[1].1) {
+                sim.claim_hit(1, hit);
+            }
+        }
+    }
+    (bursts, hits)
+}
+
+#[test]
+fn a_missile_fired_at_a_locked_pilot_hits_him() {
+    for guided in [false, true] {
+        let (bursts, hits) = shot_at_pilot(true, guided, false, false, 64 * 3);
+        assert_eq!((bursts, hits), (1, 1), "guided {guided}");
+        // Without friendly fire it bursts on him harmlessly.
+        let (bursts, hits) = shot_at_pilot(false, guided, false, false, 64 * 3);
+        assert_eq!((bursts, hits), (1, 0), "guided {guided}");
+    }
+}
+
+#[test]
+fn a_missile_on_a_pilot_lights_his_warnings() {
+    let (mut sim, base) = two_pilots();
+    let b = sim.objects()[base];
+    let (mx, my) = (b.x + 0x1000, b.y - 0x800);
+    sim.set_pilot_loadout(1, &[(0, 4), (-1, 0), (-1, 0), (-1, 0)], 0);
+    let mut inputs =
+        vec![(0, flying(mx, my - 64 * 3, 5000, 0, 200)), (1, flying(mx, my, 5000, 0, 300))];
+    inputs[1].1.cmd.toggle_bay = true;
+    inputs[1].1.cmd.lock_pilot = Some(0);
+    sim.step_pilots(&inputs, 15);
+    inputs[1].1.cmd = Commands::default();
+    for _ in 0..5 {
+        sim.step_pilots(&inputs, 15);
+    }
+    inputs[1].1.cmd.fire = true;
+    sim.step_pilots(&inputs, 15);
+    inputs[1].1.cmd = Commands::default();
+    let mut warned = false;
+    for _ in 0..15 {
+        sim.step_pilots(&inputs, 15);
+        warned |= sim.lights().rad_threat;
+    }
+    assert!(warned, "pilot 0 sees it coming");
+}
+
+#[test]
+fn a_pilots_cannon_hits_another_pilot() {
+    let (bursts, hits) = shot_at_pilot(true, false, true, false, 6);
+    assert!(bursts > 0 && hits > 0, "{bursts} {hits}");
+    // At most every quarter second: not every round that hits.
+    assert!(hits < bursts, "{bursts} {hits}");
+    let (bursts, hits) = shot_at_pilot(false, false, true, false, 6);
+    assert!(bursts > 0 && hits == 0, "{bursts} {hits}");
+}
+
+#[test]
+fn a_client_reports_his_rounds_hitting_another_pilot() {
+    let (bursts, hits) = shot_at_pilot(true, false, true, true, 6);
+    assert!(bursts > 0 && hits > 0, "{bursts} {hits}");
+    let (_, hits) = shot_at_pilot(false, false, true, true, 6);
+    assert_eq!(hits, 0);
+}
+
+#[test]
+fn a_forged_report_on_a_pilot_is_turned_down() {
+    let (mut sim, base) = two_pilots();
+    sim.opts.friendly_fire = true;
+    let b = sim.objects()[base];
+    let (mx, my) = (b.x + 0x1000, b.y - 0x800);
+    sim.set_client_rounds(1, true);
+    let mut inputs = vec![(0, flying(mx, my - 6, 5000, 0, 300)), (1, flying(mx, my, 5000, 0, 300))];
+    inputs[1].1.cmd.gun = true;
+    for _ in 0..10 {
+        sim.step_pilots(&inputs, 15);
+    }
+    let v = sim.pilot_view(0).unwrap();
+    let step = sim.step_count();
+    let at = |off: i32| (v.wx + off, 0x100000 - v.wy, v.view_z);
+    sim.claim_hit(1, claims::GunHit::Pilot { id: 0, step, at: at(2000) });
+    let hit =
+        |ev: Vec<PilotEvent>| ev.iter().any(|e| matches!(e.event, SimEvent::PlayerHit { .. }));
+    assert!(!hit(sim.step_pilots(&inputs, 15)), "far from where he was");
+    sim.claim_hit(1, claims::GunHit::Pilot { id: 0, step: sim.step_count(), at: at(0) });
+    assert!(hit(sim.step_pilots(&inputs, 15)), "where he is");
+}

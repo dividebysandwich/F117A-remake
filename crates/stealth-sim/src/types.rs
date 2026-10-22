@@ -151,6 +151,9 @@ pub struct Projectile {
     /// Missiles under realistic guidance (not in the original record): their exact flight.
     #[serde(default)]
     pub flight: Option<MissileFlight>,
+    /// An air-to-air missile fired at another pilot (not in the original): his id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_pilot: Option<u8>,
 }
 
 impl Projectile {
@@ -410,7 +413,7 @@ pub struct Commands {
     /// Lock this flight unit (airborne).
     #[serde(default)]
     pub lock_unit: Option<u16>,
-    /// Lock this other pilot's aircraft (airborne; tracking only, no weapon guides on it).
+    /// Lock this other pilot's aircraft (airborne; an air-to-air missile goes for him).
     #[serde(default)]
     pub lock_pilot: Option<u8>,
     /// Lock what is at this map point (the targeting pod's point track, not in the original):
@@ -502,6 +505,10 @@ pub struct SimOptions {
     /// hands and the AI fights the AI.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub campaign: bool,
+    /// Friendly fire (multiplayer, not in the original): the pilots' missiles and gunfire
+    /// damage each other (without it they burst on the other aircraft harmlessly).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub friendly_fire: bool,
 }
 
 impl Default for SimOptions {
@@ -516,6 +523,7 @@ impl Default for SimOptions {
             realistic_guidance: false,
             air_defence: false,
             campaign: false,
+            friendly_fire: false,
         }
     }
 }

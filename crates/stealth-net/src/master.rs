@@ -181,6 +181,7 @@ pub fn rules_list(r: &stealth_host::Rules) -> Vec<String> {
         (r.no_crashes, "no crashes"),
         (r.continuous_time, "continuous time"),
         (r.realistic_weapons, "realistic weapons"),
+        (r.friendly_fire, "friendly fire"),
     ]
     .iter()
     .filter(|x| x.0)

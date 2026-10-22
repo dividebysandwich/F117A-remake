@@ -980,8 +980,8 @@ when you play alone.
 ### Who decides what
 
 The server decides how the war is fought, for everybody: realistic damage, realistic guidance, no
-crashes, time of day (moonlit nights shorten the enemy's visual range) and realistic F-117A
-weapons, and of course the campaign's own options. Each player keeps his own cockpit (classic or
+crashes, time of day (moonlit nights shorten the enemy's visual range), realistic F-117A
+weapons and friendly fire, and of course the campaign's own options. Each player keeps his own cockpit (classic or
 modern), flight model, avionics, HUD, shaders, shadows and lights, and picks his aircraft (F-117A
 or F-16) for each sortie on the briefing's LOADOUT page.
 
@@ -998,8 +998,13 @@ or F-16) for each sortie on the briefing's LOADOUT page.
   for the others, then rows of two behind him.
 
 In the air the other players are friendly contacts on the MFD (blue on the classic map and TAC
-pages, a green ring on the modern MFD), never a radar lock; their weapons in flight show as
-missiles. Their cannon fire is drawn as tracers like your own.
+pages, a green ring on the modern MFD); their weapons in flight show as missiles. Their cannon
+fire is drawn as tracers like your own. Picked on the MFD, another player can be locked like an
+enemy aircraft (an enemy under the cursor is picked first), and an air-to-air missile fired with
+that lock goes for him: he gets the missile warning, and his decoy can lure it away. Your cannon
+rounds hit him too. Whether that hurts is the server's **friendly fire** rule: with it, missile
+and cannon hits damage him like the enemy's; without it a missile bursts on him harmlessly and
+the rounds just spark.
 
 Your cannon fires at once on your computer, and what its rounds hit on your screen counts: your
 game tells the server, which checks that you were firing and that the target really was there
@@ -1025,7 +1030,7 @@ stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 289
 | `--theater <code>` | ce, cu, ko, ku, lb, me, nc, pg, ua, vn. Default: the saved campaign's, else ce. |
 | `--roe <0..2>`, `--opponents <0..3>`, `--seed <n>`, `--start-hour <h>` | A new campaign's options. |
 | `--sky-ratio <x>` | The sky runs x times faster than real time (default 24: a day per hour). |
-| `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`, `--realistic-weapons` | The rules. |
+| `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`, `--realistic-weapons`, `--friendly-fire` | The rules. |
 | `--save <file>` | The campaign file (default `campaigns/dedicated.json` in the game's data directory). |
 | `--send-rate <hz>` | How often the moving world goes to the players, 1 to 15 times a second (default 7.5). More is smoother; less leaves bandwidth for more players. |
 | `--master <url>` | The server list to be on (default `https://sm-master.playspoon.com`; reported every 30 seconds). |

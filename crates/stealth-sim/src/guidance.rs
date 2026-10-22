@@ -180,13 +180,15 @@ impl Sim {
 
     /// The player's position (wu: east, south, true altitude) and velocity.
     pub(crate) fn player_target(&self) -> Target {
+        self.pilot_target(self.pl.id)
+    }
+
+    /// Pilot `k`'s aircraft as a target, like [`Self::player_target`].
+    pub(crate) fn pilot_target(&self, k: u8) -> Target {
+        let p = &self.pilot_ref(k as usize).p;
         Target {
-            p: [self.pl.p.wx as f64, (0x100000 - self.pl.p.wy) as f64, self.pl.p.alt as f64],
-            v: crate::ballistics::release_velocity(
-                self.pl.p.heading,
-                self.pl.p.velocity,
-                self.pl.p.climb,
-            ),
+            p: [p.wx as f64, (0x100000 - p.wy) as f64, p.alt as f64],
+            v: crate::ballistics::release_velocity(p.heading, p.velocity, p.climb),
         }
     }
 

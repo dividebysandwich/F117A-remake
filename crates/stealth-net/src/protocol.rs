@@ -8,7 +8,7 @@ use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 /// Changes with every change of the messages: client and server must agree.
-pub const PROTOCOL: u16 = 4;
+pub const PROTOCOL: u16 = 5;
 pub const DEFAULT_PORT: u16 = 28989;
 /// Players a server takes at most.
 pub const MAX_PLAYERS: usize = stealth_sim::MAX_PILOTS;

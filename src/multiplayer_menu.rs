@@ -2,7 +2,8 @@
 //! or host a campaign here and fly in it (a listen server). A dedicated server is started
 //! from the command line (`--dedicated`, `dedicated.rs`).
 //!
-//! The host's rules (realism, missile guidance, crashes, time of day, realistic weapons) are
+//! The host's rules (realism, missile guidance, crashes, time of day, realistic weapons,
+//! friendly fire) are
 //! everybody's; each player keeps his own cockpit, flight model, avionics, HUD and graphics,
 //! and picks his aircraft for each sortie.
 
@@ -112,7 +113,7 @@ impl Plugin for MultiplayerMenuPlugin {
 }
 
 /// Test aids: `--connect <host[:port]>` joins a server, `--host` serves a new campaign (in
-/// `--theater`), both as `--name <pilot>` (else the saved name).
+/// `--theater`, with `--friendly-fire`), both as `--name <pilot>` (else the saved name).
 fn test_args(
     mut done: Local<bool>,
     mut w: ResMut<MultiplayerWindow>,
@@ -137,9 +138,18 @@ fn test_args(
         state.theater = i;
     }
     if args.iter().any(|a| a == "--host") {
+        state.friendly_fire |= args.iter().any(|a| a == "--friendly-fire");
         w.show();
         w.page = Page::Host;
         w.auto_host = true;
+    }
+}
+
+/// The rules of a campaign hosted here.
+fn host_rules(settings: &crate::settings::Settings, state: &MenuState) -> stealth_host::Rules {
+    stealth_host::Rules {
+        friendly_fire: state.friendly_fire,
+        ..crate::campaign::rules_of(settings, state.lockheed)
     }
 }
 
@@ -296,7 +306,8 @@ fn multiplayer_window(
                 ui.add_space(6.0);
                 ui.label(
                     egui::RichText::new(
-                        "The server decides the rules (realism, guidance, crashes, time of day). \
+                        "The server decides the rules (realism, guidance, crashes, time of day, \
+                         friendly fire). \
                          Your cockpit, flight model, avionics, HUD and graphics stay your own; \
                          you pick your aircraft in each briefing.",
                     )
@@ -341,6 +352,7 @@ fn multiplayer_window(
                         crate::menu::realism_options(ui, &mut settings);
                         ui.checkbox(&mut settings.continuous_time, "Time of day (moonlit nights)");
                         ui.checkbox(&mut state.lockheed, "Realistic F-117A weapons");
+                        ui.checkbox(&mut state.friendly_fire, "Friendly fire");
                     });
                     ui.vertical(|ui| {
                         section(ui, "New campaign");
@@ -368,7 +380,7 @@ fn multiplayer_window(
                                 sky_ratio: w.sky_ratio,
                                 start_hour: w.start_hour,
                             };
-                            let rules = crate::campaign::rules_of(&settings, state.lockheed);
+                            let rules = host_rules(&settings, &state);
                             host = Some(
                                 Host::new(setup, &data.0, rules)
                                     .map(|h| (format!("coop-{code}-{secs}"), h))
@@ -385,7 +397,7 @@ fn multiplayer_window(
                             ui.horizontal(|ui| {
                                 ui.label(format!("{theater:<22} {hours:>5.1} h"));
                                 if ui.add_enabled(named, egui::Button::new("HOST")).clicked() {
-                                    let rules = crate::campaign::rules_of(&settings, state.lockheed);
+                                    let rules = host_rules(&settings, &state);
                                     host = Some(match save::load(&name) {
                                         Ok(Some(st)) => Host::resume(st, &data.0, rules)
                                             .map(|h| (name.clone(), h))

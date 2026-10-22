@@ -354,13 +354,8 @@ impl Sim {
                 t.box_colour = colour;
                 t.box_size = if k != 0 { k + 5 } else { 9 };
             }
-        } else if self.pl.hud_mode == HudMode::Air
-            && !self.pl.external_view
-            && self.pl.air_lock >= 0
-            && (self.pl.air_lock as usize) < self.flights.len()
-        {
-            let u = self.flights[self.pl.air_lock as usize];
-            let (scr, de92) = self.project(u.x, u.y, u.alt);
+        } else if let Some((x, y, alt)) = self.air_lock_point() {
+            let (scr, de92) = self.project(x, y, alt);
             let mut colour = 6;
             if count != 0 && cls == 7 {
                 colour = 0;
@@ -382,6 +377,19 @@ impl Sim {
         t.lock_valid = oval;
         t.in_range = red;
         self.pl.lights.lock = oval && (red || self.frame & 1 != 0);
+    }
+
+    /// The air lock in the HUD (map x, y and viewZ): the locked flight unit or other pilot.
+    fn air_lock_point(&self) -> Option<(i32, i32, i32)> {
+        if self.pl.hud_mode != HudMode::Air || self.pl.external_view {
+            return None;
+        }
+        if let Some(u) = usize::try_from(self.pl.air_lock).ok().and_then(|i| self.flights.get(i)) {
+            return Some((u.x, u.y, u.alt));
+        }
+        let k = self.pl.pilot_lock.filter(|&k| self.pilot_airborne(k))?;
+        let p = &self.pilot_ref(k as usize).p;
+        Some((p.mx, p.my, p.view_z))
     }
 
     /// Where the selected bomb would land if released now (map units with fractions; None

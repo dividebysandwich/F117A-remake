@@ -16,6 +16,9 @@ pub struct Rules {
     pub continuous_time: bool,
     /// The F-117A as it was: no cannon, only two bays.
     pub realistic_weapons: bool,
+    /// The players' missiles and gunfire damage each other.
+    #[serde(default)]
+    pub friendly_fire: bool,
 }
 
 impl Rules {
@@ -25,6 +28,7 @@ impl Rules {
             landing: if self.no_crashes { LandingMode::NoCrashes } else { LandingMode::Easy },
             realistic_damage: self.realistic_damage,
             realistic_guidance: self.realistic_guidance,
+            friendly_fire: self.friendly_fire,
             air_defence: true,
             campaign: true,
             ..Default::default()

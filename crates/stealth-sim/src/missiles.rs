@@ -64,6 +64,22 @@ impl Sim {
             }
             self.credit = None;
         }
+        // The other pilots' missiles homing on a pilot light his warnings.
+        for (k, close) in std::mem::take(&mut self.pilot_threats) {
+            self.activate(k as usize);
+            if self.pl.id != k || self.pl.damage & dmg::MW != 0 {
+                continue;
+            }
+            self.pl.lights.rad_threat = true;
+            if self.frame & 2 == 0 {
+                self.pl.lights.rad = true;
+            }
+            if close && self.frame & 3 == 0 {
+                self.pl.lights.klaxon = true;
+                self.emit(SimEvent::Rwr(RwrTone::AirLaunch));
+            }
+        }
+        self.apply_pilot_hits();
         for (k, o) in saved0 {
             self.activate(k);
             if let (Some(first), Some(o)) = (self.objects.first_mut(), o) {
@@ -73,6 +89,31 @@ impl Sim {
     }
 
     /// One frame of the projectile in slot `s`.
+    /// The pilots' weapons' hits on other pilots (`pilot_hits`), each on his turn: damage
+    /// with friendly fire. A pilot's gunfire damages another at most every quarter second.
+    pub(crate) fn apply_pilot_hits(&mut self) {
+        let hits = std::mem::take(&mut self.pilot_hits);
+        if !self.opts.friendly_fire {
+            return;
+        }
+        let back = self.pl.id as usize;
+        for (k, spec) in hits {
+            self.activate(k as usize);
+            if self.pl.id != k || self.pl.eject != 0 {
+                continue;
+            }
+            match spec {
+                Some(spec) => {
+                    let name = self.missile(spec).name.clone();
+                    self.msg(format!("Hit by {name}"));
+                    self.player_hit(true);
+                }
+                None => self.player_hit(false),
+            }
+        }
+        self.activate(back);
+    }
+
     fn missile_frame(&mut self, s: usize) {
         let (tgx, tgy) = if self.decoy_active() {
             (self.pl.cms[0].x, self.pl.cms[0].y)
@@ -97,6 +138,8 @@ impl Sim {
         let mut best;
         let mut alt0 = 0;
         let mut hit: i32 = -1;
+        // Another pilot this one homes on (and whether on his decoy).
+        let mut pilot_hit: Option<(u8, bool)> = None;
         if s < 8 {
             // ---- enemy missile ----
             alt0 = self.pl.p.view_z;
@@ -180,6 +223,23 @@ impl Sim {
                         locked = true;
                     }
                 }
+                // Fired at another pilot: him while the seeker sees him (or his decoy).
+                if let Some(k) = self.proj[s].target_pilot.filter(|&k| self.pilot_airborne(k)) {
+                    let p = self.pilot_ref(k as usize);
+                    let decoy = p.cms[0].ttl > 0;
+                    let (x, y) = if decoy { (p.cms[0].x, p.cms[0].y) } else { (p.p.mx, p.p.my) };
+                    let z = p.p.view_z;
+                    if self.acquire(s, x, y, z, cls) {
+                        aim = self.acq_aim;
+                        best = self.acq_range;
+                        hit = -1;
+                        alt0 = z;
+                        locked = true;
+                        pilot_hit = Some((k, decoy));
+                        let close = (self.proj[s].speed << 4) > best;
+                        self.pilot_threats.push((k, close));
+                    }
+                }
             }
             if !guided && self.proj[s].speed < (mt.max_speed as i32) >> 6 && self.frame & 1 != 0 {
                 self.proj[s].speed += 1;
@@ -253,6 +313,15 @@ impl Sim {
                     crate::guidance::Target { p, v: [0.0; 3] }
                 } else {
                     self.player_target()
+                })
+            } else if let Some((k, decoy)) = pilot_hit {
+                Some(if decoy {
+                    let p = self.pilot_ref(k as usize);
+                    let c = p.cms[0];
+                    let p = [c.x as f64 * 32.0 + 16.0, c.y as f64 * 32.0 + 16.0, p.p.alt as f64];
+                    crate::guidance::Target { p, v: [0.0; 3] }
+                } else {
+                    self.pilot_target(k)
                 })
             } else if hit < 0 {
                 None
@@ -329,6 +398,17 @@ impl Sim {
                             self.log_event(5, spec);
                         }
                     }
+                }
+            } else if let Some((k, decoy)) = pilot_hit {
+                // At another pilot: the burst is everybody's to see, the damage his (with
+                // friendly fire), applied when his turn comes.
+                let p = self.pilot_ref(k as usize).p;
+                let (x, y, alt) = if decoy { (m.x, m.y, m.alt) } else { (p.mx, p.my, p.view_z) };
+                self.flash = Flash { x, y, alt, timer: 0x10 };
+                self.emit(SimEvent::Explosion { x, y, alt, kind: 0x10 });
+                self.proj[s].ttl = 0;
+                if !decoy {
+                    self.pilot_hits.push((k, Some(spec)));
                 }
             } else if cls == 7 {
                 if hit >= 0 {

@@ -5,7 +5,8 @@
 //! ([`GunHit`]). The host checks each report ([`Sim::claim_hit`], applied in the next step):
 //! the pilot fired lately, the unit was where the report says at that frame (the host keeps
 //! the flight units' positions of the last second: lag compensation), and within the
-//! cannon's reach of him; then it is his kill as if the host's rounds had hit.
+//! cannon's reach of him; then it is his kill as if the host's rounds had hit. Another
+//! pilot's aircraft hit is checked the same way (the host keeps the pilots' positions too).
 
 use serde::{Deserialize, Serialize};
 
@@ -25,12 +26,17 @@ const SLACK: f64 = 1.5;
 /// A unit is reported hit once in this many steps.
 const CLAIM_AGAIN: u32 = 15;
 
+/// The pilots' positions at a step (id, world units like the rounds').
+pub(crate) type PilotsAt = Vec<(u8, (i32, i32, i32))>;
+
 /// A client's report of one of his rounds hitting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GunHit {
     /// Flight unit `unit` at the host's frame `step` (the one shown), the round at `at`
     /// (world units like the units' wx, wy and alt).
     Aircraft { unit: u16, step: u32, at: (i32, i32, i32) },
+    /// Pilot `id`'s aircraft, like [`GunHit::Aircraft`].
+    Pilot { id: u8, step: u32, at: (i32, i32, i32) },
     /// The round hit the ground at (x, y) (fine units, like [`SimEvent::RoundImpact`]).
     Ground { x: i32, y: i32 },
 }
@@ -63,10 +69,12 @@ impl Sim {
         }
     }
 
-    /// The flight units' positions of this step, while some pilot reports his own hits.
+    /// The flight units' and pilots' positions of this step, while some pilot reports his own
+    /// hits.
     pub(crate) fn record_flights(&mut self) {
         if !self.present().iter().any(|&k| self.pilot_ref(k).client_rounds) {
             self.flight_history.clear();
+            self.pilot_history.clear();
             return;
         }
         let now = self.flights.iter().map(|u| (u.wx, u.wy, u.alt)).collect();
@@ -74,6 +82,25 @@ impl Sim {
         while self.flight_history.len() > HISTORY {
             self.flight_history.pop_front();
         }
+        let pilots = self
+            .present()
+            .into_iter()
+            .map(|k| (k as u8, Self::round_point(&self.pilot_ref(k).p)))
+            .collect();
+        self.pilot_history.push_back((self.steps, pilots));
+        while self.pilot_history.len() > HISTORY {
+            self.pilot_history.pop_front();
+        }
+    }
+
+    /// Where pilot `id` was at step `step`, like [`Self::flight_at`].
+    fn pilot_at(&self, id: u8, step: u32) -> Option<(i32, i32, i32)> {
+        let newest = self.pilot_history.back().map_or(self.steps, |&(s, _)| s);
+        if step.wrapping_sub(newest) as i32 > 0 {
+            return Some(Self::round_point(&self.pilot_ref(id as usize).p));
+        }
+        let (_, at) = self.pilot_history.iter().find(|(s, _)| *s == step)?;
+        at.iter().find(|(k, _)| *k == id).map(|&(_, p)| p)
     }
 
     /// Where flight unit `j` was at step `step`; None when that is too long ago. A step not
@@ -131,6 +158,18 @@ impl Sim {
                     }
                     self.gun_kill(j);
                 }
+                GunHit::Pilot { id: victim, step, at } => {
+                    if !self.pilot_airborne(victim) {
+                        continue;
+                    }
+                    let Some(was) = self.pilot_at(victim, step) else { continue };
+                    let r = self.gun_hit_radius() * SLACK;
+                    let d = [(at.0 - was.0) as f64, (at.1 - was.1) as f64, (at.2 - was.2) as f64];
+                    if d.iter().map(|v| v * v).sum::<f64>() > r * r || far(was) {
+                        continue;
+                    }
+                    self.gun_hit_pilot(victim, was);
+                }
                 GunHit::Ground { x, y } => {
                     let f = ROUND_FINE;
                     if far((x / f, y / f, 0)) {
@@ -166,6 +205,7 @@ impl Sim {
         }
         let step = self.steps;
         self.claimed.retain(|&(_, s)| step.wrapping_sub(s) < CLAIM_AGAIN);
+        self.claimed_pilots.retain(|&(_, s)| step.wrapping_sub(s) < CLAIM_AGAIN);
         let mut out = Vec::new();
         let f = ROUND_FINE;
         for i in 0..nb {
@@ -184,6 +224,15 @@ impl Sim {
                     step,
                     at: (b.x / f, b.y / f, b.alt / f),
                 });
+            }
+            if self.bullets[i].x != 0
+                && let Some(k) = self.round_hits_pilots(&b).first().copied()
+            {
+                self.bullets[i].x = 0;
+                if !self.claimed_pilots.iter().any(|&(p, _)| p == k) {
+                    self.claimed_pilots.push((k, step));
+                    out.push(GunHit::Pilot { id: k, step, at: (b.x / f, b.y / f, b.alt / f) });
+                }
             }
             if let Some((x, y)) = self.bullets[i].ground_crossing() {
                 self.bullets[i].x = 0;

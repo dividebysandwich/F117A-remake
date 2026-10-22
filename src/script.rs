@@ -9,7 +9,8 @@
 //! `msl<2:ViewChase` / `air<2:HudMode` = an enemy missile / an airborne aircraft within 2 km. The step `Screenshot` takes the
 //! `--screenshot` picture at that moment. `yaw=0.5` sets the rudder, `throttle=0.8` holds an
 //! absolute throttle, `trigger=1` / `trigger=0` holds / releases the fire button (`gun=1` / `gun=0` the gun trigger), `mark=1` / `mark=0` the lock cursor
-//! target button and `press=Gear` pushes the 3D-cockpit control bound to that action.
+//! target button, `lockpilot=1` locks another player's aircraft (pilot id 1, as a display
+//! lock does) and `press=Gear` pushes the 3D-cockpit control bound to that action.
 
 use bevy::prelude::*;
 
@@ -54,6 +55,8 @@ enum Step {
     Gun(bool),
     /// Holds or releases "lock cursor target" (`mark=1`, `mark=0`).
     Mark(bool),
+    /// Locks another player's aircraft by pilot id (`lockpilot=1`).
+    LockPilot(u8),
 }
 
 #[derive(Clone, Copy)]
@@ -89,6 +92,7 @@ struct Axes {
     trigger: bool,
     gun: bool,
     mark: bool,
+    lock_pilot: Option<u8>,
 }
 
 fn parse_step(what: &str) -> Option<Step> {
@@ -110,6 +114,8 @@ fn parse_step(what: &str) -> Option<Step> {
         Step::Gun(x.parse::<u8>().ok()? != 0)
     } else if let Some(x) = what.strip_prefix("mark=") {
         Step::Mark(x.parse::<u8>().ok()? != 0)
+    } else if let Some(x) = what.strip_prefix("lockpilot=") {
+        Step::LockPilot(x.parse().ok()?)
     } else if let Some(x) = what.strip_prefix("press=") {
         Step::Press(x.to_string())
     } else {
@@ -175,6 +181,7 @@ fn apply(
         Step::Trigger(t) => axes.trigger = *t,
         Step::Gun(t) => axes.gun = *t,
         Step::Mark(t) => axes.mark = *t,
+        Step::LockPilot(k) => axes.lock_pilot = Some(*k),
         Step::Press(name) => {
             if let Some(act) = crate::input::action_by_name(name) {
                 presses.write(crate::cockpit3d::PressControl(act));
@@ -202,6 +209,8 @@ fn run_script(
     mut controls: ResMut<FlightControls>,
     mut actions: MessageWriter<ActionEvent>,
     mut presses: MessageWriter<crate::cockpit3d::PressControl>,
+    mut locks: MessageWriter<crate::avionics::LockRequest>,
+    mut hud: ResMut<crate::hud::HudState>,
 ) {
     if script.steps.is_empty() && script.conditional.is_empty() {
         return;
@@ -247,6 +256,10 @@ fn run_script(
             apply(step, &mut script.axes, &mut actions, &mut presses, &mut shot);
         }
     }
+    if let Some(k) = script.axes.lock_pilot.take() {
+        hud.mode = crate::hud::HudMode::Air;
+        locks.write(crate::avionics::LockRequest(crate::mfd::ContactRef::Pilot(k)));
+    }
     controls.roll = script.axes.roll;
     controls.pitch = script.axes.pitch;
     controls.yaw = script.axes.yaw;
@@ -272,6 +285,7 @@ fn step_name(s: &Step) -> String {
         Step::Trigger(t) => format!("trigger={}", *t as u8),
         Step::Gun(t) => format!("gun={}", *t as u8),
         Step::Mark(t) => format!("mark={}", *t as u8),
+        Step::LockPilot(k) => format!("lockpilot={k}"),
     }
 }
 

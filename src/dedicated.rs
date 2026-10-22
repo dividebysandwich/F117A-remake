@@ -30,6 +30,7 @@ stealth-mission-89 --dedicated [switches]
   --no-crashes           collisions bounce, crashes do not end the flight
   --continuous-time      moving sun and moon; moonlight sets the enemy's visual range
   --realistic-weapons    the F-117A as it was: no cannon, two bays
+  --friendly-fire        the players' missiles and gunfire damage each other
   --plain                log lines instead of the console screen (UTC timestamps; the screen is shown
                          when the output is a terminal; q or Ctrl-C stops the server)
 ";

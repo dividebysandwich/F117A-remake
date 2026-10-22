@@ -354,6 +354,7 @@ impl Sim {
             locked: false,
             fall: None,
             flight: None,
+            target_pilot: None,
         };
         if spec == 27 {
             self.pl.maverick_view = true;
@@ -400,6 +401,10 @@ impl Sim {
             pr.ttl = 0x7FFF;
         }
         self.proj[slot] = pr;
+        // An air-to-air missile fired with another pilot locked goes for him.
+        if mt.class == 7 {
+            self.proj[slot].target_pilot = self.pl.pilot_lock.filter(|&k| self.pilot_airborne(k));
+        }
         if self.guided(spec) {
             // Off the aircraft along its nose with its speed (pull up to lob a missile).
             let pos = [
@@ -530,6 +535,12 @@ impl Sim {
                 self.gun_kill(j);
                 self.bullets[i].x = 0;
             }
+            if self.bullets[i].x != 0
+                && let Some(k) = self.round_hits_pilots(&b).first().copied()
+            {
+                self.gun_hit_pilot(k, Self::round_point(&self.pilot_ref(k as usize).p));
+                self.bullets[i].x = 0;
+            }
             self.round_on_ground(i);
         }
         self.credit = None;
@@ -543,26 +554,60 @@ impl Sim {
     /// The airborne flight units a round's path over this frame passes within the hit radius
     /// of.
     pub(crate) fn round_hits(&self, b: &Bullet) -> Vec<usize> {
+        (0..self.flights.len())
+            .filter(|&j| {
+                let u = self.flights[j];
+                // A falling wreck is not shot down again.
+                u.flags & fflags::AIRBORNE != 0
+                    && u.flags & fflags::DESTROYED == 0
+                    && self.round_passes(b, (u.wx, u.wy, u.alt))
+            })
+            .collect()
+    }
+
+    /// The other pilots in the air a round's path over this frame passes within the hit
+    /// radius of.
+    pub(crate) fn round_hits_pilots(&self, b: &Bullet) -> Vec<u8> {
+        self.other_pilots()
+            .into_iter()
+            .filter(|(_, p)| self.round_passes(b, Self::round_point(p)))
+            .map(|(k, _)| k)
+            .collect()
+    }
+
+    /// A pilot's aircraft in the rounds' frame (world units, y growing south, viewZ).
+    pub(crate) fn round_point(p: &PlayerView) -> (i32, i32, i32) {
+        (p.wx, 0x100000 - p.wy, p.view_z)
+    }
+
+    /// A round's path over this frame passes within the hit radius of point `at` (world
+    /// units).
+    fn round_passes(&self, b: &Bullet, at: (i32, i32, i32)) -> bool {
         let r = self.gun_hit_radius();
         let fine = ROUND_FINE as f64;
         let end = [b.x as f64 / fine, b.y as f64 / fine, b.alt as f64 / fine];
         let step = [b.vx as f64 / fine, b.vy as f64 / fine, b.vz as f64 / fine];
         let len2 = step.iter().map(|s| s * s).sum::<f64>().max(1e-9);
-        (0..self.flights.len())
-            .filter(|&j| {
-                let u = self.flights[j];
-                // A falling wreck is not shot down again.
-                if u.flags & fflags::AIRBORNE == 0 || u.flags & fflags::DESTROYED != 0 {
-                    return false;
-                }
-                let to = [u.wx as f64 - end[0], u.wy as f64 - end[1], u.alt as f64 - end[2]];
-                // Closest point of the segment end - step .. end.
-                let k =
-                    (-(to[0] * step[0] + to[1] * step[1] + to[2] * step[2]) / len2).clamp(0.0, 1.0);
-                let d2: f64 = (0..3).map(|a| (to[a] + k * step[a]).powi(2)).sum();
-                d2 < r * r
-            })
-            .collect()
+        let to = [at.0 as f64 - end[0], at.1 as f64 - end[1], at.2 as f64 - end[2]];
+        // Closest point of the segment end - step .. end.
+        let k = (-(to[0] * step[0] + to[1] * step[1] + to[2] * step[2]) / len2).clamp(0.0, 1.0);
+        let d2: f64 = (0..3).map(|a| (to[a] + k * step[a]).powi(2)).sum();
+        d2 < r * r
+    }
+
+    /// The active pilot's gunfire hits pilot `k` (at `at`, world units as the rounds'): a
+    /// spark for everybody, and (with friendly fire, at most every quarter second) damage on
+    /// his turn.
+    pub(crate) fn gun_hit_pilot(&mut self, k: u8, at: (i32, i32, i32)) {
+        let (x, y) = (at.0 / 32, at.1 / 32);
+        self.emit(SimEvent::Explosion { x, y, alt: at.2, kind: -1 });
+        let (me, now) = (self.pl.id, self.steps);
+        let every = (self.fs / 4).max(1) as u32;
+        self.gun_damage_steps.retain(|&(_, _, s)| now.wrapping_sub(s) < every);
+        if !self.gun_damage_steps.iter().any(|&(a, b, _)| (a, b) == (me, k)) {
+            self.gun_damage_steps.push((me, k, now));
+            self.pilot_hits.push((k, None));
+        }
     }
 
     /// Flight unit `j` shot down by the active pilot's cannon.

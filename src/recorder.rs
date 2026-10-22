@@ -117,8 +117,8 @@ pub struct FlightRecord {
     pub spans: Vec<Span>,
     /// The ground units by object index (empty names: not a radar).
     pub sites: Vec<SiteInfo>,
-    /// The low-level air defences: what and where (map units).
-    pub aaa: Vec<(stealth_sim::aaa::AaaKind, i32, i32)>,
+    /// The low-level air defences: what, where (map units) and whether friendly.
+    pub aaa: Vec<(stealth_sim::aaa::AaaKind, i32, i32, bool)>,
     /// Open span per site.
     open: Vec<Option<usize>>,
     frame: u32,
@@ -190,7 +190,12 @@ impl FlightRecord {
                     }
                 })
                 .collect();
-            self.aaa = sim.aaa_units().iter().map(|u| (u.kind, u.x, u.y)).collect();
+            self.aaa = sim
+                .aaa_units()
+                .iter()
+                .enumerate()
+                .map(|(k, u)| (u.kind, u.x, u.y, sim.aaa_blue(k)))
+                .collect();
         }
         for (i, u) in sim.aaa_units().iter().enumerate() {
             if u.destroyed && !self.marks.iter().any(|m| m.kind == MarkKind::AaaKill(i)) {

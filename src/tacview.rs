@@ -198,18 +198,19 @@ impl AcmiWriter {
             );
         }
 
-        for (i, (kind, x, y)) in rec.aaa.iter().enumerate() {
-            let ty = if *kind == stealth_sim::aaa::AaaKind::Manpads {
+        for (i, &(kind, x, y, blue)) in rec.aaa.iter().enumerate() {
+            let ty = if kind == stealth_sim::aaa::AaaKind::Manpads {
                 "Ground+Light+Human+Infantry"
             } else {
                 "Ground+Heavy+Armor+AntiAircraft"
             };
+            let (coalition, colour) = if blue { ("Allies", "Blue") } else { ("Enemies", "Red") };
             let _ = writeln!(
                 w,
-                "{:x},T={},Type={ty},Name={},Coalition=Enemies,Color=Red",
+                "{:x},T={},Type={ty},Name={},Coalition={coalition},Color={colour}",
                 AAA + i as u32,
-                geo.map_t(*x as f64, *y as f64, 0.0),
-                kind.name(),
+                geo.map_t(x as f64, y as f64, 0.0),
+                kind.name_on(blue),
             );
         }
     }

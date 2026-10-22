@@ -95,7 +95,8 @@ fn frame_line(sim: &Sim, events: &[SimEvent]) -> String {
         h = fnv(h, &format!("{i} {} {} {}", o.flags, o.alert, o.unit_type));
     }
     for u in sim.aaa_units() {
-        h = fnv(h, &format!("{u:?}"));
+        // Without the Patriot launchers' ready rounds (added later; always 0 here).
+        h = fnv(h, &format!("{u:?}").replace(", rounds: 0", ""));
     }
     let _ = write!(
         s,

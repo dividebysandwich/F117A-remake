@@ -1274,6 +1274,7 @@ fn aaa_duel(kind: aaa::AaaKind, north: i32, alt: u16, light: u8) -> Vec<SimEvent
         aim_el: 0.0,
         burst: 0,
         cooldown: 0,
+        rounds: 0,
     };
     *sim.aaa_units_mut() = vec![unit];
     let p = player_at(x, y - north, alt, 0x4000, 0);
@@ -1355,6 +1356,7 @@ fn flak_leads_a_moving_target() {
         aim_el: 0.0,
         burst: 0,
         cooldown: 0,
+        rounds: 0,
     };
     *sim.aaa_units_mut() = vec![unit];
     let mut misses = Vec::new();

@@ -499,7 +499,13 @@ fn sync_aaa(
         if let Some(mut s) = state {
             s.0[1] = u.destroyed as i16;
             s.0[AAA_TURRET_SLOT] = bam16(u.aim_az - heading);
-            s.0[AAA_GUN_SLOT] = bam16(-u.aim_el);
+            // The Patriot launcher fires at a fixed elevation.
+            let el = if u.kind == stealth_sim::aaa::AaaKind::PatriotLauncher {
+                stealth_sim::campaign::PATRIOT_ELEVATION
+            } else {
+                u.aim_el
+            };
+            s.0[AAA_GUN_SLOT] = bam16(-el);
         }
     }
 

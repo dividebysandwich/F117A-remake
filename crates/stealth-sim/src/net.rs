@@ -324,8 +324,15 @@ impl Sim {
         base.aaa.truncate(self.aaa.len());
         for (i, u) in self.aaa.iter().enumerate() {
             // The aim, the burst and the tracking go with the fast state.
-            let still =
-                AaaUnit { aim_az: 0.0, aim_el: 0.0, burst: 0, cooldown: 0, tracking: false, ..*u };
+            let still = AaaUnit {
+                aim_az: 0.0,
+                aim_el: 0.0,
+                burst: 0,
+                cooldown: 0,
+                tracking: false,
+                rounds: 0,
+                ..*u
+            };
             let now = (still, self.aaa_blue(i));
             if base.aaa.get(i) != Some(&now) {
                 if i < base.aaa.len() {

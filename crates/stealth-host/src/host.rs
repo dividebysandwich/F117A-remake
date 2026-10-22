@@ -83,6 +83,8 @@ pub struct Host {
     forecast: Option<Forecast>,
     /// Events the host's own calls took from the simulation and did not use.
     leftover: Vec<PilotEvent>,
+    /// Places with a Patriot battery placed in the simulation.
+    patriots: Vec<PlaceId>,
 }
 
 impl Host {
@@ -114,6 +116,7 @@ impl Host {
             lat,
             forecast,
             leftover: Vec::new(),
+            patriots: Vec::new(),
         }
     }
 
@@ -142,9 +145,21 @@ impl Host {
                 sim.place_defences(p.x, p.y, p.airfield.is_some(), p.owner == Side::Blue);
             }
         }
+        self.place_patriots(sim);
         sim.record_shells(true);
         let events = self.state.after_load();
         self.apply(sim, events)
+    }
+
+    /// Patriot batteries at the friendly airfields in the rear that have none yet (batteries
+    /// stay where they are when the front moves on).
+    fn place_patriots(&mut self, sim: &mut Sim) {
+        for (place, x, y) in self.state.patriot_sites() {
+            if !self.patriots.contains(&place) {
+                self.patriots.push(place);
+                sim.place_patriot(x, y);
+            }
+        }
     }
 
     pub fn started(&self) -> bool {
@@ -377,6 +392,8 @@ impl Host {
                     if let Some(p) = self.state.place(*place) {
                         sim.place_defences(p.x, p.y, p.airfield.is_some(), blue);
                     }
+                    // The front moved: airfields now in the rear may get a battery.
+                    self.place_patriots(sim);
                 }
                 CampaignEvent::Repaired { object } => sim.restore_object(*object as usize),
                 CampaignEvent::IntelGained { objects, .. } => {

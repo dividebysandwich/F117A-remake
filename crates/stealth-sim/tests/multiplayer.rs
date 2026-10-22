@@ -688,3 +688,59 @@ fn a_forged_report_on_a_pilot_is_turned_down() {
     sim.claim_hit(1, claims::GunHit::Pilot { id: 0, step: sim.step_count(), at: at(0) });
     assert!(hit(sim.step_pilots(&inputs, 15)), "where he is");
 }
+
+#[test]
+fn a_mirror_sees_the_friendly_air_defences() {
+    use stealth_sim::aaa::AaaKind;
+    use stealth_sim::ai_loadout::FighterTask;
+    let (mut host, base) = two_pilots();
+    let b = host.objects()[base];
+    host.place_defences(b.x, b.y, true, true);
+    host.place_patriot(b.x + 0x100, b.y);
+    let enemy = (3..host.objects().len())
+        .find(|&i| host.objects()[i].flags & 0xF0F == 0x001)
+        .expect("enemy base");
+    host.spawn_fighter(enemy, b.x, b.y, 8, false, FighterTask::Patrol);
+    let cap = host.spawn_fighter(base, b.x, b.y, 9, true, FighterTask::Cap);
+    let d = data();
+    let s = MissionSettings {
+        theater: 3,
+        roe: 2,
+        opponents: 1,
+        kind: MissionKind::Strike,
+        ..Default::default()
+    };
+    let mut m = stealth_mission::generate(&d.gdata, &s, Seed::Srand(77)).unwrap();
+    m.world = d.gdata.theaters[3].world.clone();
+    let mut mirror =
+        Sim::with_options(&d.sim, &m, SimOptions { campaign: true, ..Default::default() });
+    mirror.make_mirror(1);
+    let mut slow_base = stealth_sim::net::SlowBase::default();
+    let idle = PlayerState { on_ground: true, fuel: 10000, ..Default::default() };
+    let inputs = vec![(0, idle.clone()), (1, idle)];
+    for _ in 0..15 * 10 {
+        host.step_pilots(&inputs, 15);
+        let slow: stealth_sim::net::WorldSlow =
+            serde_json::from_str(&serde_json::to_string(&host.world_slow(&mut slow_base)).unwrap())
+                .unwrap();
+        let fast: stealth_sim::net::WorldFast =
+            serde_json::from_str(&serde_json::to_string(&host.world_fast()).unwrap()).unwrap();
+        mirror.apply_world_slow(&slow);
+        mirror.apply_world_fast(&fast);
+        mirror.mirror_frame();
+    }
+    let kinds = |s: &Sim| -> Vec<(AaaKind, bool)> {
+        (0..s.aaa_units().len()).map(|k| (s.aaa_units()[k].kind, s.aaa_blue(k))).collect()
+    };
+    assert_eq!(kinds(&mirror), kinds(&host));
+    for kind in [AaaKind::Gepard, AaaKind::PatriotRadar, AaaKind::PatriotLauncher] {
+        assert!(kinds(&mirror).contains(&(kind, true)), "{kind:?}");
+    }
+    let f = mirror.campaign_flight(cap).expect("the CAP");
+    assert!(f.blue && f.task == FighterTask::Cap);
+    assert!(mirror.friendly_unit(cap, mirror.flights()[cap].spec));
+    let live = |s: &Sim| -> Vec<FlightUnit> {
+        s.flights().iter().copied().filter(|u| u.flags & fflags::EXISTS != 0).collect()
+    };
+    assert_eq!(live(&mirror), live(&host));
+}

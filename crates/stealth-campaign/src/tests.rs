@@ -429,3 +429,32 @@ fn a_cap_fighter_gone_from_the_air_counts_as_lost() {
     assert_eq!(c.cap_lockout.iter().filter(|l| l.0 == base).count(), 1);
     assert!(caps_from(&c.tick(60.0, &with_caps(&view, &caps[1..]), &[]), base).is_empty());
 }
+
+#[test]
+fn patriots_stand_in_the_rear() {
+    for (code, index) in [("ce", 3), ("ua", 9), ("pg", 1), ("vn", 4)] {
+        let c = campaign(code, index);
+        let sites = c.patriot_sites();
+        assert!(!sites.is_empty(), "{code}: no Patriots");
+        assert!(sites.len() <= tuning::PATRIOT_BATTERIES + c.setup.roe as usize);
+        let front = |p: PlaceId| {
+            let p = &c.places[p as usize];
+            c.places
+                .iter()
+                .filter(|q| q.owner == Side::Red)
+                .map(|q| dist(q.x - p.x, q.y - p.y))
+                .min()
+                .unwrap_or(i32::MAX)
+        };
+        for &(p, x, y) in &sites {
+            let place = &c.places[p as usize];
+            assert!(
+                place.owner == Side::Blue && place.airfield.is_some(),
+                "{code}: {}",
+                place.name
+            );
+            assert!(sites.len() == 1 || front(p) >= tuning::PATRIOT_REAR, "{code}: {}", place.name);
+            assert!(dist(x - place.x, y - place.y) <= 2 * tuning::PATRIOT_OFFSET);
+        }
+    }
+}

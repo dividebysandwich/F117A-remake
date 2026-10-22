@@ -896,6 +896,22 @@
       "class": 2,
       "turn": 5,
       "model": 15
+    },
+    {
+      "name": "MIM-104",
+      "lock_range": 70,
+      "max_speed": 2400,
+      "class": 3,
+      "turn": 4,
+      "model": 15
+    },
+    {
+      "name": "FIM-92",
+      "lock_range": 8,
+      "max_speed": 1500,
+      "class": 0,
+      "turn": 6,
+      "model": 1
     }
   ],
   "weapons": [

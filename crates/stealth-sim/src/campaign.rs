@@ -19,7 +19,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::aaa::{AaaKind, AaaUnit, M_PER_MAP, SA14, Shell, lead};
+use crate::aaa::{AaaKind, AaaUnit, M_PER_MAP, PATRIOT, SA14, STINGER, Shell, lead};
 use crate::ai_loadout::{AiLoadout, FighterTask};
 use crate::csar::BLACKHAWK;
 use crate::math::{approx, s16};
@@ -50,6 +50,18 @@ const FIGHTER_GUN_CONE: f64 = 0.1;
 pub const CAP_BUBBLE: i32 = 0xA00;
 pub const CAP_LEASH: i32 = 0xC80;
 pub const CAP_LINGER: i32 = 60;
+/// Patriot: how far it engages (35 km: it guards the rear, the front stays the players' and
+/// the CAPs') and its lowest target (m); seconds between a launcher's missiles and to reload
+/// its four; missiles in the air at one aircraft at most.
+const PATRIOT_REACH: i32 = 0x8C0;
+const PATRIOT_FLOOR: f64 = 60.0;
+const PATRIOT_RELOAD: i32 = 120;
+const PATRIOT_INTERVAL: i32 = 8;
+const PATRIOT_SALVO: usize = 2;
+pub const PATRIOT_ROUNDS: i32 = 4;
+/// A launcher fires on the track of a radar this close (1 km); its fixed elevation (rad).
+const PATRIOT_LINK: i32 = 0x40;
+pub const PATRIOT_ELEVATION: f32 = 0.66;
 /// A missile's fuse (m) and the chance (per mille) it kills what it reaches.
 const FUSE: f64 = 25.0;
 const MISSILE_PK: i32 = 700;
@@ -488,8 +500,8 @@ impl Sim {
     }
 
     /// Campaign: low-level air defences around a place. Enemy places get the guns and MANPADS
-    /// of `SimOptions::air_defence`; friendly ones Shilkas and MANPADS teams only. Replaces the
-    /// other side's guns there.
+    /// of `SimOptions::air_defence`; friendly ones Gepards at airfields and Stinger teams.
+    /// Replaces the other side's guns there.
     pub fn place_defences(&mut self, x: i32, y: i32, airfield: bool, blue: bool) {
         let Some(mut c) = self.campaign.take() else { return };
         let mut rng = c.rng;
@@ -514,6 +526,7 @@ impl Sim {
                 aim_el: 0.3,
                 burst: 0,
                 cooldown: 0,
+                rounds: 0,
             });
             c.aaa_blue.push(blue);
         };
@@ -540,7 +553,7 @@ impl Sim {
             }
             (true, true) => {
                 for _ in 0..2 {
-                    add(&mut rng, AaaKind::Zsu, x, y, 26, 90);
+                    add(&mut rng, AaaKind::Gepard, x, y, 26, 90);
                     add(&mut rng, AaaKind::Manpads, x, y, 15, 80);
                 }
             }
@@ -552,6 +565,39 @@ impl Sim {
         }
         c.rng = rng;
         c.aaa_target.resize(self.aaa.len(), None);
+        self.campaign = Some(c);
+        if self.aaa_rng.is_none() {
+            self.aaa_rng = Some(Rng::new(self.rng.hold ^ 0x5EAD_AAA0));
+        }
+    }
+
+    /// Campaign: a friendly Patriot battery at (x, y): its radar and three launchers around it.
+    pub fn place_patriot(&mut self, x: i32, y: i32) {
+        let Some(mut c) = self.campaign.take() else { return };
+        if self.aaa.len() + 4 <= MAX_UNITS {
+            c.aaa_blue.resize(self.aaa.len(), false);
+            let mut rng = c.rng;
+            let facing = rng.random(0x4000) as f32 * 4.0 / 65536.0 * std::f32::consts::TAU;
+            let unit = |kind: AaaKind, x: i32, y: i32| AaaUnit {
+                kind,
+                x: x.clamp(0x40, 0x7FC0),
+                y: y.clamp(0x40, 0x7FC0),
+                aim_az: facing,
+                aim_el: PATRIOT_ELEVATION,
+                rounds: if kind == AaaKind::PatriotLauncher { PATRIOT_ROUNDS } else { 0 },
+                ..Default::default()
+            };
+            self.aaa.push(unit(AaaKind::PatriotRadar, x, y));
+            for k in 0..3 {
+                let t = facing as f64 + (k as f64 - 1.0) * 1.2 + std::f64::consts::PI;
+                let r = (10 + rng.random(16)) as f64;
+                let (lx, ly) = (x + (t.sin() * r) as i32, y - (t.cos() * r) as i32);
+                self.aaa.push(unit(AaaKind::PatriotLauncher, lx, ly));
+            }
+            c.aaa_blue.resize(self.aaa.len(), true);
+            c.aaa_target.resize(self.aaa.len(), None);
+            c.rng = rng;
+        }
         self.campaign = Some(c);
         if self.aaa_rng.is_none() {
             self.aaa_rng = Some(Rng::new(self.rng.hold ^ 0x5EAD_AAA0));
@@ -835,12 +881,33 @@ impl Sim {
             let from = [o.x as f64 * M_PER_MAP, (0x8000 - o.y) as f64 * M_PER_MAP, 5.0];
             launches.push(self.ai_missile(spec, from, [0.0, 0.0, 1.0], j, false));
         }
-        // Guns pick a target in reach; MANPADS teams fire.
+        // Guns pick a target in reach; MANPADS teams fire; Patriot radars track.
         for k in 0..self.aaa.len() {
             let u = self.aaa[k];
             let blue = c.aaa_blue[k];
             c.aaa_target[k] = None;
-            if u.destroyed || (!blue && u.tracking) {
+            // The missile teams reload here (the classic air defence only does it while it
+            // fights a player).
+            if (u.kind == AaaKind::Manpads && (blue || !u.tracking)) || u.kind.patriot() {
+                let a = &mut self.aaa[k];
+                a.cooldown = (a.cooldown - fs).max(0);
+                if a.kind == AaaKind::PatriotLauncher && a.rounds == 0 && a.cooldown == 0 {
+                    a.rounds = PATRIOT_ROUNDS;
+                }
+            }
+            if u.destroyed || (!blue && u.tracking) || u.kind == AaaKind::PatriotLauncher {
+                continue;
+            }
+            if u.kind == AaaKind::PatriotRadar {
+                let track = near(u.x, u.y, !blue, PATRIOT_REACH, PATRIOT_REACH, PATRIOT_FLOOR)
+                    .filter(|&(j, d)| d <= horizon(pos[j][2]));
+                c.aaa_target[k] = track.map(|t| t.0);
+                let a = &mut self.aaa[k];
+                a.tracking = track.is_some();
+                if let Some((j, _)) = track {
+                    let d = sub(pos[j], u.metres());
+                    a.aim_az = d[0].atan2(d[1]) as f32;
+                }
                 continue;
             }
             let (_, reach, ceiling) = gun_envelope(u.kind);
@@ -857,8 +924,48 @@ impl Sim {
                 let from = add(u.metres(), [0.0, 0.0, 1.5]);
                 let d = sub(pos[j], from);
                 let dir = mul(d, 1.0 / len(d).max(1.0));
-                launches.push(self.ai_missile(SA14, from, dir, j, blue));
+                launches.push(self.ai_missile(
+                    if blue { STINGER } else { SA14 },
+                    from,
+                    dir,
+                    j,
+                    blue,
+                ));
             }
+        }
+        // Patriot launchers fire on their battery radar's track.
+        for k in 0..self.aaa.len() {
+            let u = self.aaa[k];
+            if u.kind != AaaKind::PatriotLauncher || u.destroyed {
+                continue;
+            }
+            let blue = c.aaa_blue[k];
+            let track = (0..self.aaa.len()).find_map(|r| {
+                let radar = self.aaa[r];
+                (radar.kind == AaaKind::PatriotRadar
+                    && !radar.destroyed
+                    && c.aaa_blue[r] == blue
+                    && approx(radar.x - u.x, radar.y - u.y) < PATRIOT_LINK)
+                    .then_some(c.aaa_target[r])
+                    .flatten()
+            });
+            self.aaa[k].tracking = track.is_some();
+            let Some(j) = track else { continue };
+            let from = add(u.metres(), [0.0, 0.0, 3.0]);
+            let d = sub(pos[j], from);
+            let az = d[0].atan2(d[1]);
+            self.aaa[k].aim_az = az as f32;
+            let in_air = |m: &AiMissile| m.target == j && m.spec == PATRIOT && m.blue == blue;
+            let salvo = c.missiles.iter().chain(&launches).filter(|m| in_air(m)).count();
+            if u.rounds == 0 || u.cooldown > 0 || salvo >= PATRIOT_SALVO || rng.random(100) >= 50 {
+                continue;
+            }
+            let a = &mut self.aaa[k];
+            a.rounds -= 1;
+            a.cooldown = if a.rounds == 0 { PATRIOT_RELOAD } else { PATRIOT_INTERVAL } * fs;
+            let el = PATRIOT_ELEVATION as f64;
+            let dir = [az.sin() * el.cos(), az.cos() * el.cos(), el.sin()];
+            launches.push(self.ai_missile(PATRIOT, from, dir, j, blue));
         }
         // Campaign fighters go for the other side's aircraft and fire when in reach. A CAP
         // stays over its airfield and lands when there is nothing left to engage.
@@ -953,7 +1060,7 @@ impl Sim {
         for k in 0..self.aaa.len() {
             let Some(j) = c.aaa_target[k] else { continue };
             let u = &mut self.aaa[k];
-            if u.destroyed || u.kind == AaaKind::Manpads {
+            if u.destroyed || u.kind == AaaKind::Manpads || u.kind.patriot() {
                 continue;
             }
             let t = self.flights[j];
@@ -1223,6 +1330,8 @@ fn gun_envelope(kind: AaaKind) -> (f64, f64, f64) {
         AaaKind::Zsu => (970.0, 2500.0, 2000.0),
         AaaKind::S60 => (1000.0, 6000.0, 4500.0),
         AaaKind::Manpads => (0.0, 5000.0, 3500.0),
+        AaaKind::Gepard => (1175.0, 3500.0, 3000.0),
+        AaaKind::PatriotLauncher | AaaKind::PatriotRadar => (0.0, 0.0, 0.0),
     }
 }
 

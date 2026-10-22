@@ -376,6 +376,43 @@ impl CampaignState {
         }
     }
 
+    /// Friendly airfields with a Patriot battery, and where each stands: those well behind
+    /// the front (else the rearmost one), nearest the front first.
+    pub fn patriot_sites(&self) -> Vec<(PlaceId, i32, i32)> {
+        let mut all: Vec<(PlaceId, i32)> = self
+            .places
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.owner == Side::Blue && p.airfield.is_some())
+            .map(|(k, p)| {
+                let d = self
+                    .places
+                    .iter()
+                    .filter(|q| q.owner == Side::Red)
+                    .map(|q| dist(q.x - p.x, q.y - p.y))
+                    .min()
+                    .unwrap_or(i32::MAX);
+                (k as PlaceId, d)
+            })
+            .collect();
+        all.sort_by_key(|a| a.1);
+        let max = PATRIOT_BATTERIES + self.setup.roe as usize;
+        let mut rear: Vec<PlaceId> =
+            all.iter().filter(|a| a.1 >= PATRIOT_REAR).take(max).map(|a| a.0).collect();
+        if rear.is_empty() {
+            rear.extend(all.last().map(|a| a.0));
+        }
+        rear.into_iter()
+            .map(|k| {
+                let p = &self.places[k as usize];
+                // Off the airfield at an angle of its own (the golden angle per place).
+                let a = k as f64 * 2.399_963;
+                let r = (PATRIOT_OFFSET + (k as i32 * 37) % (PATRIOT_OFFSET / 2)) as f64;
+                (k, p.x + (a.sin() * r) as i32, p.y - (a.cos() * r) as i32)
+            })
+            .collect()
+    }
+
     /// The campaign sends an insertion of its own when a front place is (nearly) undefended.
     pub(crate) fn auto_insertion(&mut self, view: &WorldView, ev: &mut Vec<CampaignEvent>) {
         if self.clock - self.auto_insert_at < AUTO_INSERT_EVERY {

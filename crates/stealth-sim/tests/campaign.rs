@@ -373,6 +373,7 @@ fn a_long_campaign_stays_bounded() {
     assert!(sim.event_log().len() < 500);
 }
 
+use stealth_sim::aaa::{AaaKind, PATRIOT, STINGER};
 use stealth_sim::ai_loadout::{AIM9, AIM120, FighterTask};
 use stealth_sim::campaign::{CAP_BUBBLE, CAP_LEASH};
 
@@ -412,6 +413,70 @@ fn raid(sim: &mut Sim) -> (usize, usize) {
     // Unarmed: what is tested is what shoots it down.
     sim.set_fighter_loadout(f, Default::default());
     (home, f)
+}
+
+#[test]
+fn a_patriot_battery_shoots_down_raiders() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let (home, _) = raid(&mut sim);
+    let o = sim.objects()[home];
+    sim.place_patriot(o.x + 0x100, o.y);
+    let kinds: Vec<AaaKind> = sim.aaa_units().iter().map(|u| u.kind).collect();
+    assert_eq!(kinds.iter().filter(|&&k| k == AaaKind::PatriotLauncher).count(), 3);
+    assert_eq!(kinds.iter().filter(|&&k| k == AaaKind::PatriotRadar).count(), 1);
+    assert!((0..kinds.len()).all(|k| sim.aaa_blue(k)));
+    let mut seen = Vec::new();
+    assert!(until_down(&mut sim, 8, 40 * 60, &mut seen), "the Patriots never got it");
+    assert!(seen.contains(&PATRIOT));
+}
+
+#[test]
+fn patriot_launchers_need_their_radar() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let (home, _) = raid(&mut sim);
+    let o = sim.objects()[home];
+    sim.place_patriot(o.x + 0x100, o.y);
+    for u in sim.aaa_units_mut().iter_mut() {
+        if u.kind == AaaKind::PatriotRadar {
+            u.destroyed = true;
+        }
+    }
+    let mut seen = Vec::new();
+    assert!(!until_down(&mut sim, 8, 30 * 60, &mut seen));
+    assert!(seen.is_empty(), "{seen:?}");
+}
+
+#[test]
+fn friendly_guns_and_stingers_defend_an_airfield() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let (home, f) = raid(&mut sim);
+    let o = sim.objects()[home];
+    sim.place_defences(o.x, o.y, true, true);
+    let kinds: Vec<AaaKind> = sim.aaa_units().iter().map(|u| u.kind).collect();
+    assert!(kinds.contains(&AaaKind::Gepard) && kinds.contains(&AaaKind::Manpads));
+    assert!(!kinds.contains(&AaaKind::Zsu));
+    // Low over the field, in the guns' reach (its patrol would circle it out of their reach).
+    run(&mut sim, &idle(), 60);
+    let mut seen = Vec::new();
+    let mut down = false;
+    for _ in 0..10 * 60 {
+        let u = &mut sim.flights_mut()[f];
+        if u.flags & fflags::DESTROYED == 0 {
+            (u.x, u.y, u.alt) = (o.x + 0x30, o.y, 1500);
+            (u.wx, u.wy) = (u.x << 5, u.y << 5);
+        }
+        let ev = run(&mut sim, &idle(), 1);
+        seen.extend(sim.ai_missiles().iter().map(|m| m.spec));
+        if ev.iter().any(|e| matches!(e, SimEvent::CampaignFlightDestroyed { tag: 8, .. })) {
+            down = true;
+            break;
+        }
+    }
+    assert!(down, "the airfield's guns never got it");
+    assert!(seen.iter().all(|&s| s == STINGER), "{seen:?}");
 }
 
 #[test]

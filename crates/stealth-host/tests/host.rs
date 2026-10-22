@@ -86,3 +86,32 @@ fn the_server_sees_by_the_moon() {
     assert_eq!(stealth_host::sky::visual_light(7000.0, 12.0, lat), 255);
     assert!(stealth_host::sky::visual_light(7000.0, 0.0, lat) <= 85);
 }
+
+/// The friendly side's air defences stand from the start: Patriots in the rear, Gepards at the
+/// airfields.
+#[test]
+fn friendly_air_defences_stand_from_the_start() {
+    use stealth_sim::aaa::AaaKind;
+    for code in ["ce", "ua"] {
+        let s = setup(code);
+        let data = theater::game_data().unwrap();
+        let sim_data = theater::sim_data(s.theater, code).unwrap();
+        let mut host = Host::new(s, &data, Rules::default()).unwrap();
+        let mut sim = host.new_sim(&sim_data);
+        host.begin(&mut sim);
+        let blue = |sim: &stealth_sim::Sim, kind| {
+            (0..sim.aaa_units().len())
+                .filter(|&k| sim.aaa_units()[k].kind == kind && sim.aaa_blue(k))
+                .count()
+        };
+        let batteries = host.state.patriot_sites().len();
+        assert!(batteries > 0, "{code}");
+        assert_eq!(blue(&sim, AaaKind::PatriotRadar), batteries, "{code}");
+        assert_eq!(blue(&sim, AaaKind::PatriotLauncher), 3 * batteries, "{code}");
+        assert!(blue(&sim, AaaKind::Gepard) > 0, "{code}");
+        assert_eq!(blue(&sim, AaaKind::Zsu), 0, "{code}");
+        // No two batteries in one place, on a second begin neither.
+        host.begin(&mut sim);
+        assert_eq!(blue(&sim, AaaKind::PatriotRadar), batteries, "{code}");
+    }
+}

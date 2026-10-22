@@ -58,6 +58,12 @@ pub const SCRAMBLE_RANGE: i32 = 0x1400;
 pub const AI_CAP_TRIGGER: i32 = 0xA00;
 pub const AI_CAP_STATION: i32 = 0x200;
 pub const AI_CAP_RESPAWN: f64 = 5.0 * 60.0;
+/// Patriot batteries defend friendly airfields at least this far behind the front (60 km), at
+/// most this many (plus one per ROE level), standing this far from the airfield (4-6 km).
+pub const PATRIOT_REAR: i32 = 0xF00;
+pub const PATRIOT_BATTERIES: usize = 2;
+pub const PATRIOT_OFFSET: i32 = 0x100;
+
 /// Mission success: share of the defences destroyed (SEAD, CAS), time on station or kills
 /// (CAP), within this radius of the CAP point (20 km).
 pub const SUPPRESS_SHARE: f32 = 0.5;

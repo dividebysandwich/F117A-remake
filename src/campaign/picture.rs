@@ -81,7 +81,7 @@ pub fn picture(state: &CampaignState, sim: &Sim) -> Picture {
         {
             continue;
         }
-        let blue = sim.campaign_flight(i).map_or_else(|| sim.friendly_aircraft(u.spec), |f| f.blue);
+        let blue = sim.friendly_unit(i, u.spec);
         let a = Aircraft {
             unit: i,
             spec: u.spec,

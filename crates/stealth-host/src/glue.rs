@@ -59,8 +59,7 @@ pub fn world_view(sim: &Sim) -> WorldView {
         })
         .filter_map(|(i, u)| {
             let tag = sim.campaign_flight(i).map_or(0, |f| f.tag);
-            let blue =
-                sim.campaign_flight(i).map_or_else(|| sim.friendly_aircraft(u.spec), |f| f.blue);
+            let blue = sim.friendly_unit(i, u.spec);
             // The base traffic is no part of the war.
             (tag != 0 || !blue).then_some(FlightView { x: u.x, y: u.y, side: side_of(blue), tag })
         })
@@ -87,9 +86,7 @@ pub fn spotted(state: &CampaignState, sim: &Sim) -> Vec<Report> {
                 && u.flags & fflags::DESTROYED == 0
                 && u.speed > 0
         })
-        .filter(|(i, u)| {
-            sim.campaign_flight(*i).map_or_else(|| sim.friendly_aircraft(u.spec), |f| f.blue)
-        })
+        .filter(|(i, u)| sim.friendly_unit(*i, u.spec))
         .map(|(_, u)| (u.x, u.y, u.alt.max(0) as f64 * WU))
         .collect();
     let objects = sim.objects();

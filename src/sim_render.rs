@@ -803,7 +803,7 @@ fn sync_objects(
         if u.flags & fflags::DESTROYED != 0 || (u.wx == 0 && u.wy == 0) {
             continue;
         }
-        let friendly = sim.friendly_aircraft(u.spec);
+        let friendly = sim.friendly_unit(i, u.spec);
         let key = (model, friendly);
         if vis.aircraft.get(&i).is_some_and(|&(_, k, _)| k != key) {
             if let Some((e, ..)) = vis.aircraft.remove(&i) {

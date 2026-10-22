@@ -1108,7 +1108,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         } else {
             ContactKind::Aircraft
         };
-        let friendly = sim.friendly_aircraft(u.spec);
+        let friendly = sim.friendly_unit(i, u.spec);
         contacts.list.push(Contact {
             kind,
             east,

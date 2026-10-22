@@ -644,6 +644,12 @@ impl Sim {
         self.campaign.as_ref().and_then(|c| c.flights.get(i).copied().flatten())
     }
 
+    /// Whether flight unit `i` (of aircraft spec `spec`) is friendly: a campaign aircraft's
+    /// side, else its type's.
+    pub fn friendly_unit(&self, i: usize, spec: i32) -> bool {
+        self.campaign_flight(i).map_or_else(|| self.friendly_aircraft(spec), |f| f.blue)
+    }
+
     /// Where a campaign fighter patrols (circling its goal), None for other aircraft.
     pub(crate) fn campaign_goal(&self, i: usize, u: &FlightUnit) -> Option<(i32, i32)> {
         let f = self.campaign_flight(i).filter(|f| f.role == Role::Fighter)?;
@@ -674,7 +680,7 @@ impl Sim {
         {
             return None;
         }
-        Some(self.campaign_flight(i).map_or_else(|| self.friendly_aircraft(u.spec), |f| f.blue))
+        Some(self.friendly_unit(i, u.spec))
     }
 
     /// One frame of the campaign: its aircraft's fate, and the AI fighting the AI.

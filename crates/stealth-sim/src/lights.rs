@@ -28,7 +28,7 @@ impl Sim {
         u.flags & fflags::EXISTS != 0
             && u.flags & fflags::DESTROYED == 0
             && u.speed != 0
-            && near_home_airfield(&self.objects, u.x, u.y, self.friendly_aircraft(u.spec))
+            && near_home_airfield(&self.objects, u.x, u.y, self.friendly_unit(i, u.spec))
     }
 
     /// Whether the player's aircraft shows its lights (the rule of the friendly aircraft).

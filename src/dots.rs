@@ -16,7 +16,7 @@ use bevy::mesh::{Indices, MeshTag, MeshVertexAttribute, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::VertexFormat;
 
-use crate::palette_material::{FLAG_DOT, PaletteMaterial, TAG_DOT};
+use crate::palette_material::{FLAG_DOT, FLAG_NIGHT_DIM, PaletteMaterial, TAG_DOT};
 
 pub struct DotsPlugin;
 
@@ -111,7 +111,8 @@ fn dot_materials(
             None => {
                 let Some(m) = materials.get(source) else { continue };
                 let mut m = m.clone();
-                m.params.flags |= FLAG_DOT;
+                // Dots are lights whatever their colour.
+                m.params.flags = (m.params.flags | FLAG_DOT) & !FLAG_NIGHT_DIM;
                 let h = materials.add(m);
                 dots.twins.insert(source, h.clone());
                 dots.sources.insert(h.id(), source);

@@ -27,6 +27,9 @@ pub const FLAG_CLOUD_COVERAGE: u32 = 32;
 /// Dot lights: drawn in the transparent pass (after all opaque geometry, depth tested but not
 /// written; see dots.rs).
 pub const FLAG_DOT: u32 = 128;
+/// Line in a scenery colour (rivers, roads, shores), not a light: a moonless night darkens it
+/// like the ground (`Palette::line_flags`).
+pub const FLAG_NIGHT_DIM: u32 = 64;
 /// Mesh tag bit of warm objects (aircraft, vehicles, buildings, fires): bright in the FLIR
 /// picture, everything else cold.
 pub const TAG_WARM: u32 = 1 << 11;

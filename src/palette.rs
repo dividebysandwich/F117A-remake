@@ -12,7 +12,7 @@ use bevy::render::storage::ShaderBuffer;
 use serde::Deserialize;
 
 use crate::palette_material::{
-    FLAG_BACKGROUND, FLAG_LINE, Globals, PaletteMaterial, PaletteParams, pack16,
+    FLAG_BACKGROUND, FLAG_LINE, FLAG_NIGHT_DIM, Globals, PaletteMaterial, PaletteParams, pack16,
 };
 use crate::settings::{AppState, MissionSetup, Settings, SetupSet};
 
@@ -110,6 +110,16 @@ pub struct Palette {
 impl Palette {
     pub fn material(&self, c: u8) -> Handle<PaletteMaterial> {
         self.materials[c as usize].clone()
+    }
+
+    /// Flags of the line material for model colour `c`: lights keep their brightness in the
+    /// theater's night palette (or gain it), scenery colours fade there and get darkened with
+    /// the ground on a moonless night.
+    pub fn line_flags(&self, c: u8) -> u32 {
+        let i = (self.word(c) & 0xFF) as usize;
+        let max = |p: &VgaPalette| p.colors[i].into_iter().max().unwrap_or(0) as f32;
+        let dim = max(&self.theater.night) < 0.7 * max(&self.theater.day);
+        FLAG_LINE | if dim { FLAG_NIGHT_DIM } else { 0 }
     }
 
     pub fn line_material(&self, c: u8) -> Handle<PaletteMaterial> {
@@ -210,7 +220,7 @@ fn setup_palette(
     };
     palette.materials = (0..=255u8).map(|c| materials.add(mk(palette.word(c), 0))).collect();
     palette.line_materials = (0..=255u8)
-        .map(|c| materials.add(mk(0xFF00 | (palette.word(c) & 0xFF), FLAG_LINE)))
+        .map(|c| materials.add(mk(0xFF00 | (palette.word(c) & 0xFF), palette.line_flags(c))))
         .collect();
     palette.background = materials.add(mk(0, FLAG_BACKGROUND));
     palette.background_flir =
@@ -266,11 +276,12 @@ fn apply_remap_changes(palette: Res<Palette>, mut materials: ResMut<Assets<Palet
         {
             m.params.word = word;
         }
-        let line = 0xFF00 | (word & 0xFF);
+        let (line, flags) = (0xFF00 | (word & 0xFF), palette.line_flags(c));
         if let Some(mut m) = materials.get_mut(&palette.line_materials[c as usize])
-            && m.params.word != line
+            && (m.params.word != line || m.params.flags != flags)
         {
             m.params.word = line;
+            m.params.flags = flags;
         }
     }
 }

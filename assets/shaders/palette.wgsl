@@ -1033,7 +1033,8 @@ fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
         }
     }
     // A dark night blacks out the scenery; lights (lines and dots) show, aircraft barely.
-    var dark = select(night_dark(), 0.0, is_line);
+    // Lines in scenery colours (rivers, roads: material flag 64) go dark with the ground.
+    var dark = select(night_dark(), 0.0, is_line && (material.flags & 64u) == 0u);
     if ((in.warm & 4u) != 0u) {
         dark = night_dark() * AIRCRAFT_NIGHT;
     } else if ((in.warm & 2u) != 0u) {

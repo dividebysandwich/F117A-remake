@@ -188,7 +188,8 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     // The targets are the campaign's: nothing of the generated strike mission's stays.
     let (object, shape_name, area) = primary_target(state, &o.objective);
     let p = &mut m.primary;
-    p.place_name = o.title.clone();
+    // "SEAD - Wittstock": the place (the kneeboard puts the kind before it).
+    p.place_name = o.title.split_once(" - ").map_or(o.title.clone(), |t| t.1.to_string());
     p.position = object.and_then(|k| state.site(k)).map_or(target, |s| MapPoint { x: s.x, y: s.y });
     p.mission_type = match o.kind {
         MissionKind::Recon => 1,

@@ -25,7 +25,10 @@ impl Plugin for ReconPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ReconPhotos>()
             .add_systems(OnEnter(AppState::Flight), reset)
-            .add_systems(Update, (start, shoot).chain().run_if(in_state(AppState::Flight)));
+            .add_systems(
+                Update,
+                (restart, start, shoot).chain().run_if(in_state(AppState::Flight)),
+            );
     }
 }
 
@@ -91,6 +94,24 @@ pub fn airborne(t: &stealth_mission::Target) -> bool {
 }
 
 fn reset(mut recon: ResMut<ReconPhotos>, mut sites: ResMut<StreamSites>) {
+    *recon = ReconPhotos::default();
+    *sites = StreamSites::default();
+}
+
+/// A new mission in the same flight (a campaign's next sortie): its own pictures.
+fn restart(
+    mut commands: Commands,
+    mission: Option<Res<ActiveMission>>,
+    mut recon: ResMut<ReconPhotos>,
+    mut sites: ResMut<StreamSites>,
+    cams: Query<Entity, With<ReconCamera>>,
+) {
+    if !recon.started || !mission.is_some_and(|m| m.is_changed()) {
+        return;
+    }
+    for e in &cams {
+        commands.entity(e).despawn();
+    }
     *recon = ReconPhotos::default();
     *sites = StreamSites::default();
 }

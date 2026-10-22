@@ -141,8 +141,8 @@ pub struct Combat {
     /// Number of sim frames run this frame.
     pub steps: u32,
     sim_waypoint: i32,
-    /// The selected air-to-ground missile's launch zone and the sim frame it was found in.
-    launch_zone: (i32, Option<stealth_sim::dlz::LaunchZone>),
+    /// The selected missile's launch zone, the sim frame it was found in and what it was for.
+    launch_zone: (i32, Option<stealth_sim::dlz::LaunchZone>, ZoneKey),
     pub end: Option<EndInfo>,
     flight_end_timer: f32,
     lockheed: bool,
@@ -367,7 +367,7 @@ fn start_combat(
         wreck: None,
         steps: 0,
         sim_waypoint: 0,
-        launch_zone: (-1, None),
+        launch_zone: (-1, None, ZoneKey::default()),
         end: None,
         flight_end_timer: 0.0,
         lockheed: m.settings.plane == stealth_mission::Plane::Lockheed,
@@ -869,6 +869,7 @@ struct Outputs<'w, 's> {
     emitters: ResMut<'w, crate::rwr::Emitters>,
     ships: Option<Res<'w, crate::world::Ships>>,
     tiles: Res<'w, TileOverrides>,
+    time: Res<'w, Time>,
 }
 
 /// Map units -> world units (east, north).
@@ -958,16 +959,152 @@ pub fn camera_zoom(range: i32) -> u8 {
     z
 }
 
+/// Sim frames between launch zone searches (flying the missiles out takes a while).
+const ZONE_EVERY: i32 = 3;
+/// Seconds the drawn launch zone and range caret take to ease most of the way (63 %) to new
+/// ones: the zone over a few searches, smoothing out their jitter.
+const ZONE_EASE: f32 = 0.5;
+const RANGE_EASE: f32 = 0.1;
+/// A launch zone range (km) jumping by more than this from the one drawn (a share of it and
+/// at least) is held back, and searches in a row that have to agree on it before it is drawn.
+const ZONE_JUMP: (f32, f32) = (0.15, 1.5);
+const ZONE_CONFIRM: usize = 4;
+/// The range caret: km a frame it may move, frames in a row to agree on a jump.
+const RANGE_JUMP: f32 = 1.0;
+const RANGE_CONFIRM: usize = 8;
+
+/// A value on the HUD that ignores sudden jumps: one far from the value drawn (or a value
+/// appearing or going away) only counts once `confirm` updates in a row agree on it.
+#[derive(Debug, Clone, Default)]
+struct Steady {
+    value: Option<f32>,
+    /// The jump held back, one entry per update.
+    pending: Vec<Option<f32>>,
+}
+
+impl Steady {
+    fn reset(&mut self, v: Option<f32>) {
+        self.value = v;
+        self.pending.clear();
+    }
+
+    /// `jump`: the largest change from a value that is no jump.
+    fn update(&mut self, v: Option<f32>, jump: impl Fn(f32) -> f32, confirm: usize) {
+        let near = |a: Option<f32>, b: Option<f32>| match (a, b) {
+            (Some(a), Some(b)) => (a - b).abs() <= jump(a),
+            (a, b) => a.is_none() && b.is_none(),
+        };
+        if near(self.value, v) {
+            self.reset(v);
+            return;
+        }
+        // Held back until it holds: each update near the last.
+        if self.pending.last().is_some_and(|&p| !near(p, v)) {
+            self.pending.clear();
+        }
+        self.pending.push(v);
+        if self.pending.len() >= confirm {
+            self.reset(v);
+        }
+    }
+}
+
+/// The launch zone and range caret as drawn: each range steady ([`Steady`]), the zone easing
+/// toward it.
+#[derive(Default)]
+struct ZoneDisplay {
+    /// Shortest, longest and no-escape range.
+    steady: [Steady; 3],
+    /// km: shortest, longest and no-escape range.
+    shown: Option<(f32, f32, Option<f32>)>,
+    range: Steady,
+    range_shown: Option<f32>,
+}
+
+impl ZoneDisplay {
+    /// A new search: `found` (km) for the target and store the last was for unless `fresh`.
+    fn found(&mut self, found: Option<(f32, f32, Option<f32>)>, fresh: bool) {
+        let values = [found.map(|z| z.0), found.map(|z| z.1), found.and_then(|z| z.2)];
+        for (s, v) in self.steady.iter_mut().zip(values) {
+            if fresh {
+                s.reset(v);
+            } else {
+                s.update(v, |a| (a * ZONE_JUMP.0).max(ZONE_JUMP.1), ZONE_CONFIRM);
+            }
+        }
+        if fresh {
+            self.shown = None;
+        }
+    }
+
+    /// Eases the zone drawn `dt` seconds toward the steady one.
+    fn ease(&mut self, dt: f32) {
+        let k = 1.0 - (-dt / ZONE_EASE).exp();
+        let ease = |a: f32, b: f32| a + (b - a) * k;
+        let [lo, hi, ne] = &self.steady;
+        let target = lo.value.zip(hi.value).map(|(lo, hi)| (lo, hi, ne.value));
+        self.shown = match (self.shown, target) {
+            (Some(a), Some(b)) => Some((
+                ease(a.0, b.0),
+                ease(a.1, b.1),
+                match (a.2, b.2) {
+                    (Some(x), Some(y)) => Some(ease(x, y)),
+                    (_, y) => y,
+                },
+            )),
+            (_, b) => b,
+        };
+    }
+
+    /// The range caret's range now (km), held back from sudden jumps and eased over `dt`
+    /// seconds.
+    fn range(&mut self, km: f32, fresh: bool, dt: f32) -> f32 {
+        if fresh || self.range.value.is_none() {
+            self.range.reset(Some(km));
+            self.range_shown = None;
+        } else {
+            self.range.update(Some(km), |_| RANGE_JUMP, RANGE_CONFIRM);
+        }
+        let to = self.range.value.unwrap_or(km);
+        let k = 1.0 - (-dt / RANGE_EASE).exp();
+        let shown = self.range_shown.map_or(to, |a| a + (to - a) * k);
+        self.range_shown = Some(shown);
+        shown
+    }
+}
+
+/// What a launch zone was found for: the HUD mode, the locks and the selected store.
+type ZoneKey = (Option<HudMode>, Option<usize>, Option<usize>, Option<u8>, Option<usize>, bool);
+
 /// Publishes the simulation state into the cockpit and the flight model (every frame).
-fn publish(mut combat: ResMut<Combat>, out: Outputs) {
+fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Outputs) {
     let o = combat.sim.objectives();
     let waypoint_changed = o.waypoint != combat.sim_waypoint;
     combat.sim_waypoint = o.waypoint;
-    // Flying the missile out takes a while: once per sim frame.
+    // The launch zone, found every few sim frames, at once for another target or store. The
+    // drawn one holds back sudden jumps and eases toward it (ZoneDisplay), but starts afresh
+    // for another target or store.
     let frame = combat.sim.frame();
-    if combat.launch_zone.0 != frame {
-        combat.launch_zone = (frame, combat.sim.launch_zone());
+    let t = combat.sim.targeting();
+    let key = (
+        Some(out.hud.mode),
+        t.ground,
+        t.air,
+        t.pilot,
+        combat.sim.weapon_groups().1,
+        combat.sim.gun_selected(),
+    );
+    let fresh = key != combat.launch_zone.2;
+    if fresh || (frame - combat.launch_zone.0).rem_euclid(0x10000) >= ZONE_EVERY {
+        combat.launch_zone = (frame, combat.sim.launch_zone(), key);
+        let found = combat.launch_zone.1.and_then(|z| {
+            let km = |mu: i32| mu as f32 * 32.0 * WU as f32 / 1000.0;
+            z.zone.map(|(lo, hi)| (km(lo), km(hi), z.no_escape.map(km)))
+        });
+        zone.found(found, fresh);
     }
+    let dt = out.time.delta_secs();
+    zone.ease(dt);
     let combat = &*combat;
     let Outputs {
         mut player,
@@ -988,6 +1125,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         mut emitters,
         ships,
         tiles,
+        time: _,
     } = out;
     let eye = settings.cockpit_eye();
     let sim = &combat.sim;
@@ -1413,15 +1551,19 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         new_cues.lock = t.lock_valid;
         new_cues.in_range = t.in_range;
         new_cues.launch_zone = combat.launch_zone.1.filter(|_| hud.mode != HudMode::Nav).map(|z| {
-            let km = |mu: i32| mu as f32 * 32.0 * WU as f32 / 1000.0;
             let air = hud.mode == HudMode::Air;
+            // The range now (the zone is a few frames old), as the HUD shows it.
+            let km = info.range_km.unwrap_or(z.range as f32 * 32.0 * WU as f32 / 1000.0);
+            let range_km = zone.range(km, fresh, dt);
+            let zone = zone.shown;
             crate::hud::LaunchZoneCue {
-                range_km: km(z.range),
-                zone_km: z.zone.map(|(lo, hi)| (km(lo), km(hi))),
-                no_escape_km: z.no_escape.map(km),
+                range_km,
+                zone_km: zone.map(|z| (z.0, z.1)),
+                no_escape_km: zone.and_then(|z| z.2),
                 // An air-to-air missile homes on the target fired outside the oval too.
-                shoot: z.in_zone() && (air || t.lock_valid),
-                too_close: z.too_close(),
+                shoot: zone.is_some_and(|z| (z.0..=z.1).contains(&range_km))
+                    && (air || t.lock_valid),
+                too_close: zone.is_some_and(|z| range_km < z.0),
             }
         });
         if sim.gun_selected() {
@@ -1660,6 +1802,47 @@ fn end_overlay(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn steady_values_hold_back_sudden_jumps() {
+        let jump = |a: f32| (a * ZONE_JUMP.0).max(ZONE_JUMP.1);
+        let mut s = Steady::default();
+        s.reset(Some(10.0));
+        // Small steps go through.
+        s.update(Some(10.8), jump, 4);
+        assert_eq!(s.value, Some(10.8));
+        // A jump, or the value going away, is held back, and alternating ones never count.
+        for v in [Some(60.0), Some(10.9), None, Some(60.0), Some(61.0), Some(11.0)] {
+            s.update(v, jump, 4);
+            assert!(s.value.is_some_and(|v| v < 12.0), "{v:?}: {:?}", s.value);
+        }
+        // Until enough in a row agree.
+        for k in 0..4 {
+            assert!(s.value.is_some_and(|v| v < 12.0), "{k}");
+            s.update(Some(60.0 + k as f32), jump, 4);
+        }
+        assert_eq!(s.value, Some(63.0));
+        for _ in 0..4 {
+            s.update(None, jump, 4);
+        }
+        assert_eq!(s.value, None);
+    }
+
+    #[test]
+    fn zone_display_eases_and_starts_afresh() {
+        let mut z = ZoneDisplay::default();
+        z.found(Some((7.0, 60.0, Some(30.0))), true);
+        z.ease(0.01);
+        assert_eq!(z.shown, Some((7.0, 60.0, Some(30.0))));
+        // The near end cut short once: drawn as before.
+        z.found(Some((50.0, 60.0, None)), false);
+        z.ease(1.0);
+        assert_eq!(z.shown, Some((7.0, 60.0, Some(30.0))));
+        // Another target: at once.
+        z.found(Some((3.0, 20.0, None)), true);
+        z.ease(0.01);
+        assert_eq!(z.shown, Some((3.0, 20.0, None)));
+    }
 
     fn level(knots: f32) -> (Aircraft, WorldPos) {
         let mut a = Aircraft::new_on_runway(5000.0);

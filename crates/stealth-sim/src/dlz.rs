@@ -30,6 +30,10 @@ const AIR_SEARCH: i32 = 0x12C0;
 /// Map units an aircraft target draws away from a missile's closest approach before the
 /// missile counts as beaten (more than the rounding of the positions).
 const DRAWING_AWAY: i32 = 4;
+/// Air-to-air: ranges around a miss checked for hits, a share of the range (1/n) and the
+/// least (map units).
+const NEAR_MISS_SPREAD: i32 = 50;
+const NEAR_MISS_MIN: i32 = 8;
 
 /// What a predicted missile flies at: its position at the launch (wu: east, south, up), its
 /// velocity (wu/s) and its altitude as the classic flight compares it (viewZ for aircraft).
@@ -116,7 +120,7 @@ impl Sim {
                 let p = [tx as f64 * 32.0 + 16.0, ty as f64 * 32.0 + 16.0, 0.0];
                 self.reaches(w, spec, Track { p, v: [0.0; 3], alt: 0 }, false)
             };
-            find_zone(lock_max, at)
+            find_zone(lock_max, 0, at)
         };
         Some(LaunchZone { range, lock_max, zone, no_escape: None })
     }
@@ -148,11 +152,19 @@ impl Sim {
             return Some(LaunchZone { range, lock_max, zone: None, no_escape: None });
         }
         let (ux, uy) = (dx / 32.0 / d, dy / 32.0 / d);
-        let at = |r: i32, v: [f64; 3]| {
+        let hits = |r: i32, v: [f64; 3]| {
             let p = [me[0] + ux * r as f64 * 32.0, me[1] + uy * r as f64 * 32.0, tg.p[2]];
             self.reaches(w, spec, Track { p, v, alt }, true)
         };
-        let zone = find_zone(AIR_SEARCH, |r| at(r, tg.v));
+        // A missile passing just outside its fuse radius misses from a range here and there
+        // all through the zone, a different one with every change of the geometry: a miss
+        // between hits a little closer and a little farther counts as a hit, or the zone
+        // would jump about.
+        let at = |r: i32, v: [f64; 3]| {
+            let d = (r / NEAR_MISS_SPREAD).max(NEAR_MISS_MIN);
+            hits(r, v) || (hits(r - d, v) && hits(r + d, v))
+        };
+        let zone = find_zone(AIR_SEARCH, 1, |r| at(r, tg.v));
         // Turning tail: away from the launch at its speed.
         let vh = tg.v[0].hypot(tg.v[1]);
         let away = [ux * vh, uy * vh, tg.v[2]];
@@ -195,7 +207,10 @@ impl Sim {
             // Out of the seeker's view the missile flies straight on: it never sees a target
             // on the ground again, nor one flying on straight once that draws away. Nor does
             // a missile at its full speed or burnt out catch an aircraft drawing away.
-            let away = r > closest.saturating_add(DRAWING_AWAY);
+            // Straight, not the seeker's octagonal approximation: that grows as the bearing
+            // swings with the missile turning onto the target.
+            let dist = (s16(tx - m.x) as f64).hypot(s16(ty - m.y) as f64) as i32;
+            let away = dist > closest.saturating_add(DRAWING_AWAY);
             let spent = match m.flight {
                 Some(f) => f.t as f64 * dt > burn,
                 None => m.speed >= top,
@@ -203,7 +218,7 @@ impl Sim {
             if !seen && (!air || away) || (air && away && spent) {
                 return false;
             }
-            closest = closest.min(r);
+            closest = closest.min(dist);
             if guided {
                 let target = seen.then_some(Target { p, v: track.v });
                 let guide = target.filter(|_| aim != 0);
@@ -227,15 +242,27 @@ impl Sim {
 
 /// The ranges in 1..=`max` for which `reaches` holds, as (shortest, longest): sampled, then
 /// the edges bisected. The samples are closer together at short range, where the shortest
-/// range lies. Only the run of ranges up to the longest counts: a missile that misses from
-/// farther in may still hit from close by by luck (diving down steeply onto the target).
-fn find_zone(max: i32, reaches: impl Fn(i32) -> bool) -> Option<(i32, i32)> {
+/// range lies. Only the run of ranges up to the longest counts, through no more than `gap`
+/// missing samples in a row: a missile that misses from farther in may still hit from close
+/// by by luck (diving down steeply onto the target).
+fn find_zone(max: i32, gap: usize, reaches: impl Fn(i32) -> bool) -> Option<(i32, i32)> {
     let sample = |k: i32| {
         ((max as f64 * (k as f64 / SAMPLES as f64).powf(1.5)).round() as i32).clamp(1, max)
     };
     let hits: Vec<bool> = (1..=SAMPLES).map(|k| reaches(sample(k))).collect();
     let last = hits.iter().rposition(|&h| h)? as i32 + 1;
-    let first = (1..=last).rev().take_while(|&k| hits[k as usize - 1]).last()?;
+    let (mut first, mut misses) = (last, 0);
+    for k in (1..last).rev() {
+        if hits[k as usize - 1] {
+            first = k;
+            misses = 0;
+        } else {
+            misses += 1;
+            if misses > gap {
+                break;
+            }
+        }
+    }
     // Between a miss and a hit.
     let edge = |mut miss: i32, mut hit: i32| {
         for _ in 0..REFINE {
@@ -290,14 +317,17 @@ mod tests {
 
     #[test]
     fn finds_the_zone_edges() {
-        let z = find_zone(2000, |r| (300..=1400).contains(&r)).unwrap();
+        let z = find_zone(2000, 0, |r| (300..=1400).contains(&r)).unwrap();
         assert!((z.0 - 300).abs() <= 20 && (z.1 - 1400).abs() <= 20, "{z:?}");
-        let z = find_zone(2000, |r| r >= 100).unwrap();
+        let z = find_zone(2000, 0, |r| r >= 100).unwrap();
         assert!((z.0 - 100).abs() <= 5 && z.1 == 2000, "{z:?}");
         // A lucky hit from close in is no part of the zone.
-        let z = find_zone(2000, |r| (40..60).contains(&r) || (300..=1400).contains(&r)).unwrap();
+        let z = find_zone(2000, 0, |r| (40..60).contains(&r) || (300..=1400).contains(&r)).unwrap();
         assert!((z.0 - 300).abs() <= 20, "{z:?}");
-        assert_eq!(find_zone(2000, |_| false), None);
+        assert_eq!(find_zone(2000, 0, |_| false), None);
+        // A single missing sample within the zone, bridged.
+        let z = find_zone(2000, 1, |r| (300..=1400).contains(&r) && !(1000..1010).contains(&r));
+        assert!(z.is_some_and(|z| (z.0 - 300).abs() <= 20), "{z:?}");
     }
 
     #[test]

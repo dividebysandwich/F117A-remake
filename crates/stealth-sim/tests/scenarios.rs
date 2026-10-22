@@ -1576,3 +1576,60 @@ fn launch_zone_predicts_air_to_air_hits() {
         }
     }
 }
+/// The air-to-air launch zone against an An-72 circling while the player closes, every 3
+/// frames: its edges move smoothly (a near miss here and there in the zone does not cut it).
+#[test]
+fn launch_zone_holds_steady_on_a_turning_target() {
+    let d = data();
+    for guided in [false, true] {
+        for w in [0, 1] {
+            let m = mission(d, 3, 0x1234, 1);
+            let opts = SimOptions { realistic_guidance: guided, ..Default::default() };
+            let mut sim = Sim::with_options(&d.sim, &m, opts);
+            let (mx, my) = sandbox(&mut sim, &m);
+            sim.set_training(true);
+            sim.set_loadout(&[(w, 2)]);
+            {
+                let u = &mut sim.flights_mut()[1];
+                *u = FlightUnit {
+                    x: mx + 1400,
+                    y: my - 1400,
+                    alt: 5000,
+                    heading: 0x2000,
+                    spec: 9,
+                    flags: 0x43,
+                    speed: 200,
+                    timer: 30000,
+                    wp: 3,
+                    ..Default::default()
+                };
+                u.wx = u.x << 5;
+                u.wy = u.y << 5;
+            }
+            let mut p = player_at(mx, my, 5000, 0x2000, 300);
+            p.hud_mode = HudMode::Air;
+            p.cmd.toggle_bay = true;
+            p.cmd.lock_unit = Some(1);
+            let mut y = p.y as f64;
+            let mut last: Option<dlz::LaunchZone> = None;
+            for f in 0..15 * 40 {
+                sim.step(&p, 15);
+                p.cmd = Commands::default();
+                y += 300.0 * 27.0 / 16.0 / 15.0 * 0.7;
+                p.y = y as i32;
+                if f % 3 != 0 || f < 10 {
+                    continue;
+                }
+                let z = sim.launch_zone().unwrap();
+                let (lo, hi) = z.zone.expect("a zone");
+                if let Some((l, h)) = last.and_then(|l| l.zone) {
+                    let ne = |z: &dlz::LaunchZone| z.no_escape.unwrap_or(0);
+                    let jump =
+                        (lo - l).abs().max((hi - h).abs()).max((ne(&z) - ne(&last.unwrap())).abs());
+                    assert!(jump < 400, "guided {guided} weapon {w} frame {f}: {last:?} -> {z:?}");
+                }
+                last = Some(z);
+            }
+        }
+    }
+}

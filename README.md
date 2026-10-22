@@ -6,6 +6,14 @@ A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations with VR support
 
 > **📖 [User Manual](docs/manual.md)**
 
+<p align="center">
+  <a href="https://discord.gg/zjjGeKKpC">
+    <img alt="Join us on Discord" src="https://img.shields.io/badge/Join%20us%20on%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" height="48" />
+  </a>
+  <br />
+  <sub>Fly together, report bugs, share missions and follow development on the <a href="https://discord.gg/zjjGeKKpC">Stealth Mission 89 Discord</a>.</sub>
+</p>
+
 ## Running
 ```sh
 cargo run --release

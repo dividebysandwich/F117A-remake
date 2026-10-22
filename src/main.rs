@@ -21,6 +21,7 @@ mod flight_menu;
 mod font;
 mod freecam;
 mod headtrack;
+mod help;
 mod hotas;
 mod hud;
 mod input;
@@ -78,6 +79,8 @@ use settings::{MissionSetup, Settings};
 fn main() {
     // `--dedicated`: the coop server, in the console it was started from.
     dedicated::run_if_asked();
+    // `--help`: the command line options.
+    help::run_if_asked();
     #[cfg(windows)]
     win_console::leave_explorer_console();
     let mut settings = Settings::from_args();

@@ -14,9 +14,18 @@ anyhow.workspace = true
 ciborium = "0.2.2"
 stealth-master-proto = { path = "../stealth-master-proto" }
 serde_json = "1"
+# Instant and SystemTime that work in the browser build too (std's panic there).
+web-time = "1"
 lz4_flex = { version = "0.11.6", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
 
 # The dedicated server's console and the master server's HTTP: not in the browser build.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ratatui = "0.30.2"
 ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+
+# The browser build: a WebSocket to the master server's relay, and fetch for the list.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["BinaryType", "CloseEvent", "MessageEvent", "Response", "WebSocket", "Window"] }

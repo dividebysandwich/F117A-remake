@@ -6407,6 +6407,7 @@ version = "0.4.1"
 dependencies = [
  "anyhow",
  "ciborium",
+ "js-sys",
  "lz4_flex",
  "ratatui",
  "serde",
@@ -6417,6 +6418,10 @@ dependencies = [
  "stealth-mission",
  "stealth-sim",
  "ureq",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]

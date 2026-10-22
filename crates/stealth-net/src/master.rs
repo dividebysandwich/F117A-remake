@@ -1,6 +1,7 @@
 //! The public server list (`stealth-master-proto`): a server's reports to the master server
 //! on a thread of their own ([`Reporter`]), and a game's look at the list ([`fetch_list`]).
-//! The browser build has neither: no threads, and no HTTP client here.
+//! The browser build reports nothing (it can't host), fetches the list with the browser's
+//! `fetch`, and joins through the master server's relay ([`relay_url`]).
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports, dead_code))]
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -185,9 +186,62 @@ pub fn fetch_list(master: &str) -> Result<Vec<ServerEntry>, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Where an answer to [`fetch_list_into`] goes.
+pub type ListSlot = Arc<Mutex<Option<Result<Vec<ServerEntry>, String>>>>;
+
+/// Fetches the list at `master` in the background, into `slot` when it is there.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn fetch_list_into(master: &str, slot: ListSlot) {
+    let master = master.to_string();
+    std::thread::spawn(move || {
+        let list = fetch_list(&master);
+        if let Ok(mut s) = slot.lock() {
+            *s = Some(list);
+        }
+    });
+}
+
 #[cfg(target_arch = "wasm32")]
-pub fn fetch_list(_master: &str) -> Result<Vec<ServerEntry>, String> {
-    Err("not available in the browser".into())
+pub fn fetch_list_into(master: &str, slot: ListSlot) {
+    let url = format!("{}/api/servers", master.trim_end_matches('/'));
+    wasm_bindgen_futures::spawn_local(async move {
+        let list = fetch_json(&url).await;
+        if let Ok(mut s) = slot.lock() {
+            *s = Some(list);
+        }
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_json(url: &str) -> Result<Vec<ServerEntry>, String> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+    let why = |e: wasm_bindgen::JsValue| {
+        e.as_string()
+            .or_else(|| e.dyn_ref::<js_sys::Error>().map(|e| String::from(e.message())))
+            .unwrap_or_else(|| format!("{e:?}"))
+    };
+    let window = web_sys::window().ok_or("no window")?;
+    let resp: web_sys::Response =
+        JsFuture::from(window.fetch_with_str(url)).await.map_err(why)?.unchecked_into();
+    if !resp.ok() {
+        return Err(format!("{url}: {} {}", resp.status(), resp.status_text()));
+    }
+    let text = JsFuture::from(resp.text().map_err(why)?).await.map_err(why)?;
+    serde_json::from_str(&text.as_string().unwrap_or_default()).map_err(|e| e.to_string())
+}
+
+/// The relay at `master` to the server with this id: a WebSocket URL.
+pub fn relay_url(master: &str, id: &str) -> String {
+    let master = master.trim_end_matches('/');
+    let ws = if let Some(rest) = master.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if let Some(rest) = master.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else {
+        format!("wss://{master}")
+    };
+    format!("{ws}/relay/{id}")
 }
 
 /// The campaign's clock: "day 3 14:05", "day 9 06:30 - won".
@@ -297,5 +351,15 @@ pub fn report(server: &Server, host: &Host, sim: &Sim, dedicated: bool) -> Serve
                 })
                 .collect(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_relay_is_on_the_master_servers_host() {
+        let url = super::relay_url("https://sm-master.playspoon.com/", "0123456789abcdef");
+        assert_eq!(url, "wss://sm-master.playspoon.com/relay/0123456789abcdef");
+        assert_eq!(super::relay_url("http://127.0.0.1:8090", "ab"), "ws://127.0.0.1:8090/relay/ab");
     }
 }

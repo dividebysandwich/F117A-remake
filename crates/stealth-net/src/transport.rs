@@ -5,11 +5,16 @@
 //! Every data packet carries its sequence number and acknowledges the peer's latest packets
 //! (the latest number and a bitfield of the 32 before it). Reliable messages ride in packets
 //! until a packet carrying them is acknowledged.
+//!
+//! The packets go through [`Datagrams`]: a UDP socket, or in the browser build a WebSocket to
+//! the master server's relay, which passes each message on as one datagram (`websocket.rs`).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::ErrorKind;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 /// Bytes of payload in one packet (stays under common path MTUs).
 const MTU: usize = 1200;
@@ -221,9 +226,37 @@ impl Conn {
     }
 }
 
+/// What an [`Endpoint`]'s packets go through (Send and Sync: the game keeps it in a resource).
+pub trait Datagrams: Send + Sync {
+    /// The next datagram that came in and where from; `WouldBlock` when there is none.
+    fn recv_from(&mut self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)>;
+    fn send_to(&mut self, p: &[u8], to: SocketAddr);
+    fn local_addr(&self) -> Option<SocketAddr> {
+        None
+    }
+    /// Why nothing goes through any more, once that is so (a relay closed).
+    fn closed(&self) -> Option<String> {
+        None
+    }
+}
+
+impl Datagrams for UdpSocket {
+    fn recv_from(&mut self, buf: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+        UdpSocket::recv_from(self, buf)
+    }
+
+    fn send_to(&mut self, p: &[u8], to: SocketAddr) {
+        let _ = UdpSocket::send_to(self, p, to);
+    }
+
+    fn local_addr(&self) -> Option<SocketAddr> {
+        UdpSocket::local_addr(self).ok()
+    }
+}
+
 /// One end: a server with many connections, or a client with one.
 pub struct Endpoint {
-    socket: UdpSocket,
+    socket: Box<dyn Datagrams>,
     server: bool,
     conns: Vec<Conn>,
     next_id: ConnId,
@@ -241,7 +274,7 @@ impl Endpoint {
     pub fn server(addr: &str, max_conns: usize) -> std::io::Result<Self> {
         let socket = UdpSocket::bind(addr)?;
         socket.set_nonblocking(true)?;
-        Ok(Self::with_socket(socket, true, max_conns))
+        Ok(Self::with_socket(Box::new(socket), true, max_conns))
     }
 
     /// A client connecting to `addr` ("host:port").
@@ -253,16 +286,28 @@ impl Endpoint {
         let bind = if target.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" };
         let socket = UdpSocket::bind(bind)?;
         socket.set_nonblocking(true)?;
+        Ok(Self::connecting(Box::new(socket), target))
+    }
+
+    /// A client connecting through the master server's relay at `url`
+    /// ("wss://.../relay/<server id>"), which knows the server's address.
+    #[cfg(target_arch = "wasm32")]
+    pub fn relay(url: &str) -> std::io::Result<Self> {
+        let socket = crate::websocket::WsDatagrams::open(url)?;
+        Ok(Self::connecting(Box::new(socket), crate::websocket::PEER))
+    }
+
+    fn connecting(socket: Box<dyn Datagrams>, target: SocketAddr) -> Self {
         let mut e = Self::with_socket(socket, false, 1);
         let salt = e.random() | 1;
         e.conns.push(Conn::new(0, target, salt, Instant::now()));
         e.next_id = 1;
-        Ok(e)
+        e
     }
 
-    fn with_socket(socket: UdpSocket, server: bool, max_conns: usize) -> Self {
-        let seed = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+    fn with_socket(socket: Box<dyn Datagrams>, server: bool, max_conns: usize) -> Self {
+        let seed = web_time::SystemTime::now()
+            .duration_since(web_time::SystemTime::UNIX_EPOCH)
             .map_or(1, |d| d.subsec_nanos() ^ d.as_secs() as u32)
             | 1;
         Self {
@@ -279,7 +324,7 @@ impl Endpoint {
     }
 
     pub fn local_addr(&self) -> Option<SocketAddr> {
-        self.socket.local_addr().ok()
+        self.socket.local_addr()
     }
 
     fn random(&mut self) -> u32 {
@@ -359,6 +404,11 @@ impl Endpoint {
                 // Windows reports an unreachable peer of an earlier send here.
                 Err(e) if e.kind() == ErrorKind::ConnectionReset => continue,
                 Err(_) => break,
+            }
+        }
+        if let Some(why) = self.socket.closed() {
+            for c in self.conns.drain(..) {
+                self.events.push(NetEvent::Disconnected(c.id, why.clone()));
             }
         }
         let mut gone = Vec::new();
@@ -519,7 +569,7 @@ impl Endpoint {
         if self.loss > 0.0 && (self.random() % 10_000) as f32 / 10_000.0 < self.loss {
             return;
         }
-        let _ = self.socket.send_to(p, to);
+        self.socket.send_to(p, to);
     }
 
     /// Sends what is queued, resends what is due, keeps the connections alive.
@@ -759,5 +809,31 @@ mod tests {
             }
         }
         assert_eq!(why.as_deref(), Some("The server is full"));
+    }
+
+    /// A relay that has closed.
+    struct Closed;
+
+    impl Datagrams for Closed {
+        fn recv_from(&mut self, _: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+            Err(ErrorKind::WouldBlock.into())
+        }
+        fn send_to(&mut self, _: &[u8], _: SocketAddr) {}
+        fn closed(&self) -> Option<String> {
+            Some("Relay: idle".into())
+        }
+    }
+
+    #[test]
+    fn a_closed_relay_ends_the_connection_with_its_reason() {
+        let mut c = Endpoint::connecting(Box::new(Closed), "0.0.0.0:0".parse().unwrap());
+        let now = Instant::now();
+        c.flush(now);
+        let events = c.poll(now);
+        assert!(
+            matches!(&events[..], [NetEvent::Disconnected(0, why)] if why == "Relay: idle"),
+            "{events:?}"
+        );
+        assert!(c.poll(now).is_empty());
     }
 }

@@ -8,7 +8,7 @@
 //!   frames and events land in the [`NetInbox`] here and the combat step applies them instead
 //!   of stepping; the campaign's news go to the campaign.
 
-use std::time::Instant;
+use web_time::Instant;
 
 use bevy::prelude::*;
 use stealth_net::client::{Client, ClientEvent};

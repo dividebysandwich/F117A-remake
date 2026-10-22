@@ -688,7 +688,7 @@ fn host_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEvent
     };
     // The players who joined: their messages.
     if let Some(server) = server.as_deref_mut() {
-        out.extend(server.pump(host, sim, std::time::Instant::now()));
+        out.extend(server.pump(host, sim, web_time::Instant::now()));
     }
     for a in std::mem::take(&mut c.actions) {
         let result = match a {
@@ -727,7 +727,7 @@ fn host_frame(c: &mut ActiveCampaign, s: &mut Session, dt: f32) -> Vec<HostEvent
     if let Some(server) = server {
         server.route(&ev);
         if combat.steps > 0 {
-            server.send_frame(host, sim, std::time::Instant::now());
+            server.send_frame(host, sim, web_time::Instant::now());
         }
         c.roster = server.roster(host, sim);
     }

@@ -47,7 +47,7 @@ pub struct MultiplayerWindow {
     auto_host: bool,
     /// The public server list: as last fetched, being fetched, or why not.
     servers: Vec<ServerEntry>,
-    fetching: Option<Arc<Mutex<Option<Result<Vec<ServerEntry>, String>>>>>,
+    fetching: Option<stealth_net::master::ListSlot>,
     list_error: Option<String>,
     listed_once: bool,
 }
@@ -68,19 +68,14 @@ impl MultiplayerWindow {
         }
     }
 
-    /// Fetches the public server list (on a thread; `multiplayer_window` takes the answer).
+    /// Fetches the public server list (in the background; `multiplayer_window` takes the
+    /// answer).
     fn refresh_list(&mut self) {
         if self.fetching.is_some() {
             return;
         }
         let answer = Arc::new(Mutex::new(None));
-        let (to, url) = (answer.clone(), master_url());
-        std::thread::spawn(move || {
-            let list = stealth_net::master::fetch_list(&url);
-            if let Ok(mut a) = to.lock() {
-                *a = Some(list);
-            }
-        });
+        stealth_net::master::fetch_list_into(&master_url(), answer.clone());
         self.fetching = Some(answer);
         self.list_error = None;
     }
@@ -208,7 +203,7 @@ fn multiplayer_window(
     }
     // Joining: what the server says.
     if let Some((client, addr)) = w.joining.as_mut() {
-        let now = std::time::Instant::now();
+        let now = web_time::Instant::now();
         let events = client.poll(now);
         client.flush(now);
         let addr = addr.clone();

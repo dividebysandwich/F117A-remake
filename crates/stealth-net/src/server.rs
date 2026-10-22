@@ -8,7 +8,7 @@
 //! [`Server::send_frame`] sends the state.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use web_time::Instant;
 
 use stealth_campaign::{CampaignEvent, PlayerId};
 use stealth_host::{Host, HostEvent};

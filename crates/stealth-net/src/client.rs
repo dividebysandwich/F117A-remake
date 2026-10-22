@@ -2,7 +2,7 @@
 //! out, the server's state and events in.
 
 use std::collections::VecDeque;
-use std::time::Instant;
+use web_time::Instant;
 
 use stealth_campaign::{CampaignState, PlayerId};
 use stealth_host::{HostEvent, Rules};
@@ -56,26 +56,26 @@ pub struct Client {
 impl Client {
     /// Starts connecting to `addr` ("host" or "host:port") as `name`.
     pub fn connect(addr: &str, name: &str) -> std::io::Result<Self> {
-        let addr = addr.trim();
-        let with_port = if addr.rsplit_once(':').is_some_and(|(h, p)| {
-            !h.is_empty() && p.parse::<u16>().is_ok() && (!h.contains(':') || h.ends_with(']'))
-        }) {
-            addr.to_string()
-        } else if addr.contains(':') && !addr.starts_with('[') {
-            // A bare IPv6 address.
-            format!("[{addr}]:{DEFAULT_PORT}")
-        } else {
-            format!("{addr}:{DEFAULT_PORT}")
-        };
-        Ok(Self {
-            net: Endpoint::client(&with_port)?,
+        Ok(Self::on(Endpoint::client(&with_default_port(addr))?, name))
+    }
+
+    /// Starts connecting through the master server's relay at `url`
+    /// (`master::relay_url`): the browser build's way to a server.
+    #[cfg(target_arch = "wasm32")]
+    pub fn relayed(url: &str, name: &str) -> std::io::Result<Self> {
+        Ok(Self::on(Endpoint::relay(url)?, name))
+    }
+
+    fn on(net: Endpoint, name: &str) -> Self {
+        Self {
+            net,
             name: name.to_string(),
             id: None,
             seq: 0,
             recent: VecDeque::new(),
             last_step: None,
             closed: false,
-        })
+        }
     }
 
     pub fn send(&mut self, msg: &ToServer) {
@@ -184,5 +184,20 @@ impl Client {
         self.net.close(0, "Left");
         self.net.flush(now);
         self.closed = true;
+    }
+}
+
+/// "host" or "host:port" with the port: the default one if none.
+fn with_default_port(addr: &str) -> String {
+    let addr = addr.trim();
+    if addr.rsplit_once(':').is_some_and(|(h, p)| {
+        !h.is_empty() && p.parse::<u16>().is_ok() && (!h.contains(':') || h.ends_with(']'))
+    }) {
+        addr.to_string()
+    } else if addr.contains(':') && !addr.starts_with('[') {
+        // A bare IPv6 address.
+        format!("[{addr}]:{DEFAULT_PORT}")
+    } else {
+        format!("{addr}:{DEFAULT_PORT}")
     }
 }

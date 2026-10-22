@@ -565,12 +565,14 @@ fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>, px: f32) -> vec3<f32> {
             let c_el = (cell.y + 0.5 + 0.6 * (hash2(cell + 3.3) - 0.5)) * STAR_CELL;
             let star = vec3<f32>(cos(c_el) * sin(c_az), sin(c_el), -cos(c_el) * cos(c_az));
             let d = length(nd - star);
-            let r = max(STAR_CELL * 0.06, px * 0.7);
-            let core = 1.0 - smoothstep(r - px, r + px, d);
+            // A hard edged point about a pixel across: unfiltered, it pops between pixels as the
+            // view moves, so the stars twinkle.
+            let r = max(STAR_CELL * 0.03, px * 0.55);
+            let core = select(0.0, 1.0, d < r);
             let mag = 0.35 + 0.65 * pow(h / STAR_SHARE, 3.0);
             // Fainter towards the horizon (haze).
             let alt_fade = smoothstep(0.0, 0.15, nd.y);
-            bg += vec3<f32>(0.9, 0.92, 1.0) * core * mag * stars * alt_fade * 0.8;
+            bg += vec3<f32>(0.9, 0.92, 1.0) * core * mag * stars * alt_fade;
         }
     }
     // The sun's disc, a soft edge against the sky.

@@ -84,16 +84,18 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
 
 /// The briefing date ("June 5, 1991"), else 1 January 1990.
 pub(crate) fn briefing_date(text: &str) -> (i64, i64, i64) {
+    parse_briefing_date(text).unwrap_or((1990, 1, 1))
+}
+
+/// The briefing's date (year, month, day), if it has one.
+pub(crate) fn parse_briefing_date(text: &str) -> Option<(i64, i64, i64)> {
     const MONTHS: [&str; 12] =
         ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
     let lower = text.to_ascii_lowercase();
     let words: Vec<&str> = lower.split([' ', ',']).filter(|w| !w.is_empty()).collect();
-    let parsed = (|| {
-        let first = words.first()?;
-        let m = MONTHS.iter().position(|m| first.starts_with(m))?;
-        Some((words.get(2)?.parse().ok()?, m as i64 + 1, words.get(1)?.parse().ok()?))
-    })();
-    parsed.unwrap_or((1990, 1, 1))
+    let first = words.first()?;
+    let m = MONTHS.iter().position(|m| first.starts_with(m))?;
+    Some((words.get(2)?.parse().ok()?, m as i64 + 1, words.get(1)?.parse().ok()?))
 }
 
 /// ISO 8601 UTC time of the mission start: the briefing date and the local mission clock,

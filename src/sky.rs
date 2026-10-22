@@ -54,6 +54,8 @@ pub struct Sky {
     /// Mission date: days since 1970-01-01 (the moon's phase), and the theater's latitude.
     days: f64,
     lat: f64,
+    /// The season 0 (midwinter) .. 1 (midsummer); summer without a mission date.
+    summer: f64,
     /// The moon phase chosen for the mission (else the date's).
     chosen: Option<f64>,
     /// A campaign's sky (its moon moves on faster).
@@ -75,6 +77,7 @@ impl Default for Sky {
             glow: 0.0,
             days: 0.0,
             lat: 45.0,
+            summer: 1.0,
             chosen: None,
             campaign: false,
             golden: None,
@@ -293,6 +296,24 @@ pub fn blend(p: &TheaterPalettes, golden: &VgaPalette, elev: f64, moonlight: f64
 
 /// How dark the night is (0 .. 1) at a sun elevation (degrees): the palette's night under a
 /// full moon high in the sky, black when the moon is new or down. It falls with the dusk.
+/// The season on a day (days since 1970-01-01) at a latitude: 0 (midwinter) .. 1 (midsummer).
+pub fn season(days: f64, lat: f64) -> f64 {
+    // The March equinox of 1970 fell on day 78.
+    let s = (TAU * (days - 78.0) / 365.2422).sin();
+    // Full summer from May to mid August.
+    smoothstep(-0.5, 0.6, if lat < 0.0 { -s } else { s })
+}
+
+/// Strength of the red glow a dark night leaves at the horizon, by the sun's elevation (degrees).
+/// Its last trace lingers: gone about two hours after dusk in winter, at midnight (the sun's
+/// lowest, the latitude less 90) in summer, back again for the dawn.
+pub fn horizon_glow(elev: f64, lat: f64, summer: f64) -> f64 {
+    let end = (-27.0 + (lat - 90.0 + 27.0) * summer).min(-12.0);
+    // The sun's height over its lowest grows with the square of the time, so the root of it
+    // fades evenly in time.
+    2.0 * smoothstep(-18.0, -9.0, elev) + ((elev - end) / (-9.0 - end)).clamp(0.0, 1.0).sqrt()
+}
+
 pub fn darkness(elev: f64, moonlight: f64) -> f64 {
     (1.0 - moonlight) * (1.0 - smoothstep(-14.0, -5.0, elev))
 }
@@ -318,13 +339,13 @@ fn reset_sky(
     mission: Option<Res<crate::mission::ActiveMission>>,
 ) {
     let (_, lat0) = crate::world::geo_origin(&setup.theater);
-    let days = mission.as_ref().map_or(0.0, |m| {
-        let (y, mo, d) = crate::tacview::briefing_date(&m.0.briefing.date);
-        crate::tacview::days_from_civil(y, mo, d) as f64
-    });
+    let date = mission.as_ref().and_then(|m| crate::tacview::parse_briefing_date(&m.0.briefing.date));
+    let days = date.map_or(0.0, |(y, mo, d)| crate::tacview::days_from_civil(y, mo, d) as f64);
     let chosen = mission.and_then(|m| m.0.settings.moon).map(|e| (e % 8) as f64 / 8.0);
     // The middle of the theater, 256 km north of its corner.
-    *sky = Sky { lat: lat0 + 256.0 / 111.2, days, chosen, ..default() };
+    let lat = lat0 + 256.0 / 111.2;
+    let summer = date.map_or(1.0, |_| season(days, lat));
+    *sky = Sky { lat, days, summer, chosen, ..default() };
 }
 
 fn update_sky(
@@ -367,7 +388,7 @@ fn update_sky(
         stars: ((1.0 - smoothstep(-14.0, -4.0, elev)) * (1.0 - 0.6 * moonlight)) as f32,
         day: day as f32,
         dark: darkness(elev, moonlight) as f32,
-        glow: (1.0 + 2.0 * smoothstep(-18.0, -9.0, elev)) as f32,
+        glow: horizon_glow(elev, sky.lat, sky.summer) as f32,
         ..sky.clone()
     };
     // Alt-N's jump to the target palette wins.
@@ -393,6 +414,22 @@ fn update_sky(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn horizon_glow_lingers_in_summer() {
+        let glow = |hours: f64, summer: f64| {
+            let elev = (sun_dir(hours, 50.0).y as f64).asin().to_degrees();
+            horizon_glow(elev, 50.0, summer)
+        };
+        for h in [19.0, 20.0, 21.0, 22.0, 23.0, 23.5, 24.0] {
+            eprintln!("{h}: winter {:.4} summer {:.4}", glow(h, 0.0), glow(h, 1.0));
+        }
+        assert!(glow(21.0, 0.0) == 0.0 && glow(23.0, 1.0) > 0.0);
+        assert!(glow(24.0, 1.0) < 1e-6);
+        // Midwinter and midsummer dates in the northern hemisphere.
+        let day = |m, d| crate::tacview::days_from_civil(1991, m, d) as f64;
+        assert!(season(day(12, 21), 50.0) < 0.01 && season(day(6, 21), 50.0) > 0.99);
+    }
 
     #[test]
     fn equinox_sun() {

@@ -286,7 +286,8 @@ fn multiplayer_window(
                         }
                     } else {
                         let ready = named && !state.server_addr.trim().is_empty();
-                        join = ui.add_enabled(ready, big_button("CONNECT")).clicked();
+                        // `|=`: a JOIN in the server list above joins too.
+                        join |= ui.add_enabled(ready, big_button("CONNECT")).clicked();
                     }
                     if let Some(s) = &w.status {
                         ui.label(egui::RichText::new(s).color(BRIGHT));

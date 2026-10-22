@@ -16,8 +16,9 @@ a web browser gets the list as a page. A server not heard of for 90 seconds is g
 | `GET /health` | `{"ok":true}` |
 
 The server speaks plain HTTP and keeps the list in memory (it fills again within half a
-minute after a restart). HTTPS comes from a reverse proxy on the same machine; requests from
-there carry the client's address in `X-Forwarded-For`.
+minute after a restart). HTTPS comes from a reverse proxy (Caddy, Cloudflare and cloudflared, ...); a
+request from this machine or its LAN is a proxy's, and the client is in its `CF-Connecting-IP`
+or else the last internet address in `X-Forwarded-For`.
 
 The pages fetch themselves again every 5 seconds and swap in what changed, so the maps follow
 each report (while somebody flies, servers report every 10 seconds). The map pictures in

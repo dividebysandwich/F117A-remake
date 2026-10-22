@@ -45,6 +45,48 @@ impl Response {
     }
 }
 
+/// An address no game on the internet joins: this machine, the LAN, a container network.
+pub fn is_internal(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                // Carrier-grade NAT, 100.64.0.0/10.
+                || (o[0] == 100 && (o[1] & 0xc0) == 64)
+        }
+        IpAddr::V6(v6) => {
+            let s = v6.segments()[0];
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_internal(IpAddr::V4(v4));
+            }
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (s & 0xfe00) == 0xfc00
+                || (s & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+/// Where a request came from. From the internet: the peer. Through proxies on this machine
+/// or its network (Caddy, cloudflared, a container's port): the client they forward,
+/// Cloudflare's `CF-Connecting-IP` first, else the last address in `X-Forwarded-For` that is
+/// not one of the proxies.
+pub fn client_ip<'a>(peer: IpAddr, header: impl Fn(&str) -> Option<&'a str>) -> IpAddr {
+    if !is_internal(peer) {
+        return peer;
+    }
+    let parse = |s: &str| s.trim().parse::<IpAddr>().ok();
+    if let Some(ip) = header("CF-Connecting-IP").and_then(parse) {
+        return ip;
+    }
+    header("X-Forwarded-For")
+        .and_then(|f| f.rsplit(',').filter_map(parse).find(|ip| !is_internal(*ip)))
+        .unwrap_or(peer)
+}
+
 struct Listed {
     report: ServerReport,
     seen: Instant,
@@ -218,6 +260,29 @@ mod tests {
         let list: Vec<ServerEntry> = serde_json::from_slice(&r.body).unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].report.players.len(), 2);
+    }
+
+    #[test]
+    fn the_client_is_found_behind_proxies() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let headers = |h: &'static [(&'static str, &'static str)]| {
+            move |n: &str| h.iter().find(|x| x.0.eq_ignore_ascii_case(n)).map(|x| x.1)
+        };
+        // From the internet: the peer, whatever it says.
+        let spoof = headers(&[("CF-Connecting-IP", "1.2.3.4"), ("X-Forwarded-For", "1.2.3.4")]);
+        assert_eq!(client_ip(ip("203.0.113.5"), spoof), ip("203.0.113.5"));
+        // cloudflared on the LAN, Caddy between: Cloudflare's header.
+        let cf =
+            headers(&[("cf-connecting-ip", "81.189.183.15"), ("X-Forwarded-For", "192.168.178.2")]);
+        assert_eq!(client_ip(ip("192.168.178.2"), cf), ip("81.189.183.15"));
+        assert_eq!(client_ip(ip("::1"), cf), ip("81.189.183.15"));
+        // Plain proxies: the last address not theirs.
+        let xff = headers(&[("X-Forwarded-For", "9.9.9.9, 81.189.183.15, 172.17.0.1")]);
+        assert_eq!(client_ip(ip("127.0.0.1"), xff), ip("81.189.183.15"));
+        // Nothing forwarded: the peer.
+        assert_eq!(client_ip(ip("10.0.0.7"), headers(&[])), ip("10.0.0.7"));
+        assert!(is_internal(ip("100.100.1.1")) && is_internal(ip("fd00::1")));
+        assert!(!is_internal(ip("2001:db8::1")) && !is_internal(ip("8.8.8.8")));
     }
 
     #[test]

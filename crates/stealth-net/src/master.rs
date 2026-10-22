@@ -13,6 +13,7 @@ use stealth_master_proto::{
     SideHolding,
 };
 use stealth_sim::Sim;
+use ureq::config::IpFamily;
 
 use crate::PROTOCOL;
 use crate::protocol::PlayerStatus;
@@ -81,9 +82,12 @@ impl Drop for Reporter {
     }
 }
 
-fn new_agent(timeout: u64) -> ureq::Agent {
+/// A reporting server's agent speaks IPv4 to the master server: the address it sees is the
+/// one listed, and game servers listen on IPv4 only.
+fn new_agent(timeout: u64, ip: IpFamily) -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(timeout)))
+        .ip_family(ip)
         .user_agent(concat!("stealth-mission-89/", env!("CARGO_PKG_VERSION")))
         .build()
         .into()
@@ -95,7 +99,7 @@ fn run(url: &str, rx: &Receiver<Msg>, log: &Mutex<Vec<String>>) {
             l.push(s);
         }
     };
-    let agent = new_agent(TIMEOUT);
+    let agent = new_agent(TIMEOUT, IpFamily::Ipv4Only);
     let mut latest: Option<ServerReport> = None;
     let mut next = Instant::now();
     let mut every = REPORT_EVERY;
@@ -141,14 +145,15 @@ fn run(url: &str, rx: &Receiver<Msg>, log: &Mutex<Vec<String>>) {
         }
     }
     if let Some(r) = latest.filter(|_| listed) {
-        let _ = new_agent(2).delete(format!("{url}/api/servers/{}", r.port)).call();
+        let _ =
+            new_agent(2, IpFamily::Ipv4Only).delete(format!("{url}/api/servers/{}", r.port)).call();
     }
 }
 
 /// The servers on the list at `master`.
 pub fn fetch_list(master: &str) -> Result<Vec<ServerEntry>, String> {
     let url = format!("{}/api/servers", master.trim_end_matches('/'));
-    new_agent(TIMEOUT)
+    new_agent(TIMEOUT, IpFamily::Any)
         .get(&url)
         .call()
         .map_err(|e| e.to_string())?

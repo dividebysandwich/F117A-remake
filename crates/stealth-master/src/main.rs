@@ -1,6 +1,7 @@
 //! The master server: game servers report to it, games list them (`stealth-master-proto`).
-//! It serves plain HTTP; HTTPS comes from a reverse proxy in front of it (`deploy/`), whose
-//! `X-Forwarded-For` it believes when the request comes from this machine.
+//! It serves plain HTTP; HTTPS comes from a reverse proxy in front of it (`deploy/`, or
+//! Cloudflare), whose `CF-Connecting-IP` or `X-Forwarded-For` it believes when the request
+//! comes from this machine or its LAN.
 //!
 //! `stealth-master [--listen <addr:port>] [--threads <n>]` (default 127.0.0.1:8089, 4).
 
@@ -9,8 +10,8 @@ use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use stealth_master::{List, MAX_BODY};
-use tiny_http::{Header, Request, Response, Server};
+use stealth_master::{List, MAX_BODY, is_internal};
+use tiny_http::{Header, Method, Request, Response, Server};
 
 const USAGE: &str = "stealth-master [--listen <addr:port>] [--threads <n>]";
 
@@ -47,23 +48,24 @@ fn main() {
     }
 }
 
-/// The client's address: the peer's, or behind a proxy on this machine the one it forwards.
+/// The client's address: the peer's, or behind proxies the one they forward.
 fn client_ip(req: &Request) -> Option<IpAddr> {
     let peer = req.remote_addr()?.ip();
-    if !peer.is_loopback() {
-        return Some(peer);
-    }
-    let forwarded = req
-        .headers()
+    Some(stealth_master::client_ip(peer, |name| header(req, name)))
+}
+
+fn header<'r>(req: &'r Request, name: &str) -> Option<&'r str> {
+    req.headers()
         .iter()
-        .find(|h| h.field.equiv("X-Forwarded-For"))
-        .and_then(|h| h.value.as_str().split(',').next_back())
-        .and_then(|ip| ip.trim().parse().ok());
-    Some(forwarded.unwrap_or(peer))
+        .find(|h| h.field.as_str().as_str().eq_ignore_ascii_case(name))
+        .map(|h| h.value.as_str())
 }
 
 fn serve(mut req: Request, list: &Mutex<List>) {
     let Some(from) = client_ip(&req) else { return };
+    if is_internal(from) && req.method() == &Method::Post {
+        eprintln!("{from} reports from a LAN address: a server not joinable from the internet");
+    }
     let mut body = Vec::new();
     let ok = req.as_reader().take(MAX_BODY as u64 + 1).read_to_end(&mut body).is_ok();
     let method = req.method().as_str().to_string();

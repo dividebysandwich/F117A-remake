@@ -24,7 +24,7 @@ use crate::csar::BLACKHAWK;
 use crate::math::{approx, s16};
 use crate::rng::Rng;
 use crate::types::*;
-use crate::{ENEMY_SLOTS, Sim};
+use crate::{AircraftKind, ENEMY_SLOTS, Sim};
 
 const M_PER_WU: f64 = M_PER_MAP / 32.0;
 const G: f64 = 9.81;
@@ -36,6 +36,9 @@ const FIGHTER_RELOAD: i32 = 12;
 const FIGHTER_MISSILES: i32 = 4;
 /// A fighter goes for enemy aircraft this close (80 km, its radar).
 const FIGHTER_SEARCH: i32 = 0x1400;
+/// A SAM site engages a helicopter this close at most (8 km): low and slow, it hides in the
+/// terrain and the ground clutter from a far radar.
+const HELO_SAM_REACH: i32 = 0x200;
 /// A missile's fuse (m) and the chance (per mille) it kills what it reaches.
 const FUSE: f64 = 25.0;
 const MISSILE_PK: i32 = 700;
@@ -738,13 +741,19 @@ impl Sim {
         let sides: Vec<Option<bool>> = (0..self.flights.len()).map(|i| self.ai_side(i)).collect();
         let pos: Vec<[f64; 3]> = self.flights.iter().map(flight_metres).collect();
         let xy: Vec<(i32, i32)> = self.flights.iter().map(|u| (u.x, u.y)).collect();
+        let helo: Vec<bool> = self
+            .flights
+            .iter()
+            .map(|u| self.aircraft_kind(u.spec) == AircraftKind::Helicopter)
+            .collect();
         let Some(mut c) = self.campaign.take() else { return };
         let mut rng = c.rng;
-        let near = |x: i32, y: i32, blue: bool, reach: i32, min_alt: f64| {
+        // The nearest aircraft of a side in reach (`helo_reach` for helicopters).
+        let near = |x: i32, y: i32, blue: bool, reach: i32, helo_reach: i32, min_alt: f64| {
             (0..sides.len())
                 .filter(|&j| sides[j] == Some(blue) && pos[j][2] > min_alt)
                 .map(|j| (j, approx(xy[j].0 - x, xy[j].1 - y)))
-                .filter(|&(_, d)| d < reach)
+                .filter(|&(j, d)| d < if helo[j] { helo_reach } else { reach })
                 .min_by_key(|&(_, d)| d)
         };
         let mut launches: Vec<AiMissile> = Vec::new();
@@ -761,7 +770,9 @@ impl Sim {
             let spec = self.site_missile(o.unit_type);
             let lock = (self.missile(spec).lock_range as i32) << 6;
             let reach = lock * if c.intel[i] { INTEL_DETECTION } else { 10 } / 10;
-            let Some((j, d)) = near(o.x, o.y, true, reach, 15.0) else { continue };
+            let Some((j, d)) = near(o.x, o.y, true, reach, reach.min(HELO_SAM_REACH), 15.0) else {
+                continue;
+            };
             if d > horizon(pos[j][2]) || rng.random(100) > 40 + 15 * self.diff {
                 continue;
             }
@@ -778,7 +789,8 @@ impl Sim {
                 continue;
             }
             let (_, reach, ceiling) = gun_envelope(u.kind);
-            let Some((j, _)) = near(u.x, u.y, !blue, (reach / M_PER_MAP) as i32, 15.0) else {
+            let reach = (reach / M_PER_MAP) as i32;
+            let Some((j, _)) = near(u.x, u.y, !blue, reach, reach, 15.0) else {
                 continue;
             };
             if pos[j][2] > ceiling {
@@ -801,7 +813,7 @@ impl Sim {
             }
             let u = self.flights[i];
             f.cooldown = (f.cooldown - fs).max(0);
-            f.target = near(u.x, u.y, !f.blue, FIGHTER_SEARCH, 0.0).map(|t| t.0);
+            f.target = near(u.x, u.y, !f.blue, FIGHTER_SEARCH, FIGHTER_SEARCH, 0.0).map(|t| t.0);
             if let Some(j) = f.target
                 && f.missiles > 0
                 && f.cooldown == 0

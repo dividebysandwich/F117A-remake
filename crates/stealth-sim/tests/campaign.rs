@@ -230,6 +230,38 @@ fn fighters_go_for_the_helicopters() {
 }
 
 #[test]
+fn a_far_sam_site_leaves_helicopters_alone() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let from = find(&sim, 0x401, Some("Neuberg"));
+    let to = find(&sim, 0x001, Some("Tabor"));
+    // An SA-11 20 km off the route: well in its reach, but too far to see a helicopter.
+    let (a, b) = (sim.objects()[from], sim.objects()[to]);
+    let site = &mut sim.objects_mut()[3];
+    site.unit_type = 5;
+    site.x = (a.x + b.x) / 2;
+    site.y = (a.y + b.y) / 2 + 20 * 64;
+    site.flags = 0;
+    for n in 0..4 {
+        sim.spawn_insertion(from, to, 100 + n, n as usize);
+    }
+    let mut landed = 0;
+    for _ in 0..45 * 60 {
+        for e in run(&mut sim, &idle(), 1) {
+            match e {
+                SimEvent::CampaignFlightDestroyed { tag, .. } => panic!("the SA-11 got {tag}"),
+                SimEvent::CampaignFlightLanded { .. } => landed += 1,
+                _ => {}
+            }
+        }
+        if landed == 4 {
+            break;
+        }
+    }
+    assert_eq!(landed, 4);
+}
+
+#[test]
 fn places_change_hands_and_get_repaired() {
     let (_, mut sim) = campaign();
     let tabor = find(&sim, 0x001, Some("Tabor"));

@@ -40,7 +40,7 @@ returns to it.
 |---|---|
 | SINGLE MISSION | One mission with the options below. |
 | CAREER | Pilot records and the tour of duty, with the tour's options (chapter 10). |
-| DYNAMIC CAMPAIGN | Start or continue a dynamic campaign, with the theater, situation, opponents, aircraft, realism and classic / modern options. |
+| DYNAMIC CAMPAIGN | Start or continue a dynamic campaign, with the theater, situation, opponents, aircraft, realism and classic / modern options. **Weather**: *changing* (the default) or *clear sky*. Changing weather turns once or twice a day of the campaign's sky, mostly fair (clear, scattered or broken cumulus, sometimes an overcast) and now and then thunderstorms; each change takes a few minutes, the clouds building up or thinning out and the light following. The Ops screen shows the weather and the next change next to the clock, the briefing the cloud layers. |
 | MULTIPLAYER | Coop in the dynamic campaign: join a server or host a campaign and fly in it (chapter 13). |
 | CONTROLS | The input mapping (chapter 2). |
 | QUIT | Exit to the desktop. |
@@ -982,7 +982,8 @@ when you play alone.
 
 The server decides how the war is fought, for everybody: realistic damage, realistic guidance, no
 crashes, time of day (moonlit nights shorten the enemy's visual range), realistic F-117A
-weapons and friendly fire, and of course the campaign's own options. Each player keeps his own cockpit (classic or
+weapons and friendly fire, and of course the campaign's own options. The weather is the same for
+everybody: the same clouds in the same places, and the same lightning strikes. Each player keeps his own cockpit (classic or
 modern), flight model, avionics, HUD, shaders, shadows and lights, and picks his aircraft (F-117A
 or F-16) for each sortie on the briefing's LOADOUT page.
 
@@ -1031,6 +1032,7 @@ stealth-mission-89 --dedicated --theater ua --name "Friday night ops" --port 289
 | `--theater <code>` | ce, cu, ko, ku, lb, me, nc, pg, ua, vn. Default: the saved campaign's, else ce. |
 | `--roe <0..2>`, `--opponents <0..3>`, `--seed <n>`, `--start-hour <h>` | A new campaign's options. |
 | `--sky-ratio <x>` | The sky runs x times faster than real time (default 24: a day per hour). |
+| `--clear-sky` | A new campaign without weather (else it changes once or twice a day). |
 | `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`, `--realistic-weapons`, `--friendly-fire` | The rules. |
 | `--save <file>` | The campaign file (default `campaigns/dedicated.json` in the game's data directory). |
 | `--send-rate <hz>` | How often the moving world goes to the players, 1 to 15 times a second (default 7.5). More is smoother; less leaves bandwidth for more players. |

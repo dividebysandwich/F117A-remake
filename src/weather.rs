@@ -83,6 +83,8 @@ pub struct WeatherState {
     pub weather: Weather,
     /// The dynamic campaign's changing weather.
     forecast: Option<Forecast>,
+    /// Its weather now and what comes next.
+    pub now: Option<Now>,
     /// Drawn coverage of the cumulus, stratus and cumulonimbus layers (percent, unrounded).
     cover: [f32; 3],
     /// Stratus field threshold 0..1 of the drawn deck.
@@ -411,6 +413,7 @@ fn update_weather(
     let Some(f) = state.forecast.as_mut() else { return };
     let now = f.at(c.state().clock);
     state.set(now);
+    state.now = Some(now);
     if now.weather.sky != before {
         info!("weather: {}", now.weather.describe());
     }

@@ -4,11 +4,13 @@
 
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, PrimaryEguiContext, egui};
+use stealth_campaign::weather::Now;
 use stealth_campaign::{
     Aircraft as Airframe, InsertionState, MissionKind, MissionOffer, Objective, PlayerId, Side,
     SortieResult,
 };
 use stealth_host::glue::sortie_mission;
+use stealth_mission::Sky;
 use stealth_net::protocol::PlayerStatus;
 
 use super::{Action, ActiveCampaign, Phase, Role, describe, kind_of, preview};
@@ -225,6 +227,21 @@ fn kind_colour(k: MissionKind) -> egui::Color32 {
     }
 }
 
+/// The weather and the next change: a short form for the header and the briefing's line.
+fn weather_text(c: &ActiveCampaign, now: &Now) -> (String, String) {
+    let name = |s: Sky| match s {
+        Sky::Storm => "THUNDERSTORMS".to_string(),
+        s => s.name().to_ascii_uppercase(),
+    };
+    let setup = &c.state().setup;
+    let h = setup.start_hour as f64 + now.next.1 * setup.sky_ratio as f64 / 3600.0;
+    let mins = (h.rem_euclid(24.0) * 60.0).floor() as i64;
+    let at = format!("{:02}:{:02}", mins / 60, mins % 60);
+    let short = format!("WX {}, {} AT {at}", name(now.weather.sky), name(now.next.0));
+    let line = format!("{} Changing to {} at {at}.", now.weather.describe(), now.next.0.name());
+    (short, line.replace("Storm", "thunderstorms"))
+}
+
 /// The campaign clock as the sky shows it: day and time.
 fn clock_text(c: &ActiveCampaign) -> String {
     let h = c.state().sky_hours();
@@ -243,10 +260,12 @@ pub fn ops_ui(
     loadout: Option<Res<crate::loadout::PlannedLoadout>>,
     mut next: ResMut<NextState<AppState>>,
     mut unit_view: ResMut<super::UnitView>,
+    weather: Res<crate::weather::WeatherState>,
 ) -> Result {
     if !c.screen_open() || c.exit {
         return Ok(());
     }
+    let wx = weather.now.map(|n| weather_text(&c, &n));
     let Ok(ctx) = contexts.ctx_mut() else { return Ok(()) };
     crate::menu::apply_ui_zoom(ctx);
     if ctx.global_style().visuals.window_fill != BG {
@@ -303,7 +322,8 @@ pub fn ops_ui(
         }
     }
     if c.ui.briefing.is_some() {
-        briefing(ctx, c, &combat.sim, &mut planner, egui::vec2(width, height));
+        let line = wx.as_ref().map(|w| w.1.as_str());
+        briefing(ctx, c, &combat.sim, &mut planner, line, egui::vec2(width, height));
         return Ok(());
     }
     let mut leave = false;
@@ -359,6 +379,9 @@ pub fn ops_ui(
                                 .color(MISSILE_RED),
                         );
                         ui.label(egui::RichText::new(clock_text(c)).color(BRIGHT));
+                        if let Some((short, _)) = &wx {
+                            ui.label(egui::RichText::new(short).color(DIM));
+                        }
                     });
                     if ui.add(exit_button(c.role)).clicked() {
                         c.ui.confirm_exit = true;
@@ -916,6 +939,7 @@ fn briefing(
     c: &mut ActiveCampaign,
     sim: &stealth_sim::Sim,
     planner: &mut crate::planner::Planner,
+    weather: Option<&str>,
     size: egui::Vec2,
 ) {
     let Some(mut b) = c.ui.briefing.take() else { return };
@@ -958,6 +982,9 @@ fn briefing(
                 kind_of(b.aircraft).name(),
                 b.loadout.summary()
             ));
+            if let Some(line) = weather {
+                ui.label(egui::RichText::new(line).color(DIM));
+            }
             if coop {
                 group_label(ui, c, o.id);
                 let (_, flying) = group(c, o.id);

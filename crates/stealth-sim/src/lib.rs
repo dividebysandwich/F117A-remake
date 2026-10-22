@@ -1,4 +1,5 @@
 pub mod aaa;
+pub mod ai_loadout;
 pub mod ballistics;
 pub mod campaign;
 pub mod claims;

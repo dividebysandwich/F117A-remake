@@ -182,6 +182,8 @@ pub enum CampaignEvent {
         from: ObjectId,
         x: i32,
         y: i32,
+        #[serde(default)]
+        task: FighterTask,
     },
     /// News for the players (shown on the HUD and in the campaign log).
     Message(String),
@@ -213,6 +215,7 @@ impl CampaignState {
         self.repairs(&mut ev);
         self.expire_intel(&mut ev);
         self.enemy_air(view, &mut ev);
+        self.friendly_cap(view, &mut ev);
         self.auto_insertion(view, &mut ev);
         if self.clock - self.board_at >= tuning::BOARD_REFRESH
             || ev.iter().any(|e| matches!(e, CampaignEvent::PlaceCaptured { .. }))
@@ -241,6 +244,7 @@ impl CampaignState {
             }
         }
         self.patrols.clear();
+        self.caps.clear();
         self.board_at = f64::MIN;
         for p in &mut self.plans {
             p.crew.clear();

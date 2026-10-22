@@ -231,7 +231,14 @@ fn campaign_run() -> u64 {
             sim.spawn_insertion(base, enemy, 10 + round * 4 + n, n as usize);
         }
         let t = sim.objects()[base];
-        sim.spawn_fighter(enemy, t.x, t.y, 20 + round, false);
+        sim.spawn_fighter(
+            enemy,
+            t.x,
+            t.y,
+            20 + round,
+            false,
+            stealth_sim::ai_loadout::FighterTask::Patrol,
+        );
         for _ in 0..15 * 30 {
             let ev = sim.step(&idle, 15);
             trace.push_str(&frame_line(&sim, &ev));

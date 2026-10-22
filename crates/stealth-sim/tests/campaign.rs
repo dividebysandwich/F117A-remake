@@ -215,7 +215,7 @@ fn fighters_go_for_the_helicopters() {
     // Scrambled (as the campaign does) when the helicopter is 80 km out.
     run(&mut sim, &idle(), 20 * 60);
     let t = sim.objects()[to];
-    sim.spawn_fighter(enemy, t.x, t.y, 8, false);
+    sim.spawn_fighter(enemy, t.x, t.y, 8, false, stealth_sim::ai_loadout::FighterTask::Patrol);
     let mut lost = false;
     for _ in 0..15 * 60 {
         if run(&mut sim, &idle(), 1)
@@ -271,9 +271,10 @@ fn fighters_use_their_guns() {
     sim.spawn_insertion(from, to, 7, 0);
     run(&mut sim, &idle(), 20 * 60);
     let t = sim.objects()[to];
-    let f = sim.spawn_fighter(enemy, t.x, t.y, 8, false);
+    let f =
+        sim.spawn_fighter(enemy, t.x, t.y, 8, false, stealth_sim::ai_loadout::FighterTask::Patrol);
     // No missiles: only its gun.
-    sim.flights_mut()[f].missile = 0;
+    sim.set_fighter_loadout(f, Default::default());
     let mut lost = false;
     for _ in 0..15 * 60 {
         if run(&mut sim, &idle(), 1)
@@ -355,7 +356,14 @@ fn a_long_campaign_stays_bounded() {
     for minute in 0..30 {
         if minute % 3 == 0 {
             sim.spawn_insertion(from, to, tag, 0);
-            sim.spawn_fighter(enemy, t.x, t.y, tag + 1, false);
+            sim.spawn_fighter(
+                enemy,
+                t.x,
+                t.y,
+                tag + 1,
+                false,
+                stealth_sim::ai_loadout::FighterTask::Patrol,
+            );
             tag += 2;
         }
         run(&mut sim, &idle(), 60);
@@ -363,4 +371,153 @@ fn a_long_campaign_stays_bounded() {
     assert!(sim.flights().len() < 40, "{} flight units", sim.flights().len());
     assert!(sim.ai_missiles().len() < 50);
     assert!(sim.event_log().len() < 500);
+}
+
+use stealth_sim::ai_loadout::{AIM9, AIM120, FighterTask};
+use stealth_sim::campaign::{CAP_BUBBLE, CAP_LEASH};
+
+/// Runs until `tag` is shot down (true) or `secs` are up; every AI missile seen goes to `seen`.
+fn until_down(sim: &mut Sim, tag: u32, secs: i32, seen: &mut Vec<i32>) -> bool {
+    for _ in 0..secs {
+        let ev = run(sim, &idle(), 1);
+        seen.extend(sim.ai_missiles().iter().map(|m| m.spec));
+        if ev
+            .iter()
+            .any(|e| matches!(e, SimEvent::CampaignFlightDestroyed { tag: t, .. } if *t == tag))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Runs until flight `f` is this close to (x, y).
+fn until_near(sim: &mut Sim, f: usize, (x, y): (i32, i32), d: i32) {
+    for _ in 0..40 * 60 {
+        let u = sim.flights()[f];
+        if (u.x - x).abs().max((u.y - y).abs()) < d {
+            return;
+        }
+        run(sim, &idle(), 1);
+    }
+    panic!("never got near");
+}
+
+/// An enemy patrol out of Konmarno over Neuberg (tag 8), and Neuberg.
+fn raid(sim: &mut Sim) -> (usize, usize) {
+    let home = find(sim, 0x401, Some("Neuberg"));
+    let enemy = find(sim, 0x001, Some("Konmarno"));
+    let t = sim.objects()[home];
+    let f = sim.spawn_fighter(enemy, t.x, t.y, 8, false, FighterTask::Patrol);
+    // Unarmed: what is tested is what shoots it down.
+    sim.set_fighter_loadout(f, Default::default());
+    (home, f)
+}
+
+#[test]
+fn a_cap_defends_its_airfield_with_missiles() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let (home, raider) = raid(&mut sim);
+    let o = sim.objects()[home];
+    // Scrambled as the campaign does, with the raider 30 km out.
+    until_near(&mut sim, raider, (o.x, o.y), 0x780);
+    let cap = sim.spawn_fighter(home, o.x, o.y, 9, true, FighterTask::Cap);
+    let f = sim.campaign_flight(cap).unwrap();
+    assert_eq!(f.task, FighterTask::Cap);
+    assert_eq!(f.anchor, (o.x, o.y));
+    assert!(f.loadout.stores.iter().all(|s| s.count == 0 || [AIM120, AIM9].contains(&s.missile)));
+    let mut seen = Vec::new();
+    assert!(until_down(&mut sim, 8, 15 * 60, &mut seen), "the CAP never got the raider");
+    assert!(seen.iter().any(|s| [AIM120, AIM9].contains(s)), "{seen:?}");
+}
+
+#[test]
+fn a_cap_stays_home_and_lands() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let home = find(&sim, 0x401, Some("Neuberg"));
+    let enemy = find(&sim, 0x001, Some("Konmarno"));
+    let (o, e) = (sim.objects()[home], sim.objects()[enemy]);
+    assert!((e.x - o.x).abs().max((e.y - o.y).abs()) > CAP_LEASH, "Konmarno too close");
+    // An enemy patrol over its own base, out of the bubble.
+    sim.spawn_fighter(enemy, e.x, e.y, 8, false, FighterTask::Patrol);
+    let cap = sim.spawn_fighter(home, o.x, o.y, 9, true, FighterTask::Cap);
+    let mut landed = false;
+    for _ in 0..30 * 60 {
+        for ev in run(&mut sim, &idle(), 1) {
+            match ev {
+                SimEvent::CampaignFlightDestroyed { tag, .. } => panic!("{tag} shot down"),
+                SimEvent::CampaignFlightLanded { tag: 9, .. } => landed = true,
+                _ => {}
+            }
+        }
+        if landed {
+            break;
+        }
+        if let Some(f) = sim.campaign_flight(cap) {
+            assert!(f.target.is_none(), "went for an aircraft out of its bubble");
+            let u = sim.flights()[cap];
+            assert!(
+                (u.x - o.x).abs().max((u.y - o.y).abs()) < CAP_BUBBLE,
+                "strayed {},{} from home",
+                u.x - o.x,
+                u.y - o.y
+            );
+        }
+    }
+    assert!(landed, "the CAP never landed");
+}
+
+#[test]
+fn a_cap_does_not_follow_into_enemy_territory() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let (home, raider) = raid(&mut sim);
+    let o = sim.objects()[home];
+    until_near(&mut sim, raider, (o.x, o.y), 0x780);
+    let cap = sim.spawn_fighter(home, o.x, o.y, 9, true, FighterTask::Cap);
+    sim.set_fighter_loadout(cap, Default::default());
+    // Wait until the CAP has the raider.
+    let mut engaged = false;
+    for _ in 0..30 * 60 {
+        run(&mut sim, &idle(), 1);
+        if sim.campaign_flight(cap).and_then(|f| f.target) == Some(raider) {
+            engaged = true;
+            break;
+        }
+    }
+    assert!(engaged, "the CAP never went for the raider");
+    // Dragged out past the leash: it lets go.
+    let u = &mut sim.flights_mut()[cap];
+    u.x = o.x + CAP_LEASH + 0x100;
+    u.wx = u.x << 5;
+    run(&mut sim, &idle(), 2);
+    assert_eq!(sim.campaign_flight(cap).and_then(|f| f.target), None);
+}
+
+#[test]
+fn a_friendly_fighter_leaves_the_player_alone() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let home = find(&sim, 0x401, Some("Neuberg"));
+    let o = sim.objects()[home];
+    let cap = sim.spawn_fighter(home, o.x, o.y, 9, true, FighterTask::Cap);
+    let st = sim.respawn_player(home, None);
+    let (x, y) = Sim::map_to_world(o.x + 0x100, o.y);
+    let ps = PlayerState {
+        x,
+        y,
+        altitude: 3000,
+        velocity: 400 * 27,
+        gear_up: true,
+        on_ground: false,
+        fuel: 10000,
+        ..st
+    };
+    for _ in 0..120 {
+        sim.raise_alarm();
+        run(&mut sim, &ps, 1);
+        assert_ne!(sim.flights()[cap].mode, 1, "the CAP went for the player");
+    }
 }

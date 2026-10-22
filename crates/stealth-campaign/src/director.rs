@@ -32,6 +32,7 @@ impl CampaignState {
             }
             Report::FlightDestroyed { tag, .. } if tag != 0 => {
                 self.patrols.retain(|p| p.0 != tag);
+                self.cap_report(tag, true);
                 let Some(k) = self.insertions.iter().position(|i| i.helicopters.contains(&tag))
                 else {
                     return;
@@ -56,6 +57,7 @@ impl CampaignState {
             }
             Report::FlightLanded { tag, x, y } if tag != 0 => {
                 self.patrols.retain(|p| p.0 != tag);
+                self.cap_report(tag, false);
                 let Some(k) = self.insertions.iter().position(|i| {
                     i.state == InsertionState::Enroute && i.helicopters.contains(&tag)
                 }) else {
@@ -209,7 +211,9 @@ impl CampaignState {
                         self.insertions[k].scrambled = true;
                         let tag = self.id();
                         self.patrols.push((tag, Side::Red, self.clock));
-                        ev.push(CampaignEvent::LaunchFighters { tag, side: Side::Red, from, x, y });
+                        let task = FighterTask::Patrol;
+                        let side = Side::Red;
+                        ev.push(CampaignEvent::LaunchFighters { tag, side, from, x, y, task });
                         ev.push(CampaignEvent::Message("Enemy fighters scrambled".into()));
                     }
                 }
@@ -297,7 +301,79 @@ impl CampaignState {
         let Some((x, y)) = goal else { return };
         let tag = self.id();
         self.patrols.push((tag, Side::Red, now));
-        ev.push(CampaignEvent::LaunchFighters { tag, side: Side::Red, from, x, y });
+        let task = FighterTask::Patrol;
+        ev.push(CampaignEvent::LaunchFighters { tag, side: Side::Red, from, x, y, task });
+    }
+
+    /// A friendly airfield with enemy aircraft close scrambles a CAP of one or two fighters
+    /// (two against two or more); none while its CAP flies, nor for a while after one of its
+    /// fighters was shot down.
+    pub(crate) fn friendly_cap(&mut self, view: &WorldView, ev: &mut Vec<CampaignEvent>) {
+        let now = self.clock;
+        // Fighters gone from the air without landing: shot down (the simulation reports that a
+        // frame later).
+        let gone: Vec<u32> = self
+            .caps
+            .iter()
+            .filter(|c| now - c.launched >= 30.0)
+            .flat_map(|c| c.tags.iter().copied())
+            .filter(|&t| !view.flights.iter().any(|f| f.tag == t))
+            .collect();
+        for tag in gone {
+            self.cap_report(tag, true);
+        }
+        self.cap_lockout.retain(|l| l.1 > now);
+        for base in self.bases(Side::Blue) {
+            if self.caps.iter().any(|c| c.base == base)
+                || self.cap_lockout.iter().any(|l| l.0 == base)
+            {
+                continue;
+            }
+            let Some(s) = self.site(base) else { continue };
+            let (bx, by, name) = (s.x, s.y, s.name.clone());
+            let threats: Vec<(i32, i32, i32)> = view
+                .flights
+                .iter()
+                .filter(|f| f.side == Side::Red)
+                .map(|f| (f.x, f.y, dist(f.x - bx, f.y - by)))
+                .filter(|t| t.2 <= AI_CAP_TRIGGER)
+                .collect();
+            let Some(&(tx, ty, d)) = threats.iter().min_by_key(|t| t.2) else { continue };
+            let n = if threats.len() >= 2 { 2 } else { 1 + self.rng.below(2) as usize };
+            // The orbit: out from the airfield towards the threat.
+            let r = AI_CAP_STATION.min(d);
+            let d = d.max(1);
+            let (x, y) = (bx + (tx - bx) * r / d, by + (ty - by) * r / d);
+            let tags: Vec<u32> = (0..n).map(|_| self.id()).collect();
+            for &tag in &tags {
+                let task = FighterTask::Cap;
+                ev.push(CampaignEvent::LaunchFighters {
+                    tag,
+                    side: Side::Blue,
+                    from: base,
+                    x,
+                    y,
+                    task,
+                });
+            }
+            self.caps.push(CapFlight { base, tags, launched: now });
+            self.note(format!("CAP scrambled from {name}"));
+        }
+    }
+
+    /// A CAP fighter shot down (`lost`) or landed. A loss keeps its airfield from sending
+    /// another CAP for a while.
+    fn cap_report(&mut self, tag: u32, lost: bool) {
+        let Some(k) = self.caps.iter().position(|c| c.tags.contains(&tag)) else { return };
+        let base = self.caps[k].base;
+        self.caps[k].tags.retain(|&t| t != tag);
+        if self.caps[k].tags.is_empty() {
+            self.caps.remove(k);
+        }
+        if lost {
+            self.cap_lockout.retain(|l| l.0 != base);
+            self.cap_lockout.push((base, self.clock + AI_CAP_RESPAWN));
+        }
     }
 
     /// The campaign sends an insertion of its own when a front place is (nearly) undefended.

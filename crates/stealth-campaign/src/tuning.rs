@@ -51,6 +51,13 @@ pub const PATROL_EVERY: f64 = 6.0 * 60.0;
 pub const PATROLS: usize = 2;
 pub const SCRAMBLE_RANGE: i32 = 0x1400;
 
+/// Friendly air: a CAP of one or two fighters scrambles from an airfield when enemy aircraft
+/// come this close to it (40 km, the bubble its fighters engage in:
+/// `stealth_sim::campaign::CAP_BUBBLE`) and orbits this far out towards them (8 km); after a
+/// CAP fighter is shot down that airfield sends none for this long.
+pub const AI_CAP_TRIGGER: i32 = 0xA00;
+pub const AI_CAP_STATION: i32 = 0x200;
+pub const AI_CAP_RESPAWN: f64 = 5.0 * 60.0;
 /// Mission success: share of the defences destroyed (SEAD, CAS), time on station or kills
 /// (CAP), within this radius of the CAP point (20 km).
 pub const SUPPRESS_SHARE: f32 = 0.5;

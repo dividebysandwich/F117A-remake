@@ -196,6 +196,12 @@ impl Sim {
                     if u.flags & fflags::AIRBORNE == 0 || u.speed == 0 {
                         continue;
                     }
+                    // The seeker leaves the campaign's friendly aircraft alone unless the
+                    // pilot locked one up himself.
+                    let friend = self.campaign_flight(j).is_some_and(|f| f.blue);
+                    if friend && self.proj[s].target != j as i32 {
+                        continue;
+                    }
                     if self.acquire(s, u.x, u.y, u.alt, cls) && self.acq_range < best {
                         aim = self.acq_aim;
                         best = self.acq_range;

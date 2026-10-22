@@ -336,3 +336,96 @@ fn players_share_a_plan_locked_while_it_is_flown() {
     assert!(c.prune_plans());
     assert!(c.plan(offer.id).is_none());
 }
+
+/// The friendly CAPs launched from `base` by these events (tags).
+fn caps_from(ev: &[CampaignEvent], base: ObjectId) -> Vec<u32> {
+    ev.iter()
+        .filter_map(|e| match e {
+            CampaignEvent::LaunchFighters { tag, side: Side::Blue, from, task, .. } => {
+                assert_eq!(*task, FighterTask::Cap);
+                (*from == base).then_some(*tag)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// A friendly airfield with enemy aircraft 20 km off it.
+fn raided_base(c: &CampaignState, raiders: u32) -> (ObjectId, WorldView) {
+    let base = c.bases(Side::Blue)[0];
+    let s = c.site(base).unwrap();
+    let flights = (0..raiders)
+        .map(|k| FlightView {
+            x: s.x + 0x500,
+            y: s.y + k as i32 * 0x20,
+            side: Side::Red,
+            tag: 900 + k,
+        })
+        .collect();
+    (base, WorldView { flights, ..Default::default() })
+}
+
+/// The view with these friendly fighters in the air too.
+fn with_caps(view: &WorldView, tags: &[u32]) -> WorldView {
+    let mut v = view.clone();
+    v.flights.extend(tags.iter().map(|&tag| FlightView { x: 0, y: 0, side: Side::Blue, tag }));
+    v
+}
+
+#[test]
+fn a_raid_scrambles_a_cap() {
+    let mut c = campaign("ce", 3);
+    let (base, view) = raided_base(&c, 1);
+    let caps = caps_from(&c.tick(1.0, &view, &[]), base);
+    assert!((1..=2).contains(&caps.len()), "{caps:?}");
+    // None more while it flies.
+    assert!(caps_from(&c.tick(60.0, &with_caps(&view, &caps), &[]), base).is_empty());
+    // Two raiders: two fighters.
+    let mut c = campaign("ce", 3);
+    let (base, view) = raided_base(&c, 2);
+    assert_eq!(caps_from(&c.tick(1.0, &view, &[]), base).len(), 2);
+    // Nothing near: no CAP.
+    let mut c = campaign("ce", 3);
+    assert!(caps_from(&c.tick(1.0, &WorldView::default(), &[]), base).is_empty());
+}
+
+#[test]
+fn a_lost_cap_is_not_replaced_for_five_minutes() {
+    let mut c = campaign("ce", 3);
+    let (base, view) = raided_base(&c, 2);
+    let caps = caps_from(&c.tick(1.0, &view, &[]), base);
+    let lost = Report::FlightDestroyed { tag: caps[0], side: Side::Blue, x: 0, y: 0, by: None };
+    let landed = Report::FlightLanded { tag: caps[1], x: 0, y: 0 };
+    assert!(caps_from(&c.tick(1.0, &view, &[lost, landed]), base).is_empty());
+    assert!(c.caps.iter().all(|cap| cap.base != base));
+    // The raiders are still there.
+    assert!(caps_from(&c.tick(tuning::AI_CAP_RESPAWN - 10.0, &view, &[]), base).is_empty());
+    assert!(!caps_from(&c.tick(20.0, &view, &[]), base).is_empty());
+}
+
+#[test]
+fn a_landed_cap_can_go_again() {
+    let mut c = campaign("ce", 3);
+    let (base, view) = raided_base(&c, 1);
+    let caps = caps_from(&c.tick(1.0, &view, &[]), base);
+    let landed: Vec<Report> =
+        caps.iter().map(|&tag| Report::FlightLanded { tag, x: 0, y: 0 }).collect();
+    c.tick(1.0, &WorldView::default(), &landed);
+    assert!(c.caps.iter().all(|cap| cap.base != base));
+    assert!(c.cap_lockout.iter().all(|l| l.0 != base));
+    assert!(!caps_from(&c.tick(1.0, &view, &[]), base).is_empty());
+}
+
+#[test]
+fn a_cap_fighter_gone_from_the_air_counts_as_lost() {
+    let mut c = campaign("ce", 3);
+    let (base, view) = raided_base(&c, 2);
+    let caps = caps_from(&c.tick(1.0, &view, &[]), base);
+    c.tick(40.0, &with_caps(&view, &caps), &[]);
+    // One vanishes before its loss is reported; the report comes after.
+    c.tick(1.0, &with_caps(&view, &caps[1..]), &[]);
+    let lost = Report::FlightDestroyed { tag: caps[0], side: Side::Blue, x: 0, y: 0, by: None };
+    c.tick(1.0, &with_caps(&view, &caps[1..]), &[lost]);
+    assert_eq!(c.cap_lockout.iter().filter(|l| l.0 == base).count(), 1);
+    assert!(caps_from(&c.tick(60.0, &with_caps(&view, &caps[1..]), &[]), base).is_empty());
+}

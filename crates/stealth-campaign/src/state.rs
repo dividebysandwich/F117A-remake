@@ -400,6 +400,30 @@ pub struct CampaignState {
     pub auto_insert_at: f64,
     /// Campaign tags of the fighters in the air (side, launch time).
     pub patrols: Vec<(u32, Side, f64)>,
+    /// Friendly CAPs in the air, and the airfields that send none until then (campaign time).
+    #[serde(default)]
+    pub caps: Vec<CapFlight>,
+    #[serde(default)]
+    pub cap_lockout: Vec<(ObjectId, f64)>,
+}
+
+/// What a campaign fighter takes off for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum FighterTask {
+    /// Patrols and goes for the other side's aircraft.
+    #[default]
+    Patrol,
+    /// Defends its airfield, then lands.
+    Cap,
+}
+
+/// Friendly fighters defending an airfield.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CapFlight {
+    pub base: ObjectId,
+    /// Campaign tags of its fighters still in the air.
+    pub tags: Vec<u32>,
+    pub launched: f64,
 }
 
 impl CampaignState {
@@ -519,6 +543,8 @@ impl CampaignState {
             patrol_at: 0.0,
             auto_insert_at: 0.0,
             patrols: Vec::new(),
+            caps: Vec::new(),
+            cap_lockout: Vec::new(),
         };
         c.note("Campaign started");
         c

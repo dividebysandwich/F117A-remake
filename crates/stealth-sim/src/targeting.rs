@@ -219,7 +219,7 @@ impl Sim {
                 if u.flags & fflags::AIRBORNE != 0
                     && u.flags & fflags::DESTROYED == 0
                     && u.speed != 0
-                    && self.ac_type(u.spec).radar != -1
+                    && !self.friendly_unit(j, u.spec)
                     && r < best_r
                     && self.cam_off(b) < 0x2000
                     && self.player_sees(u.x, u.y, u.alt)

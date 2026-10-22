@@ -79,6 +79,8 @@ impl Sim {
             mode = 2;
         } else if self.alarm_timer != 0
             && (u.flags & 0x140 == 0 || self.alarm_timer > self.alarm_recent())
+            // A friendly fighter (a campaign CAP) never goes for the player.
+            && !self.campaign_flight(i).is_some_and(|f| f.blue)
         {
             mode = 1;
             if self.decoy_active() {
@@ -321,9 +323,10 @@ impl Sim {
         if u.timer == 0 {
             u.flags |= fflags::RTB;
             let mut best = (u.wp, 0x7FFF);
+            let friendly = self.campaign_flight(i).is_some_and(|f| f.blue);
             for (k, o) in self.objects.iter().enumerate().take(self.woc).skip(3) {
-                // A campaign may have taken the airfield (friendly now).
-                if o.flags & 0x101 == 1 && o.flags & oflags::FRIENDLY == 0 {
+                // An airfield of its side (a campaign may have taken one).
+                if o.flags & 0x101 == 1 && (o.flags & oflags::FRIENDLY != 0) == friendly {
                     let d = approx(o.x - u.x, o.y - u.y);
                     if d < best.1 {
                         best = (k as i32, d);

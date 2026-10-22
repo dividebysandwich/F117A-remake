@@ -10,8 +10,8 @@
 use serde::{Deserialize, Serialize};
 use stealth_campaign::weather::Forecast;
 use stealth_campaign::{
-    Aircraft, CampaignEvent, CampaignSetup, CampaignState, Command, Objective, PlaceId, PlayerId,
-    Report, RoutePoint, Side, Sortie, SortieRecord,
+    Aircraft, CampaignEvent, CampaignSetup, CampaignState, Command, FighterTask, Objective,
+    PlaceId, PlayerId, Report, RoutePoint, Side, Sortie, SortieRecord,
 };
 use stealth_mission::{GameData, Mission};
 use stealth_sim::{PilotEvent, PlayerState, Sim, SimEvent, oflags};
@@ -389,8 +389,12 @@ impl Host {
                         sim.set_intel(o as usize, false);
                     }
                 }
-                CampaignEvent::LaunchFighters { tag, side, from, x, y } => {
-                    sim.spawn_fighter(*from as usize, *x, *y, *tag, *side == Side::Blue);
+                CampaignEvent::LaunchFighters { tag, side, from, x, y, task } => {
+                    let task = match task {
+                        FighterTask::Patrol => stealth_sim::ai_loadout::FighterTask::Patrol,
+                        FighterTask::Cap => stealth_sim::ai_loadout::FighterTask::Cap,
+                    };
+                    sim.spawn_fighter(*from as usize, *x, *y, *tag, *side == Side::Blue, task);
                 }
                 CampaignEvent::SortieStarted { player, sortie } => {
                     let base = sortie.base as usize;

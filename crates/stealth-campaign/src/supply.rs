@@ -29,22 +29,43 @@ impl CampaignState {
             return;
         }
         self.resupply_at = self.clock;
+        let skill = (self.setup.opponents as usize).min(3);
         for side in [Side::Blue, Side::Red] {
             let (most_f, most_h) = (2 * self.fighters_start(side), 2 * HELICOPTERS_START);
+            let (nf, nh) = match side {
+                Side::Blue => (RESUPPLY_FIGHTERS, RESUPPLY_HELICOPTERS),
+                _ => (ENEMY_RESUPPLY_FIGHTERS[skill], ENEMY_RESUPPLY_HELICOPTERS[skill]),
+            };
             let f = self.forces_mut(side);
-            for _ in 0..RESUPPLY_FIGHTERS {
-                if f.fighters < most_f && f.materiel >= FIGHTER_COST {
-                    f.fighters += 1;
-                    f.materiel -= FIGHTER_COST;
-                    f.ledger.aircraft += FIGHTER_COST;
+            let buy = |f: &mut Forces, fighter: bool| {
+                let (n, most, cost) = if fighter {
+                    (&mut f.fighters, most_f, FIGHTER_COST)
+                } else {
+                    (&mut f.helicopters, most_h, HELICOPTER_COST)
+                };
+                if *n >= most || f.materiel < cost {
+                    return false;
                 }
+                *n += 1;
+                f.materiel -= cost;
+                f.ledger.aircraft += cost;
+                true
+            };
+            // Helicopters first: the offensive runs on them.
+            for _ in 0..nh {
+                buy(f, false);
             }
-            for _ in 0..RESUPPLY_HELICOPTERS {
-                if f.helicopters < most_h && f.materiel >= HELICOPTER_COST {
-                    f.helicopters += 1;
-                    f.materiel -= HELICOPTER_COST;
-                    f.ledger.aircraft += HELICOPTER_COST;
+            for _ in 0..nf {
+                buy(f, true);
+            }
+            // What the stores hold beyond the reserve goes on aircraft too, helicopters and
+            // fighters in turn.
+            let mut fighter = false;
+            while f.materiel > MATERIEL_RESERVE {
+                if !buy(f, fighter) && !buy(f, !fighter) {
+                    break;
                 }
+                fighter = !fighter;
             }
         }
     }

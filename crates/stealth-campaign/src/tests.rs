@@ -795,12 +795,13 @@ fn repairs_wait_for_materiel() {
 #[test]
 fn the_ai_flies_the_aircraft_it_has() {
     let mut c = campaign("ce", 3);
-    // No fighters: no patrol.
-    c.red.fighters = 0;
+    // Only the fighters a raid needs: no patrol.
+    let reserve = (tuning::RAID_AIRCRAFT + tuning::RAID_ESCORTS) as u32;
+    c.red.fighters = reserve;
     let ev = c.tick(tuning::PATROL_EVERY + 1.0, &WorldView::default(), &[]);
     assert!(!ev.iter().any(|e| matches!(e, CampaignEvent::LaunchFighters { side: Side::Red, .. })));
-    // One: it goes, and comes back to the ground when it lands.
-    c.red.fighters = 1;
+    // One more: it goes, and comes back to the ground when it lands.
+    c.red.fighters = reserve + 1;
     let ev = c.tick(tuning::PATROL_EVERY + 1.0, &WorldView::default(), &[]);
     let tag = ev
         .iter()
@@ -809,10 +810,10 @@ fn the_ai_flies_the_aircraft_it_has() {
             _ => None,
         })
         .expect("a patrol");
-    assert_eq!(c.red.fighters, 0);
+    assert_eq!(c.red.fighters, reserve);
     assert_eq!(c.airborne(Side::Red).0, 1);
     c.tick(1.0, &WorldView::default(), &[Report::FlightLanded { tag, x: 0, y: 0 }]);
-    assert_eq!(c.red.fighters, 1);
+    assert_eq!(c.red.fighters, reserve + 1);
     // A friendly CAP only with fighters left.
     let mut c = campaign("ce", 3);
     c.blue.fighters = 0;

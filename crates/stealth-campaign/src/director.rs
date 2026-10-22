@@ -552,7 +552,8 @@ impl CampaignState {
                 })
         });
         let Some((x, y)) = goal else { return };
-        if self.forces(Side::Red).fighters == 0
+        // The fighters a raid needs stay home.
+        if (self.forces(Side::Red).fighters as usize) <= RAID_AIRCRAFT + RAID_ESCORTS
             || !self.pay(Side::Red, SORTIE_COST, Spend::Operations)
         {
             return;
@@ -598,7 +599,7 @@ impl CampaignState {
                 .filter(|t| t.2 <= AI_CAP_TRIGGER)
                 .collect();
             let Some(&(tx, ty, d)) = threats.iter().min_by_key(|t| t.2) else { continue };
-            let n = if threats.len() >= 2 { 2 } else { 1 + self.rng.below(2) as usize };
+            let n = if threats.len() >= 2 { 2 } else { 1 };
             // As many as the airfields have left and the materiel pays for.
             let n = n.min(self.blue.fighters as usize);
             if n == 0 || !self.pay(Side::Blue, SORTIE_COST * n as f64, Spend::Operations) {
@@ -687,8 +688,15 @@ impl CampaignState {
             return;
         }
         // Guns count too: helicopters landing among them do not get through.
+        if (self.blue.helicopters as usize) < INSERTION_HELOS || self.blue.materiel < INSERTION_COST
+        {
+            return;
+        }
         let candidate = self.front(Side::Blue).into_iter().find(|&p| {
-            !self.active_insertion(p) && self.threat_of(p, Some(view)) <= AUTO_INSERT_THREAT
+            let q = &self.places[p as usize];
+            !self.active_insertion(p)
+                && self.threat_of(p, Some(view)) <= AUTO_INSERT_THREAT
+                && self.insertion_base(Side::Blue, q.x, q.y).is_some()
         });
         let Some(place) = candidate else { return };
         if let Ok(e) = self.order_insertion(None, place) {
@@ -703,7 +711,8 @@ impl CampaignState {
         let skill = (self.setup.opponents as usize).min(3);
         let now = self.clock;
         if now - self.enemy_insert_at >= ENEMY_INSERT_EVERY[skill] {
-            let target = self
+            // One of the weakest places, those it failed at lately weighed stronger.
+            let mut weak: Vec<(PlaceId, i32)> = self
                 .front(Side::Red)
                 .into_iter()
                 .filter(|&p| {
@@ -711,7 +720,12 @@ impl CampaignState {
                     self.insertion_base(Side::Red, p.x, p.y).is_some()
                 })
                 .filter(|&p| !self.active_insertion(p))
-                .min_by_key(|&p| self.threat_of(p, Some(view)));
+                .map(|p| (p, self.threat_of(p, Some(view)) + SAM_THREAT * self.failed_at(p)))
+                .collect();
+            weak.sort_by_key(|w| w.1);
+            weak.truncate(ENEMY_TARGET_CHOICE);
+            let target =
+                (!weak.is_empty()).then(|| weak[self.rng.below(weak.len() as i32) as usize].0);
             match target.map(|p| self.order_insertion_for(Side::Red, None, p)) {
                 Some(Ok(e)) => {
                     self.enemy_insert_at = now;
@@ -755,6 +769,17 @@ impl CampaignState {
                 None => self.raid_at = now - RAID_EVERY[skill] + 60.0,
             }
         }
+    }
+
+    /// The enemy's insertions at a place that failed lately.
+    fn failed_at(&self, place: PlaceId) -> i32 {
+        let now = self.clock;
+        self.insertions
+            .iter()
+            .filter(|i| i.side == Side::Red && i.place == place)
+            .filter(|i| i.state == InsertionState::Failed)
+            .filter(|i| i.enroute_at.is_some_and(|t| now - t < FAILED_MEMORY))
+            .count() as i32
     }
 
     /// The friendly airfield the enemy raids next: an intact one in reach of an enemy base

@@ -51,6 +51,10 @@ pub const AUTO_INSERT_EVERY: f64 = 20.0 * 60.0;
 pub const INSERTION_RANGE: i32 = 0x4B00;
 /// Weight of a live SAM site against one AAA unit in the threat estimate.
 pub const SAM_THREAT: i32 = 3;
+/// The enemy weighs a place where its insertions failed lately (this long) as if each failure
+/// were one more SAM site, and picks among this many of the weakest.
+pub const FAILED_MEMORY: f64 = 2.0 * 3600.0;
+pub const ENEMY_TARGET_CHOICE: usize = 2;
 
 /// Enemy air: a patrol takes off this often from a live airfield, at most this many fly
 /// (plus one per ROE level); interceptors scramble against insertions this close to a base.
@@ -142,6 +146,11 @@ pub const HELICOPTERS_START: u32 = 12;
 pub const RESUPPLY_EVERY: f64 = 3600.0;
 pub const RESUPPLY_FIGHTERS: u32 = 6;
 pub const RESUPPLY_HELICOPTERS: u32 = 4;
+/// The enemy buys this many an hour by the opponents' skill (the friendly side the above).
+pub const ENEMY_RESUPPLY_FIGHTERS: [u32; 4] = [4, 6, 8, 10];
+pub const ENEMY_RESUPPLY_HELICOPTERS: [u32; 4] = [3, 4, 6, 8];
+/// Materiel above this is spent on aircraft (up to the limits) at the hourly purchase too.
+pub const MATERIEL_RESERVE: f64 = 200.0;
 pub const FIGHTER_COST: f64 = 15.0;
 pub const HELICOPTER_COST: f64 = 4.0;
 pub const CAPTURED_FIGHTERS: u32 = 2;

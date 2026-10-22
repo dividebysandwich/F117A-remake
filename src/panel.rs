@@ -135,7 +135,7 @@ pub struct LampStyle {
     pub on: (u8, u8),
 }
 
-const GREEN: LampStyle = LampStyle { off: (45, 44), on: (47, 46) };
+pub const GREEN: LampStyle = LampStyle { off: (45, 44), on: (47, 46) };
 const EMV: LampStyle = LampStyle { off: (38, 55), on: (41, 42) };
 const RED: LampStyle = LampStyle { off: (54, 55), on: (41, 42) };
 const DARK_RED: LampStyle = LampStyle { off: (16, 43), on: (41, 42) };

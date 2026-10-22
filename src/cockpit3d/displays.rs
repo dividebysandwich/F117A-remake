@@ -18,7 +18,7 @@ use crate::cockpit::{CockpitArt, Displays};
 use crate::font::Fonts;
 use crate::mfd::{CLASSIC, HIRES, MfdSide, osb};
 use crate::panel::{
-    BUTTON, LAMPS, LampId, draw_gauge, draw_label, draw_lamp, draw_led, draw_led_bars,
+    BUTTON, GREEN, LAMPS, LampId, draw_gauge, draw_label, draw_lamp, draw_led, draw_led_bars,
 };
 
 /// Emissive strength of the displays and lit lights when the cockpit is lit.
@@ -401,7 +401,12 @@ pub(super) fn update_displays(
     atlas: Query<&InstrumentAtlas>,
     mut tc: Query<(&TrackCamScreen, &mut Visibility)>,
     settings: Res<crate::settings::Settings>,
+    sky: Res<crate::sky::Sky>,
+    palette: Option<Res<crate::palette::Palette>>,
 ) {
+    // Instrument lighting: with continuous time of day the dials and the unlit green lamps and
+    // buttons glow once it is night (the darkness of a moonless night leaves them lit).
+    let backlit = sky.on && palette.is_some_and(|p| p.lights_on());
     let find = |r: CanvasRole| roles.iter().find(|(_, x)| **x == r).map(|(e, _)| e);
     for (screen, mut v) in &mut tc {
         v.set_if_neq(if d.mfd.camera_see_through(screen.0) {
@@ -480,7 +485,7 @@ pub(super) fn update_displays(
                     k,
                     t,
                 );
-                on
+                on || (backlit && style.off == GREEN.off)
             }
             Face::Button(id, label) => {
                 let on = lit[id as usize];
@@ -493,7 +498,7 @@ pub(super) fn update_displays(
                     k,
                     t,
                 );
-                on
+                on || backlit
             }
             Face::Item(Elem::Led(id)) => {
                 draw_led(c, &art.sprites, r, &d.panel.led_text(id), k);
@@ -522,7 +527,7 @@ pub(super) fn update_displays(
             }
             Face::Item(Elem::Dial(dial)) => {
                 crate::panel::draw_dial(c, r, dial, d.panel.dial_value(dial));
-                false
+                backlit
             }
             // Modern avionics: blank caps, the labels are on the display.
             Face::Osb(..) if d.mfd.state.modern => {

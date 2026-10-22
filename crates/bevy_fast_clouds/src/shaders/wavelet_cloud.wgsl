@@ -216,7 +216,7 @@ fn ridge_band(
 
 // Density and occupancy at p.
 fn density_volume(vol: GpuVolume, p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
-    let fill = max(vol.fill.x, 0.05);
+    let fill = max(vol.fill.x, 0.0);
     let occ = sat(occupancy_volume(vol, p) * fill);
     if occ < 0.02 {
         return vec2<f32>(0.0, occ);

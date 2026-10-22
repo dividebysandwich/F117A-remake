@@ -191,7 +191,8 @@ pub struct Globals {
     pub local_lights: [Vec4; 2 * MAX_LOCAL_LIGHTS],
     /// Deck base / top (metres), deck present (z), whiteout 0..1 (w).
     pub clouds: Vec4,
-    /// x: haze distance scale, y: lightning flash 0..1, z: visibility under clouds (metres).
+    /// x: haze distance scale, y: lightning flash 0..1, z: visibility under clouds (metres),
+    /// w: gloom 0..1.
     pub weather: Vec4,
     /// Cloud texture: floating origin (x, z) modulo the noise period, seed (z); stratus
     /// layer coverage 0..1 (w).

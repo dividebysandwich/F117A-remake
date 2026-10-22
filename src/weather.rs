@@ -19,8 +19,9 @@ use bevy_fast_clouds::{
     CloudRenderSettings, CloudShading, CloudSphere, CloudSystems, CloudVolume, FastCloudsPlugin,
     LodPolicy, WaveletVolume,
 };
-use stealth_mission::weather::{CELL, Cloud, CloudKind, STORM_CELL};
-use stealth_mission::{Sky, Weather};
+use stealth_campaign::weather::{FADE, Forecast, Now, cloud_fade};
+use stealth_mission::Weather;
+use stealth_mission::weather::{CELL, Cloud, CloudKind, Layer, STORM_CELL};
 
 use crate::camera::EyeCamera;
 use crate::camera::OffscreenCamera;
@@ -53,7 +54,7 @@ impl Plugin for WeatherPlugin {
         )
         .add_systems(
             PostUpdate,
-            (track_eye, follow_deck, stream_clouds, lightning, rain)
+            (update_weather, track_eye, follow_deck, stream_clouds, fade_clouds, lightning, rain)
                 .chain()
                 .after(bevy::transform::TransformSystems::Propagate)
                 .before(crate::lighting::LightingSystems)
@@ -78,12 +79,24 @@ const NOISE_PERIOD: f64 = 81920.0;
 
 #[derive(Resource, Default)]
 pub struct WeatherState {
+    /// The clouds the lines of sight see (with changing weather, those at least half built up).
     pub weather: Weather,
+    /// The dynamic campaign's changing weather.
+    forecast: Option<Forecast>,
+    /// Drawn coverage of the cumulus, stratus and cumulonimbus layers (percent, unrounded).
+    cover: [f32; 3],
+    /// Stratus field threshold 0..1 of the drawn deck.
+    stratus_threshold: f32,
+    /// Storm cells built up, 0..1.
+    storm: f32,
+    vis_km: f32,
     /// Viewpoint: map units and feet.
     pub eye_map: (i32, i32),
     pub eye_ft: f32,
-    /// In the shade of a cloud (under covered stratus or a storm cell).
-    pub shaded: bool,
+    /// In the shade of a cloud (under covered stratus or a storm cell), 0..1, eased.
+    pub shade: f32,
+    /// How grey and dim the day is under the clouds, 0..1, eased.
+    gloom: f32,
     /// Under (or in) a storm cell: rain, turbulence, close lightning.
     pub under_storm: bool,
     /// 0 clear air .. 1 inside a cloud (eased).
@@ -105,16 +118,32 @@ pub struct WeatherState {
     rng: u32,
     /// Cumulus and cumulonimbus volumes.
     puffs: HashMap<CloudKey, Streamed>,
-    streamed_at: Option<(i32, i32)>,
+    /// Where and with which layers the clouds were last streamed.
+    streamed: Option<((i32, i32), Layer, Layer)>,
 }
 
 impl WeatherState {
     /// Haze distance scale for the world under the clouds (reduced visibility in storms).
     pub fn haze_scale(&self) -> f32 {
-        if self.weather.has_storms() && (self.under_storm || self.shaded) {
-            (20.0 / self.weather.vis_km.max(1) as f32).max(1.0)
-        } else {
-            1.0
+        let under = if self.under_storm { 1.0 } else { self.shade };
+        1.0 + ((20.0 / self.vis_km.max(1.0)).max(1.0) - 1.0) * self.storm * under
+    }
+
+    /// The weather of a moment of the forecast.
+    fn set(&mut self, now: Now) {
+        self.weather = now.weather;
+        self.cover = now.cover;
+        self.stratus_threshold = now.stratus_threshold;
+        self.storm = now.storm;
+        self.vis_km = now.vis_km;
+    }
+
+    /// Drawn opacity of a cumulus or cumulonimbus (fixed weather: all of them).
+    fn fade(&self, kind: CloudKind, rank: u8) -> f32 {
+        match (&self.forecast, kind) {
+            (None, _) => 1.0,
+            (_, CloudKind::Cumulonimbus) => cloud_fade(self.cover[2], rank),
+            _ => cloud_fade(self.cover[0], rank),
         }
     }
 
@@ -131,7 +160,7 @@ impl WeatherState {
     }
 
     /// Shader globals: (stratus base m, stratus top m, stratus present, whiteout),
-    /// (haze scale, flash, cloud visibility m, 0), the cloud texture's origin and seed, and
+    /// (haze scale, flash, cloud visibility m, gloom), the cloud texture's origin and seed, and
     /// the stratus coverage field (threshold, seed, floating origin x / z).
     pub fn globals(&self, origin: DVec3) -> (Vec4, Vec4, Vec4, Vec4) {
         let w = &self.weather;
@@ -139,23 +168,23 @@ impl WeatherState {
         let clouds = Vec4::new(
             l.base_ft as f32 * WU as f32,
             l.top_ft as f32 * WU as f32,
-            l.present() as u32 as f32,
+            (self.cover[1] > 0.0) as u32 as f32,
             self.whiteout,
         );
         let stratus = Vec4::new(
-            w.stratus_threshold as f32 / 65535.0,
+            self.stratus_threshold,
             (w.layer_seed(CloudKind::Stratus) & 0xFFFF) as f32,
             origin.x as f32,
             origin.z as f32,
         );
-        let vis_m = (w.vis_km as f32 * 1000.0).max(4000.0);
+        let vis_m = (self.vis_km * 1000.0).max(4000.0);
         let noise = Vec4::new(
             origin.x.rem_euclid(NOISE_PERIOD) as f32,
             origin.z.rem_euclid(NOISE_PERIOD) as f32,
             (w.layer_seed(CloudKind::Stratus) & 0xFFFF) as f32,
-            l.cover as f32 / 100.0,
+            self.cover[1] / 100.0,
         );
-        (clouds, Vec4::new(self.haze_scale(), self.flash, vis_m, 0.0), noise, stratus)
+        (clouds, Vec4::new(self.haze_scale(), self.flash, vis_m, self.gloom), noise, stratus)
     }
 
     fn random(&mut self) -> f32 {
@@ -169,15 +198,16 @@ impl WeatherState {
 #[derive(Component)]
 struct CloudEntity;
 
-/// A cloud of the field: its kind and grid square.
-type CloudKey = (CloudKind, i32, i32);
-/// A streamed cloud: its entity and centre (map units).
-type Streamed = (Entity, (i32, i32));
+/// A cloud of the field: its kind, layer seed and grid square.
+type CloudKey = (CloudKind, u32, i32, i32);
+/// A streamed cloud: its entity, centre (map units) and rank.
+type Streamed = (Entity, (i32, i32), u8);
 
-/// Stratus plane: offset from the viewpoint is kept at zero horizontally.
+/// Stratus plane at the layer's base or top: offset from the viewpoint is kept at zero
+/// horizontally.
 #[derive(Component)]
 struct DeckPlane {
-    alt_ft: i32,
+    top: bool,
 }
 
 /// Positions only (the palette material treats UVs as dot corners).
@@ -271,9 +301,11 @@ fn lod_policy() -> LodPolicy {
     LodPolicy { use_projected_size: true, pixel_ref: px.unwrap_or(500.0), ..default() }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn setup_weather(
     mut commands: Commands,
     mission: Option<Res<ActiveMission>>,
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
     palette: Res<Palette>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<PaletteMaterial>>,
@@ -294,23 +326,29 @@ fn setup_weather(
         .position(|a| a == "--strike")
         .and_then(|i| args.get(i + 1))
         .map(|k| k == "ground");
+    let l = weather.stratus;
     *state = WeatherState {
         weather,
+        forecast: campaign.and_then(|c| Forecast::new(&c.state().setup)),
+        cover: [weather.cumulus, l, weather.cumulonimbus].map(|l| l.cover as f32),
+        stratus_threshold: weather.stratus_threshold as f32 / 65535.0,
+        storm: weather.has_storms() as u32 as f32,
+        vis_km: weather.vis_km as f32,
         test_strike,
         rng: weather.seed | 1,
         next_flash: if test_strike.is_some() { 2.0 } else { 3.0 },
         ..default()
     };
-    info!("weather: {}", weather.describe());
-    let l = weather.stratus;
-    if !l.present() {
+    if !l.present() && state.forecast.is_none() {
+        info!("weather: {}", weather.describe());
         return;
     }
     // The base seen from below, the top seen from above.
-    for (normal, alt_ft) in [(Vec3::NEG_Y, l.base_ft), (Vec3::Y, l.top_ft)] {
+    for (normal, top) in [(Vec3::NEG_Y, false), (Vec3::Y, true)] {
+        let alt_ft = if top { l.top_ft } else { l.base_ft };
         commands.spawn((
             CloudEntity,
-            DeckPlane { alt_ft },
+            DeckPlane { top },
             Mesh3d(
                 meshes.add(positions_only(
                     Plane3d::new(normal, Vec2::splat(DECK_HALF)).mesh().build(),
@@ -350,7 +388,34 @@ fn eye_position(eyes: &Eyes, origin: &FloatingOrigin) -> Option<DVec3> {
     Some(tf.translation().as_dvec3() + origin.origin)
 }
 
-/// Viewpoint position, whiteout and deck state.
+/// The dynamic campaign's weather now (from the campaign clock, the same on every computer
+/// of a session); a coop client's mirror simulation gets it too.
+fn update_weather(
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
+    combat: Option<ResMut<crate::combat::Combat>>,
+    mut state: ResMut<WeatherState>,
+) {
+    let Some(c) = campaign else { return };
+    let before = state.weather.sky;
+    let Some(f) = state.forecast.as_mut() else { return };
+    let now = f.at(c.state().clock);
+    state.set(now);
+    if now.weather.sky != before {
+        info!("weather: {}", now.weather.describe());
+    }
+    if c.role == crate::campaign::Role::Client
+        && let Some(mut combat) = combat
+    {
+        combat.sim.set_weather(now.weather);
+    }
+}
+
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Viewpoint position, whiteout, shade and deck state.
 fn track_eye(
     time: Res<Time>,
     origin: Res<FloatingOrigin>,
@@ -363,22 +428,39 @@ fn track_eye(
     let ft = alt as f32;
     let w = state.weather;
     let inside = w.in_cloud(map.0, map.1, ft as i32);
-    let k = (time.delta_secs() * 3.0).min(1.0);
+    let dt = time.delta_secs();
+    let k = (dt * 3.0).min(1.0);
     state.whiteout += ((inside as u32 as f32) - state.whiteout) * k;
     state.eye_map = map;
     state.eye_ft = ft;
-    state.shaded = w.under_cloud(map.0, map.1, ft as i32);
     state.under_storm = w.under_storm(map.0, map.1, ft as i32);
+    // Under the deck where the drawn sheet covers the sun (palette.wgsl `stratus_cover`).
+    let below = state.cover[1] > 0.0 && ft < w.stratus.base_ft as f32;
+    let deck = if below {
+        let thr = state.stratus_threshold;
+        smoothstep(thr, thr + 0.035, w.stratus_field(map.0 as f32, map.1 as f32))
+    } else {
+        0.0
+    };
+    let shade = if state.under_storm { 1.0 } else { deck };
+    state.shade += (shade - state.shade) * (dt * 0.5).min(1.0);
+    // Grey days: under a deck as far as it covers the sky, and in storms.
+    let overcast = if ft < w.stratus.top_ft as f32 { state.cover[1] / 100.0 } else { 0.0 };
+    let gloom = (0.8 * overcast + 0.6 * state.storm).min(1.0);
+    state.gloom += (gloom - state.gloom) * (dt * 0.3).min(1.0);
 }
 
 fn follow_deck(
     origin: Res<FloatingOrigin>,
     eyes: Eyes,
+    state: Res<WeatherState>,
     mut decks: Query<(&DeckPlane, &mut WorldPos)>,
 ) {
     let Some(p) = eye_position(&eyes, &origin) else { return };
+    let l = state.weather.stratus;
     for (deck, mut pos) in &mut decks {
-        let want = DVec3::new(p.x.round(), deck.alt_ft as f64 * WU, p.z.round());
+        let alt_ft = if deck.top { l.top_ft } else { l.base_ft };
+        let want = DVec3::new(p.x.round(), alt_ft as f64 * WU, p.z.round());
         if pos.0 != want {
             pos.0 = want;
         }
@@ -396,26 +478,35 @@ fn stream_clouds(
         return;
     }
     let (x, y) = state.eye_map;
-    let w = state.weather;
-    if let Some((sx, sy)) = state.streamed_at
+    // Changing weather: the clouds still or already faintly there are drawn too.
+    let mut w = state.weather;
+    if state.forecast.is_some() {
+        for (l, c) in [(&mut w.cumulus, state.cover[0]), (&mut w.cumulonimbus, state.cover[2])] {
+            l.cover = (c * (100.0 + FADE) / 100.0).ceil().clamp(0.0, 100.0) as u8;
+        }
+    }
+    if let Some(((sx, sy), cu, cb)) = state.streamed
         && (sx - x).abs() < CELL / 2
         && (sy - y).abs() < CELL / 2
+        && cu == w.cumulus
+        && cb == w.cumulonimbus
     {
         return;
     }
-    state.streamed_at = Some((x, y));
+    state.streamed = Some(((x, y), w.cumulus, w.cumulonimbus));
     let keep = (DRAW_RADIUS + STORM_CELL) as i64;
-    state.puffs.retain(|_, (e, (cx, cy))| {
+    state.puffs.retain(|&(kind, seed, gx, gy), (e, (cx, cy), _)| {
         let (dx, dy) = ((*cx - x) as i64, (*cy - y) as i64);
         let near = dx * dx + dy * dy <= keep * keep;
-        if !near {
+        let still = w.layer_seed(kind) == seed && w.cloud(kind, gx, gy).is_some();
+        if !(near && still) {
             commands.entity(*e).try_despawn();
         }
-        near
+        near && still
     });
     let new: Vec<Cloud> = w
         .clouds_near(x, y, DRAW_RADIUS)
-        .filter(|c| !state.puffs.contains_key(&(c.kind, c.gx, c.gy)))
+        .filter(|c| !state.puffs.contains_key(&(c.kind, w.layer_seed(c.kind), c.gx, c.gy)))
         .collect();
     for c in new {
         let h = hash(
@@ -427,18 +518,19 @@ fn stream_clouds(
         let r_m = c.r as f32 * 32.0 * WU as f32;
         let pos = wu_to_bevy(c.x as f64 * 32.0, (0x8000 - c.y) as f64 * 32.0, c.base_ft as f64);
         let h_m = (c.top_ft - c.base_ft) as f32 * WU as f32;
-        // Storm cells are dark, and so is everything under a storm sky.
-        let (spheres, darken) = match c.kind {
-            CloudKind::Cumulonimbus => (tower_spheres(r_m, h_m, h), STORM_DARKEN),
-            _ if w.sky == Sky::Storm => (cumulus_spheres(r_m, h_m, h), STORM_DARKEN / 2.0),
-            _ => (cumulus_spheres(r_m, h_m, h), 0.0),
+        let spheres = match c.kind {
+            CloudKind::Cumulonimbus => tower_spheres(r_m, h_m, h),
+            _ => cumulus_spheres(r_m, h_m, h),
         };
         let volume = WaveletVolume::from_spheres(spheres, h as u32, 3, 4, 0.72).with_floor(0.0);
         let tf = Transform::from_translation((pos - origin.origin).as_vec3());
         let e = commands
             .spawn((
                 CloudEntity,
-                CloudVolume::new(volumes.add(volume)).with_core(1.0).with_darken(darken),
+                CloudVolume::new(volumes.add(volume))
+                    .with_core(1.0)
+                    .with_fill(state.fade(c.kind, c.rank))
+                    .with_darken(darken(&state, c.kind)),
                 WorldPos(pos),
                 tf,
                 // Drawn this frame: transforms were already propagated.
@@ -446,7 +538,30 @@ fn stream_clouds(
                 Visibility::default(),
             ))
             .id();
-        state.puffs.insert((c.kind, c.gx, c.gy), (e, (c.x, c.y)));
+        state.puffs.insert((c.kind, w.layer_seed(c.kind), c.gx, c.gy), (e, (c.x, c.y), c.rank));
+    }
+}
+
+/// Storm cells are dark, and so is everything under a storm sky.
+fn darken(state: &WeatherState, kind: CloudKind) -> f32 {
+    match kind {
+        CloudKind::Cumulonimbus => STORM_DARKEN,
+        _ => STORM_DARKEN / 2.0 * state.storm,
+    }
+}
+
+/// Clouds fade in and out as their layer's coverage changes.
+fn fade_clouds(state: Res<WeatherState>, mut volumes: Query<&mut CloudVolume>) {
+    if state.forecast.is_none() {
+        return;
+    }
+    for (&(kind, ..), &(e, _, rank)) in &state.puffs {
+        let Ok(mut v) = volumes.get_mut(e) else { continue };
+        let (fill, dark) = (state.fade(kind, rank), darken(&state, kind));
+        if v.fill != fill || v.darken != dark {
+            v.fill = fill;
+            v.darken = dark;
+        }
     }
 }
 
@@ -498,9 +613,11 @@ fn shade_clouds(
         ramp: std::array::from_fn(|i| {
             let k = i as f32 / 15.0;
             let moonlit = (sky * (1.8 - 1.3 * k) + Vec3::splat(0.004 * (1.0 - k))) * night;
-            tint(linear(CLOUD_RAMP + i as u8).max(moonlit)).extend(1.0)
+            // Grey days (`whiteout` in palette.wgsl).
+            let c = linear(CLOUD_RAMP + i as u8).max(moonlit) * (1.0 - 0.3 * state.gloom);
+            tint(c).extend(1.0)
         }),
-        haze_distance: (state.weather.vis_km as f32 * 1000.0).max(4000.0),
+        haze_distance: (state.vis_km * 1000.0).max(4000.0),
         flash: BOLT_COLOR * state.flash * flash_scale,
         line_a,
         line_b,
@@ -832,7 +949,7 @@ fn rain(
     };
     state.prev_eye = eye;
     let w = state.weather;
-    let raining = state.under_storm || (w.sky == Sky::Storm && state.shaded);
+    let raining = state.under_storm || (w.has_storms() && state.storm > 0.5 && state.shade > 0.5);
     let Ok((cam, cam_tf)) = eye_cams.single() else { return };
     if !raining {
         if let Some(e) = state.rain.take() {

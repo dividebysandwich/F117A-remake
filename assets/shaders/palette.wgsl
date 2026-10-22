@@ -50,7 +50,8 @@ struct Globals {
     local_lights: array<vec4<f32>, 64>,
     // Weather: deck base / top (metres, eye height frame), deck present (z), whiteout 0..1 (w).
     clouds: vec4<f32>,
-    // x: haze distance scale, y: lightning flash 0..1, z: visibility under clouds (metres).
+    // x: haze distance scale, y: lightning flash 0..1, z: visibility under clouds (metres),
+    // w: gloom 0..1 (grey, dim days under an overcast and in storms).
     weather: vec4<f32>,
     // Cloud texture: floating origin (x, z) modulo NOISE_PERIOD, seed (z); stratus layer
     // coverage 0..1 (w).
@@ -589,10 +590,13 @@ fn bayer4(p: vec2<u32>) -> f32 {
     return (m[(p.y & 3u) * 4u + (p.x & 3u)] + 0.5) / 16.0;
 }
 
-// Inside a cloud: everything but the cockpit fades into it.
+// Inside a cloud: everything but the cockpit fades into it. Under an overcast or in a storm
+// the day turns greyer and dimmer.
 fn whiteout(rgb: vec3<f32>, dist: f32) -> vec3<f32> {
+    let g = globals.weather.w;
+    let grey = mix(rgb, vec3<f32>(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722))), 0.4 * g) * (1.0 - 0.3 * g);
     let w = globals.clouds.w * smoothstep(3.0, 60.0, dist);
-    return mix(rgb, pal(CLOUD_RAMP + 2u), w);
+    return mix(grey, pal(CLOUD_RAMP + 2u), w);
 }
 
 // --- Smoke plumes ----------------------------------------------------------------------------

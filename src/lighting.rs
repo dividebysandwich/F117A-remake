@@ -161,8 +161,8 @@ fn update_sun(
     state.daylight = daylight;
     // World shader: ambient + sun keeps sunlit faces near the original brightness and
     // darkens shadowed ones. Under an overcast the sun is hidden.
-    let overcast = weather.shaded || weather.whiteout > 0.5;
-    let strength = 0.45 * daylight * if overcast { 0.15 } else { 1.0 };
+    let shade = weather.shade.max(weather.whiteout);
+    let strength = 0.45 * daylight * (1.0 - 0.85 * shade);
     // Continuous time of day: the moving sun, kept a little above the horizon for the shading.
     let dir = if celestial.on {
         let s = celestial.sun;
@@ -180,7 +180,7 @@ fn update_sun(
             *tf = Transform::IDENTITY.looking_to(-dir, Vec3::Y);
         }
         light.illuminance = LUX_PER_UNIT * (0.15 + 0.85 * daylight) * daylight.max(0.05);
-        light.shadow_maps_enabled = settings.shadows && !overcast;
+        light.shadow_maps_enabled = settings.shadows && shade < 0.5;
         light.color = Color::linear_rgb(1.0, 0.97, 0.9);
     }
     // Cockpit ambient: palette-independent, dim at night (the instrument lights take over).

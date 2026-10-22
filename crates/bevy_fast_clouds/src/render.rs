@@ -53,6 +53,7 @@ pub struct CloudVolume {
     pub volume: Handle<WaveletVolume>,
     pub j_max: u32,
     pub h_max: u32,
+    /// Density scale; lowering it thins and shrinks the cloud (0: not drawn).
     pub fill: f32,
     /// 0: wisps of the ridges alone; 1: a solid core from the spheres, its edges eroded by
     /// the ridges.
@@ -67,7 +68,7 @@ impl CloudVolume {
     }
 
     pub fn with_fill(self, fill: f32) -> Self {
-        Self { fill: fill.max(0.05), ..self }
+        Self { fill: fill.max(0.0), ..self }
     }
 
     pub fn with_core(self, core: f32) -> Self {
@@ -337,7 +338,7 @@ pub(crate) fn upload_cloud_frame(
         let Some(asset) = assets.get(&volume.volume) else {
             continue;
         };
-        if !visible.get() {
+        if !visible.get() || volume.fill <= 0.0 {
             continue;
         }
         let (aabb_min, aabb_max) = world_aabb(tf, asset.aabb_min, asset.aabb_max);
@@ -352,7 +353,7 @@ pub(crate) fn upload_cloud_frame(
                 aabb_max,
                 h_max: volume.h_max as f32,
                 misc: UVec4::new(0, 0, asset.seed, interior),
-                fill: Vec4::new(volume.fill.max(0.05), volume.core, volume.darken, 0.0),
+                fill: Vec4::new(volume.fill, volume.core, volume.darken, 0.0),
             },
             tf: *tf,
             volume: volume.volume.id(),

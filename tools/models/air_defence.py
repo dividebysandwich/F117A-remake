@@ -1,5 +1,6 @@
-"""Builds the remake's low-level air defences (ZSU-23-4 Shilka, S-60 gun, MANPADS team) in
-Blender, for the air defence option (crates/stealth-sim/src/aaa.rs):
+"""Builds the remake's low-level air defences (ZSU-23-4 Shilka, S-60 gun, MANPADS team, and the
+friendly Patriot launcher and radar and the Gepard) in Blender, for the air defence option and
+the campaign (crates/stealth-sim/src/aaa.rs):
 
     blender -b --factory-startup --python-exit-code 1 --python tools/models/air_defence.py -- assets/models/aaa.glb
 
@@ -7,7 +8,7 @@ Nodes follow stflt.glb's conventions: a root `aaa_NNN` with `attr` and `_lodN` l
 detailed level the intact model is `_s1v0` and the wreck `_s1v1` (state slot 1, the destroyed
 variant); the intact model's moving parts are `_part1` (turret or crew, yaw, state slot 21),
 `_part2` (guns or launcher, elevation, slot 22, a child of part 1) and on the Shilka `_part3`
-(the Gun Dish radar, turning with the global radar angle, slot 16). Model space: x right,
+(the Gun Dish radar, or the Gepard's search radar, turning with the global radar angle, slot 16). Model space: x right,
 y forward, z up, aircraft model units (WU / 8 m); built in metres and scaled.
 """
 
@@ -28,6 +29,9 @@ from mklib import Geo, Ramp, block, frustum, wheel  # noqa: E402
 ZSU = 110
 S60 = 111
 MANPADS = 112
+PATRIOT_LN = 113
+PATRIOT_RADAR = 114
+GEPARD = 115
 
 # Model units per metre (a unit is WU / 8 = 0.061 m).
 K = 8.0 * 1_048_576 / 512_000
@@ -274,6 +278,182 @@ def manpads():
     mesh_obj("aaa_112_lod0_s1v1", manpads_position(True), lod0)
 
 
+# ------------------------------------------------------------------------------ Patriot launcher
+
+
+def semitrailer(length, paint=OLIVE, wheels=RUBBER):
+    """A flatbed semitrailer (front at +y, deck at 1.3 m) on two rear axles, legs down."""
+    g = Geo()
+    y0, y1 = -length / 2, length / 2
+    g.add(block(-1.25, 1.25, y0, y1, 1.05, 1.3, paint))
+    for sx in (-1, 1):
+        g.add(block(sx * 0.6 - 0.12, sx * 0.6 + 0.12, y0 + 0.3, y1 - 0.3, 0.8, 1.05, OLIVE_DARK))
+        for y in (y0 + 0.9, y0 + 2.0):
+            g.add(wheel((sx * 1.0, y, 0.5), 0.5, 0.45, wheels, n=8))
+        # Levelling jacks at the corners.
+        for y in (y0 + 0.25, y1 - 0.4):
+            g.add(block(sx * 1.35 - 0.1, sx * 1.35 + 0.1, y - 0.1, y + 0.1, 0.0, 1.1, STEEL))
+            g.add(block(sx * 1.35 - 0.25, sx * 1.35 + 0.25, y - 0.25, y + 0.25, 0.0, 0.06, STEEL))
+    return g
+
+
+def tractor(paint=OLIVE, wheels=RUBBER):
+    """A heavy truck tractor (HEMTT-ish) with its cab forward, around its rear axles."""
+    g = Geo()
+    g.add(block(-1.2, 1.2, -2.6, 3.4, 0.9, 1.25, OLIVE_DARK))
+    g.add(block(-1.25, 1.25, 1.6, 3.6, 1.25, 2.9, paint, taper=0.1, taper_y=0.15))
+    g.add(block(-1.05, 1.05, 3.55, 3.62, 2.1, 2.75, GLASS))
+    for sx in (-1, 1):
+        g.add(block(sx * 1.25 - 0.02 * sx, sx * 1.26, 2.3, 3.3, 2.1, 2.7, GLASS))
+        for y in (-2.0, -0.7, 2.6):
+            g.add(wheel((sx * 1.05, y, 0.6), 0.6, 0.5, wheels, n=8))
+    g.add(block(-1.0, 1.0, 0.2, 1.5, 1.25, 1.9, paint))
+    return g
+
+
+def canisters(paint=OLIVE):
+    """Four launch canisters in a 2 x 2 box, pivot at the rear lower edge, pointing +y."""
+    g = Geo()
+    g.add(block(-1.05, 1.05, 0.0, 5.8, 0.0, 2.1, paint))
+    for sx in (-1, 1):
+        for z in (0.5, 1.6):
+            # The canister lids (darker squares on the front face).
+            g.face([(sx * 0.95, 5.81, z - 0.42), (sx * 0.1, 5.81, z - 0.42), (sx * 0.1, 5.81, z + 0.42), (sx * 0.95, 5.81, z + 0.42)], OLIVE_DARK, (0, 0, 1.05))
+    # Stiffening ribs along the sides.
+    for y in (1.0, 2.9, 4.8):
+        g.add(block(-1.1, 1.1, y, y + 0.2, -0.05, 2.15, OLIVE_DARK))
+    return g
+
+
+def patriot_turntable(paint=OLIVE):
+    """Traverse ring and the elevation cradle on the trailer bed."""
+    g = Geo()
+    g.add(frustum((0, 0, 0), (0, 0, 0.3), 1.0, 0.95, paint, n=8))
+    for sx in (-1, 1):
+        g.add(block(sx * 1.0 - 0.1, sx * 1.0 + 0.1, -0.5, 0.4, 0.2, 0.8, OLIVE_DARK))
+    return g
+
+
+def launcher_body(paint=OLIVE, wheels=RUBBER):
+    """Trailer and tractor, the cab to the rear (-y): the canisters fire over the trailer's tail."""
+    g = semitrailer(9.0, paint, wheels).add(tractor(paint, wheels).transformed(lambda p: p + mklib.v3((0, 7.2, 0))))
+    # A generator set behind the gooseneck.
+    g.add(block(-1.0, 1.0, 3.2, 4.4, 1.3, 2.3, OLIVE_DARK if paint is OLIVE else paint))
+    return g.rotated_z(math.pi)
+
+
+def patriot_launcher():
+    root, lod0, lod1 = levels(PATRIOT_LN, 20000)
+    intact = mesh_obj("aaa_113_lod0_s1v0", launcher_body(), lod0)
+    table = part("aaa_113_lod0_s1v0_part1", patriot_turntable(), intact, (0, 1.2, 1.3), TURRET_SLOT, 0)
+    part("aaa_113_lod0_s1v0_part2", canisters(), table, (0, -0.9, 0.7), GUN_SLOT, 1)
+    w = launcher_body(BURNT, BURNT)
+    w.add(canisters(BURNT).rotated_x(0.15).rotated_z(0.3).transformed(lambda p: p + mklib.v3((0.4, 0.0, 1.1))))
+    mesh_obj("aaa_113_lod0_s1v1", w, lod0)
+    far(lod1, "aaa_113", [(-1.25, 1.25, -10.8, 4.5, 0.4, 1.3), (-1.25, 1.25, -10.8, -8.8, 1.3, 2.9), (-1.05, 1.05, 0.3, 5.5, 1.6, 4.3)])
+
+
+# --------------------------------------------------------------------------------- Patriot radar
+
+
+def phased_array(paint=OLIVE):
+    """The AN/MPQ-53 shelter with its big slanted array face to the front (+y)."""
+    g = Geo()
+    g.add(block(-1.2, 1.2, -2.2, 1.0, 0.0, 2.3, paint))
+    # The array: an octagonal plate leaning back 22 degrees, on a frame on the front of the shelter.
+    face = Geo()
+    n = 8
+    pts = [(1.25 * math.cos(2 * math.pi * (k + 0.5) / n), 0.0, 1.25 * math.sin(2 * math.pi * (k + 0.5) / n)) for k in range(n)]
+    back = [(x, -0.25, z) for x, _, z in pts]
+    face.add(mklib.tube([[mklib.v3(p) for p in back], [mklib.v3(p) for p in pts]], OLIVE_DARK))
+    g.add(face.rotated_x(-0.38).transformed(lambda p: p + mklib.v3((0, 1.35, 1.9))))
+    # Three small arrays below the main one, and the IFF bar along its top.
+    for x in (-0.8, 0.0, 0.8):
+        g.add(block(x - 0.25, x + 0.25, 1.0, 1.2, 0.35, 0.65, OLIVE_DARK))
+    g.add(block(-1.0, 1.0, 1.75, 1.9, 3.15, 3.3, STEEL))
+    return g
+
+
+def patriot_radar():
+    root, lod0, lod1 = levels(PATRIOT_RADAR, 20000)
+    intact = mesh_obj("aaa_114_lod0_s1v0", semitrailer(7.0), lod0)
+    part("aaa_114_lod0_s1v0_part1", phased_array(), intact, (0, 0.2, 1.3), TURRET_SLOT, 0)
+    w = semitrailer(7.0, BURNT, BURNT)
+    w.add(phased_array(BURNT).recolour(BURNT).rotated_z(-0.25).rotated_x(-0.1).transformed(lambda p: p + mklib.v3((0, 0.2, 1.2))))
+    mesh_obj("aaa_114_lod0_s1v1", w, lod0)
+    far(lod1, "aaa_114", [(-1.25, 1.25, -3.5, 3.5, 0.4, 1.3), (-1.2, 1.2, -2.0, 1.2, 1.3, 3.6), (-1.2, 1.2, 1.2, 1.7, 2.0, 4.4)])
+
+
+# ---------------------------------------------------------------------------------------- Gepard
+
+
+def gepard_hull(paint=OLIVE, wheels=RUBBER):
+    """Leopard 1 hull, 7.1 x 3.3 m, seven road wheels a side, the wedge glacis in front."""
+    g = Geo()
+    g.add(mklib.side_prism([(-3.5, 0.5), (3.0, 0.5), (3.55, 1.05), (3.2, 1.55), (-3.5, 1.6)], -1.4, 1.4, paint))
+    for sx in (-1, 1):
+        x = sx * 1.5
+        for k in range(7):
+            g.add(wheel((x, -2.75 + k * 0.85, 0.36), 0.35, 0.32, wheels, n=8))
+        g.add(wheel((x, -3.25, 0.62), 0.3, 0.32, wheels, n=8))
+        g.add(wheel((x, 3.15, 0.62), 0.3, 0.32, wheels, n=8))
+        g.add(block(x - 0.2, x + 0.2, -3.35, 3.2, 0.7, 0.78, wheels))
+        # Side skirts.
+        g.add(block(x + sx * 0.18 - 0.03, x + sx * 0.18 + 0.03, -3.3, 3.25, 0.7, 1.25, paint))
+    g.add(block(-1.2, 1.2, -3.45, -1.8, 1.6, 1.7, OLIVE_DARK))
+    g.add(block(-1.1, -0.5, 2.3, 2.8, 1.55, 1.65, paint))
+    return g
+
+
+def gepard_turret(paint=OLIVE):
+    """The big boxy turret with its gun housings to the sides and the tracking radar in front."""
+    g = Geo()
+    g.add(block(-1.25, 1.25, -1.6, 1.5, 0.0, 1.15, paint, taper=0.1, taper_y=0.2))
+    # Turret bustle and the cheek housings that carry the guns.
+    g.add(block(-1.1, 1.1, -2.1, -1.5, 0.15, 1.0, OLIVE_DARK))
+    for x0 in (-1.33, 1.25):
+        g.add(block(x0, x0 + 0.08, -0.6, 0.9, 0.3, 1.0, OLIVE_DARK))
+    # Tracking radar: a round dish on the turret front.
+    g.add(frustum((0, 1.45, 0.75), (0, 1.75, 0.75), 0.5, 0.42, OLIVE_DARK, n=10))
+    g.add(block(0.5, 0.9, 0.4, 0.9, 1.15, 1.35, GLASS))
+    return g
+
+
+def gepard_guns():
+    """The two 35 mm Oerlikons in their housings outside the turret (pivot at the trunnions)."""
+    g = Geo()
+    for sx in (-1, 1):
+        x = sx * 1.6
+        g.add(block(x - 0.22, x + 0.22, -1.0, 0.9, -0.3, 0.3, OLIVE))
+        g.add(barrel(0.9, 3.4, 0.05, x=x))
+        g.add(barrel(3.2, 3.55, 0.08, x=x))
+    # The cross shaft through the turret.
+    g.add(barrel(-0.1, 0.1, 0.12, x=0.0).rotated_z(math.pi / 2))
+    return g
+
+
+def gepard_search():
+    """The search radar folded up on the turret's rear: a wide flat dish on a mast."""
+    g = Geo()
+    g.add(frustum((0, 0, 0), (0, 0, 0.45), 0.1, 0.08, STEEL, n=6))
+    g.add(block(-1.0, 1.0, -0.1, 0.05, 0.45, 0.95, OLIVE_DARK, taper=0.25))
+    return g
+
+
+def gepard():
+    root, lod0, lod1 = levels(GEPARD, 16000)
+    intact = mesh_obj("aaa_115_lod0_s1v0", gepard_hull(), lod0)
+    turret = part("aaa_115_lod0_s1v0_part1", gepard_turret(), intact, (0, 0.2, 1.6), TURRET_SLOT, 0)
+    part("aaa_115_lod0_s1v0_part2", gepard_guns(), turret, (0, 0.2, 0.65), GUN_SLOT, 1)
+    part("aaa_115_lod0_s1v0_part3", gepard_search(), turret, (0, -1.8, 1.0), RADAR_SLOT, 0)
+    w = gepard_hull(BURNT, BURNT)
+    w.add(gepard_turret(BURNT).rotated_z(-0.5).transformed(lambda p: p + mklib.v3((-0.2, 0.2, 1.55))))
+    guns = gepard_guns().recolour(BURNT).rotated_x(-0.2)
+    w.add(guns.rotated_z(-0.5).transformed(lambda p: p + mklib.v3((-0.1, 0.4, 2.15))))
+    mesh_obj("aaa_115_lod0_s1v1", w, lod0)
+    far(lod1, "aaa_115", [(-1.6, 1.6, -3.5, 3.5, 0.2, 1.6), (-1.8, 1.8, -1.6, 1.8, 1.6, 2.8)])
+
+
 # -------------------------------------------------------------------------------------- common
 
 
@@ -312,6 +492,9 @@ def main():
     zsu()
     s60()
     manpads()
+    patriot_launcher()
+    patriot_radar()
+    gepard()
     bpy.ops.export_scene.gltf(
         filepath=out, export_format="GLB", export_extras=True, export_yup=True, export_texcoords=False,
         export_normals=False, export_materials="EXPORT", use_visible=False, export_animations=False,

@@ -3,17 +3,22 @@
 //! Cloudflare), whose `CF-Connecting-IP` or `X-Forwarded-For` it believes when the request
 //! comes from this machine or its LAN.
 //!
-//! `stealth-master [--listen <addr:port>] [--threads <n>]` (default 127.0.0.1:8089, 4).
+//! The relay for the browser build (`relay.rs`) takes WebSockets on a port of its own, to
+//! which the proxy sends `/relay/`.
+//!
+//! `stealth-master [--listen <addr:port>] [--threads <n>] [--relay-listen <addr:port>|off]
+//! [--relay-internal]` (default 127.0.0.1:8089, 4, 127.0.0.1:8090).
 
 use std::io::Read;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use stealth_master::{List, MAX_BODY, is_internal};
+use stealth_master::{List, MAX_BODY, is_internal, relay};
 use tiny_http::{Header, Method, Request, Response, Server};
 
-const USAGE: &str = "stealth-master [--listen <addr:port>] [--threads <n>]";
+const USAGE: &str = "stealth-master [--listen <addr:port>] [--threads <n>] \
+                     [--relay-listen <addr:port>|off] [--relay-internal]";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -33,6 +38,20 @@ fn main() {
     };
     eprintln!("stealth-master listening on http://{listen}");
     let list = Arc::new(Mutex::new(List::default()));
+    let relay_listen = get("--relay-listen").unwrap_or_else(|| "127.0.0.1:8090".into());
+    if relay_listen != "off" {
+        let listener = match std::net::TcpListener::bind(&relay_listen) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("relay listening on {relay_listen}: {e}");
+                std::process::exit(1);
+            }
+        };
+        eprintln!("relay listening on ws://{relay_listen}/relay/<server id>");
+        let allow_internal = args.iter().any(|a| a == "--relay-internal");
+        let list = list.clone();
+        std::thread::spawn(move || relay::serve(listener, list, allow_internal));
+    }
     let workers: Vec<_> = (0..threads)
         .map(|_| {
             let (server, list) = (server.clone(), list.clone());

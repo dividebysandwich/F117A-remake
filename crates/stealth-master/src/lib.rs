@@ -10,6 +10,7 @@ use stealth_master_proto::{
 };
 
 mod page;
+pub mod relay;
 
 /// Seconds a game server waits at least between two reports (more are turned down).
 const MIN_REPORT_GAP: f64 = 5.0;
@@ -182,6 +183,15 @@ impl List {
     fn expire(&mut self, now: Instant) {
         let after = Duration::from_secs(EXPIRE_AFTER);
         self.servers.retain(|_, l| now.duration_since(l.seen) < after);
+    }
+
+    /// The address of the server with this id, if it is still listed.
+    pub fn addr_of(&mut self, id: &str, now: Instant) -> Option<SocketAddr> {
+        self.expire(now);
+        self.servers
+            .iter()
+            .find(|(addr, l)| server_id(&l.report.name, &addr.ip().to_string()) == id)
+            .map(|(addr, _)| *addr)
     }
 
     /// The server with this id.

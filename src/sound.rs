@@ -5,7 +5,8 @@
 //!   0 = none; Alt-V cycles, with an extra step at level 3 that halves the engine first).
 //!   Gear, bay doors, the error buzz and speech bypass the level.
 //! - The engine drone follows airspeed only (pitch `(0x83 + (knots & ~1)) * 49716 / 2^18` Hz),
-//!   is silent at 0 kt and with the throttle closed, and only plays at level 3.
+//!   is silent at 0 kt and with the throttle closed on the ground (in the air it keeps playing
+//!   as wind noise), and only plays at level 3.
 //! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.flac) register under id NN, and a
 //!   requested id with no sample stays silent, so speech can be added later by dropping files in.
 //! - Radar warning tones come from `sounds/rwr/` instead of the original sounds 8 and 9.
@@ -348,7 +349,7 @@ fn engine_drone(
     let Ok(a) = player.single() else { return };
     let knots = a.knots().min(768.0);
     let on = level.0 == 3
-        && a.set_thrust > 0.0
+        && (a.set_thrust > 0.0 || !a.on_ground)
         && knots >= 2.0
         && a.ended.is_none()
         && !has_ejected(combat.as_deref());

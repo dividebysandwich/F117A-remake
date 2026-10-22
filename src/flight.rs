@@ -81,10 +81,7 @@ pub struct SimTables {
 
 impl SimTables {
     pub fn load() -> Self {
-        let path = crate::asset_path::asset("sim/tables.ron");
-        let text =
-            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        ron::from_str(&text).expect("tables.ron")
+        crate::asset_path::load_ron("sim/tables.ron")
     }
 }
 

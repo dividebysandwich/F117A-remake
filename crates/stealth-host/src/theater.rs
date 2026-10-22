@@ -17,16 +17,15 @@ struct TheaterFile {
 
 /// Tile data of a remake theater.
 pub fn load_tiles(code: &str) -> Result<TheaterTiles> {
-    let path = crate::assets::asset(&format!("theaters/{}.ron", code.to_ascii_lowercase()));
-    let text = std::fs::read_to_string(&path).with_context(|| path.display().to_string())?;
-    let t: TheaterFile = ron::from_str(&text).with_context(|| path.display().to_string())?;
+    let rel = format!("theaters/{}.ron", code.to_ascii_lowercase());
+    let t: TheaterFile = ron::from_str(&crate::assets::read_to_string(&rel)?).context(rel)?;
     Ok(TheaterTiles::from_tilesets(&t.grid, &t.tiles, &t.model_attr))
 }
 
 /// The simulation's tables, with the tiles of theater `index` (`code`) if they are not among
 /// the sim data's.
 pub fn sim_data(index: usize, code: &str) -> Result<SimData> {
-    let d = SimData::load_json(&crate::assets::asset("sim"))?;
+    let d = sim_tables()?;
     if d.theaters.get(index).is_some() {
         return Ok(d);
     }
@@ -36,7 +35,12 @@ pub fn sim_data(index: usize, code: &str) -> Result<SimData> {
 
 /// The mission generator's tables.
 pub fn game_data() -> Result<GameData> {
-    GameData::load_json(&crate::assets::asset("mission"))
+    GameData::load_with(|name| crate::assets::read(&format!("mission/{name}")))
+}
+
+/// The simulation's tables and the classic theaters' tiles (`assets/sim`).
+pub fn sim_tables() -> Result<SimData> {
+    SimData::load_with(|name| crate::assets::read(&format!("sim/{name}")))
 }
 
 /// Index of a theater code ("ce").

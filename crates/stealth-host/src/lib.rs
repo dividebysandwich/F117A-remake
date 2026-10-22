@@ -8,6 +8,7 @@ pub mod host;
 pub mod rules;
 pub mod save;
 pub mod sky;
+pub mod store;
 pub mod theater;
 
 pub use host::{Debrief, Host, HostEvent, Stores};

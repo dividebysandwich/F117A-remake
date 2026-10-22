@@ -1,7 +1,5 @@
 //! Saved files in the user's config directory, and the menu choices remembered between runs.
 
-use std::path::PathBuf;
-
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -10,25 +8,26 @@ use stealth_mission::{MissionKind, Sky};
 use crate::menu::MenuState;
 use crate::settings::{DEFAULT_VR_COCKPIT_SCALE, Settings, VR_COCKPIT_SCALE_RANGE};
 
-/// `<config dir>/stealth-mission-89/<name>`.
-pub fn config_path(name: &str) -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("stealth-mission-89").join(name))
+/// `<config dir>/stealth-mission-89/<name>` (`stealth_host::store`); None in the browser.
+pub fn config_path(name: &str) -> Option<std::path::PathBuf> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return stealth_host::store::path(&format!("config/{name}"));
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = name;
+        None
+    }
 }
 
 /// Reads a saved file; None if it is missing or unreadable (logged).
 pub fn load_json<T: DeserializeOwned>(name: &str) -> Option<T> {
-    let path = config_path(name)?;
-    let text = std::fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&text).map_err(|e| warn!("{}: {e}; ignored", path.display())).ok()
+    let text =
+        stealth_host::store::read(&format!("config/{name}")).map_err(|e| warn!("{e:#}")).ok()??;
+    serde_json::from_str(&text).map_err(|e| warn!("{name}: {e}; ignored")).ok()
 }
 
-pub fn save_json<T: Serialize>(name: &str, value: &T) -> anyhow::Result<PathBuf> {
-    let path = config_path(name).ok_or_else(|| anyhow::anyhow!("no user config directory"))?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(&path, serde_json::to_string_pretty(value)?)?;
-    Ok(path)
+pub fn save_json<T: Serialize>(name: &str, value: &T) -> anyhow::Result<()> {
+    stealth_host::store::write(&format!("config/{name}"), &serde_json::to_string_pretty(value)?)
 }
 
 /// Menu choices and switches (`prefs.json`), used when the game starts into the menu.

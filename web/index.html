@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stealth Mission 89</title>
+  <link data-trunk rel="rust" href="../Cargo.toml" data-bin="stealth-mission-89"
+        data-cargo-no-default-features data-cargo-profile="wasm-release"
+        data-wasm-opt="0">
+  <link data-trunk rel="copy-dir" href="../assets">
+  <link data-trunk rel="copy-file" href="download.html">
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; color: #4f4; overflow: hidden;
+                 font: 16px/1.5 monospace; }
+    #sm89 { display: block; width: 100%; height: 100%; outline: none; }
+    #status { position: fixed; inset: 0; display: flex; align-items: center;
+              justify-content: center; text-align: center; padding: 16px; pointer-events: none; }
+    #status.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="sm89" tabindex="0"></canvas>
+  <div id="status">STEALTH MISSION 89<br>Loading...</div>
+  <script>
+    // The renderer needs WebGPU (its shaders read storage buffers, which WebGL2 lacks).
+    const status = document.getElementById("status");
+    if (!navigator.gpu) {
+      status.innerHTML = "STEALTH MISSION 89<br><br>This browser has no WebGPU.<br>" +
+        "Use a current Chrome, Edge, Firefox or Safari, with hardware acceleration on.";
+      throw new Error("no WebGPU");
+    }
+    // The game's audio starts before the player has touched the page, so the browser keeps it
+    // suspended: resume it on the first click or key.
+    const contexts = [];
+    const Native = window.AudioContext || window.webkitAudioContext;
+    if (Native) {
+      window.AudioContext = window.webkitAudioContext = class extends Native {
+        constructor(...args) { super(...args); contexts.push(this); }
+      };
+    }
+    const resume = () => contexts.forEach(c => c.state === "suspended" && c.resume());
+    ["pointerdown", "keydown"].forEach(e => window.addEventListener(e, resume, { capture: true }));
+    // The keys and the right mouse button belong to the game.
+    const canvas = document.getElementById("sm89");
+    canvas.addEventListener("contextmenu", e => e.preventDefault());
+    canvas.addEventListener("pointerdown", () => canvas.focus());
+    // Trunk's loader says when the game is running.
+    addEventListener("TrunkApplicationStarted", () => status.classList.add("hidden"));
+  </script>
+</body>
+</html>

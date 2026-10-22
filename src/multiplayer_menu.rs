@@ -378,8 +378,8 @@ fn multiplayer_window(
                         });
                         if ui.add_enabled(named, big_button("HOST NEW")).clicked() || auto_host {
                             let (code, _) = THEATERS[state.theater.min(THEATERS.len() - 1)];
-                            let secs = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
+                            let secs = web_time::SystemTime::now()
+                                .duration_since(web_time::UNIX_EPOCH)
                                 .map_or(0, |d| d.as_secs());
                             let setup = CampaignSetup {
                                 theater: state.theater,

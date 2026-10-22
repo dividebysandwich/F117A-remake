@@ -12,8 +12,11 @@ stealth-host = { path = "../stealth-host" }
 serde.workspace = true
 anyhow.workspace = true
 ciborium = "0.2.2"
-ratatui = "0.30.2"
 stealth-master-proto = { path = "../stealth-master-proto" }
 serde_json = "1"
-ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
 lz4_flex = { version = "0.11.6", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
+
+# The dedicated server's console and the master server's HTTP: not in the browser build.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ratatui = "0.30.2"
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }

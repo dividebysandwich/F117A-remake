@@ -142,9 +142,7 @@ pub fn prepare_map(
         return;
     }
     if planner.sim.is_none() {
-        planner.sim = SimData::load_json(&crate::asset_path::asset("sim"))
-            .map_err(|e| warn!("planner: {e:#}"))
-            .ok();
+        planner.sim = stealth_host::theater::sim_tables().map_err(|e| warn!("planner: {e:#}")).ok();
     }
     if planner.theater.as_ref().is_none_or(|t| t.id != id) {
         planner.theater = Some(Theater::load(&id));
@@ -224,8 +222,7 @@ fn render_theater(theater: &Theater, models: &HashMap<u8, MapModel>) -> egui::Co
     let to_px = |east: f64, north: f64| {
         Vec2::new((east / 32.0 / px) as f32, ((0x8000 as f64 - north / 32.0) / px) as f32)
     };
-    let text =
-        std::fs::read_to_string(crate::asset_path::asset("palettes/remap.ron")).unwrap_or_default();
+    let text = crate::asset_path::read_to_string("palettes/remap.ron").unwrap_or_default();
     let remaps: Vec<RemapTable> = ron::from_str(&text).unwrap_or_default();
     let map16 =
         remaps.iter().find(|t| t.name == "map16").map(|t| t.entries.clone()).unwrap_or_default();

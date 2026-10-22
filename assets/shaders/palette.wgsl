@@ -321,8 +321,9 @@ fn haze_smooth(idx: u32, fog: f32) -> vec3<f32> {
 }
 
 // Modern mode: subtle flat shading from the sim data's (unused) light vector (-36, 36, 36).
-fn shade(world: vec3<f32>, dir: vec3<f32>) -> f32 {
-    var n = normalize(cross(dpdx(world), dpdy(world)));
+// `face`: the face normal from the position's derivatives (`Deriv`).
+fn shade(face: vec3<f32>, dir: vec3<f32>) -> f32 {
+    var n = normalize(face);
     if (dot(n, dir) > 0.0) { n = -n; }
     let l = normalize(vec3<f32>(-36.0, 36.0, 36.0));
     return 0.86 + 0.14 * dot(n, l);
@@ -330,8 +331,8 @@ fn shade(world: vec3<f32>, dir: vec3<f32>) -> f32 {
 
 // Lighting options: the palette colour lit by the sun (with shadow maps) and local lights,
 // using the flat face normal. Unlit parts keep roughly the classic brightness.
-fn lit(rgb: vec3<f32>, world: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32) -> vec3<f32> {
-    var n = normalize(cross(dpdx(world), dpdy(world)));
+fn lit(rgb: vec3<f32>, world: vec3<f32>, face: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32) -> vec3<f32> {
+    var n = normalize(face);
     if (dot(n, dir) > 0.0) { n = -n; }
     return lit_surface(rgb, world, n, clip, flags);
 }
@@ -525,12 +526,11 @@ fn hash2(p: vec2<f32>) -> f32 {
 }
 
 // Continuous time of day: the sun, stars and the moon over the sky colour (`nd` normalised, above the
-// horizon). The moon is lit from the true sun direction, so its phase shows by itself.
-fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>) -> vec3<f32> {
+// horizon). The moon is lit from the true sun direction, so its phase shows by itself. `px`:
+// radians per pixel (`Deriv`).
+fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>, px: f32) -> vec3<f32> {
     var bg = bg_in;
     let daylight = clamp(globals.light_info.y, 0.0, 1.0);
-    // Radians per pixel (from the smooth view direction: cell distances jump at cell edges).
-    let px = max(length(fwidth(nd)), 1e-5);
     let stars = globals.sky_moon.w;
     if (stars > 0.0) {
         let az = atan2(nd.x, -nd.z);
@@ -803,8 +803,21 @@ fn flir(rgb: vec3<f32>, warm: u32, fog_f: f32) -> vec3<f32> {
     return vec3<f32>(pow(v, 2.2));
 }
 
+// Screen-space derivatives, taken at the start of `fragment`: WebGPU only allows them in
+// uniform control flow, which a branch or return on a varying ends.
+struct Deriv {
+    // Face normal (unnormalised, either side).
+    face: vec3<f32>,
+    // Radians per pixel of the view direction (from the smooth direction: cell distances in
+    // the night sky jump at cell edges).
+    sky_px: f32,
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    var deriv: Deriv;
+    deriv.face = cross(dpdx(in.world_position), dpdy(in.world_position));
+    deriv.sky_px = max(length(fwidth(normalize(in.world_position - view.world_position))), 1e-5);
     if ((u32(globals.light_info.w) & 1u) != 0u) {
         return vec4<f32>(pal(material.word & 0xFFu), 1.0);
     }
@@ -814,15 +827,15 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             let dir = in.world_position - view.world_position;
             return vec4<f32>(vec3<f32>(pow(select(0.2, 0.35, dir.y < 0.0), 2.2)), 1.0);
         }
-        let c = shade_fragment(in);
+        let c = shade_fragment(in, deriv);
         return vec4<f32>(flir(c.rgb, in.warm, in.fog_f), c.a);
     }
-    let c = shade_fragment(in);
+    let c = shade_fragment(in, deriv);
     let glare = sun_glare(in.world_position - view.world_position);
     return vec4<f32>(nvg(c.rgb + glare * c.a, in.clip_position), c.a);
 }
 
-fn shade_fragment(in: VertexOutput) -> vec4<f32> {
+fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
     let dir = in.world_position - view.world_position;
     let modern = globals.params.w != 0.0;
     // One pipeline per kind of material (palette_material.rs `PaletteKey`): a shader with
@@ -845,7 +858,7 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
             if (cover < bayer4(vec2<u32>(in.clip_position.xy))) { discard; }
             cover = 1.0;
         }
-        var n = normalize(cross(dpdx(in.world_position), dpdy(in.world_position)));
+        var n = normalize(deriv.face);
         if (dot(n, dir) > 0.0) { n = -n; }
         let noise = cloud_noise(in.world_position, d);
         return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d), in.world_position), cover);
@@ -869,7 +882,7 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
             bg = pal(band(dir).x);
         }
         if (globals.sky_sun.w > 0.0 && dir.y > 0.0) {
-            bg = night_sky(bg, normalize(dir));
+            bg = night_sky(bg, normalize(dir), deriv.sky_px);
         }
         // Lighting options: the ground gradient is lit like flat ground where the view ray
         // meets the ground plane (y = 0), so it takes shadows and local lights.
@@ -958,11 +971,11 @@ fn shade_fragment(in: VertexOutput) -> vec4<f32> {
 #ifdef PALETTE_LIT
     let flags = u32(globals.ambient.w);
     if (!is_line && flags != 0u) {
-        rgb = lit(rgb, in.world_position, dir, in.clip_position, flags);
+        rgb = lit(rgb, in.world_position, deriv.face, dir, in.clip_position, flags);
     } else
 #endif
     if (modern && !is_line) {
-        rgb = rgb * shade(in.world_position, dir);
+        rgb = rgb * shade(deriv.face, dir);
     }
     return vec4<f32>(flash(whiteout(rgb, length(dir)), in.world_position), 1.0);
 #endif

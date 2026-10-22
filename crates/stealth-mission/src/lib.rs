@@ -168,9 +168,15 @@ pub struct GameData {
 impl GameData {
     /// Read the JSON export written by [`GameData::write_json`].
     pub fn load_json(dir: &Path) -> Result<Self> {
-        let read = |name: String| {
-            std::fs::read(dir.join(&name)).with_context(|| format!("{}", dir.join(&name).display()))
-        };
+        Self::load_with(|name| {
+            std::fs::read(dir.join(name)).with_context(|| format!("{}", dir.join(name).display()))
+        })
+    }
+
+    /// [`GameData::load_json`] with the files' contents from `read` (a name such as
+    /// `tables.json`).
+    pub fn load_with(read: impl Fn(&str) -> Result<Vec<u8>>) -> Result<Self> {
+        let read = |name: String| read(&name);
         let tables = serde_json::from_slice(&read("tables.json".into())?).context("tables.json")?;
         let theaters = ALL_THEATERS
             .iter()

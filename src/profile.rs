@@ -19,7 +19,9 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use bevy::platform::time::Instant;
 
 use bevy::diagnostic::DiagnosticsStore;
 use bevy::log::BoxedLayer;

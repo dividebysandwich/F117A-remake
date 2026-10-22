@@ -9,7 +9,9 @@
 //! * [`master`]: the public server list.
 
 pub mod client;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod console;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod dedicated;
 pub mod master;
 pub mod protocol;

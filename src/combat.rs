@@ -85,7 +85,7 @@ const MAX_STEPS: u32 = 30;
 pub struct SimDataRes(pub Arc<SimData>);
 
 fn load_sim_data() -> anyhow::Result<SimData> {
-    SimData::load_json(&crate::asset_path::asset("sim"))
+    stealth_host::theater::sim_tables()
 }
 
 /// The running simulation and its bookkeeping.

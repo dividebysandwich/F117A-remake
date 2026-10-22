@@ -213,16 +213,20 @@ fn relaunch_in_vr(state: &MenuState, settings: &crate::settings::Settings) -> st
     }
     if let Some(lo) = &state.loadout {
         match crate::prefs::save_json(crate::loadout::LOADOUT_FILE, lo) {
-            Ok(path) => {
-                cmd.arg("--loadout").arg(path);
+            Ok(()) => {
+                if let Some(path) = crate::prefs::config_path(crate::loadout::LOADOUT_FILE) {
+                    cmd.arg("--loadout").arg(path);
+                }
             }
             Err(e) => warn!("saving the loadout: {e}"),
         }
     }
     if let Some(route) = &state.route {
         match crate::prefs::save_json(crate::mission::ROUTE_FILE, route) {
-            Ok(path) => {
-                cmd.arg("--route").arg(path);
+            Ok(()) => {
+                if let Some(path) = crate::prefs::config_path(crate::mission::ROUTE_FILE) {
+                    cmd.arg("--route").arg(path);
+                }
             }
             Err(e) => warn!("saving the route: {e}"),
         }
@@ -707,6 +711,10 @@ pub(crate) fn aircraft_options(
     {
         settings.set_changed();
     }
+    // The browser build writes no files and cannot listen for Tacview.
+    if cfg!(target_arch = "wasm32") {
+        return;
+    }
     let s = settings.bypass_change_detection();
     if facts(
         ui.checkbox(&mut s.tacview, "Tacview export"),
@@ -896,6 +904,13 @@ pub(crate) fn classic_modern_options(
     s.classic_hud = !hud;
     s.classic_avionics = !avionics;
     s.classic_flight = !flight;
+    // The browser build hears no tracking program.
+    if cfg!(target_arch = "wasm32") {
+        if toggled {
+            settings.set_changed();
+        }
+        return;
+    }
     section(ui, "Head/eye tracking");
     // Read every frame by `headtrack`: no change detection needed.
     facts(
@@ -915,6 +930,15 @@ pub(crate) fn classic_modern_options(
     if toggled {
         settings.set_changed();
     }
+}
+
+/// The download page beside the game's page, as an absolute address (egui opens no relative one).
+#[cfg(target_arch = "wasm32")]
+fn download_url() -> String {
+    let location = web_sys::window().map(|w| w.location());
+    let origin = location.as_ref().and_then(|l| l.origin().ok()).unwrap_or_default();
+    let path = location.as_ref().and_then(|l| l.pathname().ok()).unwrap_or_default();
+    format!("{origin}{}download.html", &path[..path.rfind('/').map_or(0, |i| i + 1)])
 }
 
 /// A full-screen-width menu window in the terminal style.
@@ -988,14 +1012,16 @@ fn main_screen(
             {
                 campaign.show();
             }
-            if facts(
-                ui.add(wide("MULTIPLAYER")),
-                &[
-                    "Coop in the dynamic campaign",
-                    "Join a server, or host a campaign and fly in it",
-                ],
-            )
-            .clicked()
+            // Browsers cannot send UDP (docs/web.md).
+            if !cfg!(target_arch = "wasm32")
+                && facts(
+                    ui.add(wide("MULTIPLAYER")),
+                    &[
+                        "Coop in the dynamic campaign",
+                        "Join a server, or host a campaign and fly in it",
+                    ],
+                )
+                .clicked()
             {
                 multiplayer.show();
             }
@@ -1007,8 +1033,25 @@ fn main_screen(
             {
                 dialog.open = true;
             }
+            // The browser build: the desktop game is a download (web/download.html).
+            #[cfg(target_arch = "wasm32")]
+            if facts(
+                ui.add(wide("DOWNLOAD")),
+                &[
+                    "The desktop game for Windows, Linux and macOS",
+                    "With VR and multiplayer",
+                    "Steam Deck and Steam Frame: the Linux AppImage",
+                ],
+            )
+            .clicked()
+            {
+                ui.ctx().open_url(egui::OpenUrl::new_tab(download_url()));
+            }
             ui.add_space(10.0);
-            if facts(ui.add(wide("QUIT")), &["Exit to the desktop"]).clicked() {
+            // In the browser the tab is closed instead.
+            if !cfg!(target_arch = "wasm32")
+                && facts(ui.add(wide("QUIT")), &["Exit to the desktop"]).clicked()
+            {
                 exit.write(AppExit::Success);
             }
             ui.add_space(6.0);
@@ -1230,8 +1273,8 @@ fn menu_ui(
                         }
                         next.set(AppState::Flight);
                     }
-                    // Already in VR: "Fly" flies in the headset.
-                    if !settings.vr {
+                    // Already in VR: "Fly" flies in the headset. No VR in the browser.
+                    if !settings.vr && !cfg!(target_arch = "wasm32") {
                         let vr_button = ui
                             .add_enabled(can_fly && vr.0, big_button("FLY IN VR"))
                             .on_disabled_hover_text(if vr.0 { "Generate a mission first" } else { "No OpenXR runtime (Monado, WiVRn, SteamVR) is active" });

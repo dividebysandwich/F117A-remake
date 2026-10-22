@@ -3259,9 +3259,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -6258,6 +6260,7 @@ version = "0.4.1"
 dependencies = [
  "anyhow",
  "dirs",
+ "js-sys",
  "ron",
  "serde",
  "serde_json",
@@ -6265,6 +6268,7 @@ dependencies = [
  "stealth-formats",
  "stealth-mission",
  "stealth-sim",
+ "web-sys",
 ]
 
 [[package]]
@@ -6306,6 +6310,7 @@ dependencies = [
  "bevy_mod_xr",
  "dirs",
  "embed-resource",
+ "getrandom 0.3.4",
  "gilrs",
  "image",
  "libc",
@@ -6322,6 +6327,8 @@ dependencies = [
  "stealth-mission",
  "stealth-net",
  "stealth-sim",
+ "web-sys",
+ "web-time",
  "windows-sys 0.61.2",
 ]
 

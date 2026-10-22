@@ -377,8 +377,8 @@ fn folder() -> Option<PathBuf> {
 /// Writes the recording of a flight; errors are logged.
 pub fn export(rec: &FlightRecord, m: &Mission, data: &SimData, aircraft: &str) -> Option<PathBuf> {
     let dir = folder()?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
     let (y, mo, d) = civil_from_days(now.div_euclid(86_400));
     let t = now.rem_euclid(86_400);

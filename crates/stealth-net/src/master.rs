@@ -1,5 +1,7 @@
 //! The public server list (`stealth-master-proto`): a server's reports to the master server
 //! on a thread of their own ([`Reporter`]), and a game's look at the list ([`fetch_list`]).
+//! The browser build has neither: no threads, and no HTTP client here.
+#![cfg_attr(target_arch = "wasm32", allow(unused_imports, dead_code))]
 
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -13,6 +15,7 @@ use stealth_master_proto::{
     SideHolding,
 };
 use stealth_sim::Sim;
+#[cfg(not(target_arch = "wasm32"))]
 use ureq::config::IpFamily;
 
 use crate::PROTOCOL;
@@ -89,6 +92,7 @@ impl Drop for Reporter {
 /// one listed, and game servers listen on IPv4 only.
 /// A fresh connection each time: at a report every half minute a kept one saves nothing, and
 /// one a NAT box forgot would only hang the next report.
+#[cfg(not(target_arch = "wasm32"))]
 fn new_agent(timeout: u64, ip: IpFamily) -> ureq::Agent {
     let phase = Some(Duration::from_secs(PHASE_TIMEOUT.min(timeout)));
     ureq::Agent::config_builder()
@@ -102,6 +106,7 @@ fn new_agent(timeout: u64, ip: IpFamily) -> ureq::Agent {
         .into()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn run(url: &str, rx: &Receiver<Msg>, log: &Mutex<Vec<String>>) {
     let say = |s: String| {
         if let Ok(mut l) = log.lock() {
@@ -163,7 +168,12 @@ fn run(url: &str, rx: &Receiver<Msg>, log: &Mutex<Vec<String>>) {
     }
 }
 
+/// The browser build has no thread to report from (and no server to report).
+#[cfg(target_arch = "wasm32")]
+fn run(_url: &str, _rx: &Receiver<Msg>, _log: &Mutex<Vec<String>>) {}
+
 /// The servers on the list at `master`.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn fetch_list(master: &str) -> Result<Vec<ServerEntry>, String> {
     let url = format!("{}/api/servers", master.trim_end_matches('/'));
     new_agent(TIMEOUT, IpFamily::Any)
@@ -173,6 +183,11 @@ pub fn fetch_list(master: &str) -> Result<Vec<ServerEntry>, String> {
         .body_mut()
         .read_json::<Vec<ServerEntry>>()
         .map_err(|e| e.to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn fetch_list(_master: &str) -> Result<Vec<ServerEntry>, String> {
+    Err("not available in the browser".into())
 }
 
 /// The campaign's clock: "day 3 14:05".

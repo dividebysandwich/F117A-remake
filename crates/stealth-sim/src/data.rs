@@ -124,9 +124,13 @@ pub struct SimData {
 impl SimData {
     /// Read `sim.json` and `theaters/<code>.json` from `dir` (`assets/sim`).
     pub fn load_json(dir: &Path) -> Result<Self> {
-        let read = |name: &str| {
+        Self::load_with(|name| {
             std::fs::read(dir.join(name)).with_context(|| format!("{}", dir.join(name).display()))
-        };
+        })
+    }
+
+    /// [`SimData::load_json`] with the files' contents from `read` (a name such as `sim.json`).
+    pub fn load_with(read: impl Fn(&str) -> Result<Vec<u8>>) -> Result<Self> {
         let mut d: Self = serde_json::from_slice(&read("sim.json")?).context("sim.json")?;
         d.theaters = THEATERS
             .iter()

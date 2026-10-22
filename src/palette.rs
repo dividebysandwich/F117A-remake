@@ -47,10 +47,7 @@ pub struct VgaPalette {
 
 impl VgaPalette {
     pub fn load(name: &str) -> VgaPalette {
-        let path = crate::asset_path::asset(&format!("palettes/{name}.ron"));
-        let p = path.display();
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e}"));
-        ron::from_str(&text).unwrap_or_else(|e| panic!("{p}: {e}"))
+        crate::asset_path::load_ron(&format!("palettes/{name}.ron"))
     }
 
     pub fn color(&self, i: u8) -> Color {
@@ -181,10 +178,7 @@ pub struct Viewpoint {
 }
 
 pub fn load_theater_palettes(theater: &str) -> TheaterPalettes {
-    let path = crate::asset_path::asset(&format!("palettes/tod_{theater}.ron"));
-    let p = path.display();
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e}"));
-    ron::from_str(&text).unwrap_or_else(|e| panic!("{p}: {e}"))
+    crate::asset_path::load_ron(&format!("palettes/tod_{theater}.ron"))
 }
 
 fn setup_palette(
@@ -196,10 +190,7 @@ fn setup_palette(
 ) {
     *tod = TimeOfDay { night_mission: setup.night, seed: setup.tod_seed, ..default() };
     let theater = load_theater_palettes(&setup.theater);
-    let remap = crate::asset_path::asset("palettes/remap.ron");
-    let text =
-        std::fs::read_to_string(&remap).unwrap_or_else(|e| panic!("{}: {e}", remap.display()));
-    let remaps: Vec<RemapTable> = ron::from_str(&text).expect("remap.ron");
+    let remaps: Vec<RemapTable> = crate::asset_path::load_ron("palettes/remap.ron");
     let globals = buffers.add(ShaderBuffer::from(Globals::default()));
     let active = tod.initial(&theater);
     let mut palette = Palette {

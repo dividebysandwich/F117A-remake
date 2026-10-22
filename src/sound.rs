@@ -171,13 +171,13 @@ pub const AIRBURST: u8 = 110;
 
 fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     let mut bank = SoundBank::default();
-    let Ok(dir) = std::fs::read_dir(crate::asset_path::asset("sounds")) else {
+    let names = crate::asset_path::list("sounds");
+    if names.is_empty() {
         warn!("assets/sounds missing: no original sounds");
         commands.insert_resource(bank);
         return;
-    };
-    for e in dir.flatten() {
-        let name = e.file_name().to_string_lossy().into_owned();
+    }
+    for name in names {
         let Some(stem) = name.strip_suffix(".flac") else { continue };
         let path = format!("sounds/{name}");
         if let Some(k) = stem.strip_prefix("engine_").and_then(|k| k.parse::<f32>().ok()) {
@@ -192,7 +192,7 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
         }
     }
     for (tone, file) in RWR_FILES {
-        if crate::asset_path::asset(&format!("sounds/rwr/{file}")).exists() {
+        if crate::asset_path::exists(&format!("sounds/rwr/{file}")) {
             bank.sfx
                 .entry(rwr_id(tone))
                 .or_default()
@@ -200,8 +200,7 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
         }
     }
     let optional = |name: &str| {
-        crate::asset_path::asset(&format!("sounds/{name}"))
-            .exists()
+        crate::asset_path::exists(&format!("sounds/{name}"))
             .then(|| server.load(format!("sounds/{name}")))
     };
     if let Some(h) = optional("airburst.flac") {

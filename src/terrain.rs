@@ -82,7 +82,7 @@ fn refine(
     }
     let handle = library.load(&server, &theater.id);
     let Some(gltf) = gltfs.get(&handle) else { return };
-    let start = std::time::Instant::now();
+    let start = bevy::platform::time::Instant::now();
     let colours: HashMap<AssetId<GltfMaterial>, u8> = gltf
         .named_materials
         .iter()

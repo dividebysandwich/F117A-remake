@@ -11,6 +11,8 @@
 //!
 //! Home puts the current pose at the centre (OpenTrack's own centre key does too). Not in VR,
 //! where the headset tracks the head.
+// The browser build has neither (the plugin only adds the resource there).
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 
 use std::net::UdpSocket;
 
@@ -23,7 +25,10 @@ pub struct HeadTrackPlugin;
 impl Plugin for HeadTrackPlugin {
     fn build(&self, app: &mut App) {
         // Every state, so the menu shows whether a tracker is heard before the flight.
-        app.init_resource::<HeadTrack>().add_systems(PreUpdate, receive);
+        app.init_resource::<HeadTrack>();
+        // The browser has neither OpenTrack's UDP nor FreeTrack's shared memory.
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(PreUpdate, receive);
     }
 }
 

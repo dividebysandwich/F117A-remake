@@ -12,6 +12,7 @@ mod combat;
 mod crash_log;
 mod csar_view;
 mod debrief;
+#[cfg(not(target_arch = "wasm32"))]
 mod dedicated;
 mod dots;
 mod explosions;
@@ -78,6 +79,7 @@ use settings::{MissionSetup, Settings};
 
 fn main() {
     // `--dedicated`: the coop server, in the console it was started from.
+    #[cfg(not(target_arch = "wasm32"))]
     dedicated::run_if_asked();
     // `--help`: the command line options.
     help::run_if_asked();
@@ -115,8 +117,23 @@ fn main() {
                 } else {
                     bevy::window::PresentMode::AutoVsync
                 },
+                // The browser build: the page's canvas, filling it; the page passes the keys
+                // (F1, Tab...) and right clicks (mouse look) to the game.
+                #[cfg(target_arch = "wasm32")]
+                canvas: Some("#sm89".into()),
+                #[cfg(target_arch = "wasm32")]
+                fit_canvas_to_parent: true,
+                #[cfg(target_arch = "wasm32")]
+                prevent_default_event_handling: true,
                 ..default()
             }),
+            ..default()
+        })
+        // The browser build fetches the assets from the page's server, which has no `.meta`
+        // files (asking for each would log a 404 per asset).
+        .set(AssetPlugin {
+            #[cfg(target_arch = "wasm32")]
+            meta_check: bevy::asset::AssetMetaCheck::Never,
             ..default()
         })
         .set(bevy::log::LogPlugin {

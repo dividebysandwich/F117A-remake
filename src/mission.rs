@@ -14,7 +14,7 @@ pub struct MissionData(pub Arc<GameData>);
 
 impl MissionData {
     pub fn load() -> anyhow::Result<Self> {
-        Ok(Self(Arc::new(GameData::load_json(&crate::asset_path::asset("mission"))?)))
+        Ok(Self(Arc::new(stealth_host::theater::game_data()?)))
     }
 }
 

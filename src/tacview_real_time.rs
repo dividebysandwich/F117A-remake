@@ -10,6 +10,8 @@
 //! `XtraLib.Stream.0\nTacview.RealTimeTelemetry.0\n<client name>\n<password hash>\0` (CRC-64/WE of
 //! the UTF-16 password, in hexadecimal), then the host sends ACMI 2.2 text, one packet per frame.
 //! There is no keep-alive; either side may close the connection at any time.
+// The browser build cannot listen for Tacview (the plugin only adds the resource there).
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -48,8 +50,10 @@ pub struct TacviewRealTimePlugin;
 
 impl Plugin for TacviewRealTimePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Telemetry>()
-            .add_systems(Update, (serve, stream.after(CombatSystems)).chain())
+        app.init_resource::<Telemetry>();
+        // The browser cannot listen for Tacview's connection.
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(Update, (serve, stream.after(CombatSystems)).chain())
             .add_systems(OnExit(AppState::Flight), end_flight);
     }
 }

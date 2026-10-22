@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Download Stealth Mission 89</title>
+  <!-- window.SM89_VERSION, written from Cargo.toml's version when the page is built (Trunk.toml). -->
+  <script src="version.js"></script>
+  <style>
+    :root {
+      --bg: #000; --panel: #061206; --line: #1d4a1d; --text: #8f8; --bright: #cfc;
+      --dim: #4a8a4a; --amber: #fc4; --amber-bg: #1a1300;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text);
+                 font: 16px/1.5 ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 16px 48px; }
+    h1 { color: var(--bright); font-size: 28px; letter-spacing: 2px; margin: 0; }
+    h2 { color: var(--bright); font-size: 18px; letter-spacing: 1px; margin: 32px 0 12px; }
+    p { margin: 8px 0; }
+    a { color: var(--bright); }
+    .sub { color: var(--dim); margin-bottom: 24px; }
+    .steam { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .steam .card { border-color: var(--amber); background: var(--amber-bg); }
+    .steam h3 { color: var(--amber); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    .card { border: 1px solid var(--line); background: var(--panel); padding: 16px; }
+    .card.mine { border-color: var(--bright); box-shadow: 0 0 0 1px var(--bright) inset; }
+    .card h3 { margin: 0 0 4px; color: var(--bright); font-size: 17px; }
+    .card .what { color: var(--dim); font-size: 14px; margin-bottom: 12px; }
+    .card .tag { color: var(--bg); background: var(--bright); font-size: 12px; padding: 0 6px;
+                 margin-left: 6px; vertical-align: middle; }
+    .btn { display: block; text-decoration: none; color: var(--bg); background: var(--text);
+           padding: 8px 12px; margin-top: 8px; font-weight: bold; overflow-wrap: anywhere; }
+    .btn:hover, .btn:focus-visible { background: var(--bright); }
+    .btn.alt { background: none; color: var(--text); border: 1px solid var(--line); font-weight: normal; }
+    .btn.alt:hover, .btn.alt:focus-visible { border-color: var(--bright); color: var(--bright); }
+    .steam .btn { background: var(--amber); }
+    small, .note { color: var(--dim); font-size: 14px; }
+    code { color: var(--bright); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>STEALTH MISSION 89</h1>
+  <p class="sub">Download version <span id="version">?</span> for your computer.
+    <a href="index.html">Back to the browser version</a></p>
+
+  <h2>Steam Deck and Steam Frame</h2>
+  <div class="steam">
+    <div class="card">
+      <h3>Steam Deck</h3>
+      <div class="what">Take <b>Linux, Intel/AMD (x86-64)</b>: the AppImage.</div>
+      <a class="btn" data-file="x86_64.AppImage">AppImage, x86-64</a>
+    </div>
+    <div class="card">
+      <h3>Steam Frame</h3>
+      <div class="what">Take <b>Linux, ARM (aarch64)</b>: the AppImage. VR included.</div>
+      <a class="btn" data-file="aarch64.AppImage">AppImage, aarch64</a>
+    </div>
+  </div>
+  <p class="note">In desktop mode, mark the AppImage executable (Properties &gt; Permissions, or
+    <code>chmod +x</code>) and start it, or add it to Steam as a non-Steam game.</p>
+
+  <h2>All platforms</h2>
+  <div class="grid">
+    <div class="card" data-os="windows" data-arch="x86">
+      <h3>Windows, Intel/AMD</h3>
+      <div class="what">x86-64 PCs. VR with an OpenXR runtime (SteamVR...).</div>
+      <a class="btn" data-file="x86_64-pc-windows-msvc.msi">Installer (.msi)</a>
+      <a class="btn alt" data-file="x86_64-pc-windows-msvc.zip">Portable (.zip)</a>
+    </div>
+    <div class="card" data-os="windows" data-arch="arm">
+      <h3>Windows, ARM</h3>
+      <div class="what">Snapdragon and other ARM64 PCs.</div>
+      <a class="btn" data-file="aarch64-pc-windows-msvc.msi">Installer (.msi)</a>
+      <a class="btn alt" data-file="aarch64-pc-windows-msvc.zip">Portable (.zip)</a>
+    </div>
+    <div class="card" data-os="linux" data-arch="x86">
+      <h3>Linux, Intel/AMD</h3>
+      <div class="what">x86-64, also the Steam Deck.</div>
+      <a class="btn" data-file="x86_64.AppImage">AppImage</a>
+      <a class="btn alt" data-file="x86_64-unknown-linux-gnu.tar.gz">Archive (.tar.gz)</a>
+    </div>
+    <div class="card" data-os="linux" data-arch="arm">
+      <h3>Linux, ARM</h3>
+      <div class="what">aarch64, also the Steam Frame.</div>
+      <a class="btn" data-file="aarch64.AppImage">AppImage</a>
+      <a class="btn alt" data-file="aarch64-unknown-linux-gnu.tar.gz">Archive (.tar.gz)</a>
+    </div>
+    <div class="card" data-os="mac" data-arch="arm">
+      <h3>macOS, Apple Silicon</h3>
+      <div class="what">M1 and later. No VR.</div>
+      <a class="btn" data-file="aarch64-apple-darwin.tar.gz">Archive (.tar.gz)</a>
+    </div>
+    <div class="card" data-os="mac" data-arch="x86">
+      <h3>macOS, Intel</h3>
+      <div class="what">Intel Macs. No VR.</div>
+      <a class="btn" data-file="x86_64-apple-darwin.tar.gz">Archive (.tar.gz)</a>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top: 24px">Other versions and the release notes:
+    <a id="release" href="https://github.com/dividebysandwich/stealth-mission-89/releases">the release on GitHub</a>.</p>
+</main>
+<script>
+  const REPO = "https://github.com/dividebysandwich/stealth-mission-89/releases";
+  const version = window.SM89_VERSION;
+  document.getElementById("version").textContent = version || "latest";
+  // Release files are named stealth-mission-89-v<version>-<platform>.<ext> (.github/workflows/build.yml).
+  for (const a of document.querySelectorAll("a[data-file]")) {
+    a.href = version
+      ? `${REPO}/download/v${version}/stealth-mission-89-v${version}-${a.dataset.file}`
+      : `${REPO}/latest`;
+  }
+  if (version) document.getElementById("release").href = `${REPO}/tag/v${version}`;
+
+  // Marks the card that fits this computer.
+  (async () => {
+    const ua = navigator.userAgent;
+    const os = /Windows/.test(ua) ? "windows" : /Mac OS X/.test(ua) ? "mac"
+      : /Linux|X11/.test(ua) && !/Android/.test(ua) ? "linux" : null;
+    if (!os) return;
+    let arch = /aarch64|arm64|ARM/i.test(ua) ? "arm" : "x86";
+    let hinted = false;
+    try {
+      const hints = await navigator.userAgentData?.getHighEntropyValues(["architecture"]);
+      if (hints?.architecture) {
+        arch = hints.architecture === "arm" ? "arm" : "x86";
+        hinted = true;
+      }
+    } catch (e) {}
+    // Browsers on Apple Silicon claim Intel; only the architecture hint (Chromium) can tell.
+    if (os === "mac" && !hinted) return;
+    const card = document.querySelector(`.card[data-os="${os}"][data-arch="${arch}"]`);
+    if (!card) return;
+    card.classList.add("mine");
+    card.querySelector("h3").insertAdjacentHTML("beforeend", '<span class="tag">THIS COMPUTER</span>');
+  })();
+</script>
+</body>
+</html>

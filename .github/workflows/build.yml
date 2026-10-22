@@ -169,6 +169,35 @@ jobs:
             dist/*.AppImage.zsync
           if-no-files-found: error
 
+  # The browser build (docs/web.md): the page, the wasm and the assets, to serve as they are.
+  web:
+    name: wasm32 (browser)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32
+      # Trunk fetches the matching wasm-bindgen and wasm-opt itself.
+      - uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+      - name: Build
+        run: trunk build --release
+      - name: Package
+        id: package
+        run: |
+          name="stealth-mission-89-${GITHUB_REF_NAME//\//-}-web"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: dist/web
+          if-no-files-found: error
+
   # The server list's master server (runs on a Linux host behind a reverse proxy).
   master:
     name: stealth-master

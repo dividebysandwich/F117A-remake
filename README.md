@@ -21,6 +21,8 @@ cargo run --release
 Pick a theater, situation, mission type, weather, opponents and aircraft in the menu. The briefing
 shows the generated mission.
 
+In the browser (WebGPU, single player): `trunk serve --release`, see [docs/web.md](docs/web.md).
+
 <img width="1414" height="705" alt="image" src="https://github.com/user-attachments/assets/44d5b0eb-702a-4281-aa8e-86c82fc969e2" />
 
 Command-line options:

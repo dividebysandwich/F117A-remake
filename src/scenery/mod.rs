@@ -242,7 +242,7 @@ fn build_scenery(
     if !loaded {
         return;
     }
-    let start = std::time::Instant::now();
+    let start = bevy::platform::time::Instant::now();
     let remap = &assets.palette.remaps[REMAP_DETAIL_HIGH].entries;
     let mut ground = ground::Ground::build(
         &theater,

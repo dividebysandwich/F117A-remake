@@ -4,7 +4,6 @@
 //! the user config directory.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::PathBuf;
 
 use bevy::platform::cell::SyncCell;
 use bevy::prelude::*;
@@ -330,7 +329,7 @@ impl InputConfig {
         true
     }
 
-    pub fn save(&self) -> anyhow::Result<PathBuf> {
+    pub fn save(&self) -> anyhow::Result<()> {
         crate::prefs::save_json(FILE, self)
     }
 

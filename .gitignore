@@ -10,3 +10,6 @@ target/
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 __pycache__/
+
+# The browser build (Trunk.toml)
+/dist

@@ -267,10 +267,7 @@ pub struct TownSite {
 
 impl Theater {
     pub fn load(id: &str) -> Theater {
-        let path = crate::asset_path::asset(&format!("theaters/{id}.ron"));
-        let p = path.display();
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{p}: {e}"));
-        ron::from_str(&text).unwrap_or_else(|e| panic!("{p}: {e}"))
+        crate::asset_path::load_ron(&format!("theaters/{id}.ron"))
     }
 
     /// Tile data for the simulation (`findNearestTile`), for theaters not in the exported sim data.

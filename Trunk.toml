@@ -1,0 +1,14 @@
+# The browser build (docs/web.md): `trunk build --release`, `trunk serve --release`.
+[build]
+target = "web/index.html"
+dist = "dist/web"
+
+# The download page's version (web/download.html): the one in Cargo.toml, so the release links
+# follow it.
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", """
+v=$(sed -n 's/^version *= *"\\([^"]*\\)".*/\\1/p' Cargo.toml | head -n1)
+printf 'window.SM89_VERSION = "%s";\\n' "$v" > "$TRUNK_STAGING_DIR/version.js"
+"""]

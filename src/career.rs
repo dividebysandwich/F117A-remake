@@ -2,8 +2,6 @@
 //! tour of duty, a run of sorties in one theater where what the pilot destroys stays destroyed.
 //! Pilots are saved in `<data dir>/stealth-mission-89/pilots/<name>.json`.
 
-use std::path::PathBuf;
-
 use bevy::prelude::*;
 use bevy_egui::egui;
 use serde::{Deserialize, Serialize};
@@ -90,9 +88,8 @@ pub struct Pilot {
 #[derive(Resource, Debug, Clone)]
 pub struct CareerFlight(pub String);
 
-fn pilots_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("stealth-mission-89").join("pilots"))
-}
+/// The store directory of the pilots (`stealth_host::store`).
+const PILOTS: &str = "data/pilots";
 
 /// File key of a pilot name (letters, digits, '-').
 pub fn file_key(name: &str) -> String {
@@ -129,34 +126,29 @@ impl Pilot {
     }
 
     pub fn load(key: &str) -> Option<Self> {
-        let path = pilots_dir()?.join(format!("{key}.json"));
-        serde_json::from_str(&std::fs::read_to_string(&path).ok()?)
-            .map_err(|e| warn!("{}: {e}", path.display()))
+        let file = format!("{PILOTS}/{key}.json");
+        serde_json::from_str(&stealth_host::store::read(&file).ok()??)
+            .map_err(|e| warn!("{file}: {e}"))
             .ok()
     }
 
     pub fn load_all() -> Vec<Self> {
-        let Some(dir) = pilots_dir() else { return Vec::new() };
-        let mut v: Vec<Self> = std::fs::read_dir(dir)
+        let mut v: Vec<Self> = stealth_host::store::list(PILOTS)
             .into_iter()
-            .flatten()
-            .flatten()
-            .filter_map(|e| e.path().file_stem().and_then(|s| s.to_str()).and_then(Self::load))
+            .filter_map(|(name, _)| name.strip_suffix(".json").and_then(Self::load))
             .collect();
         v.sort_by(|a, b| a.name.cmp(&b.name));
         v
     }
 
     pub fn save(&self) {
-        let Some(dir) = pilots_dir() else { return };
         let text = match serde_json::to_string_pretty(self) {
             Ok(t) => t,
             Err(e) => return warn!("saving pilot {}: {e}", self.name),
         };
-        if let Err(e) = std::fs::create_dir_all(&dir)
-            .and_then(|_| std::fs::write(dir.join(format!("{}.json", self.key())), text))
+        if let Err(e) = stealth_host::store::write(&format!("{PILOTS}/{}.json", self.key()), &text)
         {
-            warn!("saving pilot {}: {e}", self.name);
+            warn!("saving pilot {}: {e:#}", self.name);
         }
     }
 

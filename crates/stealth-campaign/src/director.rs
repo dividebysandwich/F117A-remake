@@ -55,20 +55,9 @@ impl CampaignState {
                 let h = ins.helicopters.iter().position(|&t| t == tag).expect("contains");
                 ins.alive[h] = false;
                 let left = ins.alive.iter().filter(|&&a| a).count();
-                let (id, place, side) = (ins.id, ins.place, ins.side);
+                let side = ins.side;
                 if ins.state == InsertionState::Enroute && left == 0 {
-                    ins.state = InsertionState::Failed;
-                    self.settle_insertion(id, InsertionState::Failed);
-                    ev.push(CampaignEvent::InsertionFailed { id, place });
-                    if side == Side::Blue {
-                        self.note(format!("Insertion at {name} failed: all helicopters lost"));
-                        ev.push(CampaignEvent::Message(format!("Insertion at {name} failed")));
-                    } else {
-                        self.note(format!("Enemy insertion at {name} stopped"));
-                        ev.push(CampaignEvent::Message(format!(
-                            "Enemy insertion at {name} stopped!"
-                        )));
-                    }
+                    self.insertion_failed(k, "all helicopters lost", ev);
                 } else if ins.state == InsertionState::Enroute {
                     ev.push(CampaignEvent::Message(if side == Side::Blue {
                         format!("Helicopter lost - {left} left for {name}")
@@ -95,9 +84,34 @@ impl CampaignState {
                 let Some(t) = self.site(target) else { return };
                 if dist(t.x - x, t.y - y) <= CAPTURE_RADIUS {
                     self.capture(k, ev);
+                    return;
+                }
+                // Down somewhere else: that one takes nobody there.
+                let ins = &mut self.insertions[k];
+                let h = ins.helicopters.iter().position(|&t| t == tag).expect("contains");
+                ins.alive[h] = false;
+                if ins.alive.iter().all(|a| !a) {
+                    self.insertion_failed(k, "the helicopters landed short", ev);
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Insertion `k` in the air failed (`why`, for the friendly side's log).
+    fn insertion_failed(&mut self, k: usize, why: &str, ev: &mut Vec<CampaignEvent>) {
+        let ins = &mut self.insertions[k];
+        ins.state = InsertionState::Failed;
+        let (id, place, side) = (ins.id, ins.place, ins.side);
+        let name = self.places[place as usize].name.clone();
+        self.settle_insertion(id, InsertionState::Failed);
+        ev.push(CampaignEvent::InsertionFailed { id, place });
+        if side == Side::Blue {
+            self.note(format!("Insertion at {name} failed: {why}"));
+            ev.push(CampaignEvent::Message(format!("Insertion at {name} failed")));
+        } else {
+            self.note(format!("Enemy insertion at {name} stopped"));
+            ev.push(CampaignEvent::Message(format!("Enemy insertion at {name} stopped!")));
         }
     }
 
@@ -142,9 +156,7 @@ impl CampaignState {
         self.settle_insertion(id, InsertionState::Captured);
         // Aircraft left on a taken airfield.
         if airfield {
-            let f = self.forces_mut(side);
-            f.fighters += CAPTURED_FIGHTERS;
-            f.helicopters += CAPTURED_HELICOPTERS;
+            self.aircraft_back(side, CAPTURED_FIGHTERS, CAPTURED_HELICOPTERS);
         }
         if side == Side::Blue {
             self.note(format!("{name} captured"));
@@ -293,6 +305,20 @@ impl CampaignState {
                         )));
                     }
                     ev.push(CampaignEvent::InsertionLaunched { id, side, from, target, tags });
+                }
+                // Still not there long after: called home.
+                InsertionState::Enroute
+                    if ins.enroute_at.is_some_and(|t| self.clock - t > INSERTION_TIMEOUT) =>
+                {
+                    let tags: Vec<u32> = ins
+                        .helicopters
+                        .iter()
+                        .zip(&ins.alive)
+                        .filter(|(_, a)| **a)
+                        .map(|(&t, _)| t)
+                        .collect();
+                    ev.extend(tags.into_iter().map(|tag| CampaignEvent::Recall { tag }));
+                    self.insertion_failed(k, "the helicopters turned back", ev);
                 }
                 // Friendly airfields scramble their CAP at the enemy's helicopters on their own
                 // (`friendly_cap`).
@@ -764,6 +790,21 @@ impl CampaignState {
         let now = self.clock;
         for k in 0..self.raids.len() {
             let r = &self.raids[k];
+            // Still not there long after: called home, the raid turned back.
+            if r.state == RaidState::Enroute && r.enroute_at.is_some_and(|t| now - t > RAID_TIMEOUT)
+            {
+                let tags: Vec<u32> =
+                    r.aircraft.iter().zip(&r.alive).filter(|(_, a)| **a).map(|(&t, _)| t).collect();
+                let text = format!(
+                    "{} turned back from {}",
+                    raid_name(r),
+                    self.places[r.place as usize].name
+                );
+                ev.extend(tags.into_iter().map(|tag| CampaignEvent::Recall { tag }));
+                self.end_raid(k, RaidState::Repelled);
+                self.note(text);
+                continue;
+            }
             let RaidState::Pending { launch_at } = r.state else { continue };
             let (id, side, target, base, escorted) = (r.id, r.side, r.target, r.from, r.escorted);
             let (drones, what) = (r.drones, raid_name(r));

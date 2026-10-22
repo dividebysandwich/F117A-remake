@@ -39,6 +39,9 @@ pub const CAPTURE_RADIUS: i32 = 0x60;
 /// Insertion helicopters cover this many map units a second on average, take-off and landing
 /// included (~310 km/h; for the intercepts' arrival times).
 pub const HELO_SPEED: f64 = 5.5;
+/// Insertions and raids still in the air this long after take-off are called home.
+pub const INSERTION_TIMEOUT: f64 = 60.0 * 60.0;
+pub const RAID_TIMEOUT: f64 = 60.0 * 60.0;
 /// The campaign sends an insertion on its own when a front place's threat is at most this, and
 /// not more often than this.
 pub const AUTO_INSERT_THREAT: i32 = 0;

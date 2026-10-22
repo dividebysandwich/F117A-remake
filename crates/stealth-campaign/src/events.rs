@@ -71,6 +71,7 @@ impl CampaignState {
             ev.push(CampaignEvent::Message("Enemy AWACS shot down!".into()));
         } else {
             self.note("The enemy AWACS landed");
+            ev.push(CampaignEvent::Message("The enemy AWACS has landed".into()));
         }
     }
 

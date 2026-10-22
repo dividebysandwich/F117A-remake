@@ -135,18 +135,27 @@ impl CampaignState {
     /// A campaign aircraft landed: back on the ground, ready for the next launch.
     pub(crate) fn airframe_home(&mut self, tag: u32) {
         if let Some(&(_, side, _)) = self.patrols.iter().find(|p| p.0 == tag) {
-            self.forces_mut(side).fighters += 1;
+            self.aircraft_back(side, 1, 0);
         } else if self.caps.iter().any(|c| c.tags.contains(&tag)) {
-            self.blue.fighters += 1;
+            self.aircraft_back(Side::Blue, 1, 0);
         } else if let Some(side) =
             self.raids.iter().find(|r| !r.drones && r.aircraft.contains(&tag)).map(|r| r.side)
         {
-            self.forces_mut(side).fighters += 1;
+            self.aircraft_back(side, 1, 0);
         } else if let Some(side) =
             self.insertions.iter().find(|i| i.helicopters.contains(&tag)).map(|i| i.side)
         {
-            self.forces_mut(side).helicopters += 1;
+            self.aircraft_back(side, 0, 1);
         }
+    }
+
+    /// Fighters and helicopters back on a side's ground, no more than it keeps (the players'
+    /// reserve helicopters come back too, but do not swell the pool).
+    pub(crate) fn aircraft_back(&mut self, side: Side, fighters: u32, helicopters: u32) {
+        let (most_f, most_h) = self.aircraft_limits(side);
+        let f = self.forces_mut(side);
+        f.fighters = (f.fighters + fighters).min(most_f.max(f.fighters));
+        f.helicopters = (f.helicopters + helicopters).min(most_h.max(f.helicopters));
     }
 
     /// After loading a save the aircraft that were in the air are back on the ground (the
@@ -154,18 +163,19 @@ impl CampaignState {
     pub(crate) fn ground_everything(&mut self) {
         let patrols: Vec<Side> = self.patrols.iter().map(|p| p.1).collect();
         for side in patrols {
-            self.forces_mut(side).fighters += 1;
+            self.aircraft_back(side, 1, 0);
         }
         let caps: usize = self.caps.iter().map(|c| c.tags.len()).sum();
-        self.blue.fighters += caps as u32;
+        self.aircraft_back(Side::Blue, caps as u32, 0);
+        // Drones are no fighters: the ones in the air are spent.
         let raids: Vec<(Side, u32)> = self
             .raids
             .iter()
-            .filter(|r| r.state == RaidState::Enroute)
+            .filter(|r| r.state == RaidState::Enroute && !r.drones)
             .map(|r| (r.side, r.alive.iter().filter(|&&a| a).count() as u32))
             .collect();
         for (side, n) in raids {
-            self.forces_mut(side).fighters += n;
+            self.aircraft_back(side, n, 0);
         }
         let helos: Vec<(Side, u32)> = self
             .insertions
@@ -174,7 +184,7 @@ impl CampaignState {
             .map(|i| (i.side, i.alive.iter().filter(|&&a| a).count() as u32))
             .collect();
         for (side, n) in helos {
-            self.forces_mut(side).helicopters += n;
+            self.aircraft_back(side, 0, n);
         }
     }
 

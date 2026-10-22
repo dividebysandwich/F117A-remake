@@ -1255,3 +1255,88 @@ fn insertions_go_where_the_board_offers_them() {
     assert!(c.apply(P0, Command::OrderInsertion { place: far }).is_err());
     assert!(c.apply(P0, Command::OrderInsertion { place: front[0] }).is_ok());
 }
+
+/// Drones in the air when the campaign is saved are spent, not fighters back home.
+#[test]
+fn drones_in_the_air_are_no_fighters_after_a_load() {
+    let mut c = campaign("ce", 3);
+    let before = c.red.fighters;
+    let target = c.places[0].members[0];
+    c.raids.push(Raid {
+        id: 9999,
+        side: Side::Red,
+        place: 0,
+        target,
+        from: 0,
+        aircraft: (1..=6).map(|k| 90000 + k).collect(),
+        alive: vec![true; 6],
+        state: RaidState::Enroute,
+        ended: None,
+        escorted: true,
+        drones: true,
+        enroute_at: Some(0.0),
+    });
+    c.after_load();
+    assert_eq!(c.red.fighters, before);
+}
+
+/// An insertion still in the air after an hour is called home; helicopters landing short of
+/// the place take nothing.
+#[test]
+fn insertions_in_the_air_do_not_go_on_for_ever() {
+    let mut c = campaign("ce", 3);
+    let place = c.front(Side::Blue)[0];
+    c.apply(P0, Command::OrderInsertion { place }).unwrap();
+    let ev = c.tick(tuning::INSERTION_LEAD + 1.0, &WorldView::default(), &[]);
+    let tags = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::InsertionLaunched { tags, side: Side::Blue, .. } => Some(tags.clone()),
+            _ => None,
+        })
+        .unwrap();
+    let ev = c.tick(tuning::INSERTION_TIMEOUT + 1.0, &WorldView::default(), &[]);
+    assert_eq!(c.insertions[0].state, InsertionState::Failed);
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::Recall { tag } if *tag == tags[0])));
+    // The next one (the campaign may have ordered it meanwhile) lands short.
+    let _ = c.apply(P0, Command::OrderInsertion { place });
+    let k = c.insertions.iter().rposition(|i| i.place == place).unwrap();
+    assert!(matches!(c.insertions[k].state, InsertionState::Pending { .. }));
+    let ev = c.tick(tuning::INSERTION_LEAD + 1.0, &WorldView::default(), &[]);
+    let tags = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::InsertionLaunched { tags, side: Side::Blue, .. } => Some(tags.clone()),
+            _ => None,
+        })
+        .unwrap();
+    let short: Vec<Report> =
+        tags.iter().map(|&tag| Report::FlightLanded { tag, x: 0, y: 0 }).collect();
+    c.tick(1.0, &WorldView::default(), &short);
+    assert_eq!(c.insertions[k].state, InsertionState::Failed);
+    assert_eq!(c.places[place as usize].owner, Side::Red);
+}
+
+/// A player's insertion flies on the reserve, but the reserve does not swell the pool.
+#[test]
+fn the_reserve_helicopters_do_not_swell_the_pool() {
+    let mut c = campaign("ce", 3);
+    let most = c.aircraft_limits(Side::Blue).1;
+    c.blue.helicopters = most;
+    let place = c.front(Side::Blue)[0];
+    c.apply(P0, Command::OrderInsertion { place }).unwrap();
+    let ev = c.tick(tuning::INSERTION_LEAD + 1.0, &WorldView::default(), &[]);
+    let tags = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::InsertionLaunched { tags, .. } => Some(tags.clone()),
+            _ => None,
+        })
+        .unwrap();
+    // Topped up meanwhile; every helicopter comes home.
+    c.blue.helicopters = most;
+    let home: Vec<Report> =
+        tags.iter().map(|&tag| Report::FlightLanded { tag, x: 0, y: 0 }).collect();
+    c.tick(1.0, &WorldView::default(), &home);
+    assert_eq!(c.blue.helicopters, most);
+}

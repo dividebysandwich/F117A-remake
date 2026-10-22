@@ -16,7 +16,8 @@ trunk build --release        # dist/web: serve the folder as it is
 builds quickly for now (about 2.5 minutes, a 79 MB wasm). Its comment lists the settings for a
 smaller download (42 MB, 13 MB gzipped, about 15 minutes). Any static web server works, as long
 as it serves `.wasm` as `application/wasm`. CI builds the folder in the `web` job of
-`.github/workflows/build.yml` and uploads it as an artifact. Nothing is deployed automatically.
+`.github/workflows/build.yml` and uploads it as one zip (`stealth-mission-89-<ref>-web.zip`).
+Nothing is deployed automatically.
 
 The build also writes gzipped copies (`*.wasm.gz`, `*.js.gz`, from the hook in `Trunk.toml`). With
 nginx, `gzip_static on;` sends them to browsers that take gzip, without compressing the 79 MB wasm

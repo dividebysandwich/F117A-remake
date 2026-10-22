@@ -169,7 +169,8 @@ jobs:
             dist/*.AppImage.zsync
           if-no-files-found: error
 
-  # The browser build (docs/web.md): the page, the wasm and the assets, to serve as they are.
+  # The browser build (docs/web.md): the page, the wasm and the assets, zipped into one folder
+  # to unpack and serve as it is.
   web:
     name: wasm32 (browser)
     runs-on: ubuntu-24.04
@@ -191,11 +192,13 @@ jobs:
         id: package
         run: |
           name="stealth-mission-89-${GITHUB_REF_NAME//\//-}-web"
+          cp -r dist/web "dist/$name"
+          (cd dist && zip -qr "$name.zip" "$name")
           echo "name=$name" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.package.outputs.name }}
-          path: dist/web
+          path: dist/${{ steps.package.outputs.name }}.zip
           if-no-files-found: error
 
   # The server list's master server (runs on a Linux host behind a reverse proxy).

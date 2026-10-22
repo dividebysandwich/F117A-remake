@@ -659,7 +659,7 @@ fn classic_state_golden() {
         0xba589aadaab5186c,
         0x9cf0b5fb867de513,
         0xfd625b48088f0682,
-        0xa7251f2277b66c45,
+        0x06baf572471839c6,
         0x7ee058ea48de94d8,
         0xb1a12c7232ebbd73,
         0x04fe778c03c5d65c,

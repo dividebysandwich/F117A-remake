@@ -39,6 +39,10 @@ const FIGHTER_SEARCH: i32 = 0x1400;
 /// A SAM site engages a helicopter this close at most (8 km): low and slow, it hides in the
 /// terrain and the ground clutter from a far radar.
 const HELO_SAM_REACH: i32 = 0x200;
+/// A SAM site engages a strike aircraft on its low-level run in and out this close at most (16 km),
+/// inside the reach of its anti-radiation missiles (`HARM`): a SEAD flight gets its shot off
+/// at the site it goes for, the sites it passes on the way still shoot.
+const STRIKE_SAM_REACH: i32 = 0x400;
 /// A fighter's gun: muzzle velocity (m/s), reach (m), and how far off its nose (rad) the
 /// target may be for it to fire.
 const FIGHTER_GUN_V0: f64 = 1000.0;
@@ -79,8 +83,14 @@ const DRONE_ALT: i32 = 300;
 const AWACS_HOME: i32 = 0x100;
 /// The attack drone's aircraft type.
 const GERAN: usize = 29;
-/// A campaign strike aircraft this close to its target (map units, ~750 m) bombs it.
-const BOMB_RELEASE: i32 = 0x30;
+/// What a campaign strike aircraft fires at its target and from how far (map units): a SAM
+/// site's radar gets an anti-radiation missile from its lock range (20 km), anything else a
+/// salvo of air-to-ground rockets (the AGM-65's flight, ~5 km).
+const HARM: i32 = 24;
+const ROCKETS: i32 = 27;
+const ROCKET_RELEASE: i32 = 0x140;
+/// The chance (per mille) a strike aircraft's weapon that reaches its target destroys it.
+const GROUND_PK: i32 = 850;
 /// Altitude (world units, ~590 m) a strike aircraft flies in at.
 pub(crate) const STRIKE_ALT: i32 = 1200;
 
@@ -91,7 +101,7 @@ pub enum Role {
     Insertion,
     /// Fighter: patrols around its goal, goes for the other side's aircraft.
     Fighter,
-    /// Strike aircraft: flies low to its goal, bombs the object there and flies home (an
+    /// Strike aircraft: flies low to its goal, fires at the object there and flies home (an
     /// attack drone dives into it).
     Strike,
     /// AWACS: orbits its goal and fights nobody.
@@ -131,7 +141,7 @@ pub struct CampaignFlight {
     /// The pilot who shot it down.
     #[serde(default)]
     pub killed_by: Option<u8>,
-    /// Strike aircraft: the object it bombs (None once its bombs are gone).
+    /// Strike aircraft: the object it attacks (None once it has fired).
     #[serde(default)]
     pub strike: Option<i32>,
     /// An attack drone: it is destroyed with its target.
@@ -152,6 +162,9 @@ pub struct AiMissile {
     pub turn: f64,
     pub ttl: i32,
     pub blue: bool,
+    /// A strike aircraft's weapon: the object it flies at (`target` is then its launcher).
+    #[serde(default)]
+    pub ground: Option<usize>,
 }
 
 /// A tracer of a gun firing at an AI aircraft.
@@ -1029,11 +1042,21 @@ impl Sim {
         }
     }
 
-    /// Strike aircraft over their target bomb it and turn for home; a recalled AWACS over
-    /// its base lands. (Attack drones hit theirs in `drone_impact`.)
+    /// Strike aircraft in reach of their target fire at it and turn for home; a recalled
+    /// AWACS over its base lands. (Attack drones hit theirs in `drone_impact`.)
     fn campaign_bombs(&mut self) {
+        // Per object: the weapon a strike aircraft fires at it, and from how far.
+        let weapon = |sim: &Sim, t: usize| {
+            let o = sim.objects.get(t).copied().unwrap_or_default();
+            if o.unit_type != 0 && o.flags & oflags::AIRFIELD == 0 {
+                (HARM, (sim.missile(HARM).lock_range as i32) << 6)
+            } else {
+                (ROCKETS, ROCKET_RELEASE)
+            }
+        };
+        let weapons: Vec<(i32, i32)> = (0..self.objects.len()).map(|t| weapon(self, t)).collect();
         let c = self.campaign.as_mut().expect("campaign");
-        let mut hits = Vec::new();
+        let mut shots = Vec::new();
         for (i, slot) in c.flights.iter_mut().enumerate() {
             let Some(f) = slot.as_mut() else { continue };
             let u = &mut self.flights[i];
@@ -1050,15 +1073,22 @@ impl Sim {
             if u.flags & fflags::DESTROYED != 0 || u.flags & fflags::AIRBORNE == 0 {
                 continue;
             }
-            if approx(u.x - f.goal.0, u.y - f.goal.1) < BOMB_RELEASE {
+            let (spec, release) =
+                weapons.get(target as usize).copied().unwrap_or((ROCKETS, ROCKET_RELEASE));
+            if approx(u.x - f.goal.0, u.y - f.goal.1) < release {
                 f.strike = None;
                 u.flags |= fflags::RTB;
                 u.wp = f.home;
-                hits.push(target);
+                shots.push((i, spec, target as usize, f.blue));
             }
         }
-        for t in hits {
-            self.remove_object(t as usize);
+        for (i, spec, target, blue) in shots {
+            let u = self.flights[i];
+            let mut m = self.ai_missile(spec, flight_metres(&u), direction(u.heading, 0), i, blue);
+            m.ground = Some(target);
+            if let Some(c) = self.campaign.as_mut() {
+                c.missiles.push(m);
+            }
         }
     }
 
@@ -1068,19 +1098,29 @@ impl Sim {
         let sides: Vec<Option<bool>> = (0..self.flights.len()).map(|i| self.ai_side(i)).collect();
         let pos: Vec<[f64; 3]> = self.flights.iter().map(flight_metres).collect();
         let xy: Vec<(i32, i32)> = self.flights.iter().map(|u| (u.x, u.y)).collect();
-        let helo: Vec<bool> = self
-            .flights
-            .iter()
-            .map(|u| self.aircraft_kind(u.spec) == AircraftKind::Helicopter)
+        // How close a SAM site engages each low flyer: helicopters, strike aircraft in and out.
+        let low: Vec<Option<i32>> = (0..self.flights.len())
+            .map(|i| {
+                if self.aircraft_kind(self.flights[i].spec) == AircraftKind::Helicopter {
+                    Some(HELO_SAM_REACH)
+                } else if self
+                    .campaign_flight(i)
+                    .is_some_and(|f| f.role == Role::Strike && !f.kamikaze)
+                {
+                    Some(STRIKE_SAM_REACH)
+                } else {
+                    None
+                }
+            })
             .collect();
         let Some(mut c) = self.campaign.take() else { return };
         let mut rng = c.rng;
-        // The nearest aircraft of a side in reach (`helo_reach` for helicopters).
-        let near = |x: i32, y: i32, blue: bool, reach: i32, helo_reach: i32, min_alt: f64| {
+        // The nearest aircraft of a side in reach (`low` for a SAM radar's low flyers).
+        let near = |x: i32, y: i32, blue: bool, reach: i32, sam: bool, min_alt: f64| {
             (0..sides.len())
                 .filter(|&j| sides[j] == Some(blue) && pos[j][2] > min_alt)
                 .map(|j| (j, approx(xy[j].0 - x, xy[j].1 - y)))
-                .filter(|&(j, d)| d < if helo[j] { helo_reach } else { reach })
+                .filter(|&(j, d)| d < low[j].filter(|_| sam).map_or(reach, |l| reach.min(l)))
                 .min_by_key(|&(_, d)| d)
         };
         let mut launches: Vec<AiMissile> = Vec::new();
@@ -1097,7 +1137,7 @@ impl Sim {
             let spec = self.site_missile(o.unit_type);
             let lock = (self.missile(spec).lock_range as i32) << 6;
             let reach = lock * if c.intel[i] { INTEL_DETECTION } else { 10 } / 10;
-            let Some((j, d)) = near(o.x, o.y, true, reach, reach.min(HELO_SAM_REACH), 15.0) else {
+            let Some((j, d)) = near(o.x, o.y, true, reach, true, 15.0) else {
                 continue;
             };
             if d > horizon(pos[j][2]) || rng.random(100) > 40 + 15 * self.diff {
@@ -1125,7 +1165,7 @@ impl Sim {
                 continue;
             }
             if u.kind == AaaKind::PatriotRadar {
-                let track = near(u.x, u.y, !blue, PATRIOT_REACH, PATRIOT_REACH, PATRIOT_FLOOR)
+                let track = near(u.x, u.y, !blue, PATRIOT_REACH, true, PATRIOT_FLOOR)
                     .filter(|&(j, d)| d <= horizon(pos[j][2]));
                 c.aaa_target[k] = track.map(|t| t.0);
                 let a = &mut self.aaa[k];
@@ -1138,7 +1178,7 @@ impl Sim {
             }
             let (_, reach, ceiling) = gun_envelope(u.kind);
             let reach = (reach / M_PER_MAP) as i32;
-            let Some((j, _)) = near(u.x, u.y, !blue, reach, reach, 15.0) else {
+            let Some((j, _)) = near(u.x, u.y, !blue, reach, false, 15.0) else {
                 continue;
             };
             if pos[j][2] > ceiling {
@@ -1274,6 +1314,7 @@ impl Sim {
             turn,
             ttl: ((range_m / speed + 3.0) * self.fs as f64) as i32,
             blue,
+            ground: None,
         }
     }
 
@@ -1404,8 +1445,31 @@ impl Sim {
         let mut rng = c.rng;
         let mut kills: Vec<(usize, i32, i32, i32)> = Vec::new();
         let mut pops: Vec<(i32, i32, i32)> = Vec::new();
+        let mut ground_hits = Vec::new();
         c.missiles.retain_mut(|m| {
             m.ttl -= 1;
+            // A strike aircraft's weapon flies at its object and hits it there.
+            if let Some(g) = m.ground {
+                let o = self.objects.get(g).copied().unwrap_or_default();
+                let at = [o.x as f64 * M_PER_MAP, (0x8000 - o.y) as f64 * M_PER_MAP, 5.0];
+                let v = len(m.vel).max(1.0);
+                let speed = (v + m.speed * dt * 1.5).min(m.speed);
+                let to = sub(at, m.pos);
+                let k = (m.turn * dt * 4.0).min(1.0);
+                let dir = add(mul(m.vel, (1.0 - k) / v), mul(to, k / len(to).max(1e-6)));
+                let dir = mul(dir, 1.0 / len(dir).max(1e-9));
+                let step = mul(dir, speed * dt);
+                if crate::aaa::closest(sub(m.pos, at), step) < FUSE {
+                    pops.push(metres_map(at));
+                    if rng.random(1000) < GROUND_PK {
+                        ground_hits.push(g);
+                    }
+                    return false;
+                }
+                m.vel = mul(dir, speed);
+                m.pos = add(m.pos, step);
+                return m.ttl > 0 && m.pos[2] > 0.0;
+            }
             let t = self.flights.get(m.target).copied().unwrap_or_default();
             let alive = t.flags & fflags::DESTROYED == 0 && t.flags & fflags::AIRBORNE != 0;
             // Accelerate to speed, turn towards the target (pure pursuit), else fly on.
@@ -1442,6 +1506,9 @@ impl Sim {
         }
         for (j, ..) in kills {
             self.ai_kill(j);
+        }
+        for g in ground_hits {
+            self.remove_object(g);
         }
     }
 

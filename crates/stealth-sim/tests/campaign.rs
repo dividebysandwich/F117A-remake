@@ -614,6 +614,47 @@ fn an_enemy_strike_bombs_the_airfield_and_flies_home() {
 }
 
 #[test]
+fn a_sead_strike_gets_its_missile_off_at_a_live_sam_site() {
+    let (_, mut sim) = campaign();
+    sim.aaa_units_mut().clear();
+    let from = find(&sim, 0x401, None);
+    let b = sim.objects()[from];
+    // The enemy SAM site nearest the base keeps its radar; every other one is off.
+    let sam = (3..sim.objects().len())
+        .filter(|&i| {
+            let o = sim.objects()[i];
+            o.flags & 0xF0F == 0 && o.unit_type != 0 && sim.site_lock_range(o.unit_type) > 0
+        })
+        .min_by_key(|&i| {
+            let o = sim.objects()[i];
+            (o.x - b.x).abs().max((o.y - b.y).abs())
+        })
+        .expect("a SAM site");
+    for (i, o) in sim.objects_mut().iter_mut().enumerate() {
+        if i != sam {
+            o.unit_type = 0;
+        }
+    }
+    let i = sim.spawn_striker(from, sam, 56, true);
+    let (mut hit, mut lost) = (false, false);
+    for _ in 0..60 * 60 {
+        for e in run(&mut sim, &idle(), 1) {
+            match e {
+                SimEvent::GroundDestroyed { object, by: None, .. } if object == sam => hit = true,
+                SimEvent::CampaignFlightDestroyed { tag: 56, .. } => lost = true,
+                _ => {}
+            }
+        }
+        if hit {
+            break;
+        }
+    }
+    assert!(hit, "the SAM site was not hit");
+    assert!(!lost, "the SAM site shot the strike aircraft down");
+    assert!(sim.campaign_flight(i).is_some_and(|f| f.strike.is_none()), "it fired");
+}
+
+#[test]
 fn an_enemy_helicopter_lands_at_a_friendly_place() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);

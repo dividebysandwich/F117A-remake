@@ -11,8 +11,11 @@ impl Sim {
         let m = self.proj[s];
         let (r, aim, off) = seeker_geometry(&m, tx, ty);
         self.acq_aim = aim;
-        if off > 0x1000 && cls != 3 {
-            if off > 0x6000 && s < 8 && m.speed < r {
+        let overshot = off > 0x6000 && s < 8 && m.speed < r;
+        // Fixed: class 3 (track-via-missile) sees all around, and classic kept it circling a
+        // target it had overshot; now it is spent like the others.
+        if off > 0x1000 && (cls != 3 || (overshot && self.opts.fix_classic_bugs)) {
+            if overshot {
                 self.proj[s].ttl = 0;
             }
             return false;
@@ -147,6 +150,10 @@ impl Sim {
                 || (self.alarm_recent() > self.alarm_timer && spec != 0x21);
             if jam && ((self.diff << 8) + 0x180 < best || cls == 1 || cls == -1) {
                 aim = self.proj[s].heading;
+                locked = false;
+            }
+            // A pilot who ejected is no target: the missile flies on past his chute.
+            if self.pl.eject != 0 {
                 locked = false;
             }
             for k in 1..4 {
@@ -339,8 +346,13 @@ impl Sim {
             };
             // The fuse goes off near the player whatever the seeker sees, and at the decoy it
             // steers for (harmlessly; a missile that cannot reach it would circle it).
-            let fuse =
-                if s < 8 && !self.decoy_active() { Some(self.player_target()) } else { target };
+            let fuse = if s < 8 && self.pl.eject != 0 {
+                None
+            } else if s < 8 && !self.decoy_active() {
+                Some(self.player_target())
+            } else {
+                target
+            };
             let fused = self.fly_guided(s, target.filter(|_| locked && aim != 0), fuse);
             if self.proj[s].ttl == 0 {
                 return;

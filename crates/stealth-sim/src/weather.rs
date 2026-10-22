@@ -36,11 +36,13 @@ impl Sim {
         self.sees((self.pl.p.mx, self.pl.p.my, self.pl.p.view_z), (x, y, alt))
     }
 
-    /// An optical-seeker missile is only launched at a player its launcher can see.
+    /// An optical-seeker missile is only launched at a player its launcher can see (and none at
+    /// one who ejected).
     pub(crate) fn may_launch(&self, spec: i32, from: (i32, i32, i32)) -> bool {
         let cls = self.missile(spec).class as i32;
-        !optical_seeker(spec, cls)
-            || self.sees(from, (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z))
+        self.pl.eject == 0
+            && (!optical_seeker(spec, cls)
+                || self.sees(from, (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z)))
     }
 
     /// Storms halve visual ranges.

@@ -192,6 +192,12 @@ pub struct MissileFlight {
     pub smoke: i32,
     /// Climb angle (BAM) of a lofted SAM, climbing before it steers for the target; 0 = none.
     pub loft: i32,
+    /// The seeker has had its target in view, and has since lost it out of view (the missile
+    /// flies on unguided).
+    #[serde(default)]
+    pub seen: bool,
+    #[serde(default)]
+    pub lost: bool,
 }
 
 /// A falling bomb's position (fine units, [`ROUND_FINE`] per world unit: x east, y south like

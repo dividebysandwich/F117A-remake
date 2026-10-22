@@ -92,6 +92,9 @@ fn straight_secs(spec: i32) -> f64 {
 
 /// Navigation constant.
 const PN_GAIN: f64 = 4.0;
+/// Cosine of the seeker's field of view off the flight path (60°): a target outside it (one
+/// overshot, behind or passed above or below) is lost and the missile flies on unguided.
+const GIMBAL_COS: f64 = 0.5;
 /// Loft: turn rate toward the climb angle (1/s), the widest loft angle (radians), where it
 /// starts (share of the lock range) and the share of the time to go that turning down to the
 /// target may take before the missile pushes over.
@@ -301,6 +304,8 @@ pub(crate) fn start_flight(pm: &mut Projectile, pos: V3, vel: V3, fs: i32) {
         t: 0,
         smoke: profile(pm.spec).map_or(0, |p| (p.smoke * fs as f64).min(1e6) as i32),
         loft: 0,
+        seen: false,
+        lost: false,
     });
     pm.ttl = MAX_SECS * fs;
     pm.roll = 0;
@@ -344,6 +349,15 @@ pub(crate) fn flight_step(
     let a_max = prof.g * GRAVITY * lift;
     let up = [0.0, 0.0, 1.0];
     let mut cmd = mul(up, GRAVITY);
+    // The seeker, once it has had the target in view, loses it for good when it leaves the view
+    // (until then, turning over from a vertical launch or climbing a loft, it is steered to it).
+    let guide = guide.filter(|tg| {
+        let r = sub(tg.p, p);
+        let in_view = dot(r, vh) > GIMBAL_COS * len(r);
+        f.lost |= f.seen && !in_view && f.loft == 0;
+        f.seen |= in_view;
+        !f.lost
+    });
     if t >= straight_secs(m.spec)
         && let Some(tg) = guide
     {
@@ -441,6 +455,7 @@ mod tests {
 
     use super::*;
     use crate::SimData;
+    use crate::math::abs16;
     use stealth_mission::{GameData, MissionKind, MissionSettings, Seed};
 
     fn new_sim() -> Sim {
@@ -582,15 +597,38 @@ mod tests {
         missile(&mut sim, 8, 23, [0.0, 0.0, 40000.0], [0.0, -900.0, 0.0]);
         sim.proj[8].flight.as_mut().unwrap().t = 15 * 30;
         let mut h = 0;
-        fly(&mut sim, 8, [20000.0, -5000.0, 40000.0], [0.0; 3], 2.0, |m, _| h = m.heading);
+        fly(&mut sim, 8, [20000.0, -20000.0, 40000.0], [0.0; 3], 2.0, |m, _| h = m.heading);
         let fast = {
             let mut sim = new_sim();
             missile(&mut sim, 8, 23, [0.0, 0.0, 10000.0], [0.0, -3500.0, 0.0]);
             sim.proj[8].flight.as_mut().unwrap().t = 15 * 30;
             let mut h = 0;
-            fly(&mut sim, 8, [20000.0, -5000.0, 10000.0], [0.0; 3], 2.0, |m, _| h = m.heading);
+            fly(&mut sim, 8, [20000.0, -20000.0, 10000.0], [0.0; 3], 2.0, |m, _| h = m.heading);
             h
         };
         assert!(s16(h) < s16(fast) / 3, "slow {h} fast {fast}");
+    }
+
+    #[test]
+    fn an_overshot_target_is_lost() {
+        let mut sim = new_sim();
+        // An AIM-9 passing 3000 wu over a target just ahead, too steep to turn down to: it flies
+        // on instead of looping back.
+        missile(&mut sim, 8, 23, [0.0, 0.0, 12000.0], [0.0, -3500.0, 0.0]);
+        sim.proj[8].flight.as_mut().unwrap().t = 15 * 30;
+        let mut h = 0;
+        let hit = fly(&mut sim, 8, [0.0, -1000.0, 9000.0], [0.0; 3], 10.0, |m, _| {
+            h = h.max(abs16(s16(m.heading)));
+        });
+        assert!(hit.is_none() && h < 0x400, "turned back: {h:#x}");
+    }
+
+    #[test]
+    fn a_vertical_launch_turns_over_to_a_low_target() {
+        let mut sim = new_sim();
+        // An SA-10 off its vertical launcher at a target low and 15 km out.
+        missile(&mut sim, 0, 4, [0.0, 0.0, 5.0], [0.0, 0.0, 150.0]);
+        let hit = fly(&mut sim, 0, [0.0, -50_000.0, 500.0], [0.0; 3], 60.0, |_, _| {});
+        assert!(hit.is_some(), "missed");
     }
 }

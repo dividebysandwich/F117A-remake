@@ -13,6 +13,7 @@ fn setup(code: &str) -> CampaignSetup {
         seed: 1234,
         sky_ratio: 24.0,
         start_hour: 8.0,
+        dynamic_weather: true,
     }
 }
 

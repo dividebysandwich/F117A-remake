@@ -35,6 +35,8 @@ pub struct Config {
     pub seed: Option<u32>,
     pub sky_ratio: f32,
     pub start_hour: f32,
+    /// `--clear-sky`: a new campaign without weather.
+    pub clear_sky: bool,
     pub rules: Rules,
     pub save: PathBuf,
     /// Simulation frames between the moving world's messages (`--send-rate`, a second).
@@ -47,7 +49,7 @@ pub struct Config {
 
 impl Config {
     /// From the command line: `--name`, `--port`, `--max-players`, `--theater`, `--roe`,
-    /// `--opponents`, `--seed`, `--sky-ratio`, `--start-hour`, `--save <file>` and the rules
+    /// `--opponents`, `--seed`, `--sky-ratio`, `--start-hour`, `--clear-sky`, `--save <file>` and the rules
     /// `--realistic-damage`, `--realistic-guidance`, `--no-crashes`, `--continuous-time`,
     /// `--realistic-weapons`, `--friendly-fire`.
     pub fn from_args(args: &[String]) -> Result<Self> {
@@ -80,6 +82,7 @@ impl Config {
             seed: get("--seed").map(|s| s.parse()).transpose().ok().flatten(),
             sky_ratio: num(get("--sky-ratio"), "--sky-ratio", 24.0f32)?.max(0.0),
             start_hour: num(get("--start-hour"), "--start-hour", 8.0f32)?.rem_euclid(24.0),
+            clear_sky: has("--clear-sky"),
             rules: Rules {
                 realistic_damage: has("--realistic-damage"),
                 realistic_guidance: has("--realistic-guidance"),
@@ -150,6 +153,7 @@ fn campaign(cfg: &Config, data: &stealth_mission::GameData, con: &mut Console) -
                 }),
                 sky_ratio: cfg.sky_ratio,
                 start_hour: cfg.start_hour,
+                dynamic_weather: !cfg.clear_sky,
             };
             con.say(format!("a new campaign in {}", code.to_ascii_uppercase()));
             let host = Host::new(setup, data, cfg.rules)?;

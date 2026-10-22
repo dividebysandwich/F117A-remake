@@ -367,6 +367,13 @@ pub struct CampaignSetup {
     pub sky_ratio: f32,
     /// Hour of the day at the start.
     pub start_hour: f32,
+    /// The weather changes during the campaign (else a clear sky).
+    #[serde(default = "yes")]
+    pub dynamic_weather: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

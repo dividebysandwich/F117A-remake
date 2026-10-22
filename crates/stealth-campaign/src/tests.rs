@@ -17,6 +17,7 @@ fn campaign(code: &str, index: usize) -> CampaignState {
         seed: 1234,
         sky_ratio: 24.0,
         start_hour: 8.0,
+        dynamic_weather: true,
     };
     CampaignState::new(setup, &t.world)
 }

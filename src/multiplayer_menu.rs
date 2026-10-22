@@ -41,6 +41,8 @@ pub struct MultiplayerWindow {
     saves: Vec<(String, String, f64)>,
     sky_ratio: f32,
     start_hour: f32,
+    /// No weather: the original's clear sky.
+    clear_sky: bool,
     /// `--host`: host a new campaign at once.
     auto_host: bool,
     /// The public server list: as last fetched, being fetched, or why not.
@@ -366,6 +368,14 @@ fn multiplayer_window(
                                 }
                             }
                         });
+                        ui.horizontal(|ui| {
+                            ui.label("Weather:");
+                            for (clear, label) in [(false, "changing"), (true, "clear sky")] {
+                                if ui.selectable_label(w.clear_sky == clear, label).clicked() {
+                                    w.clear_sky = clear;
+                                }
+                            }
+                        });
                         if ui.add_enabled(named, big_button("HOST NEW")).clicked() || auto_host {
                             let (code, _) = THEATERS[state.theater.min(THEATERS.len() - 1)];
                             let secs = std::time::SystemTime::now()
@@ -379,6 +389,7 @@ fn multiplayer_window(
                                 seed: rand::random(),
                                 sky_ratio: w.sky_ratio,
                                 start_hour: w.start_hour,
+                                dynamic_weather: !w.clear_sky,
                             };
                             let rules = host_rules(&settings, &state);
                             host = Some(

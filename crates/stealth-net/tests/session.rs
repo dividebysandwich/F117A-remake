@@ -25,6 +25,7 @@ fn world() -> World {
         seed: 99,
         sky_ratio: 24.0,
         start_hour: 8.0,
+        dynamic_weather: true,
     };
     let data = theater::game_data().unwrap();
     let sim_data = theater::sim_data(3, "ce").unwrap();

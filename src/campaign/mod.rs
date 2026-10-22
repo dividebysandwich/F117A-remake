@@ -396,6 +396,7 @@ pub fn from_args(app: &mut App) {
                 seed: get("--seed").and_then(|s| s.parse().ok()).unwrap_or_else(rand::random),
                 sky_ratio: get("--sky-ratio").and_then(|s| s.parse().ok()).unwrap_or(24.0),
                 start_hour: get("--start-hour").and_then(|s| s.parse().ok()).unwrap_or(8.0),
+                dynamic_weather: !args.iter().any(|a| a == "--clear-sky"),
             };
             ActiveCampaign::new(name, setup, &data, rules)
         }

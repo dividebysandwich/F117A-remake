@@ -18,6 +18,8 @@ pub struct CampaignWindow {
     /// Sky speed: game time per real time.
     sky_ratio: f32,
     start_hour: f32,
+    /// No weather: the original's clear sky.
+    clear_sky: bool,
     error: Option<String>,
     /// The save whose DELETE was clicked: (name, label), awaiting confirmation.
     confirm_delete: Option<(String, String)>,
@@ -30,6 +32,7 @@ impl Default for CampaignWindow {
             saves: Vec::new(),
             sky_ratio: 24.0,
             start_hour: 8.0,
+            clear_sky: false,
             error: None,
             confirm_delete: None,
         }
@@ -144,6 +147,14 @@ pub fn campaign_window(
                         .custom_formatter(|v, _| format!("{v:02.0}:00")),
                 );
             });
+            ui.horizontal(|ui| {
+                ui.label("Weather:");
+                for (clear, label) in [(false, "changing"), (true, "clear sky")] {
+                    if ui.selectable_label(w.clear_sky == clear, label).clicked() {
+                        w.clear_sky = clear;
+                    }
+                }
+            });
             if ui.add(big_button("START")).clicked() {
                 let secs = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -156,6 +167,7 @@ pub fn campaign_window(
                     seed: rand::random(),
                     sky_ratio: w.sky_ratio,
                     start_hour: w.start_hour,
+                    dynamic_weather: !w.clear_sky,
                 };
                 let rules = super::rules_of(&settings, state.realistic(crate::aircraft::AircraftKind::F117));
                 match ActiveCampaign::new(format!("{code}-{secs}"), setup, &data, rules) {

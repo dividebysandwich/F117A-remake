@@ -22,6 +22,7 @@ mod missions;
 pub mod rng;
 mod state;
 pub mod tuning;
+pub mod weather;
 
 use serde::{Deserialize, Serialize};
 

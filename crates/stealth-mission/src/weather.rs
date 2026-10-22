@@ -67,6 +67,11 @@ const ODDS: [[u8; 5]; 10] = [
     [20, 25, 25, 22, 8],  // Ukraine
 ];
 
+/// Odds (percent) of [`Sky::ALL`] in a theater.
+pub fn odds(theater: usize) -> [u8; 5] {
+    ODDS[theater.min(ODDS.len() - 1)]
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CloudKind {
     Cumulus,
@@ -167,7 +172,7 @@ impl Weather {
     /// its main layer (stratus for overcast and storm, cumulus otherwise).
     pub fn roll(holdrand: u32, theater: usize, pick: Option<Sky>, cover: Option<u8>) -> Self {
         let mut r = MscRand::new(holdrand ^ 0x5745_4154);
-        let odds = ODDS[theater.min(ODDS.len() - 1)];
+        let odds = odds(theater);
         let mut n = r.r(100);
         let rolled = Sky::ALL
             .into_iter()
@@ -255,7 +260,8 @@ impl Weather {
             .collect();
         v.sort_by(f32::total_cmp);
         std::array::from_fn(|cover| match cover {
-            0 => u16::MAX,
+            // Just above the field's highest sample (nothing covered).
+            0 => ((v[v.len() - 1] * 65535.0) as u16).saturating_add(64),
             100 => 0,
             _ => (v[((100 - cover) * v.len() / 100).min(v.len() - 1)] * 65535.0) as u16,
         })

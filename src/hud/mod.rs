@@ -210,20 +210,24 @@ pub struct HudCues {
     pub bomb: Option<BombCue>,
     /// A recon target still to photograph is locked.
     pub recon: Option<ReconCue>,
-    /// Air-to-ground missile selected in AG with a ground lock: its launch zone.
+    /// Missile selected with a target locked (AG: air-to-ground, AA: air-to-air): its launch
+    /// zone.
     pub launch_zone: Option<LaunchZoneCue>,
 }
 
-/// Dynamic launch zone of the selected air-to-ground missile against the ground lock
+/// Dynamic launch zone of the selected missile against the locked target
 /// (`stealth_sim::dlz`): the ground ranges (km) from which a missile fired now reaches it.
+/// Drawn F-16 style: a line from the shortest range up to the longest, the no-escape part a
+/// box on it, and the target range caret beside it (above the line out of range, the line
+/// scaled down to make room).
 #[derive(Debug, Clone, Copy)]
 pub struct LaunchZoneCue {
     pub range_km: f32,
-    /// The longest range the seeker locks on from: the scale's end.
-    pub scale_km: f32,
     /// Shortest and longest range; None when it reaches the target from none.
     pub zone_km: Option<(f32, f32)>,
-    /// In the zone with the lock: fire.
+    /// Air-to-air: the longest range a target turning tail at the launch cannot escape from.
+    pub no_escape_km: Option<f32>,
+    /// In the zone (AG: with the lock): fire.
     pub shoot: bool,
     /// Inside the shortest range.
     pub too_close: bool,

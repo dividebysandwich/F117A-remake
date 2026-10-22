@@ -1488,3 +1488,91 @@ fn launch_zone_predicts_maverick_hits() {
         assert!(hits > 5, "guided {guided}: {hits} hits");
     }
 }
+
+/// Air-to-air store `w` fired from 5000 ft at a slow An-72 `range` map units northeast, flying
+/// straight on `heading` (classic guidance does not steer for a bearing of exactly north): the
+/// launch zone at the shot and whether it shot the An-72 down.
+fn air_shot(guided: bool, w: i32, range: i32, heading: i32) -> (dlz::LaunchZone, bool) {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let opts = SimOptions { realistic_guidance: guided, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    sim.set_training(true);
+    sim.set_loadout(&[(w, 2)]);
+    let diag = (range as f64 / std::f64::consts::SQRT_2).round() as i32;
+    let (x, y) = (mx + diag, my - diag);
+    // It flies for its waypoint far ahead, at 1000 ft above the player.
+    let wp = 6;
+    {
+        let ahead = if heading == 0x2000 { 1 } else { -1 } * 1000;
+        let o = &mut sim.objects_mut()[wp];
+        (o.x, o.y) = (x + ahead, y - ahead);
+    }
+    {
+        let u = &mut sim.flights_mut()[1];
+        *u = FlightUnit {
+            x,
+            y,
+            alt: 6000,
+            heading,
+            spec: 9,
+            flags: 0x43,
+            speed: 200,
+            timer: 30000,
+            wp: wp as i32,
+            ..Default::default()
+        };
+        u.wx = u.x << 5;
+        u.wy = u.y << 5;
+    }
+    let mut p = player_at(mx, my, 5000, 0x2000, 300);
+    p.hud_mode = HudMode::Air;
+    p.cmd.toggle_bay = true;
+    p.cmd.lock_unit = Some(1);
+    for _ in 0..6 {
+        sim.step(&p, 15);
+        p.cmd = Commands::default();
+    }
+    let zone = sim.launch_zone().expect("launch zone");
+    p.cmd.fire = true;
+    let mut killed = false;
+    for _ in 0..15 * 120 {
+        for e in sim.step(&p, 15) {
+            killed |= matches!(e, SimEvent::AircraftDestroyed { unit: 1, .. });
+        }
+        p.cmd = Commands::default();
+        if killed {
+            break;
+        }
+    }
+    (zone, killed)
+}
+
+#[test]
+fn launch_zone_predicts_air_to_air_hits() {
+    for guided in [false, true] {
+        for w in [0, 1] {
+            // Tail chase and head-on.
+            for heading in [0x2000, 0xA000u16 as i16 as i32] {
+                let mut hits = 0;
+                for k in 1..=30 {
+                    let range = k * 100;
+                    let (z, hit) = air_shot(guided, w, range, heading);
+                    let (lo, hi) = z.zone.unwrap_or((i32::MAX, i32::MAX));
+                    let edge = |e: i32| (z.range - e).abs() < 40 + e / 20;
+                    assert!(
+                        z.in_zone() == hit || edge(lo) || edge(hi),
+                        "guided {guided} weapon {w} heading {heading:#x} range {range}: {z:?} \
+                         hit {hit}"
+                    );
+                    if let Some(ne) = z.no_escape {
+                        assert!(ne <= hi, "{z:?}");
+                    }
+                    hits += hit as i32;
+                }
+                assert!(hits > 3, "guided {guided} weapon {w} heading {heading:#x}: {hits}");
+            }
+        }
+    }
+}

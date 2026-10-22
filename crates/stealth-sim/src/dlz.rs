@@ -1,8 +1,12 @@
-//! Dynamic launch zone of the selected air-to-ground missile against the ground lock: the
-//! ground ranges from which a missile fired now, with the aircraft's speed, altitude, heading
-//! and pitch, reaches the target. Found by flying the missile out with the simulation's own
-//! flight ([`Sim::classic_step`] or [`guidance::flight_step`]) at targets along the line to the
-//! locked one, and capped by the range the seeker locks on from at launch (the LOCK oval).
+//! Dynamic launch zones of the selected missile: the ranges from which a missile fired now,
+//! with the aircraft's speed, altitude, heading and pitch, reaches the locked target. Found by
+//! flying the missile out with the simulation's own flight ([`Sim::classic_step`] or
+//! [`guidance::flight_step`]) at targets along the line to the locked one.
+//!
+//! - Air-to-ground missiles against the ground lock (GND): capped by the range the seeker
+//!   locks on from at launch (the LOCK oval); fired without that lock the missile flies blind.
+//! - Air-to-air missiles against the air lock (AIR): the target flies on as it does now, and
+//!   for the no-escape range turns tail at the launch.
 
 use crate::Sim;
 use crate::guidance::{self, Step, Target};
@@ -10,23 +14,46 @@ use crate::math::s16;
 use crate::missiles::seeker_geometry;
 use crate::types::*;
 
-/// Ranges sampled across the lock range, before the zone's edges are bisected.
+/// Ranges sampled across the searched ranges, before the zone's edges are bisected.
 const SAMPLES: i32 = 20;
 /// Bisection steps per edge.
 const REFINE: u32 = 7;
 /// Angle off the missile's heading (BAM) within which its seeker sees the target.
 const SEEKER_CONE: i32 = 0x1000;
+/// Map units ahead per unit of lock range within which the LOCK oval locks on: ground and air
+/// (lock_oval).
+const GROUND_LOCK: f64 = 56.0;
+const AIR_LOCK: i32 = 64;
+/// Air-to-air: farthest range searched, the farthest the radar locks on from (select_air; a
+/// missile fired head-on at a fast target reaches well beyond the oval's lock range).
+const AIR_SEARCH: i32 = 0x12C0;
+/// Map units an aircraft target draws away from a missile's closest approach before the
+/// missile counts as beaten (more than the rounding of the positions).
+const DRAWING_AWAY: i32 = 4;
 
-/// Launch zone against the ground lock (ground ranges in map units).
+/// What a predicted missile flies at: its position at the launch (wu: east, south, up), its
+/// velocity (wu/s) and its altitude as the classic flight compares it (viewZ for aircraft).
+#[derive(Debug, Clone, Copy)]
+struct Track {
+    p: [f64; 3],
+    v: [f64; 3],
+    alt: i32,
+}
+
+/// Launch zone against the locked target (ground ranges in map units).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LaunchZone {
     /// Range to the target (straight, not the octagonal approximation of the HUD's range).
     pub range: i32,
-    /// The longest range the seeker locks on from (the scale's end).
+    /// The longest range the LOCK oval locks on from.
     pub lock_max: i32,
     /// Shortest and longest range a missile fired now reaches the target from; None when it
-    /// reaches it from none (too low, too slow, pointing away).
+    /// reaches it from none (too low, too slow, pointing away). Air-to-air: with the target
+    /// flying on as it does now, which may take the longest range past `lock_max`.
     pub zone: Option<(i32, i32)>,
+    /// Air-to-air: the longest range from which the missile still reaches a target that turns
+    /// tail at the launch (no escape inside it); None for ground targets or when there is none.
+    pub no_escape: Option<i32>,
 }
 
 impl LaunchZone {
@@ -42,13 +69,21 @@ impl LaunchZone {
 }
 
 impl Sim {
-    /// The launch zone of the selected air-to-ground missile (HARM, Penguin, Harpoon,
-    /// Maverick) against the ground lock in GND mode; None without one, or when the missile
-    /// can do nothing to the target.
+    /// The launch zone of the selected missile: an air-to-ground one (HARM, Penguin, Harpoon,
+    /// Maverick) against the ground lock in GND mode, an air-to-air one against the air lock in
+    /// AIR mode; None without one, or when the missile can do nothing to the target.
     pub fn launch_zone(&self) -> Option<LaunchZone> {
-        if self.pl.hud_mode != HudMode::Gnd || self.pl.gun_selected {
+        if self.pl.gun_selected {
             return None;
         }
+        match self.pl.hud_mode {
+            HudMode::Gnd => self.ground_zone(),
+            HudMode::Air => self.air_zone(),
+            HudMode::Nav => None,
+        }
+    }
+
+    fn ground_zone(&self) -> Option<LaunchZone> {
         let (w, count) = self.selected_weapon();
         let spec = self.selected_spec();
         let mt = self.missile(spec);
@@ -65,8 +100,7 @@ impl Sim {
         {
             return None;
         }
-        // The oval locks on within 56 map units per lock range unit ahead (lock_oval).
-        let slant = 56.0 * mt.lock_range as f64;
+        let slant = GROUND_LOCK * mt.lock_range as f64;
         let height = (self.pl.p.view_z >> 5) as f64;
         let lock_max = (slant * slant - height * height).max(0.0).sqrt() as i32;
         let (dx, dy) = (s16(o.x - self.pl.p.mx) as f64, s16(o.y - self.pl.p.my) as f64);
@@ -77,18 +111,58 @@ impl Sim {
         } else {
             let at = |r: i32| {
                 let k = r as f64 / d;
-                let tx = (self.pl.p.mx + (dx * k).round() as i32) & 0xFFFF;
-                let ty = (self.pl.p.my + (dy * k).round() as i32) & 0xFFFF;
-                self.reaches(w, spec, tx, ty)
+                let tx = self.pl.p.mx + (dx * k).round() as i32;
+                let ty = self.pl.p.my + (dy * k).round() as i32;
+                let p = [tx as f64 * 32.0 + 16.0, ty as f64 * 32.0 + 16.0, 0.0];
+                self.reaches(w, spec, Track { p, v: [0.0; 3], alt: 0 }, false)
             };
             find_zone(lock_max, at)
         };
-        Some(LaunchZone { range, lock_max, zone })
+        Some(LaunchZone { range, lock_max, zone, no_escape: None })
     }
 
-    /// A missile `spec` (store `w`) fired now at a target on the ground at map point
-    /// (tx, ty) reaches it.
-    fn reaches(&self, w: i32, spec: i32, tx: i32, ty: i32) -> bool {
+    fn air_zone(&self) -> Option<LaunchZone> {
+        let (w, count) = self.selected_weapon();
+        let spec = self.selected_spec();
+        let mt = self.missile(spec);
+        if count <= 0 || mt.class != 7 {
+            return None;
+        }
+        let lock_max = AIR_LOCK * mt.lock_range as i32;
+        let lock = usize::try_from(self.pl.air_lock).ok().filter(|&i| {
+            self.flights.get(i).is_some_and(|u| {
+                u.flags & fflags::AIRBORNE != 0 && u.flags & fflags::DESTROYED == 0 && u.speed != 0
+            })
+        });
+        let (tg, alt) = if let Some(i) = lock {
+            (self.unit_target(i), self.flights[i].alt)
+        } else {
+            let k = self.pl.pilot_lock.filter(|&k| self.pilot_airborne(k))?;
+            (self.pilot_target(k), self.pilot_ref(k as usize).p.view_z)
+        };
+        let me = self.player_target().p;
+        let (dx, dy) = (tg.p[0] - me[0], tg.p[1] - me[1]);
+        let d = dx.hypot(dy) / 32.0;
+        let range = d.round() as i32;
+        if d < 1.0 || lock_max < 1 {
+            return Some(LaunchZone { range, lock_max, zone: None, no_escape: None });
+        }
+        let (ux, uy) = (dx / 32.0 / d, dy / 32.0 / d);
+        let at = |r: i32, v: [f64; 3]| {
+            let p = [me[0] + ux * r as f64 * 32.0, me[1] + uy * r as f64 * 32.0, tg.p[2]];
+            self.reaches(w, spec, Track { p, v, alt }, true)
+        };
+        let zone = find_zone(AIR_SEARCH, |r| at(r, tg.v));
+        // Turning tail: away from the launch at its speed.
+        let vh = tg.v[0].hypot(tg.v[1]);
+        let away = [ux * vh, uy * vh, tg.v[2]];
+        let no_escape = zone.and_then(|(lo, hi)| far_edge(lo, hi, |r| at(r, away)));
+        Some(LaunchZone { range, lock_max, zone, no_escape })
+    }
+
+    /// A missile `spec` (store `w`) fired now reaches the target flying `track` (`air`: an
+    /// aircraft, else on the ground).
+    fn reaches(&self, w: i32, spec: i32, track: Track, air: bool) -> bool {
         let mut m = self.launch_projectile(w, spec);
         let fs = self.fs;
         let guided = self.guided(spec);
@@ -97,38 +171,49 @@ impl Sim {
             guidance::start_flight(&mut m, pos, vel, fs);
         }
         let vmax = self.guided_vmax(spec);
-        let target =
-            Target { p: [tx as f64 * 32.0 + 16.0, ty as f64 * 32.0 + 16.0, 0.0], v: [0.0; 3] };
+        let radius = if air { guidance::FUSE_AAM } else { guidance::FUSE_GROUND };
         let top = (self.missile(spec).max_speed as i32) >> 6;
+        let dt = 1.0 / fs.max(1) as f64;
         // Fired in the next simulation frame, which moves it with this frame's number (the
         // number advances at the end of a frame).
         let mut frame = self.frame - 1;
+        let mut t = 0.0;
+        let mut closest = i32::MAX;
+        let burn = guidance::profile(spec).map_or(0.0, |p| p.burn);
         while m.ttl > 0 {
             frame += 1;
             if !guided && m.speed < top && frame & 1 != 0 {
                 m.speed += 1;
             }
+            let p: [f64; 3] = std::array::from_fn(|k| track.p[k] + track.v[k] * t);
+            let talt = track.alt + (track.v[2] * t) as i32;
+            t += dt;
+            let (tx, ty) =
+                (((p[0] / 32.0).floor() as i32) & 0xFFFF, ((p[1] / 32.0).floor() as i32) & 0xFFFF);
             let (r, aim, off) = seeker_geometry(&m, tx, ty);
-            // Out of the seeker's view the missile flies straight on and never sees it again.
-            if off > SEEKER_CONE {
+            let seen = off <= SEEKER_CONE;
+            // Out of the seeker's view the missile flies straight on: it never sees a target
+            // on the ground again, nor one flying on straight once that draws away. Nor does
+            // a missile at its full speed or burnt out catch an aircraft drawing away.
+            let away = r > closest.saturating_add(DRAWING_AWAY);
+            let spent = match m.flight {
+                Some(f) => f.t as f64 * dt > burn,
+                None => m.speed >= top,
+            };
+            if !seen && (!air || away) || (air && away && spent) {
                 return false;
             }
+            closest = closest.min(r);
             if guided {
-                let guide = (aim != 0).then_some(target);
-                match guidance::flight_step(
-                    &mut m,
-                    vmax,
-                    guidance::FUSE_GROUND,
-                    fs,
-                    guide,
-                    Some(target),
-                ) {
+                let target = seen.then_some(Target { p, v: track.v });
+                let guide = target.filter(|_| aim != 0);
+                match guidance::flight_step(&mut m, vmax, radius, fs, guide, target) {
                     Step::Fused => return true,
                     Step::Flying => {}
                     Step::Ground | Step::Spent => return false,
                 }
             } else {
-                if self.classic_step(&mut m, false, true, aim, r, 0) {
+                if self.classic_step(&mut m, false, seen, aim, r, talt) {
                     return true;
                 }
                 if m.alt < 0 {
@@ -171,6 +256,34 @@ fn find_zone(max: i32, reaches: impl Fn(i32) -> bool) -> Option<(i32, i32)> {
     Some((lo, hi))
 }
 
+/// The longest range in `lo`..=`hi` for which `reaches` holds, `reaches` holding up to it
+/// from `lo`: bisected from a hit found coming down from `hi`.
+fn far_edge(lo: i32, hi: i32, reaches: impl Fn(i32) -> bool) -> Option<i32> {
+    if reaches(hi) {
+        return Some(hi);
+    }
+    let mut miss = hi;
+    let mut hit = (1..=4).rev().map(|k| lo + (hi - lo) * k / 5).chain([lo]).find(|&r| {
+        let h = reaches(r);
+        if !h {
+            miss = r;
+        }
+        h
+    })?;
+    for _ in 0..REFINE {
+        if miss - hit <= 1 {
+            break;
+        }
+        let mid = (miss + hit) / 2;
+        if reaches(mid) {
+            hit = mid;
+        } else {
+            miss = mid;
+        }
+    }
+    Some(hit)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +298,15 @@ mod tests {
         let z = find_zone(2000, |r| (40..60).contains(&r) || (300..=1400).contains(&r)).unwrap();
         assert!((z.0 - 300).abs() <= 20, "{z:?}");
         assert_eq!(find_zone(2000, |_| false), None);
+    }
+
+    #[test]
+    fn finds_the_far_edge() {
+        assert_eq!(far_edge(100, 2000, |r| r <= 2000), Some(2000));
+        let e = far_edge(100, 2000, |r| r <= 700).unwrap();
+        assert!((e - 700).abs() <= 15, "{e}");
+        let e = far_edge(100, 2000, |r| r <= 150).unwrap();
+        assert!((e - 150).abs() <= 3, "{e}");
+        assert_eq!(far_edge(100, 2000, |_| false), None);
     }
 }

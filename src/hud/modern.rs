@@ -490,10 +490,19 @@ fn air_to_air(c: &mut Canvas, f: &HudFrame) {
             let dot = Vec2::new(CX, CY) + d.clamp_length_max(ase);
             c.ring(dot, 4.0, PEN * 1.5, INK);
         }
-        if cues.lock && cues.in_range && f.blink {
-            text(c, CX, CY - ase - 22.0, "SHOOT", Align::Centre);
+        let cue = match cues.launch_zone {
+            Some(z) if z.shoot => f.blink.then_some("SHOOT"),
+            Some(z) if z.too_close => Some("TOO CLOSE"),
+            Some(_) => None,
+            None => (cues.lock && cues.in_range && f.blink).then_some("SHOOT"),
+        };
+        if let Some(s) = cue {
+            text(c, CX, CY - ase - 22.0, s, Align::Centre);
         }
-        launch_zone(c, f);
+        match &cues.launch_zone {
+            Some(z) => dynamic_launch_zone(c, z),
+            None => launch_zone(c, f),
+        }
     }
 }
 
@@ -550,8 +559,8 @@ fn gun_sight(c: &mut Canvas, f: &HudFrame) {
     }
 }
 
-/// Dynamic launch zone right of the boresight: the weapon's maximum and minimum range and the
-/// target range caret.
+/// Launch zone right of the boresight without a locked target's zone: the weapon's nominal
+/// maximum and minimum range and the target range caret.
 fn launch_zone(c: &mut Canvas, f: &HudFrame) {
     let Some(rmax) = f.weapon_range_km.filter(|r| *r > 0.0) else { return };
     let (x, top, bottom) = (880.0, CY - 100.0, CY + 100.0);
@@ -576,21 +585,23 @@ fn launch_zone(c: &mut Canvas, f: &HudFrame) {
     }
 }
 
-/// AG dynamic launch zone right of the boresight, clear of the altitude readout: the scale up to the range
-/// the seeker locks on from, the zone from the shortest to the longest range bracketed beside
-/// it and the target range caret.
-fn ag_launch_zone(c: &mut Canvas, z: &super::LaunchZoneCue) {
+/// Dynamic launch zone right of the boresight, clear of the altitude readout (F-16 style): a
+/// line from the shortest range up to the longest with ticks at both ends, the no-escape part
+/// a box on it (AA), and the target range caret left of it. The line fills the scale unless
+/// the target is out of range: then it shrinks to leave the caret above it.
+fn dynamic_launch_zone(c: &mut Canvas, z: &super::LaunchZoneCue) {
+    let Some((lo, hi)) = z.zone_km else { return };
     let (x, top, bottom) = (820.0, CY - 100.0, CY + 100.0);
-    let full = z.scale_km.max(0.1);
+    let full = hi.max(z.range_km * 1.1).max(0.1);
     let y = |r: f32| bottom - (r / full).clamp(0.0, 1.0) * (bottom - top);
-    c.stroke(Vec2::new(x, top), Vec2::new(x, bottom), THIN, INK);
-    for yy in [top, bottom] {
-        c.stroke(Vec2::new(x, yy), Vec2::new(x + 6.0, yy), THIN, INK);
-    }
-    small(c, x + 6.0, top - 14.0, &format!("{full:.0}"), Align::Centre);
-    if let Some((lo, hi)) = z.zone_km {
-        let (a, b) = (Vec2::new(x + 14.0, y(hi)), Vec2::new(x + 14.0, y(lo)));
-        c.polyline(&[Vec2::new(x, a.y), a, b, Vec2::new(x, b.y)], PEN, INK);
+    let (a, b) = (y(hi), y(lo));
+    c.polyline(
+        &[Vec2::new(x + 10.0, a), Vec2::new(x, a), Vec2::new(x, b), Vec2::new(x + 10.0, b)],
+        PEN,
+        INK,
+    );
+    if let Some(ne) = z.no_escape_km {
+        c.frame(Vec2::new(x, y(ne)), Vec2::new(x + 10.0, b), PEN, INK);
     }
     let yy = y(z.range_km);
     c.polyline(
@@ -682,7 +693,7 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2, down: Vec2) {
         }
     }
     if let Some(z) = &cues.launch_zone {
-        ag_launch_zone(c, z);
+        dynamic_launch_zone(c, z);
     }
     let bomb = cues.bomb;
     if let Some(dir) = cues.ccip_dir.filter(|_| bomb.is_none_or(|b| !b.ccrp)) {
@@ -855,18 +866,18 @@ mod tests {
         let plain = ink(&f);
         let mut z = crate::hud::LaunchZoneCue {
             range_km: 20.0,
-            scale_km: 28.0,
             zone_km: None,
+            no_escape_km: None,
             shoot: false,
             too_close: false,
         };
+        // No zone: nothing to draw.
         f.cues.launch_zone = Some(z);
-        let scale = ink(&f);
-        assert!(scale > plain);
+        assert_eq!(ink(&f), plain);
         z.zone_km = Some((3.0, 25.0));
         f.cues.launch_zone = Some(z);
         let zone = ink(&f);
-        assert!(zone > scale);
+        assert!(zone > plain);
         z.shoot = true;
         f.cues.launch_zone = Some(z);
         assert!(ink(&f) > zone, "SHOOT");
@@ -875,6 +886,36 @@ mod tests {
         z.range_km = 1.0;
         f.cues.launch_zone = Some(z);
         assert!(ink(&f) > zone, "TOO CLOSE");
+    }
+
+    #[test]
+    fn draws_the_air_to_air_launch_zone() {
+        let ink = |f: &HudFrame| {
+            let mut c = Canvas::new(WIDTH, HEIGHT);
+            draw(&mut c, f);
+            c.px.iter().filter(|&&p| p != 0).count()
+        };
+        let mut f = frame(HudMode::Air);
+        f.blink = true;
+        f.weapon_air_to_air = true;
+        f.cues.target_dir = Some(Vec3::new(0.05, 0.02, -1.0));
+        let mut z = crate::hud::LaunchZoneCue {
+            range_km: 30.0,
+            zone_km: Some((2.0, 25.0)),
+            no_escape_km: None,
+            shoot: false,
+            too_close: false,
+        };
+        f.cues.launch_zone = Some(z);
+        let zone = ink(&f);
+        z.no_escape_km = Some(12.0);
+        f.cues.launch_zone = Some(z);
+        let no_escape = ink(&f);
+        assert!(no_escape > zone, "no-escape box");
+        z.shoot = true;
+        z.range_km = 20.0;
+        f.cues.launch_zone = Some(z);
+        assert!(ink(&f) > no_escape, "SHOOT");
     }
 
     #[test]

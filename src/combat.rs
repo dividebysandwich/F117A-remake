@@ -1412,13 +1412,15 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         });
         new_cues.lock = t.lock_valid;
         new_cues.in_range = t.in_range;
-        new_cues.launch_zone = combat.launch_zone.1.filter(|_| hud.mode == HudMode::Gnd).map(|z| {
+        new_cues.launch_zone = combat.launch_zone.1.filter(|_| hud.mode != HudMode::Nav).map(|z| {
             let km = |mu: i32| mu as f32 * 32.0 * WU as f32 / 1000.0;
+            let air = hud.mode == HudMode::Air;
             crate::hud::LaunchZoneCue {
                 range_km: km(z.range),
-                scale_km: km(z.lock_max),
                 zone_km: z.zone.map(|(lo, hi)| (km(lo), km(hi))),
-                shoot: z.in_zone() && t.lock_valid,
+                no_escape_km: z.no_escape.map(km),
+                // An air-to-air missile homes on the target fired outside the oval too.
+                shoot: z.in_zone() && (air || t.lock_valid),
                 too_close: z.too_close(),
             }
         });

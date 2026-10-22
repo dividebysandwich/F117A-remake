@@ -111,7 +111,7 @@ const MIN_SPEED: f64 = 500.0;
 const MAX_SECS: i32 = 150;
 /// Proximity fuse radius (wu): SAMs, air-to-air missiles and against ground targets.
 const FUSE_SAM: f64 = 110.0;
-const FUSE_AAM: f64 = 50.0;
+pub(crate) const FUSE_AAM: f64 = 50.0;
 pub(crate) const FUSE_GROUND: f64 = 35.0;
 /// Speed at launch from the ground (wu/s) and height of the rail.
 const RAIL_SPEED: f64 = 150.0;

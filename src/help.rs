@@ -27,7 +27,7 @@ Starting
   --campaign <name>            straight into a saved campaign, or a new one under that name
                                (--theater, --roe, --opponents, --seed, --sky-ratio, --start-hour)
   --vr                         OpenXR headset (without a runtime it runs on the desktop)
-  --viewer                     browse the converted models
+  --viewer                     browse the game's 3D models
     --file <name> --model <n>  the model shown first
     --pitch <deg> --yaw <deg> --distance <m>
                                the view of it

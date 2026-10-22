@@ -19,11 +19,20 @@ pub struct CampaignWindow {
     sky_ratio: f32,
     start_hour: f32,
     error: Option<String>,
+    /// The save whose DELETE was clicked: (name, label), awaiting confirmation.
+    confirm_delete: Option<(String, String)>,
 }
 
 impl Default for CampaignWindow {
     fn default() -> Self {
-        Self { open: false, saves: Vec::new(), sky_ratio: 24.0, start_hour: 8.0, error: None }
+        Self {
+            open: false,
+            saves: Vec::new(),
+            sky_ratio: 24.0,
+            start_hour: 8.0,
+            error: None,
+            confirm_delete: None,
+        }
     }
 }
 
@@ -40,6 +49,7 @@ impl CampaignWindow {
         self.open = true;
         self.saves = stealth_host::save::list_saves();
         self.error = None;
+        self.confirm_delete = None;
     }
 }
 
@@ -74,7 +84,9 @@ pub fn campaign_window(
     let (code, theater) = THEATERS[state.theater.min(THEATERS.len() - 1)];
     let mut start: Option<ActiveCampaign> = None;
     let mut vr_name: Option<String> = None;
-    let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    // Escape cancels the delete confirmation first, then closes the window.
+    let mut close = escape && w.confirm_delete.is_none();
     let width = crate::menu::wide_width(ctx);
     crate::menu::menu_window(ctx, "Dynamic campaign", width).show(ctx, |ui| {
         ui.label(egui::RichText::new("DYNAMIC CAMPAIGN").heading().color(BRIGHT));
@@ -174,6 +186,9 @@ pub fn campaign_window(
                     if !settings.vr && vr.0 && ui.add(big_button("IN VR")).clicked() {
                         vr_name = Some(name.clone());
                     }
+                    if ui.add(big_button("DELETE")).on_hover_text("Delete this saved campaign").clicked() {
+                        w.confirm_delete = Some((name.clone(), format!("{theater}, {hours:.1} h played")));
+                    }
                 });
             }
             if let Some(e) = &w.error {
@@ -186,6 +201,40 @@ pub fn campaign_window(
             close = true;
         }
     });
+    if let Some((name, label)) = w.confirm_delete.clone() {
+        let mut delete = false;
+        let mut cancel = escape;
+        egui::Window::new("Delete the campaign")
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .collapsible(false)
+            .resizable(false)
+            .title_bar(false)
+            .order(egui::Order::Foreground)
+            .frame(egui::Frame::window(&ctx.global_style()).inner_margin(18.0))
+            .show(ctx, |ui| {
+                ui.label(egui::RichText::new("DELETE THIS CAMPAIGN?").heading().color(BRIGHT));
+                ui.label(egui::RichText::new(&label).color(BRIGHT));
+                ui.label(egui::RichText::new("The save is gone for good.").color(DIM));
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.add(big_button("DELETE").fill(super::ops::EXIT_RED)).clicked() {
+                        delete = true;
+                    }
+                    if ui.add(big_button("CANCEL")).clicked() {
+                        cancel = true;
+                    }
+                });
+            });
+        if delete {
+            if let Err(e) = stealth_host::save::delete(&name) {
+                w.error = Some(format!("The save could not be deleted: {e:#}"));
+            }
+            w.saves = stealth_host::save::list_saves();
+        }
+        if delete || cancel {
+            w.confirm_delete = None;
+        }
+    }
     if let Some(c) = start {
         c.save();
         super::start(&mut commands, c, &mut setup, &tables.start_dir);

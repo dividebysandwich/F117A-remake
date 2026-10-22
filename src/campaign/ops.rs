@@ -1014,7 +1014,7 @@ fn route_editor(
 }
 
 /// The red way out: SAVE & EXIT, or DISCONNECT from a server.
-const EXIT_RED: egui::Color32 = egui::Color32::from_rgb(150, 24, 20);
+pub(crate) const EXIT_RED: egui::Color32 = egui::Color32::from_rgb(150, 24, 20);
 
 fn exit_button(role: Role) -> egui::Button<'static> {
     let label = if role == Role::Client { "DISCONNECT" } else { "SAVE & EXIT" };

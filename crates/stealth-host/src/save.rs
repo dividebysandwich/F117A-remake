@@ -46,6 +46,17 @@ pub fn load(name: &str) -> Result<Option<CampaignState>> {
     }
 }
 
+/// Removes the campaign saved under `name`; a save that is already gone is no error.
+pub fn delete(name: &str) -> Result<()> {
+    let path = path_of(name).context("no data directory")?;
+    match std::fs::remove_file(&path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(e).with_context(|| path.display().to_string())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// The campaign in `path`, None if there is no such file.
 pub fn load_from(path: &Path) -> Result<Option<CampaignState>> {
     let text = match std::fs::read_to_string(path) {

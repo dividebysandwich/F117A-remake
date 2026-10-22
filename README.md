@@ -37,7 +37,7 @@ Command-line options:
 | `--lockheed` | realistic weapons: the real aircraft's 2 bays, no air-to-air missiles, no carrier operations |
 | `--head-tracking` | head/eye tracking: infrared, eye, webcam or phone trackers move the cockpit view through a tracking program such as OpenTrack (FreeTrack output on Windows, or UDP to 127.0.0.1 port 4242); Home recentres |
 | `--vr` | OpenXR headset (without a runtime it runs on the desktop); the menu and the debrief are a panel in the headset, operated with a controller |
-| `--viewer [--file stflt --model 24]` | browse the converted models |
+| `--viewer [--file stflt --model 24]` | browse the 3D models |
 | `--freecam [--at Gutersloh\|primary] [--pos x,z]` | free debug camera |
 
 <img width="1173" height="727" alt="image" src="https://github.com/user-attachments/assets/affc6127-3d83-49a2-8cde-e128e941fa64" />

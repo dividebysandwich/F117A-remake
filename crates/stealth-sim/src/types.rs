@@ -410,6 +410,9 @@ pub struct Commands {
     /// Lock this flight unit (airborne).
     #[serde(default)]
     pub lock_unit: Option<u16>,
+    /// Lock this other pilot's aircraft (airborne; tracking only, no weapon guides on it).
+    #[serde(default)]
+    pub lock_pilot: Option<u8>,
     /// Lock what is at this map point (the targeting pod's point track, not in the original):
     /// the object there, or the plain ground as object 0.
     #[serde(default)]
@@ -796,6 +799,9 @@ pub struct TargetingState {
     pub ground: Option<usize>,
     /// Air lock (flight unit index).
     pub air: Option<usize>,
+    /// Air lock on another pilot's aircraft (pilot id; instead of `air`).
+    #[serde(default)]
+    pub pilot: Option<u8>,
     /// LOCK oval shown.
     pub lock_valid: bool,
     /// Oval red / contracted (in range).

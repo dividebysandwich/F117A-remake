@@ -409,6 +409,7 @@ fn collect_commands(
     for crate::avionics::LockRequest(target) in locks.read() {
         match *target {
             ContactRef::Unit(i) => c.lock_unit = u16::try_from(i).ok(),
+            ContactRef::Pilot(k) => c.lock_pilot = Some(k),
             ContactRef::Object(i) => c.lock_object = u16::try_from(i).ok(),
             ContactRef::Point(x, y) => c.designate_at = Some((x, y)),
         }
@@ -884,6 +885,24 @@ pub fn unit_position(prev: Option<&FlightUnit>, u: &FlightUnit, alpha: f32) -> (
     (old.0 + (cur.0 - old.0) * t, old.1 + (cur.1 - old.1) * t, old.2 + (cur.2 - old.2) * t)
 }
 
+/// Another pilot's aircraft while airborne, as drawn: world position (wu east, north, alt),
+/// velocity (Bevy metres per second along the nose) and type name.
+pub fn remote_motion(combat: &Combat, id: u8) -> Option<((f64, f64, f64), DVec3, &'static str)> {
+    let p = combat.sim.remote_pilots().into_iter().find(|p| p.id == id && !p.on_ground)?;
+    let v = combat.remote_track.view_at(id, combat.remote_time, p.view);
+    let r = std::f64::consts::TAU / 65536.0;
+    let (h, pitch) = ((v.heading as u16) as f64 * r, (v.pitch as i16) as f64 * r);
+    let dir = DVec3::new(h.sin() * pitch.cos(), pitch.sin(), -h.cos() * pitch.cos());
+    let name = if p.external_stores {
+        "F-16"
+    } else if p.lockheed {
+        "F-117A"
+    } else {
+        "F-19"
+    };
+    Some(((v.wx as f64, v.wy as f64, v.alt as f64), dir * v.knots as f64 * 0.514_444, name))
+}
+
 /// Projects a world point (wu east, north, viewZ) seen from the eye point (aircraft frame) into
 /// the 320x200 cockpit screen (f = 256, vertical 0.75 f, centre (159, 52)); None behind the eye.
 pub fn project_cockpit(
@@ -1101,7 +1120,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
             threat: None,
         });
     }
-    // The other players: friendly aircraft (never a lock), and their weapons in flight.
+    // The other players: friendly aircraft, and their weapons in flight.
     let me = sim.active_pilot();
     for p in sim.remote_pilots().iter().filter(|p| p.id != me && p.chute.is_none()) {
         if !p.on_ground {
@@ -1113,7 +1132,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                 alt: v.view_z as f32,
                 heading: v.heading as u16,
                 friendly: true,
-                target: None,
+                target: Some(ContactRef::Pilot(p.id)),
                 threat: None,
             });
         }
@@ -1172,7 +1191,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         }
     }
     // Ships (on the datalink): the world's ship objects (armed ones with their threat ring)
-    // and the theater's ships among the tile objects, lockable unless friendly.
+    // and the theater's ships among the tile objects, friendly ones lockable too.
     let mut ship_at = Vec::new();
     for (i, ob) in objects.iter().enumerate().skip(3) {
         if ob.flags & oflags::DESTROYED != 0 || !sim.object_is_ship(i) || (ob.x, ob.y) == (0, 0) {
@@ -1182,7 +1201,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         let friendly = ob.flags & (oflags::FRIENDLY | oflags::NEUTRAL) != 0;
         let armed = ob.unit_type > 0 && i < sim.ground_unit_count() && !friendly;
         let threat = armed.then(|| (crate::rwr::km(sim.site_lock_range(ob.unit_type)), [0u8; 3]));
-        let target = (!friendly).then_some(ContactRef::Object(i));
+        let target = Some(ContactRef::Object(i));
         contacts.list.push(Contact {
             kind: ContactKind::Ship,
             east,
@@ -1208,7 +1227,7 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                 && (o.y - y).abs() < 2
                 && o.flags & (oflags::FRIENDLY | oflags::NEUTRAL) != 0
         });
-        let target = (!friendly).then_some(ContactRef::Point(x, y));
+        let target = Some(ContactRef::Point(x, y));
         contacts.list.push(Contact {
             kind: ContactKind::Ship,
             east: s.east,
@@ -1257,7 +1276,8 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         }
     }
     let locks = sim.targeting();
-    contacts.locked = locks.air.map(ContactRef::Unit).or(locks.ground.map(|g| {
+    let air = locks.air.map(ContactRef::Unit).or(locks.pilot.map(ContactRef::Pilot));
+    contacts.locked = air.or(locks.ground.map(|g| {
         // A ship tile object locked by its point: the lock box goes on its symbol.
         let o = objects.get(g).copied().unwrap_or_default();
         let near = |k: &Contact| matches!(k.target, Some(ContactRef::Point(x, y)) if (x - o.x).abs() <= 1 && (y - o.y).abs() <= 1);
@@ -1322,11 +1342,21 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
                 player_view.view_z as f64,
             ));
         }
-    } else if let Some(u) = t.air.and_then(|i| sim.flights().get(i).map(|u| (i, *u))) {
-        let (i, u) = u;
-        let ty = &sim.aircraft_types[(u.spec.max(0) as usize).min(sim.aircraft_types.len() - 1)];
-        info.name = [ty.name.clone(), ty.nato.clone()];
-        let (east, north, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
+    } else if let Some((name, (east, north, alt))) = t
+        .air
+        .and_then(|i| sim.flights().get(i).map(|u| (i, *u)))
+        .map(|(i, u)| {
+            let ty =
+                &sim.aircraft_types[(u.spec.max(0) as usize).min(sim.aircraft_types.len() - 1)];
+            let at = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
+            ([ty.name.clone(), ty.nato.clone()], at)
+        })
+        .or_else(|| {
+            let (at, _, name) = remote_motion(combat, t.pilot?)?;
+            Some(([name.to_string(), "FRIENDLY".to_string()], at))
+        })
+    {
+        info.name = name;
         let (pe, pn, _) = bevy_to_wu(pos.0);
         let range_mu = ((east - pe).hypot(north - pn) / 32.0) as i32;
         info.range_km = Some(range_mu as f32 * 32.0 * WU as f32 / 1000.0);
@@ -1368,8 +1398,11 @@ fn publish(mut combat: ResMut<Combat>, out: Outputs) {
         if sim.gun_selected() {
             // The locked aircraft (position and velocity over the last sim frame) or ground
             // object, else a target 1000 m ahead flying along with the aircraft.
-            let air = t.air.is_some_and(|i| i < sim.flights().len());
-            let target = if let Some(i) = t.air.filter(|&i| i < sim.flights().len()) {
+            let pilot = t.pilot.and_then(|k| remote_motion(combat, k));
+            let air = t.air.is_some_and(|i| i < sim.flights().len()) || pilot.is_some();
+            let target = if let Some(((e, n, alt), v, _)) = pilot {
+                Some((wu_to_bevy(e, n, alt), v))
+            } else if let Some(i) = t.air.filter(|&i| i < sim.flights().len()) {
                 let u = sim.flights()[i];
                 let (e, n, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
                 let v = combat.prev_flights.get(i).map_or(DVec3::ZERO, |p| {

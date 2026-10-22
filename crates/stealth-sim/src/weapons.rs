@@ -15,6 +15,7 @@ impl Sim {
                 HudMode::Air => {
                     self.pl.air_lock = -1;
                     self.pl.gnd_lock = -1;
+                    self.pl.pilot_lock = None;
                 }
                 HudMode::Gnd => self.pl.gnd_lock = -1,
                 HudMode::Nav => {}
@@ -55,6 +56,7 @@ impl Sim {
             self.pl.targeting.target_killed = false;
             self.pl.gnd_lock |= 0x80;
             self.pl.air_lock |= 0x80;
+            self.pl.pilot_lock = None;
         }
         if let Some(d) = c.camera_dir {
             self.camera_key(d as i32);
@@ -67,6 +69,7 @@ impl Sim {
         if c.clear_target {
             self.pl.air_lock = -1;
             self.pl.gnd_lock = -1;
+            self.pl.pilot_lock = None;
             self.pl.nearest_req = 0;
             self.pl.pflags &= !pflags::DESIGNATE;
             self.pl.target_hold = true;
@@ -114,6 +117,17 @@ impl Sim {
                 f.flags & fflags::AIRBORNE != 0 && f.flags & fflags::DESTROYED == 0
             }) {
                 self.pl.air_lock = u as i32;
+                self.pl.pilot_lock = None;
+                self.pl.target_hold = true;
+                self.pl.nearest_req = 0;
+            } else {
+                self.msg("No target");
+            }
+        }
+        if let Some(k) = c.lock_pilot {
+            if self.pilot_airborne(k) {
+                self.pl.pilot_lock = Some(k);
+                self.pl.air_lock = -1;
                 self.pl.target_hold = true;
                 self.pl.nearest_req = 0;
             } else {

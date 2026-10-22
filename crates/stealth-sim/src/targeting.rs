@@ -60,7 +60,12 @@ impl Sim {
         self.photo(ps);
         self.radio_beacon();
         self.pl.prev_fire = ps.cmd.fire;
+        // An air lock found since replaces a lock on another pilot, as does his landing.
+        if self.pl.air_lock >= 0 || !self.pl.pilot_lock.is_some_and(|k| self.pilot_airborne(k)) {
+            self.pl.pilot_lock = None;
+        }
         let t = &mut self.pl.targeting;
+        t.pilot = self.pl.pilot_lock;
         t.ground = (self.pl.gnd_lock >= 0 && (self.pl.gnd_lock as usize) < self.objects.len())
             .then_some(self.pl.gnd_lock as usize);
         t.air = (self.pl.air_lock >= 0 && (self.pl.air_lock as usize) < self.flights.len())

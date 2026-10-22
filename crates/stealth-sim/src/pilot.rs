@@ -103,6 +103,9 @@ pub struct Pilot {
     /// Air / ground target locks (bit 0x80 = reselect, -1 none).
     pub(crate) air_lock: i32,
     pub(crate) gnd_lock: i32,
+    /// Air lock on another pilot (`Commands::lock_pilot`), while `air_lock` is none.
+    #[serde(default)]
+    pub(crate) pilot_lock: Option<u8>,
     pub(crate) targeting: TargetingState,
     pub(crate) gnd_cooldown: i32,
     /// Frames left for a nearest-target request to wait for the HUD mode (`Commands::nearest_target`).
@@ -282,6 +285,12 @@ impl Sim {
         let r = f(self);
         self.activate(back);
         r
+    }
+
+    /// Pilot `k` is another one, flying in the world (not landed or ejected).
+    pub(crate) fn pilot_airborne(&self, k: u8) -> bool {
+        let p = self.pilot_ref(k as usize);
+        k != self.pl.id && p.id == k && !p.absent && !p.on_ground && p.eject == 0
     }
 
     /// Pilot `id`'s view of the world (position, attitude) while he is in it.

@@ -217,6 +217,7 @@ impl Sim {
         }
         self.pl.air_lock = -1;
         self.pl.gnd_lock = -1;
+        self.pl.pilot_lock = None;
         self.csar = None;
         self.pl.eject = 0;
         self.pl.threat_count = 0;

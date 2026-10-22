@@ -389,6 +389,7 @@ impl Sim {
                 lights: Lights::default(),
                 launches: 0,
                 air_lock: -1,
+                pilot_lock: None,
                 gnd_lock: -1,
                 targeting: TargetingState::default(),
                 gnd_cooldown: 0,

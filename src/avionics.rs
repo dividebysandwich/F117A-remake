@@ -1114,7 +1114,7 @@ fn emitter_source(r: ContactRef) -> Option<stealth_sim::EmitterSource> {
     match r {
         ContactRef::Unit(i) => Some(stealth_sim::EmitterSource::Aircraft(i)),
         ContactRef::Object(i) => Some(stealth_sim::EmitterSource::Site(i)),
-        ContactRef::Point(..) => None,
+        ContactRef::Pilot(_) | ContactRef::Point(..) => None,
     }
 }
 
@@ -1255,7 +1255,7 @@ fn slew_and_lock(
     };
     if let Some(target) = picked {
         hud.mode = match target {
-            ContactRef::Unit(_) => HudMode::Air,
+            ContactRef::Unit(_) | ContactRef::Pilot(_) => HudMode::Air,
             ContactRef::Object(_) | ContactRef::Point(..) => HudMode::Gnd,
         };
         locks.write(LockRequest(target));
@@ -1294,18 +1294,26 @@ fn emitter_ref(e: &EmitterView) -> ContactRef {
     }
 }
 
-/// The lockable contact nearest the cursor on the HSD.
+/// The lockable contact nearest the cursor on the HSD: a hostile one if any is in reach,
+/// else a friendly one.
 pub fn pick_contact(
     contacts: &Contacts,
     view: &HsdView,
     cursor: Vec2,
     radius: f32,
 ) -> Option<ContactRef> {
-    nearest(
-        contacts.list.iter().filter_map(|k| Some((view.to_screen(k.east, k.north), k.target?))),
-        cursor,
-        radius,
-    )
+    let pick = |friendly: bool| {
+        nearest(
+            contacts
+                .list
+                .iter()
+                .filter(|k| k.friendly == friendly)
+                .filter_map(|k| Some((view.to_screen(k.east, k.north), k.target?))),
+            cursor,
+            radius,
+        )
+    };
+    pick(false).or_else(|| pick(true))
 }
 
 fn nearest(
@@ -1552,5 +1560,27 @@ mod tests {
         let p = v.to_screen(0.0, 1040.0);
         assert_eq!(pick_contact(&contacts, &v, p, PICK_RADIUS), Some(ContactRef::Unit(3)));
         assert_eq!(pick_contact(&contacts, &v, p + Vec2::X * 40.0, PICK_RADIUS), None);
+    }
+
+    #[test]
+    fn lock_prefers_the_enemy_over_a_friendly() {
+        let v = HsdView::new(DVec2::ZERO, 0.0, 20.0, true, Vec2::new(231.0, 180.0));
+        let at = |n: f64, friendly, unit| Contact {
+            kind: ContactKind::Aircraft,
+            east: 0.0,
+            north: n,
+            alt: 0.0,
+            heading: 0,
+            friendly,
+            target: Some(ContactRef::Unit(unit)),
+            threat: None,
+        };
+        let contacts =
+            Contacts { list: vec![at(1000.0, true, 1), at(1100.0, false, 2)], ..default() };
+        let p = v.to_screen(0.0, 1000.0);
+        assert_eq!(pick_contact(&contacts, &v, p, PICK_RADIUS), Some(ContactRef::Unit(2)));
+        // A friendly alone is lockable.
+        let contacts = Contacts { list: vec![at(1000.0, true, 1)], ..default() };
+        assert_eq!(pick_contact(&contacts, &v, p, PICK_RADIUS), Some(ContactRef::Unit(1)));
     }
 }

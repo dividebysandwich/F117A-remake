@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::TextureFormat;
 
 use crate::camera::{View, ViewState};
-use crate::combat::{Combat, CombatSystems, map_wu, unit_position};
+use crate::combat::{Combat, CombatSystems, map_wu, remote_motion, unit_position};
 use crate::flight::{Aircraft, Player, bam};
 use crate::mfd::{CamDir, MfdState, TrackCam};
 use crate::settings::{AppState, SetupSet};
@@ -219,6 +219,8 @@ pub(crate) fn update_camera(
         Some(wu_to_bevy(e + 16.0, n - 16.0, 0.0))
     } else if let Some((i, u)) = t.air.and_then(|i| sim.flights().get(i).map(|u| (i, *u))) {
         let (e, n, z) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
+        Some(wu_to_bevy(e, n, z))
+    } else if let Some(((e, n, z), _, _)) = t.pilot.and_then(|k| remote_motion(&combat, k)) {
         Some(wu_to_bevy(e, n, z))
     } else {
         None

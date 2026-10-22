@@ -172,6 +172,7 @@ pub fn merge_commands(a: &mut Commands, b: &Commands) {
     a.eject |= b.eject;
     a.lock_object = b.lock_object.or(a.lock_object);
     a.lock_unit = b.lock_unit.or(a.lock_unit);
+    a.lock_pilot = b.lock_pilot.or(a.lock_pilot);
     a.designate_at = b.designate_at.or(a.designate_at);
     // Not in a coop game: invulnerability and the training resupply.
 }

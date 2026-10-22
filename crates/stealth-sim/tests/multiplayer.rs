@@ -199,6 +199,32 @@ fn pilots_keep_their_own_state() {
 }
 
 #[test]
+fn a_pilot_locks_another_while_he_flies() {
+    let (mut sim, base) = two_pilots();
+    let b = sim.objects()[base];
+    let mut inputs = vec![
+        (0, flying(b.x, b.y - 0x400, 3000, 0, 300)),
+        (1, flying(b.x + 0x40, b.y - 0x400, 3000, 0, 300)),
+    ];
+    sim.step_pilots(&inputs, 15);
+    inputs[0].1.cmd.lock_pilot = Some(1);
+    sim.step_pilots(&inputs, 15);
+    inputs[0].1.cmd = Commands::default();
+    assert_eq!(sim.targeting().pilot, Some(1));
+    assert_eq!(sim.targeting().air, None);
+    sim.step_pilots(&inputs, 15);
+    assert_eq!(sim.targeting().pilot, Some(1), "the lock holds");
+    // He lands: the lock is gone.
+    inputs[1].1 = PlayerState { on_ground: true, ..sim.start_state_at(base) };
+    sim.step_pilots(&inputs, 15);
+    assert_eq!(sim.targeting().pilot, None);
+    // No lock on oneself.
+    inputs[0].1.cmd.lock_pilot = Some(0);
+    sim.step_pilots(&inputs, 15);
+    assert_eq!(sim.targeting().pilot, None);
+}
+
+#[test]
 fn a_mirror_follows_the_host() {
     let (mut host, mut inputs, _) = site_engages_pilot_one();
     host.record_shells(true);

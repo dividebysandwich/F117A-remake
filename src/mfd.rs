@@ -476,7 +476,7 @@ pub enum ContactKind {
     Drone,
     Missile,
     GroundRadar,
-    /// A ship (armed ones with their threat ring); friendly ones cannot be locked.
+    /// A ship (armed ones with their threat ring).
     Ship,
     Target,
 }
@@ -490,7 +490,7 @@ pub struct Contact {
     pub alt: f32,
     /// Binary angle.
     pub heading: u16,
-    /// Friendly aircraft.
+    /// Friendly (a lock prefers hostile contacts under the cursor).
     pub friendly: bool,
     /// What a lock on it locks (aircraft: flight unit; sites and targets: world object).
     pub target: Option<ContactRef>,
@@ -503,6 +503,8 @@ pub struct Contact {
 pub enum ContactRef {
     /// Flight unit index.
     Unit(usize),
+    /// Another player's aircraft (pilot id).
+    Pilot(u8),
     /// World object index.
     Object(usize),
     /// What is at this map point (a ship among the theater's tile objects): the simulation

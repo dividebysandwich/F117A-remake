@@ -18,6 +18,11 @@ smaller download (42 MB, 13 MB gzipped, about 15 minutes). Any static web server
 as it serves `.wasm` as `application/wasm`. CI builds the folder in the `web` job of
 `.github/workflows/build.yml` and uploads it as an artifact. Nothing is deployed automatically.
 
+The build also writes gzipped copies (`*.wasm.gz`, `*.js.gz`, from the hook in `Trunk.toml`). With
+nginx, `gzip_static on;` sends them to browsers that take gzip, without compressing the 79 MB wasm
+on every request (about 17 MB on the wire). The hashed wasm and script names can be cached forever;
+`index.html` should not be.
+
 **Browser.** The game needs WebGPU: a current Chrome or Edge, Firefox 141 or later, or Safari 26,
 with hardware acceleration on. WebGL2 can't run it, because the palette, particle, trail and
 cloud shaders read storage buffers. Without WebGPU, the page says so.

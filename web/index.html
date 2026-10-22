@@ -6,27 +6,68 @@
   <title>Stealth Mission 89</title>
   <link data-trunk rel="rust" href="../Cargo.toml" data-bin="stealth-mission-89"
         data-cargo-no-default-features data-cargo-profile="wasm-release"
-        data-wasm-opt="0">
+        data-wasm-opt="0" data-initializer="loader.js">
   <link data-trunk rel="copy-dir" href="../assets">
   <link data-trunk rel="copy-file" href="download.html">
   <style>
     html, body { margin: 0; height: 100%; background: #000; color: #4f4; overflow: hidden;
                  font: 16px/1.5 monospace; }
     #sm89 { display: block; width: 100%; height: 100%; outline: none; }
-    #status { position: fixed; inset: 0; display: flex; align-items: center;
-              justify-content: center; text-align: center; padding: 16px; pointer-events: none; }
+    #status { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+              justify-content: center; text-align: center; padding: 16px; box-sizing: border-box;
+              color: #8f8; }
     #status.hidden { display: none; }
+    #status h1 { color: #cfc; font-size: 28px; letter-spacing: 4px; margin: 0 0 24px; }
+    #msg { margin-bottom: 16px; }
+    #progress { width: min(420px, 100%); }
+    #progress .row { display: flex; justify-content: space-between; font-size: 14px; }
+    #phase { letter-spacing: 2px; }
+    #bar { height: 14px; margin: 6px 0; border: 1px solid #1d4a1d; background: #061206;
+           padding: 2px; position: relative; overflow: hidden; }
+    #fill { height: 100%; width: 0; transition: width 0.2s;
+            background: repeating-linear-gradient(90deg, #8f8 0 8px, transparent 8px 10px); }
+    #bar.busy #fill { animation: pulse 1s ease-in-out infinite alternate; }
+    #bar.failed { border-color: #f44; }
+    #bar.failed #fill { background: #f44; }
+    @keyframes pulse { to { opacity: 0.35; } }
+    #bytes { color: #4a8a4a; font-size: 14px; min-height: 1.5em; overflow-wrap: anywhere; }
+    #links { margin-top: 32px; width: min(420px, 100%); }
+    #links p { color: #4a8a4a; font-size: 14px; margin: 0 0 8px; }
+    #links a { display: block; text-decoration: none; padding: 8px 12px; margin-top: 8px;
+               font-weight: bold; letter-spacing: 1px; }
+    #links a.discord { color: #fff; background: #5865f2; }
+    #links a.discord:hover, #links a.discord:focus-visible { background: #7984f5; }
+    #links a.download { color: #8f8; border: 1px solid #1d4a1d; }
+    #links a.download:hover, #links a.download:focus-visible { color: #cfc; border-color: #cfc; }
   </style>
 </head>
 <body>
   <canvas id="sm89" tabindex="0"></canvas>
-  <div id="status">STEALTH MISSION 89<br>Loading...</div>
+  <div id="status">
+    <h1>STEALTH MISSION 89</h1>
+    <div id="msg"></div>
+    <div id="progress">
+      <div class="row"><span id="phase">LOADING</span><span id="pct"></span></div>
+      <div id="bar" role="progressbar" aria-label="Download" aria-valuemin="0" aria-valuemax="100">
+        <div id="fill"></div>
+      </div>
+      <div id="bytes"></div>
+    </div>
+    <!-- Usable before the game has finished downloading. -->
+    <div id="links">
+      <p>While the game loads:</p>
+      <a class="discord" href="https://discord.gg/zjjGeKKpC" target="_blank" rel="noopener">JOIN THE DISCORD</a>
+      <a class="download" href="download.html" target="_blank">DOWNLOAD THE DESKTOP GAME</a>
+    </div>
+  </div>
   <script>
     // The renderer needs WebGPU (its shaders read storage buffers, which WebGL2 lacks).
     const status = document.getElementById("status");
     if (!navigator.gpu) {
-      status.innerHTML = "STEALTH MISSION 89<br><br>This browser has no WebGPU.<br>" +
+      document.getElementById("msg").innerHTML = "This browser has no WebGPU.<br>" +
         "Use a current Chrome, Edge, Firefox or Safari, with hardware acceleration on.";
+      document.getElementById("progress").hidden = true;
+      document.getElementById("links").firstElementChild.hidden = true;
       throw new Error("no WebGPU");
     }
     // The game's audio starts before the player has touched the page, so the browser keeps it
@@ -44,8 +85,10 @@
     const canvas = document.getElementById("sm89");
     canvas.addEventListener("contextmenu", e => e.preventDefault());
     canvas.addEventListener("pointerdown", () => canvas.focus());
-    // Trunk's loader says when the game is running.
-    addEventListener("TrunkApplicationStarted", () => status.classList.add("hidden"));
+    // Trunk's loader says when the game is running (also after a failure, see web/loader.js).
+    addEventListener("TrunkApplicationStarted", () => {
+      if (!("failed" in status.dataset)) status.classList.add("hidden");
+    });
   </script>
 </body>
 </html>

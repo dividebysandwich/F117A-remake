@@ -941,6 +941,10 @@ fn download_url() -> String {
     format!("{origin}{}download.html", &path[..path.rfind('/').map_or(0, |i| i + 1)])
 }
 
+/// The game's Discord server (also on the browser build's loading screen, web/index.html).
+#[cfg(target_arch = "wasm32")]
+const DISCORD_URL: &str = "https://discord.gg/zjjGeKKpC";
+
 /// A full-screen-width menu window in the terminal style.
 pub(crate) fn menu_window(ctx: &egui::Context, id: &str, width: f32) -> egui::Window<'static> {
     egui::Window::new(id.to_string())
@@ -1046,6 +1050,18 @@ fn main_screen(
             .clicked()
             {
                 ui.ctx().open_url(egui::OpenUrl::new_tab(download_url()));
+            }
+            #[cfg(target_arch = "wasm32")]
+            if facts(
+                ui.add(wide("DISCORD")),
+                &[
+                    "Fly together, report bugs and share missions",
+                    "Follow development",
+                ],
+            )
+            .clicked()
+            {
+                ui.ctx().open_url(egui::OpenUrl::new_tab(DISCORD_URL));
             }
             ui.add_space(10.0);
             // In the browser the tab is closed instead.

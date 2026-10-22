@@ -131,13 +131,14 @@ fn despawn_camera(mut commands: Commands, q: Query<Entity, With<TrackCamera>>) {
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub(crate) fn update_camera(
     combat: Option<Res<Combat>>,
     mfd: Res<MfdState>,
     view: Res<ViewState>,
     mut info: ResMut<TrackCam>,
     papi: Res<crate::scenery::PapiSites>,
+    mut sites: ResMut<crate::world::StreamSites>,
     player: Query<(&Aircraft, &WorldPos), (With<Player>, Without<TrackCamera>)>,
     mut cam: Query<
         (&mut Camera, &mut Projection, &mut WorldPos, &mut Transform),
@@ -151,9 +152,16 @@ pub(crate) fn update_camera(
         camera.is_active = want;
     }
     info.live = want;
-    let (Some(combat), Some((a, apos))) = (combat, ac) else { return };
+    // The ground looked at is streamed in like around the aircraft, so far-away targets show up.
+    let mut look = None;
+    let site = |sites: &mut crate::world::StreamSites, p: Option<bevy::math::DVec3>| {
+        if sites.pod != p {
+            sites.pod = p;
+        }
+    };
+    let (Some(combat), Some((a, apos))) = (combat, ac) else { return site(&mut sites, None) };
     if !want {
-        return;
+        return site(&mut sites, None);
     }
     let eye = apos.0;
     if mfd.ils {
@@ -176,7 +184,7 @@ pub(crate) fn update_camera(
                     bearing: None,
                     zoom: magnification.log2().round().clamp(0.0, 6.0) as u8 + 1,
                 };
-                return;
+                return site(&mut sites, None);
             }
             None => info.name = ["ILS".into(), "NO APPROACH".into()],
         }
@@ -207,7 +215,7 @@ pub(crate) fn update_camera(
             zoom: zoom + 1,
         };
         aim(&mut tf, &mut pos, &mut proj, dir, eye, zoom);
-        return;
+        return site(&mut sites, mfd.av.tgp.los_ground);
     }
     let sim = &combat.sim;
     let t = sim.targeting();
@@ -216,7 +224,8 @@ pub(crate) fn update_camera(
         None
     } else if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
         let (e, n) = map_wu(o.x, o.y);
-        Some(wu_to_bevy(e + 16.0, n - 16.0, 0.0))
+        look = Some(wu_to_bevy(e + 16.0, n - 16.0, 0.0));
+        look
     } else if let Some((i, u)) = t.air.and_then(|i| sim.flights().get(i).map(|u| (i, *u))) {
         let (e, n, z) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
         Some(wu_to_bevy(e, n, z))
@@ -245,6 +254,7 @@ pub(crate) fn update_camera(
         info.zoom = z + 1;
     }
     aim(&mut tf, &mut pos, &mut proj, dir, eye, info.zoom.saturating_sub(1));
+    site(&mut sites, look);
 }
 
 /// Points the camera from `eye` along `dir` with zoom shift `z`.

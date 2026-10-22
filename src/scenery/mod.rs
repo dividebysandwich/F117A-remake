@@ -320,8 +320,9 @@ fn stream_blocks(
         (_, _, false) => &[Tier::Main, Tier::Detail, Tier::Far],
         (_, _, true) => &[Tier::Main, Tier::Detail, Tier::Far, Tier::Fields],
     };
-    let eyes = std::iter::once((anchor.0, f64::MAX))
-        .chain(sites.points.iter().chain(&sites.follow).map(|&p| (p, SITE_RADIUS)));
+    let eyes = std::iter::once((anchor.0, f64::MAX)).chain(
+        sites.points.iter().chain(&sites.follow).chain(&sites.pod).map(|&p| (p, SITE_RADIUS)),
+    );
     for (eye, max_r) in eyes {
         let (east, north, _) = bevy_to_wu(eye);
         let eye = bevy::math::DVec2::new(east, north) * WU;

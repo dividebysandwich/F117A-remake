@@ -66,6 +66,9 @@ struct Globals {
     // (xyz), star visibility 0..1 (w).
     sky_sun: vec4<f32>,
     sky_moon: vec4<f32>,
+    // x: darkness of a night without moonlight 0..1 (0 under night vision goggles), y: the
+    // strength of its red horizon glow.
+    sky_night: vec4<f32>,
 };
 
 struct PaletteMaterial {
@@ -108,7 +111,7 @@ struct VertexOutput {
     @location(4) @interpolate(flat) puff_eye: vec4<f32>,
     @location(5) @interpolate(flat) puff_sun: vec3<f32>,
     @location(6) @interpolate(flat) puff_scale: vec3<f32>,
-    // Warm object or dot light (FLIR).
+    // Bit 0: warm object or dot light (FLIR); bit 1: aircraft (level code 5).
     @location(7) @interpolate(flat) warm: u32,
 #ifdef DOT_COLOUR
     @location(8) @interpolate(flat) dot_colour: u32,
@@ -154,7 +157,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.world_position = world.xyz;
     out.clip_position = position_world_to_clip(world.xyz);
     let tag = mesh_functions::get_tag(v.instance_index);
-    out.warm = select(0u, 1u, (tag & (TAG_WARM | 128u)) != 0u);
+    out.warm = select(0u, 1u, (tag & (TAG_WARM | 128u)) != 0u) | select(0u, 2u, (tag & 7u) == 5u);
 #ifdef DOT_COLOUR
     out.dot_colour = v.colour;
 #endif
@@ -331,13 +334,14 @@ fn shade(face: vec3<f32>, dir: vec3<f32>) -> f32 {
 
 // Lighting options: the palette colour lit by the sun (with shadow maps) and local lights,
 // using the flat face normal. Unlit parts keep roughly the classic brightness.
-fn lit(rgb: vec3<f32>, world: vec3<f32>, face: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32) -> vec3<f32> {
+// `dark`: the night's darkness on everything but the local lights.
+fn lit(rgb: vec3<f32>, world: vec3<f32>, face: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32, dark: f32) -> vec3<f32> {
     var n = normalize(face);
     if (dot(n, dir) > 0.0) { n = -n; }
-    return lit_surface(rgb, world, n, clip, flags);
+    return lit_surface(rgb, world, n, clip, flags, dark);
 }
 
-fn lit_surface(rgb: vec3<f32>, world: vec3<f32>, n: vec3<f32>, clip: vec4<f32>, flags: u32) -> vec3<f32> {
+fn lit_surface(rgb: vec3<f32>, world: vec3<f32>, n: vec3<f32>, clip: vec4<f32>, flags: u32, dark: f32) -> vec3<f32> {
     var light = globals.ambient.rgb;
     if ((flags & LIGHT_SHADOWS) != 0u) {
         let ndl = max(dot(n, globals.sun.xyz), 0.0);
@@ -350,6 +354,7 @@ fn lit_surface(rgb: vec3<f32>, world: vec3<f32>, n: vec3<f32>, clip: vec4<f32>, 
     } else {
         light = vec3<f32>(1.0);
     }
+    light *= 1.0 - dark;
     if ((flags & LIGHT_LOCAL) != 0u) {
         let count = min(u32(globals.light_info.x), MAX_LOCAL_LIGHTS);
         for (var i = 0u; i < count; i++) {
@@ -585,6 +590,39 @@ fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>, px: f32) -> vec3<f32> {
     return bg;
 }
 
+// A night without moonlight (continuous time of day): sky, ground and clouds go black, only
+// lights, stars and aircraft show; the horizon keeps a deep red glow. 0 (moonlit) .. 1.
+fn night_dark() -> f32 {
+    return globals.sky_night.x;
+}
+
+// The red glow over the horizon of a dark night by sky band (8-bit sRGB red).
+fn night_red(k: u32) -> vec3<f32> {
+    var red = array<f32, 10>(64.0, 48.0, 36.0, 28.0, 24.0, 16.0, 12.0, 8.0, 6.0, 3.0);
+    if (k >= 10u) { return vec3<f32>(0.0); }
+    let r = red[k] / 255.0 * globals.sky_night.y;
+    return pow(min(vec3<f32>(r, 0.0, r * 0.07), vec3<f32>(1.0)), vec3<f32>(2.2));
+}
+
+// The sky or ground colour `bg` darkened for the night (`dir`: view direction; sky band `b`
+// as from `band_f`, its fraction ignored in classic mode).
+fn night_background(bg: vec3<f32>, dir: vec3<f32>, b: vec3<f32>, modern: bool) -> vec3<f32> {
+    let dark = night_dark();
+    if (dark <= 0.0) {
+        return bg;
+    }
+    var c = bg * (1.0 - dark);
+    if (dir.y >= 0.0) {
+        let k = u32(b.y);
+        var red = night_red(k);
+        if (modern) {
+            red = mix(red, night_red(k + 1u), b.z);
+        }
+        c += red * dark;
+    }
+    return c;
+}
+
 fn bayer4(p: vec2<u32>) -> f32 {
     var m = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
     return (m[(p.y & 3u) * 4u + (p.x & 3u)] + 0.5) / 16.0;
@@ -596,7 +634,7 @@ fn whiteout(rgb: vec3<f32>, dist: f32) -> vec3<f32> {
     let g = globals.weather.w;
     let grey = mix(rgb, vec3<f32>(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722))), 0.4 * g) * (1.0 - 0.3 * g);
     let w = globals.clouds.w * smoothstep(3.0, 60.0, dist);
-    return mix(grey, pal(CLOUD_RAMP + 2u), w);
+    return mix(grey, pal(CLOUD_RAMP + 2u) * (1.0 - night_dark()), w);
 }
 
 // --- Smoke plumes ----------------------------------------------------------------------------
@@ -797,7 +835,7 @@ fn flir(rgb: vec3<f32>, warm: u32, fog_f: f32) -> vec3<f32> {
     let s = sqrt(dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722)));
     let cold = 0.3 + 0.25 * s;
     var v = cold;
-    if (warm != 0u) {
+    if ((warm & 1u) != 0u) {
         v = mix(0.85 + 0.15 * s, cold, clamp(fog_f / 24.0, 0.0, 0.6));
     }
     return vec3<f32>(pow(v, 2.2));
@@ -861,7 +899,8 @@ fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
         var n = normalize(deriv.face);
         if (dot(n, dir) > 0.0) { n = -n; }
         let noise = cloud_noise(in.world_position, d);
-        return vec4<f32>(flash(whiteout(cloud_color(noise, n, d, modern), d), in.world_position), cover);
+        let c = cloud_color(noise, n, d, modern) * (1.0 - night_dark());
+        return vec4<f32>(flash(whiteout(c, d), in.world_position), cover);
     }
 #else ifdef PALETTE_BACKGROUND
     {
@@ -873,27 +912,32 @@ fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
             return vec4<f32>(pal(select(0x7Cu, 0x88u, dir.y >= 0.0)), 1.0);
         }
         var bg: vec3<f32>;
+        let b = band_f(dir);
         if (modern) {
-            let b = band_f(dir);
             let k = u32(b.y);
             let k1 = min(k + 1u, 15u);
             bg = mix(pal(u32(b.x) + k), pal(u32(b.x) + k1), b.z);
         } else {
             bg = pal(band(dir).x);
         }
-        if (globals.sky_sun.w > 0.0 && dir.y > 0.0) {
-            bg = night_sky(bg, normalize(dir), deriv.sky_px);
-        }
         // Lighting options: the ground gradient is lit like flat ground where the view ray
         // meets the ground plane (y = 0), so it takes shadows and local lights.
         let eye = view.world_position;
+        var ground_lit = false;
 #ifdef PALETTE_LIT
         let flags = u32(globals.ambient.w);
         if (flags != 0u && dir.y < 0.0 && eye.y > 0.0) {
             let ground = eye + dir * (-eye.y / dir.y);
-            bg = lit_surface(bg, ground, vec3<f32>(0.0, 1.0, 0.0), in.clip_position, flags);
+            bg = lit_surface(bg, ground, vec3<f32>(0.0, 1.0, 0.0), in.clip_position, flags, night_dark());
+            ground_lit = true;
         }
 #endif
+        if (!ground_lit) {
+            bg = night_background(bg, dir, b, modern);
+        }
+        if (globals.sky_sun.w > 0.0 && dir.y > 0.0) {
+            bg = night_sky(bg, normalize(dir), deriv.sky_px);
+        }
         // Stratus layer beyond its planes: its underside over the sky below it, its top over
         // the ground above it, where the layer's coverage field has cloud.
         if (globals.clouds.z != 0.0) {
@@ -907,11 +951,11 @@ fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
                 d = (eye_y - globals.clouds.y) / -nd.y;
                 n = vec3<f32>(0.0, 1.0, 0.0);
             } else if (eye_y > globals.clouds.x && eye_y < globals.clouds.y) {
-                bg = mix(bg, pal(CLOUD_RAMP + 2u), stratus_cover(eye));
+                bg = mix(bg, pal(CLOUD_RAMP + 2u) * (1.0 - night_dark()), stratus_cover(eye));
             }
             if (d > 0.0) {
                 let hit = eye + nd * d;
-                let c = cloud_color(cloud_noise(hit, d), n, d, modern);
+                let c = cloud_color(cloud_noise(hit, d), n, d, modern) * (1.0 - night_dark());
                 bg = mix(bg, c, stratus_cover(hit));
             }
         }
@@ -968,14 +1012,19 @@ fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
             rgb = pal(select(lo, hi, ((px.x + px.y) & 1u) == 1u));
         }
     }
+    // A dark night blacks out the scenery; lights (lines and dots) and aircraft show.
+    let dark = select(night_dark(), 0.0, is_line || (in.warm & 2u) != 0u);
 #ifdef PALETTE_LIT
     let flags = u32(globals.ambient.w);
     if (!is_line && flags != 0u) {
-        rgb = lit(rgb, in.world_position, deriv.face, dir, in.clip_position, flags);
+        rgb = lit(rgb, in.world_position, deriv.face, dir, in.clip_position, flags, dark);
     } else
 #endif
-    if (modern && !is_line) {
-        rgb = rgb * shade(deriv.face, dir);
+    {
+        if (modern && !is_line) {
+            rgb = rgb * shade(deriv.face, dir);
+        }
+        rgb = rgb * (1.0 - dark);
     }
     return vec4<f32>(flash(whiteout(rgb, length(dir)), in.world_position), 1.0);
 #endif

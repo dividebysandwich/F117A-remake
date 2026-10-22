@@ -44,6 +44,10 @@ pub struct Sky {
     pub stars: f32,
     /// Daylight from the sun's elevation 0 (night) .. 1 (day).
     pub day: f32,
+    /// Darkness of a night without moonlight 0 .. 1 (black sky and ground, lights and stars
+    /// only), and the strength of the red glow it leaves at the horizon.
+    pub dark: f32,
+    pub glow: f32,
     /// Mission date: days since 1970-01-01 (the moon's phase), and the theater's latitude.
     days: f64,
     lat: f64,
@@ -60,6 +64,8 @@ impl Default for Sky {
             moonlight: 0.0,
             stars: 0.0,
             day: 1.0,
+            dark: 0.0,
+            glow: 0.0,
             days: 0.0,
             lat: 45.0,
             golden: None,
@@ -265,12 +271,25 @@ pub fn blend(p: &TheaterPalettes, golden: &VgaPalette, elev: f64, moonlight: f64
     }
 }
 
+/// How dark the night is (0 .. 1) at a sun elevation (degrees): the palette's night under a
+/// full moon high in the sky, black when the moon is new or down. It falls with the dusk.
+pub fn darkness(elev: f64, moonlight: f64) -> f64 {
+    (1.0 - moonlight) * (1.0 - smoothstep(-14.0, -5.0, elev))
+}
+
+fn test_arg(name: &str) -> Option<f64> {
+    let a: Vec<String> = std::env::args().collect();
+    a.windows(2).find(|w| w[0] == name).and_then(|w| w[1].parse().ok())
+}
+
 fn test_hours() -> Option<f64> {
     static H: std::sync::OnceLock<Option<f64>> = std::sync::OnceLock::new();
-    *H.get_or_init(|| {
-        let a: Vec<String> = std::env::args().collect();
-        a.windows(2).find(|w| w[0] == "--sky-hours").and_then(|w| w[1].parse().ok())
-    })
+    *H.get_or_init(|| test_arg("--sky-hours"))
+}
+
+fn test_phase() -> Option<f64> {
+    static P: std::sync::OnceLock<Option<f64>> = std::sync::OnceLock::new();
+    *P.get_or_init(|| test_arg("--sky-phase"))
 }
 
 fn reset_sky(
@@ -309,9 +328,9 @@ fn update_sky(
         return;
     }
     let seconds = clock.start_seconds as f64 + clock.elapsed.unwrap_or(0.0) as f64;
-    // Test aid: `--sky-hours <h>` sets the local time.
+    // Test aids: `--sky-hours <h>` sets the local time, `--sky-phase <0..1>` the moon's phase.
     let hours = test_hours().unwrap_or(seconds / 3600.0);
-    let phase = moon_phase(sky.days + hours / 24.0);
+    let phase = test_phase().unwrap_or_else(|| moon_phase(sky.days + hours / 24.0));
     let sun = sun_dir(hours, sky.lat);
     let moon = moon_dir(hours, sky.lat, phase);
     let elev = (sun.y as f64).asin().to_degrees();
@@ -325,6 +344,8 @@ fn update_sky(
         moonlight: moonlight as f32,
         stars: ((1.0 - smoothstep(-14.0, -4.0, elev)) * (1.0 - 0.6 * moonlight)) as f32,
         day: day as f32,
+        dark: darkness(elev, moonlight) as f32,
+        glow: (1.0 + 2.0 * smoothstep(-18.0, -9.0, elev)) as f32,
         ..sky.clone()
     };
     // Alt-N's jump to the target palette wins.
@@ -401,6 +422,15 @@ mod tests {
         let strong = golden(&p, &Look { base: 0, intensity: 1.3, warmth: 0.0 });
         let h = |p: &VgaPalette| p.colors[0x80][0] as i32 - p.colors[0x80][2] as i32;
         assert!(h(&strong) >= h(&g));
+    }
+
+    #[test]
+    fn moonless_darkness() {
+        assert_eq!(darkness(-30.0, 0.0), 1.0);
+        assert_eq!(darkness(-30.0, 1.0), 0.0);
+        assert!((darkness(-30.0, 0.5) - 0.5).abs() < 1e-9);
+        assert_eq!(darkness(0.0, 0.0), 0.0);
+        assert!(darkness(-9.0, 0.0) > 0.2 && darkness(-9.0, 0.0) < 0.8);
     }
 
     #[test]

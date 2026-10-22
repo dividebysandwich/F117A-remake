@@ -12,7 +12,7 @@ use bevy::prelude::*;
 
 use super::hud_glass::HudGlassMaterial;
 use super::layout::{DED_CANVAS, Elem, PanelLayout, PanelStyle, Placed, PxRect};
-use super::shading::{CockpitMaterial, cockpit_material};
+use super::shading::{CockpitMaterial, cockpit_material, cockpit_material_bright};
 use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit::{CockpitArt, Displays};
 use crate::font::Fonts;
@@ -305,7 +305,7 @@ pub(super) fn trackcam_material(
     materials: &mut Assets<CockpitMaterial>,
     tc_image: Option<&crate::trackcam::TrackCamImage>,
 ) -> Handle<CockpitMaterial> {
-    materials.add(cockpit_material(StandardMaterial {
+    materials.add(cockpit_material_bright(StandardMaterial {
         base_color_texture: tc_image.map(|i| i.0.clone()),
         unlit: true,
         cull_mode: None,

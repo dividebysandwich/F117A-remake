@@ -105,7 +105,7 @@ Testing and screenshots
   --damage <bits,hits>         start damaged
   --strike <ground|cloud>      a frozen lightning strike early in the flight
   --tod-seed <n>               the palette's time of day fade (0..15)
-  --sky-golden <base[,intensity[,warmth]]>, --sky-hours <h>
+  --sky-golden <base[,intensity[,warmth]]>, --sky-hours <h>, --sky-phase <0..1>
                                sky test looks
   --debrief-map                open the debrief's flight map at mid-flight
   --export-maps <dir>          write every theater's map picture and exit

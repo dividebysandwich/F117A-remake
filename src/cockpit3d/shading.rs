@@ -24,7 +24,14 @@ pub type CockpitMaterial = ExtendedMaterial<StandardMaterial, CockpitShading>;
 /// `super::sync_materials`).
 pub fn cockpit_material(base: StandardMaterial) -> CockpitMaterial {
     let unlit = base.unlit;
-    ExtendedMaterial { base, extension: CockpitShading { unlit, full: false } }
+    ExtendedMaterial { base, extension: CockpitShading { unlit, ..default() } }
+}
+
+/// A cockpit material the night never darkens (a picture or an overlay, not a surface).
+pub fn cockpit_material_bright(base: StandardMaterial) -> CockpitMaterial {
+    let mut m = cockpit_material(base);
+    m.extension.bright = true;
+    m
 }
 
 /// Picks the shader variant.
@@ -36,6 +43,12 @@ pub struct CockpitShading {
     /// The lighting options are on: Bevy's full lighting (point lights, shadows); otherwise
     /// only the sun and the ambient light.
     pub full: bool,
+    /// x: darkness of a night without moonlight 0..1 (`crate::sky::Sky::dark`): everything
+    /// but the emissive parts and the cockpit lamps' light goes dark.
+    #[uniform(100)]
+    pub night: Vec4,
+    /// Never darkened.
+    pub bright: bool,
 }
 
 #[repr(C)]

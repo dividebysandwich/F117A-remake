@@ -30,7 +30,7 @@ use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions};
 
 pub use self::shading::CockpitMaterial;
-use self::shading::cockpit_material;
+use self::shading::{cockpit_material, cockpit_material_bright};
 use crate::camera::{EyeCamera, HeadAnchor, HeadLook, Orbit, View, ViewState};
 use crate::flight::Player;
 use crate::input::{Action, ActionEvent};
@@ -230,7 +230,7 @@ fn setup_materials(mut commands: Commands, mut materials: ResMut<Assets<CockpitM
     let rubber = m(Color::srgb(0.05, 0.05, 0.05), 0.95, 0.0);
     let metal = m(Color::srgb(0.45, 0.46, 0.48), 0.4, 0.8);
     let hand = m(Color::srgb(0.25, 0.27, 0.3), 0.8, 0.0);
-    let flash = materials.add(cockpit_material(StandardMaterial {
+    let flash = materials.add(cockpit_material_bright(StandardMaterial {
         base_color: Color::srgba(0.9, 0.0, 0.0, 0.45),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
@@ -287,19 +287,32 @@ fn sync_materials(
     }
 }
 
-/// Every cockpit material's shader variant follows its `unlit` and the lighting options (also
-/// materials created later).
-fn sync_shading(settings: Res<Settings>, mut materials: ResMut<Assets<CockpitMaterial>>) {
+/// Every cockpit material's shader variant follows its `unlit` and the lighting options, and
+/// its darkness the night's (also materials created later).
+fn sync_shading(
+    settings: Res<Settings>,
+    sky: Res<crate::sky::Sky>,
+    mut materials: ResMut<Assets<CockpitMaterial>>,
+) {
     let full = lighting_on(&settings);
+    // In 1/64 steps: a change re-uploads every cockpit material.
+    let dark = if sky.on { (sky.dark * 64.0).round() / 64.0 } else { 0.0 };
+    let night =
+        |m: &CockpitMaterial| Vec4::new(if m.extension.bright { 0.0 } else { dark }, 0.0, 0.0, 0.0);
     let stale: Vec<_> = materials
         .iter()
-        .filter(|(_, m)| m.extension.unlit != m.base.unlit || m.extension.full != full)
+        .filter(|(_, m)| {
+            m.extension.unlit != m.base.unlit
+                || m.extension.full != full
+                || m.extension.night != night(m)
+        })
         .map(|(id, _)| id)
         .collect();
     for id in stale {
         if let Some(mut m) = materials.get_mut(id) {
             m.extension.unlit = m.base.unlit;
             m.extension.full = full;
+            m.extension.night = night(&m);
         }
     }
 }

@@ -359,7 +359,8 @@ fn update_globals(
     g.ambient = lighting.ambient;
     g.light_info.x = lighting.lights.len() as f32;
     g.light_info.y = lighting.daylight;
-    g.light_info.z = hud.is_some_and(|h| h.nvg) as u32 as f32;
+    let nvg = hud.is_some_and(|h| h.nvg);
+    g.light_info.z = nvg as u32 as f32;
     // `SM89_FLAT_SHADER=<bits>`: flat colours (measuring the fragment shader's cost): 1 all,
     // 2 the background sphere, 4 objects, 8 clouds and smoke.
     g.light_info.w =
@@ -379,6 +380,8 @@ fn update_globals(
     if sky.on {
         g.sky_sun = sky.sun.extend(1.0);
         g.sky_moon = sky.moon.extend(sky.stars);
+        // Night vision goggles see as well on a moonless night.
+        g.sky_night = Vec4::new(if nvg { 0.0 } else { sky.dark }, sky.glow, 0.0, 0.0);
     }
     buf.set_data(g);
 }

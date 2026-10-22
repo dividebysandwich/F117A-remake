@@ -607,8 +607,11 @@ fn shade_clouds(
     state: Res<WeatherState>,
     mut shading: ResMut<CloudShading>,
     mut render: ResMut<CloudRenderSettings>,
+    sky: Res<crate::sky::Sky>,
 ) {
     let nvg = hud.is_some_and(|h| h.nvg);
+    // A night without moonlight blacks the clouds out too (but for the goggles).
+    let lit = if nvg || !sky.on { 1.0 } else { 1.0 - sky.dark };
     let tint = |c: Vec3| if nvg { nvg_color(c, lighting.daylight) } else { c };
     let flash_scale = 1.0 + (0.3 - 1.0) * lighting.daylight.clamp(0.0, 1.0);
     let (line_a, line_b) = state.bolt_light(origin.origin);
@@ -628,7 +631,7 @@ fn shade_clouds(
             let k = i as f32 / 15.0;
             let moonlit = (sky * (1.8 - 1.3 * k) + Vec3::splat(0.004 * (1.0 - k))) * night;
             // Grey days (`whiteout` in palette.wgsl).
-            let c = linear(CLOUD_RAMP + i as u8).max(moonlit) * (1.0 - 0.3 * state.gloom);
+            let c = linear(CLOUD_RAMP + i as u8).max(moonlit) * (1.0 - 0.3 * state.gloom) * lit;
             tint(c).extend(1.0)
         }),
         haze_distance: (state.vis_km * 1000.0).max(4000.0),
@@ -637,7 +640,7 @@ fn shade_clouds(
         line_b,
         line_color: BOLT_COLOR * flash_scale,
         // Inside a cloud everything fades into it (`whiteout` in palette.wgsl).
-        fog: tint(linear(CLOUD_RAMP + 2)).extend(state.whiteout),
+        fog: tint(linear(CLOUD_RAMP + 2) * lit).extend(state.whiteout),
     };
     // VR (two large eye views on a mobile GPU): marched at a third of the resolution, coarse
     // scales only, fewer steps, no second occupancy sample for the self shadow.

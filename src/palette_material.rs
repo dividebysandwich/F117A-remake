@@ -207,6 +207,9 @@ pub struct Globals {
     pub sky_sun: Vec4,
     /// Direction to the moon (xyz), star visibility 0..1 (w).
     pub sky_moon: Vec4,
+    /// x: darkness of a night without moonlight 0..1 (0 under night vision goggles), y: the
+    /// strength of its red horizon glow.
+    pub sky_night: Vec4,
 }
 
 /// Lighting flags in `Globals.ambient.w`.
@@ -235,6 +238,7 @@ impl Default for Globals {
             bolt_b: Vec4::ZERO,
             sky_sun: Vec4::ZERO,
             sky_moon: Vec4::ZERO,
+            sky_night: Vec4::ZERO,
         }
     }
 }

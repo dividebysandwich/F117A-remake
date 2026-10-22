@@ -9,6 +9,9 @@
     pbr_functions::{alpha_discard, main_pass_post_lighting_processing},
     forward_io::{VertexOutput, FragmentOutput},
 }
+#ifdef COCKPIT_UNLIT
+#import bevy_pbr::pbr_bindings
+#endif
 #ifdef COCKPIT_SIMPLE_LIT
 #import bevy_pbr::{
     pbr_types::PbrInput,
@@ -25,6 +28,9 @@
     pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT,
 }
 #endif
+
+// x: darkness of a night without moonlight 0..1 (shading.rs `CockpitShading::night`).
+@group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> night: vec4<f32>;
 
 #ifdef COCKPIT_SIMPLE_LIT
 // apply_pbr_lighting (bevy_pbr/src/render/pbr_functions.wgsl) for directional lights without
@@ -58,7 +64,7 @@ fn simple_lighting(in: PbrInput) -> vec4<f32> {
     let indirect = ambient::ambient_light(in.world_position, in.N, in.V, NdotV, diffuse_color, F0, perceptual_roughness, in.diffuse_occlusion);
     let emissive = in.material.emissive;
     let emissive_light = emissive.rgb * base.a * mix(1.0, view_bindings::view.exposure, emissive.a);
-    return vec4<f32>(view_bindings::view.exposure * (direct + indirect) + emissive_light, base.a);
+    return vec4<f32>(view_bindings::view.exposure * (direct + indirect) * (1.0 - night.x) + emissive_light, base.a);
 }
 #endif
 
@@ -67,14 +73,26 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     var pbr_input = pbr_input_from_standard_material(in, is_front);
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
     var out: FragmentOutput;
+    // A dark night: unlit surfaces go dark but where they glow (lamps, screens, labels); lit
+    // ones lose the sun and the ambient light but keep the cockpit lamps' light.
+    let dark = night.x;
 #ifdef COCKPIT_UNLIT
     out.color = pbr_input.material.base_color;
+    // Bevy leaves the emissive texture out of unlit materials.
+    var e = pbr_bindings::material.emissive.rgb;
+#ifdef VERTEX_UVS_A
+    e *= textureSample(pbr_bindings::emissive_texture, pbr_bindings::emissive_sampler, in.uv).rgb;
+#endif
+    let glow = clamp(max(max(e.r, e.g), e.b) * 8.0, 0.0, 1.0);
+    out.color = vec4<f32>(out.color.rgb * mix(1.0 - dark, 1.0, glow), out.color.a);
 #endif
 #ifdef COCKPIT_SIMPLE_LIT
     out.color = simple_lighting(pbr_input);
 #endif
 #ifdef COCKPIT_FULL
     if (pbr_input.material.flags & STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u {
+        pbr_input.diffuse_occlusion *= 1.0 - dark;
+        pbr_input.specular_occlusion *= 1.0 - dark;
         out.color = apply_pbr_lighting(pbr_input);
     } else {
         out.color = pbr_input.material.base_color;

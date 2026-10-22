@@ -24,6 +24,8 @@ const TAG_DOT_SPOT: u32 = 32768u;
 // Dot only drawn from DOT_FAR_MIN metres away (palette_material.rs `TAG_DOT_FAR`).
 const TAG_DOT_FAR: u32 = 2147483648u;
 const DOT_FAR_MIN: f32 = 3000.0;
+// Share of a moonless night's darkness on aircraft and their spotting dots: barely visible.
+const AIRCRAFT_NIGHT: f32 = 0.9;
 // Cloud colours: the grey ramp (its base entry is the horizon haze colour).
 const CLOUD_RAMP: u32 = 0xE0u;
 
@@ -111,7 +113,8 @@ struct VertexOutput {
     @location(4) @interpolate(flat) puff_eye: vec4<f32>,
     @location(5) @interpolate(flat) puff_sun: vec3<f32>,
     @location(6) @interpolate(flat) puff_scale: vec3<f32>,
-    // Bit 0: warm object or dot light (FLIR); bit 1: aircraft (level code 5).
+    // Bit 0: warm object or dot light (FLIR); bit 1: aircraft (level code 5); bit 2: spotting
+    // dot.
     @location(7) @interpolate(flat) warm: u32,
 #ifdef DOT_COLOUR
     @location(8) @interpolate(flat) dot_colour: u32,
@@ -157,7 +160,8 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.world_position = world.xyz;
     out.clip_position = position_world_to_clip(world.xyz);
     let tag = mesh_functions::get_tag(v.instance_index);
-    out.warm = select(0u, 1u, (tag & (TAG_WARM | 128u)) != 0u) | select(0u, 2u, (tag & 7u) == 5u);
+    out.warm = select(0u, 1u, (tag & (TAG_WARM | 128u)) != 0u) | select(0u, 2u, (tag & 7u) == 5u)
+        | select(0u, 4u, (tag & (TAG_DOT_SPOT | 128u)) == (TAG_DOT_SPOT | 128u));
 #ifdef DOT_COLOUR
     out.dot_colour = v.colour;
 #endif
@@ -591,7 +595,7 @@ fn night_sky(bg_in: vec3<f32>, nd: vec3<f32>, px: f32) -> vec3<f32> {
 }
 
 // A night without moonlight (continuous time of day): sky, ground and clouds go black, only
-// lights, stars and aircraft show; the horizon keeps a deep red glow. 0 (moonlit) .. 1.
+// lights and stars show, aircraft barely; the horizon keeps a deep red glow. 0 (moonlit) .. 1.
 fn night_dark() -> f32 {
     return globals.sky_night.x;
 }
@@ -1012,8 +1016,13 @@ fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
             rgb = pal(select(lo, hi, ((px.x + px.y) & 1u) == 1u));
         }
     }
-    // A dark night blacks out the scenery; lights (lines and dots) and aircraft show.
-    let dark = select(night_dark(), 0.0, is_line || (in.warm & 2u) != 0u);
+    // A dark night blacks out the scenery; lights (lines and dots) show, aircraft barely.
+    var dark = select(night_dark(), 0.0, is_line);
+    if ((in.warm & 4u) != 0u) {
+        dark = night_dark() * AIRCRAFT_NIGHT;
+    } else if ((in.warm & 2u) != 0u) {
+        dark *= AIRCRAFT_NIGHT;
+    }
 #ifdef PALETTE_LIT
     let flags = u32(globals.ambient.w);
     if (!is_line && flags != 0u) {

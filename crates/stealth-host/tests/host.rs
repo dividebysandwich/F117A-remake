@@ -228,3 +228,32 @@ fn a_sortie_briefs_its_own_target() {
     assert_eq!(strike.primary.object_index, airfield as i16);
     assert_eq!(strike.primary.shape_name, "AIRFIELD");
 }
+
+/// Every theater can be won: taking what the helicopters reach from the friendly bases, the
+/// enemy's airfields all fall in the end.
+#[test]
+fn every_theater_can_be_won() {
+    use stealth_campaign::{Side, dist, tuning};
+    let data = theater::game_data().unwrap();
+    for code in theater::codes() {
+        let mut c = Host::new(setup(&code), &data, Rules::default()).unwrap().state;
+        loop {
+            let bases: Vec<(i32, i32)> =
+                c.bases(Side::Blue).iter().filter_map(|&b| c.site(b).map(|s| (s.x, s.y))).collect();
+            let reach = |x: i32, y: i32| {
+                bases.iter().any(|&(bx, by)| dist(x - bx, y - by) <= tuning::INSERTION_RANGE)
+            };
+            match c.places.iter().position(|p| p.owner == Side::Red && reach(p.x, p.y)) {
+                Some(k) => c.places[k].owner = Side::Blue,
+                None => break,
+            }
+        }
+        let left: Vec<&str> = c
+            .places
+            .iter()
+            .filter(|p| p.owner == Side::Red && p.airfield.is_some())
+            .map(|p| p.name.as_str())
+            .collect();
+        assert!(left.is_empty(), "{code}: out of reach {left:?}");
+    }
+}

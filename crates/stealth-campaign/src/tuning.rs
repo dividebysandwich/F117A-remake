@@ -40,14 +40,15 @@ pub const CAPTURE_RADIUS: i32 = 0x60;
 /// included (~310 km/h; for the intercepts' arrival times).
 pub const HELO_SPEED: f64 = 5.5;
 /// Insertions and raids still in the air this long after take-off are called home.
-pub const INSERTION_TIMEOUT: f64 = 60.0 * 60.0;
+pub const INSERTION_TIMEOUT: f64 = 90.0 * 60.0;
 pub const RAID_TIMEOUT: f64 = 60.0 * 60.0;
 /// The campaign sends an insertion on its own when a front place's threat is at most this, and
 /// not more often than this.
 pub const AUTO_INSERT_THREAT: i32 = 0;
 pub const AUTO_INSERT_EVERY: f64 = 20.0 * 60.0;
-/// Insertions fly from bases at most this far from the target (helicopter range, 250 km).
-pub const INSERTION_RANGE: i32 = 0x3E80;
+/// Insertions fly from bases at most this far from the target (helicopter range, 300 km: every
+/// theater's enemy airfields are in reach of one another's).
+pub const INSERTION_RANGE: i32 = 0x4B00;
 /// Weight of a live SAM site against one AAA unit in the threat estimate.
 pub const SAM_THREAT: i32 = 3;
 

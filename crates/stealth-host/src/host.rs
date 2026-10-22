@@ -8,6 +8,7 @@
 //! repaired, rearming) is in [`Host::take_sim_events`].
 
 use serde::{Deserialize, Serialize};
+use stealth_campaign::weather::Forecast;
 use stealth_campaign::{
     Aircraft, CampaignEvent, CampaignSetup, CampaignState, Command, Objective, PlaceId, PlayerId,
     Report, RoutePoint, Side, Sortie, SortieRecord,
@@ -78,6 +79,8 @@ pub struct Host {
     /// The sky: days since 1970 of the mission date, the theater's latitude.
     days: f64,
     lat: f64,
+    /// The changing weather (none under a clear sky).
+    forecast: Option<Forecast>,
     /// Events the host's own calls took from the simulation and did not use.
     leftover: Vec<PilotEvent>,
 }
@@ -100,6 +103,7 @@ impl Host {
         let (y, m, d) = crate::sky::briefing_date(&mission.briefing.date);
         let days = crate::sky::days_from_civil(y, m, d) as f64;
         let lat = crate::sky::latitude(&state.setup.theater_code.to_ascii_lowercase());
+        let forecast = Forecast::new(&state.setup);
         Self {
             state,
             mission,
@@ -108,6 +112,7 @@ impl Host {
             started: false,
             days,
             lat,
+            forecast,
             leftover: Vec::new(),
         }
     }
@@ -335,6 +340,9 @@ impl Host {
             )));
         } else {
             sim.set_visual_light(None);
+        }
+        if let Some(f) = &mut self.forecast {
+            sim.set_weather(f.at(self.state.clock).weather);
         }
         out
     }

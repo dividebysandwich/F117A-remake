@@ -20,6 +20,11 @@ pub fn optical_seeker(spec: i32, cls: i32) -> bool {
 }
 
 impl Sim {
+    /// The weather changes (the dynamic campaign's).
+    pub fn set_weather(&mut self, weather: stealth_mission::Weather) {
+        self.weather = weather;
+    }
+
     /// Clear line of sight between two points (map units, viewZ).
     pub(crate) fn sees(&self, a: (i32, i32, i32), b: (i32, i32, i32)) -> bool {
         !self.weather.any()

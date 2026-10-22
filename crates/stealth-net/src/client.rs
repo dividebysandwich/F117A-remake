@@ -56,17 +56,18 @@ pub struct Client {
 impl Client {
     /// Starts connecting to `addr` ("host" or "host:port") as `name`.
     pub fn connect(addr: &str, name: &str) -> std::io::Result<Self> {
-        Ok(Self::on(Endpoint::client(&with_default_port(addr))?, name))
+        Ok(Self::over(Endpoint::client(&with_default_port(addr))?, name))
     }
 
     /// Starts connecting through the master server's relay at `url`
     /// (`master::relay_url`): the browser build's way to a server.
     #[cfg(target_arch = "wasm32")]
     pub fn relayed(url: &str, name: &str) -> std::io::Result<Self> {
-        Ok(Self::on(Endpoint::relay(url)?, name))
+        Ok(Self::over(Endpoint::relay(url)?, name))
     }
 
-    fn on(net: Endpoint, name: &str) -> Self {
+    /// Starts connecting through `net` (`Endpoint::client_over`).
+    pub fn over(net: Endpoint, name: &str) -> Self {
         Self {
             net,
             name: name.to_string(),

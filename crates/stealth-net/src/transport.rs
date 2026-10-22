@@ -286,7 +286,7 @@ impl Endpoint {
         let bind = if target.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" };
         let socket = UdpSocket::bind(bind)?;
         socket.set_nonblocking(true)?;
-        Ok(Self::connecting(Box::new(socket), target))
+        Ok(Self::client_over(Box::new(socket), target))
     }
 
     /// A client connecting through the master server's relay at `url`
@@ -294,10 +294,11 @@ impl Endpoint {
     #[cfg(target_arch = "wasm32")]
     pub fn relay(url: &str) -> std::io::Result<Self> {
         let socket = crate::websocket::WsDatagrams::open(url)?;
-        Ok(Self::connecting(Box::new(socket), crate::websocket::PEER))
+        Ok(Self::client_over(Box::new(socket), crate::websocket::PEER))
     }
 
-    fn connecting(socket: Box<dyn Datagrams>, target: SocketAddr) -> Self {
+    /// A client connecting to `target` through any [`Datagrams`].
+    pub fn client_over(socket: Box<dyn Datagrams>, target: SocketAddr) -> Self {
         let mut e = Self::with_socket(socket, false, 1);
         let salt = e.random() | 1;
         e.conns.push(Conn::new(0, target, salt, Instant::now()));
@@ -826,7 +827,7 @@ mod tests {
 
     #[test]
     fn a_closed_relay_ends_the_connection_with_its_reason() {
-        let mut c = Endpoint::connecting(Box::new(Closed), "0.0.0.0:0".parse().unwrap());
+        let mut c = Endpoint::client_over(Box::new(Closed), "0.0.0.0:0".parse().unwrap());
         let now = Instant::now();
         c.flush(now);
         let events = c.poll(now);

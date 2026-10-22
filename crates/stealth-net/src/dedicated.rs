@@ -181,7 +181,7 @@ pub fn run(cfg: Config, stop: &AtomicBool) -> Result<()> {
         cfg.save.display()
     ));
     con.say(format!("rules: {}", rules_text(&host.rules)));
-    con.say(format!("sending the world {:.1} times a second", FS as f32 / cfg.send_every as f32));
+    con.say(format!("tick rate {:.1} updates per second", FS as f32 / cfg.send_every as f32));
     let ev = host.begin(&mut sim);
     log_events(&mut con, &ev);
     let frame = Duration::from_secs_f64(1.0 / FS as f64);

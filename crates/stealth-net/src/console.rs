@@ -187,7 +187,7 @@ fn render(f: &mut ratatui::Frame, s: &Status, log: &VecDeque<(String, String)>, 
     .block(Block::default().borders(Borders::ALL).title(" Bases "));
     f.render_widget(table, sides);
     let rows: Vec<Row> = if s.players.is_empty() {
-        vec![Row::new(vec![Cell::from("Nobody connected").style(Style::new().fg(Color::DarkGray))])]
+        vec![Row::new(vec![Cell::from("").style(Style::new().fg(Color::DarkGray))])]
     } else {
         s.players
             .iter()

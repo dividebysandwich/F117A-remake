@@ -40,7 +40,13 @@ pub struct MultiplayerWindow {
     /// Connecting to a server (until it takes the player in).
     joining: Option<(Client, String)>,
     status: Option<String>,
+    /// What went wrong, for the popup (`multiplayer_window` stamps it with the time it came).
     error: Option<String>,
+    /// The popup: the error and when it came (egui time, seconds).
+    popup: Option<(String, f64)>,
+    /// The name is missing or refused: the name area flashes (since when, egui time).
+    flash_name: bool,
+    flash_since: Option<f64>,
     saves: Vec<(String, String, f64)>,
     sky_ratio: f32,
     start_hour: f32,
@@ -184,6 +190,11 @@ fn connect(w: &mut MultiplayerWindow, addr: &str, name: &str) {
     }
 }
 
+/// The server turned the pilot's name away (`stealth_net::server`: none, or already playing).
+fn name_refused(why: &str) -> bool {
+    why == "No name" || why.ends_with(" is already playing")
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn open(_w: &MultiplayerWindow, addr: &str, name: &str) -> std::io::Result<Client> {
     Client::connect(addr, name)
@@ -275,97 +286,88 @@ fn multiplayer_window(
                 ClientEvent::Closed(why) => {
                     w.joining = None;
                     w.status = None;
+                    w.flash_name |= name_refused(&why);
                     w.error = Some(format!("{addr}: {why}"));
                 }
                 _ => {}
             }
         }
     }
+    let now = ctx.input(|i| i.time);
+    if let Some(e) = w.error.take() {
+        w.popup = Some((e, now));
+    }
+    if std::mem::take(&mut w.flash_name) {
+        w.flash_since = Some(now);
+    }
+    // Three flashes a second, for a second.
+    let flash = w.flash_since.is_some_and(|t| now - t < 1.0 && ((now - t) * 3.0).fract() < 0.5);
+    let mut no_name = false;
     let width = crate::menu::wide_width(ctx).min(1100.0);
+    // The server list takes the room the screen leaves.
+    let list_height = (ctx.content_rect().height() - 330.0).max(160.0);
     crate::menu::menu_window(ctx, "Multiplayer", width).show(ctx, |ui| {
-        ui.label(egui::RichText::new("MULTIPLAYER").heading().color(BRIGHT));
+        let title = if w.page == Page::Host { "MULTIPLAYER: HOST A GAME" } else { "MULTIPLAYER" };
+        ui.label(egui::RichText::new(title).heading().color(BRIGHT));
         ui.label(egui::RichText::new("Coop in the dynamic campaign: fly the war together").color(DIM));
-        ui.separator();
-        section(ui, "Your name");
-        text_entry(ui, "mp_name", &mut state.player_name, 24, Charset::Name, settings.vr, "Pilot name");
-        let named = !state.player_name.trim().is_empty();
-        if !named {
-            ui.label(egui::RichText::new("The other players know you by it").small().color(AMBER));
-        }
         ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            // A browser can't host (no UDP).
-            let pages: &[(Page, &str)] = if cfg!(target_arch = "wasm32") {
-                &[(Page::Join, "JOIN A GAME")]
-            } else {
-                &[(Page::Join, "JOIN A GAME"), (Page::Host, "HOST A GAME")]
-            };
-            for &(page, label) in pages {
-                if ui.selectable_label(w.page == page, egui::RichText::new(label).size(18.0)).clicked() {
-                    w.page = page;
-                    w.error = None;
-                }
+        let named = !state.player_name.trim().is_empty();
+        ui.horizontal_top(|ui| {
+            area(ui, flash, |ui| {
+                ui.set_max_width(340.0);
+                section(ui, "Your name");
+                text_entry(ui, "mp_name", &mut state.player_name, 24, Charset::Name, settings.vr, "Pilot name");
+            });
+            if w.page != Page::Join {
+                return;
             }
-        });
-        ui.separator();
-        match w.page {
-            Page::Join => {
-                if let Some(addr) = server_list(ui, &mut w, named) {
-                    state.server_addr = addr;
-                    join = true;
-                }
-                section(ui, "Server");
-                text_entry(
-                    ui,
-                    "mp_server",
-                    &mut state.server_addr,
-                    64,
-                    Charset::Address,
-                    settings.vr,
-                    "address or name[:port]",
-                );
-                let how = if cfg!(target_arch = "wasm32") {
-                    format!(
-                        "The address or name of a server on the public list (the browser joins \
-                         through it), port {} if none is given",
-                        stealth_net::DEFAULT_PORT
-                    )
-                } else {
-                    format!(
-                        "An IP address or host name, port {} if none is given",
-                        stealth_net::DEFAULT_PORT
-                    )
-                };
-                ui.label(egui::RichText::new(how).small().color(DIM));
-                ui.add_space(8.0);
+            area(ui, false, |ui| {
+                section(ui, "Join by address");
                 ui.horizontal(|ui| {
+                    text_entry(
+                        ui,
+                        "mp_server",
+                        &mut state.server_addr,
+                        64,
+                        Charset::Address,
+                        settings.vr,
+                        "address or name[:port]",
+                    );
                     if w.joining.is_some() {
                         ui.add(egui::Spinner::new().color(GREEN));
-                        if ui.add(big_button("CANCEL")).clicked() {
+                        if ui.button("CANCEL").clicked() {
                             if let Some((mut c, _)) = w.joining.take() {
                                 c.leave();
                             }
                             w.status = None;
                         }
-                    } else {
-                        let ready = named && !state.server_addr.trim().is_empty();
-                        // `|=`: a JOIN in the server list above joins too.
-                        join |= ui.add_enabled(ready, big_button("CONNECT")).clicked();
-                    }
-                    if let Some(s) = &w.status {
-                        ui.label(egui::RichText::new(s).color(BRIGHT));
+                    } else if ui
+                        .add_enabled(!state.server_addr.trim().is_empty(), egui::Button::new("CONNECT"))
+                        .clicked()
+                    {
+                        if named {
+                            join = true;
+                        } else {
+                            no_name = true;
+                        }
                     }
                 });
-                ui.add_space(6.0);
-                ui.label(
-                    egui::RichText::new(
-                        "The server decides the rules (realism, guidance, crashes, time of day, \
-                         friendly fire). \
-                         Your cockpit, flight model, avionics, HUD and graphics stay your own; \
-                         you pick your aircraft in each briefing.",
-                    )
-                    .color(DIM),
-                );
+                if let Some(s) = &w.status {
+                    ui.label(egui::RichText::new(s).small().color(BRIGHT));
+                }
+            });
+        });
+        ui.separator();
+        match w.page {
+            Page::Join => {
+                if let Some(addr) = server_list(ui, &mut w, list_height) {
+                    if named {
+                        state.server_addr = addr;
+                        join = true;
+                    } else {
+                        no_name = true;
+                    }
+                }
             }
             Page::Host => {
                 ui.horizontal(|ui| {
@@ -388,7 +390,7 @@ fn multiplayer_window(
                         .small()
                         .color(DIM),
                 );
-                ui.checkbox(&mut state.list_public, "List on the public server list (others find the game in JOIN A GAME)");
+                ui.checkbox(&mut state.list_public, "List on the public server list (others find the game in their server list)");
                 ui.horizontal_top(|ui| {
                     ui.vertical(|ui| {
                         ui.set_width(210.0);
@@ -427,7 +429,9 @@ fn multiplayer_window(
                                 }
                             }
                         });
-                        if ui.add_enabled(named, big_button("HOST NEW")).clicked() || auto_host {
+                        let clicked = ui.add(big_button("HOST NEW")).clicked();
+                        no_name |= clicked && !named;
+                        if (clicked && named) || auto_host {
                             let (code, _) = THEATERS[state.theater.min(THEATERS.len() - 1)];
                             let secs = web_time::SystemTime::now()
                                 .duration_since(web_time::UNIX_EPOCH)
@@ -465,7 +469,9 @@ fn multiplayer_window(
                             let theater = THEATERS.iter().find(|t| t.0 == code).map_or(code.as_str(), |t| t.1);
                             ui.horizontal(|ui| {
                                 ui.label(format!("{theater:<22} {hours:>5.1} h"));
-                                if ui.add_enabled(named, egui::Button::new("HOST")).clicked() {
+                                let clicked = ui.button("HOST").clicked();
+                                no_name |= clicked && !named;
+                                if clicked && named {
                                     let rules = host_rules(&settings, &state);
                                     host = Some(match save::load(&name) {
                                         Ok(Some(st)) => Host::resume(st, &data.0, rules)
@@ -481,15 +487,36 @@ fn multiplayer_window(
                 });
             }
         }
-        if let Some(e) = &w.error {
-            ui.add_space(6.0);
-            ui.colored_label(AMBER, e);
-        }
         ui.separator();
-        if ui.add_enabled(w.joining.is_none(), big_button("BACK")).clicked() {
-            close = true;
-        }
+        ui.horizontal(|ui| {
+            if ui.add_enabled(w.joining.is_none(), big_button("BACK")).clicked() {
+                close = true;
+            }
+            // A browser can't host (no UDP).
+            if w.page == Page::Join && !cfg!(target_arch = "wasm32") {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add_enabled(w.joining.is_none(), big_button("HOST A GAME")).clicked() {
+                        w.page = Page::Host;
+                    }
+                });
+            }
+        });
     });
+    if no_name {
+        w.flash_since = Some(now);
+    }
+    if let Some((e, since)) = &w.popup {
+        if now - since < POPUP_SECONDS {
+            error_popup(ctx, e);
+        } else {
+            w.popup = None;
+        }
+    }
+    // BACK from hosting goes back to the server list.
+    if close && w.page == Page::Host {
+        close = false;
+        w.page = Page::Join;
+    }
     if join {
         let (addr, name) = (state.server_addr.clone(), state.player_name.clone());
         connect(&mut w, &addr, &name);
@@ -534,8 +561,38 @@ fn server_title(state: &crate::menu::MenuState) -> String {
     }
 }
 
-/// The public server list on the Join page: a server's JOIN gives its address.
-fn server_list(ui: &mut egui::Ui, w: &mut MultiplayerWindow, named: bool) -> Option<String> {
+/// How long an error shows in its popup (seconds).
+const POPUP_SECONDS: f64 = 3.0;
+
+/// An error in a popup at the top right of the screen.
+fn error_popup(ctx: &egui::Context, text: &str) {
+    egui::Area::new(egui::Id::new("mp_error"))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 16.0))
+        .order(egui::Order::Foreground)
+        .interactable(false)
+        .show(ctx, |ui| {
+            egui::Frame::window(ui.style())
+                .stroke(egui::Stroke::new(2.0, AMBER))
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    ui.set_max_width(420.0);
+                    ui.label(egui::RichText::new(text).color(AMBER));
+                });
+        });
+}
+
+/// A small framed area of the window, lit up when `flash`.
+fn area(ui: &mut egui::Ui, flash: bool, add: impl FnOnce(&mut egui::Ui)) {
+    let (stroke, fill) = if flash {
+        (egui::Stroke::new(1.0, AMBER), AMBER.gamma_multiply(0.35))
+    } else {
+        (egui::Stroke::new(1.0, DIM), egui::Color32::TRANSPARENT)
+    };
+    egui::Frame::group(ui.style()).stroke(stroke).fill(fill).inner_margin(10.0).show(ui, add);
+}
+
+/// The public server list on the Join page, `height` tall: a server's JOIN gives its address.
+fn server_list(ui: &mut egui::Ui, w: &mut MultiplayerWindow, height: f32) -> Option<String> {
     let mut pick = None;
     ui.horizontal(|ui| {
         section(ui, "Public servers");
@@ -561,11 +618,11 @@ fn server_list(ui: &mut egui::Ui, w: &mut MultiplayerWindow, named: bool) -> Opt
     } else if w.servers.is_empty() && w.fetching.is_none() {
         ui.label(egui::RichText::new("No public servers right now").color(DIM));
     }
-    if w.servers.is_empty() {
-        ui.add_space(6.0);
-        return None;
-    }
-    egui::ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+    let list = egui::ScrollArea::vertical().max_height(height).min_scrolled_height(height);
+    list.auto_shrink([false, false]).show(ui, |ui| {
+        if w.servers.is_empty() {
+            return;
+        }
         egui::Grid::new("mp_servers")
             .num_columns(5)
             .spacing(egui::vec2(18.0, 6.0))
@@ -601,10 +658,7 @@ fn server_list(ui: &mut egui::Ui, w: &mut MultiplayerWindow, named: bool) -> Opt
                     if !ours {
                         ui.label(egui::RichText::new("other version").small().color(DIM));
                     } else if ui
-                        .add_enabled(
-                            named && !full && w.joining.is_none(),
-                            egui::Button::new("JOIN"),
-                        )
+                        .add_enabled(!full && w.joining.is_none(), egui::Button::new("JOIN"))
                         .clicked()
                     {
                         pick = Some(s.addr.clone());

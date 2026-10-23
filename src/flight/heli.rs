@@ -4,7 +4,9 @@
 //!
 //! - Thrust: linear in the collective, times rotor speed squared, with translational lift
 //!   (more thrust once the rotor flies into clean air, 12..30 kt) and ground effect (within about
-//!   one rotor diameter of the ground). The inflow damps climbs and descents along the mast.
+//!   one rotor diameter of the ground). The inflow damps the speed along the mast: climbs and
+//!   descents, and at speed the disc tilted forward loses thrust (more collective to hold the
+//!   altitude), tilted back gains it.
 //! - Rotation: the cyclic and pedals command angular accelerations; a stability augmentation
 //!   damps the rates but holds no attitude (released, the helicopter stays where it was left
 //!   and drifts). Flapback pitches the nose up with forward speed and rolls away from sideways
@@ -47,7 +49,8 @@ pub struct Rotor {
     /// one rotor diameter as drawn).
     pub ge_gain: f32,
     pub ge_height: f32,
-    /// Damping of the speed along the mast (1/s): the climb and descent rates.
+    /// Damping of the speed along the mast (1/s): the climb and descent rates, and the thrust
+    /// lost pitching forward at speed.
     pub heave_damping: f32,
     /// Angular accelerations at full cyclic, full pedal (rad/s^2).
     pub pitch_accel: f32,
@@ -245,8 +248,11 @@ pub(super) fn step(
     // Drag along the body's side and fore-aft axes.
     accel_body.x -= r.drag_linear * vb.x + r.drag.x * vb.x * vb.x.abs();
     accel_body.z -= r.drag_linear * vb.z + r.drag.z * vb.z * vb.z.abs();
-    // The inflow damps climbs and descents (not the forward flight a tilted rotor makes).
-    let mut accel = a.orientation * accel_body - Vec3::Y * (G + r.heave_damping * vel.y);
+    // The inflow: air flowing down through the disc costs thrust, up through it adds some. It
+    // damps climbs and descents, and at speed the disc tilted forward meets the air from above:
+    // pitching forward sinks unless the collective comes up (a flare lifts).
+    accel_body.y -= r.heave_damping * vb.y;
+    let mut accel = a.orientation * accel_body - Vec3::Y * G;
 
     // --- rotation
     let fin = smoothstep(15.0, 60.0, horizontal);
@@ -491,6 +497,45 @@ mod tests {
             a.heli.torque
         );
         assert!((100.0..190.0).contains(&a.knots()), "{} kt", a.knots());
+    }
+
+    /// Holds a pitch attitude with the cyclic, the altitude with the collective if `hold`.
+    fn cruise(a: Aircraft, secs: f32, pitch: f32, hold: Option<f32>, c0: f32) -> (Aircraft, f32) {
+        let mut sum = 0.0;
+        let mut n = 0.0;
+        let (a, _) = fly(a, secs, 1, |a, c| {
+            pilot(a, c, 0.0);
+            let (_, p, _) = a.euler();
+            c.pitch = (-8.0 * (p - pitch) - 1.0 * a.heli.rates.x).clamp(-1.0, 1.0);
+            c.throttle = Some(match hold {
+                Some(alt) => (c0 + (alt - a.altitude) * 0.01 - a.climb_rate * 0.03).clamp(0.0, 1.0),
+                None => c0,
+            });
+            sum += c.throttle.unwrap();
+            n += 1.0;
+        });
+        (a, sum / n)
+    }
+
+    #[test]
+    fn pitching_forward_at_speed_takes_collective() {
+        // Trimmed at about 80 kt, the altitude held.
+        let mut a0 = hovering(1000.0);
+        a0.velocity = 80.0 * 27.0;
+        let (a, _) = cruise(a0, 30.0, -0.08, Some(1000.0), 0.6);
+        let c0 = a.set_thrust / 100.0;
+        let (a, trim) = cruise(a, 5.0, -0.08, Some(1000.0), c0);
+        // Nose 8 degrees further down, the collective left: it sinks.
+        let (sunk, _) = cruise(a.clone(), 4.0, -0.22, None, trim);
+        // Held level: more collective.
+        let (_, more) = cruise(a.clone(), 10.0, -0.22, Some(a.altitude), trim);
+        println!(
+            "{:.0} kt collective {trim:.2}; nose down: climb {:.1} ft/s, to hold {more:.2}",
+            a.knots(),
+            sunk.climb_rate
+        );
+        assert!(sunk.climb_rate < -8.0, "climb {}", sunk.climb_rate);
+        assert!(more > trim + 0.04, "collective {trim} -> {more}");
     }
 
     #[test]

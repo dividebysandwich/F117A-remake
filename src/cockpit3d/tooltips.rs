@@ -1,8 +1,9 @@
 //! Tooltips (desktop): with the mouse still over a cockpit control, display, instrument or
 //! warning light, a box by the cursor names it, says what it does and which keys do the same.
 //! It follows the view: whatever comes under the cursor while the head turns, unless something
-//! in front hides it (`pick`). No tooltips in VR, outside the cockpit views, while looking
-//! around (right button held), with the menu or the kneeboard over the view.
+//! in front hides it (`pick`). No tooltips when switched off (in-flight menu), in VR, outside the
+//! cockpit views, while looking around (right button held), with the menu or the kneeboard over
+//! the view.
 //!
 //! Every tooltip text is here (to translate them one day; the aviation terms stay English).
 
@@ -465,7 +466,8 @@ pub(super) fn hover(
     let dt = time.delta_secs();
     let cockpit_view =
         matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
-    let active = !settings.vr
+    let active = settings.tooltips
+        && !settings.vr
         && cockpit_view
         && !menu.open
         && !hide.is_some_and(|h| h.0)

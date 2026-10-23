@@ -95,6 +95,8 @@ pub struct Settings {
     pub vr_cockpit_scale: f32,
     /// `--aircraft f117|f16`: the flown aircraft.
     pub aircraft: crate::aircraft::AircraftKind,
+    /// Tooltips over the cockpit's parts (in-flight menu; on by default).
+    pub tooltips: bool,
 }
 
 /// Default VR cockpit size.
@@ -232,6 +234,7 @@ impl Settings {
             aircraft: get(&a, "--aircraft")
                 .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
                 .unwrap_or_default(),
+            tooltips: true,
         }
     }
 }

@@ -2,8 +2,8 @@
 //! a screen in front of the pilot, in the cockpit, so it works on the desktop and in VR. The
 //! simulation pauses while it is open.
 //!
-//! Graphics switches (shaders, shadows, lighting), cockpit and HUD style and the VR cockpit size
-//! apply at once and are saved to the preferences when the menu closes. Choose an entry with the
+//! Graphics switches (shaders, shadows, lighting), cockpit and HUD style, the VR cockpit size and
+//! the cockpit tooltips apply at once and are saved to the preferences when the menu closes. Choose an entry with the
 //! mouse, a VR fingertip and the trigger, the arrow keys / gamepad d-pad / VR thumbstick and
 //! Enter / A / X. In VR a fingertip on the screen highlights an entry and the trigger presses it
 //! (a trigger pulled away from the screen and the cockpit controls presses the highlighted entry).
@@ -73,11 +73,12 @@ enum Item {
     Hud,
     Avionics,
     CockpitSize,
+    Tooltips,
     Resume,
     EndMission,
 }
 
-const ITEMS: [Item; 10] = [
+const ITEMS: [Item; 11] = [
     Item::Shaders,
     Item::Shadows,
     Item::Lighting,
@@ -86,6 +87,7 @@ const ITEMS: [Item; 10] = [
     Item::Hud,
     Item::Avionics,
     Item::CockpitSize,
+    Item::Tooltips,
     Item::Resume,
     Item::EndMission,
 ];
@@ -101,6 +103,7 @@ impl Item {
             Item::Hud => "HUD",
             Item::Avionics => "AVIONICS",
             Item::CockpitSize => "COCKPIT SIZE",
+            Item::Tooltips => "TOOLTIPS",
             Item::Resume => "RESUME",
             Item::EndMission => "END MISSION",
         }
@@ -118,6 +121,7 @@ impl Item {
             Item::Hud => style(s.classic_hud),
             Item::Avionics => style(s.classic_avionics),
             Item::CockpitSize => format!("< {:.0}% >", s.vr_cockpit_scale * 100.0),
+            Item::Tooltips => on(s.tooltips),
             Item::Resume | Item::EndMission => String::new(),
         }
     }
@@ -141,7 +145,7 @@ const W: usize = 768;
 const H: usize = 512;
 /// Rows of the entries.
 const TOP: f32 = 104.0;
-const ROW: f32 = 40.0;
+const ROW: f32 = 36.0;
 /// Palette colours: background, bright and dim green (the panel's lamp greens), dark row.
 const BG: u8 = 5;
 const BRIGHT: u8 = 47;
@@ -233,7 +237,7 @@ fn set_open(
     }
 }
 
-fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, bool, u32) {
+fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, bool, u32, bool) {
     (
         s.modern_shading,
         s.shadows,
@@ -243,6 +247,7 @@ fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, bool, u32) {
         s.classic_hud,
         s.classic_avionics,
         (s.vr_cockpit_scale * 100.0).round() as u32,
+        s.tooltips,
     )
 }
 
@@ -490,6 +495,7 @@ fn navigate(
         Item::Cockpit => s.classic_cockpit = !s.classic_cockpit,
         Item::Hud => s.classic_hud = !s.classic_hud,
         Item::Avionics => s.classic_avionics = !s.classic_avionics,
+        Item::Tooltips => s.tooltips = !s.tooltips,
         Item::CockpitSize => {
             let dir = if adjust != 0 {
                 adjust.signum()

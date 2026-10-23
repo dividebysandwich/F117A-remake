@@ -75,6 +75,7 @@ pub struct Prefs {
     pub max_players: u8,
     /// None: on (the default before it could be chosen).
     pub list_public: Option<bool>,
+    pub tooltips: bool,
 }
 
 const VR_SCALE_VERSION: u32 = 2;
@@ -120,6 +121,7 @@ impl Default for Prefs {
             host_port: menu.host_port,
             max_players: menu.max_players,
             list_public: Some(menu.list_public),
+            tooltips: true,
         }
     }
 }
@@ -178,6 +180,7 @@ impl Prefs {
             host_port: menu.host_port,
             max_players: menu.max_players,
             list_public: Some(menu.list_public),
+            tooltips: s.tooltips,
         }
     }
 
@@ -219,6 +222,7 @@ impl Prefs {
         s.classic_hud |= self.classic_hud;
         s.classic_avionics |= self.classic_avionics;
         s.classic_flight |= self.classic_flight;
+        s.tooltips = self.tooltips;
         if !std::env::args().any(|a| a == "--aircraft") {
             s.aircraft = self.aircraft;
         }
@@ -229,7 +233,8 @@ impl Prefs {
         }
     }
 
-    /// Saves the graphics, cockpit and HUD switches and the VR cockpit size (in-flight menu),
+    /// Saves the graphics, cockpit and HUD switches, the VR cockpit size and the tooltips switch
+    /// (in-flight menu),
     /// keeping the rest of the file.
     pub fn save_switches(s: &Settings) {
         let mut p = Self::load();
@@ -242,6 +247,7 @@ impl Prefs {
         p.classic_hud = s.classic_hud;
         p.classic_avionics = s.classic_avionics;
         p.vr_cockpit_scale = s.vr_cockpit_scale;
+        p.tooltips = s.tooltips;
         if let Err(e) = save_json(FILE, &p) {
             warn!("saving the preferences: {e}");
         }
@@ -281,5 +287,13 @@ mod tests {
         q.migrate();
         assert!((q.vr_cockpit_scale - 0.9).abs() < 1e-6, "kept through a save");
         assert_eq!(Prefs::default().vr_scale_version, VR_SCALE_VERSION);
+    }
+
+    #[test]
+    fn tooltips_default_to_on() {
+        let p: Prefs = serde_json::from_str("{}").unwrap();
+        assert!(p.tooltips);
+        let p: Prefs = serde_json::from_str(r#"{"tooltips": false}"#).unwrap();
+        assert!(!p.tooltips);
     }
 }

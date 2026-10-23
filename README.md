@@ -35,6 +35,40 @@ A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations with VR support
 
 See the [User Manual](docs/manual.md) for details.
 
+## Dynamic campaign
+
+The war runs in real time, whether you fly or not. Pick sorties from the Ops screen's mission
+board, alone or with up to 64 players in coop.
+- **Winning:** the war is won when the enemy holds no airfield, and lost when the friendly side
+  holds neither an airfield nor a carrier.
+- **Materiel:** each side's AI repairs, flies sorties and buys aircraft with the materiel its
+  places and cities bring in every hour. Aircraft shot down are gone. Interdiction strikes on
+  enemy cities cut its income. Only the AI can run short; your own sorties never do.
+- **The enemy fights back:** helicopter attacks on weak spots along the front, escorted raids on
+  airfields, AWACS patrols and, in Ukraine, Geran drone waves. The board posts intercept and
+  defend missions for them. A bombed airfield launches no AI aircraft until it is repaired.
+- **CSAR:** eject over enemy territory and the board posts a rescue. Hold the air near the pilot
+  for 2 minutes to get them out, or they may be captured.
+- **Points and ranks:** objectives, kills and bringing the aircraft home earn points, ranks and
+  medals. Packages (two kinds of objective at one place within 15 minutes) earn a bonus.
+- **Weather** changes once or twice a day, from fair skies to thunderstorms.
+- **Rules:** a campaign keeps the realism rules it was started with.
+
+<img width="1615" height="938" alt="image" src="https://github.com/user-attachments/assets/731ba65f-3876-4166-9252-40cc4cfa0f4b" />
+
+## Ukraine theater
+
+Eastern Ukraine, Crimea and southern Russia (about 31-42.6 E, 44-52 N), with the front line of 2026
+from the Sumy and Kharkiv border areas through Kupiansk, Lyman, Kostiantynivka, Pokrovsk and
+Huliaipole to the Dnipro and down the river to Kherson. You fly from Ukrainian bases (Myrhorod,
+Poltava, Dnipro, ...) against the occupied areas, Crimea and the Russian bases behind them; the
+missions follow Central Europe's rules (`--theater ua`).
+- Real towns and cities: Soviet panel-block districts with private houses around them; towns at
+  and behind the front lie in ruins, and the Donbas mining towns have their slag heaps.
+- The steppe is farmland: autumn fields (stubble, ploughland, winter wheat) with shelterbelts.
+- The Zaporizhzhia, South Ukraine, Rostov, Kursk and Novovoronezh nuclear power plants.
+- Fires and smoke burn along the whole front line and in the ruined towns in every mission.
+
 ## Running
 ```sh
 cargo run --release
@@ -73,37 +107,6 @@ Command-line options:
 
 <img width="1173" height="727" alt="image" src="https://github.com/user-attachments/assets/affc6127-3d83-49a2-8cde-e128e941fa64" />
 
-## Dynamic campaign
-
-The war runs in real time, whether you fly or not. Pick sorties from the Ops screen's mission
-board, alone or with up to 64 players in coop.
-- **Winning:** the war is won when the enemy holds no airfield, and lost when the friendly side
-  holds neither an airfield nor a carrier.
-- **Materiel:** each side's AI repairs, flies sorties and buys aircraft with the materiel its
-  places and cities bring in every hour. Aircraft shot down are gone. Interdiction strikes on
-  enemy cities cut its income. Only the AI can run short; your own sorties never do.
-- **The enemy fights back:** helicopter attacks on weak spots along the front, escorted raids on
-  airfields, AWACS patrols and, in Ukraine, Geran drone waves. The board posts intercept and
-  defend missions for them. A bombed airfield launches no AI aircraft until it is repaired.
-- **CSAR:** eject over enemy territory and the board posts a rescue. Hold the air near the pilot
-  for 2 minutes to get them out, or they may be captured.
-- **Points and ranks:** objectives, kills and bringing the aircraft home earn points, ranks and
-  medals. Packages (two kinds of objective at one place within 15 minutes) earn a bonus.
-- **Weather** changes once or twice a day, from fair skies to thunderstorms.
-- **Rules:** a campaign keeps the realism rules it was started with.
-
-## Ukraine theater
-
-Eastern Ukraine, Crimea and southern Russia (about 31-42.6 E, 44-52 N), with the front line of 2026
-from the Sumy and Kharkiv border areas through Kupiansk, Lyman, Kostiantynivka, Pokrovsk and
-Huliaipole to the Dnipro and down the river to Kherson. You fly from Ukrainian bases (Myrhorod,
-Poltava, Dnipro, ...) against the occupied areas, Crimea and the Russian bases behind them; the
-missions follow Central Europe's rules (`--theater ua`).
-- Real towns and cities: Soviet panel-block districts with private houses around them; towns at
-  and behind the front lie in ruins, and the Donbas mining towns have their slag heaps.
-- The steppe is farmland: autumn fields (stubble, ploughland, winter wheat) with shelterbelts.
-- The Zaporizhzhia, South Ukraine, Rostov, Kursk and Novovoronezh nuclear power plants.
-- Fires and smoke burn along the whole front line and in the ruined towns in every mission.
 
 ## Controls (original keyboard layout)
 
@@ -138,12 +141,6 @@ well (right stick: rudder). The menu's Classic / Modern switches (shaders, shado
 its Aircraft options match the options above. Shaders, shadows, lighting, cockpit and HUD can
 also be switched in flight (Esc).
 
-## 3D cockpit (desktop)
-* Fully clickable cockpit
-* Hold right mouse button to look around
-* Head/eye tracking (infrared, eye, webcam or phone trackers): menu *Head/Eye Tracking*
-* Esc opens the in-flight settings menu (also in VR: the MENU button on the left side panel)
-
 ### Editing the cockpits
 The cockpits are Blender models: `assets-src/blend/cockpit_modern.blend` and
 `cockpit_classic.blend` are the sources, `tools/models/export.sh cockpit_modern cockpit_classic`
@@ -154,8 +151,8 @@ object custom properties (buttons, levers, lamps); the conventions are listed in
 
 ## Server list
 Coop servers report to a master server (`crates/stealth-master`, at sm-master.playspoon.com),
-which games list them from and which shows them as a web page; see its
-[README](crates/stealth-master/README.md) for the API and how it is deployed.
+which lists running games both on the webpage and in-game. See 
+[README](crates/stealth-master/README.md) for the API and deployment.
 
 ## Testing
 ```sh
@@ -181,7 +178,7 @@ On the Frame, SteamVR's per-app GPU time (printed at the end of each run) is the
 measurement.
 
 
-## Contributing, LLM Usage, Licensing
+## Contributing, LLM Usage
 
 Both local and hosted LLMs (usually advertised as "Generative AI") were used in 
 the development of this software. Contributions written using LLMs are ok 

@@ -229,7 +229,7 @@ pub(super) fn panel_materials(
 fn atlas_scale(style: PanelStyle) -> i32 {
     match style {
         PanelStyle::Classic => TEXELS,
-        PanelStyle::Modern | PanelStyle::F16 | PanelStyle::Uh60 => MM_TEXELS,
+        PanelStyle::Modern | PanelStyle::F16 | PanelStyle::Uh60 | PanelStyle::Ah1z => MM_TEXELS,
     }
 }
 
@@ -574,7 +574,13 @@ mod tests {
     /// Every layout's faces fit the instrument atlas (`pack` asserts).
     #[test]
     fn atlas_fits() {
-        for style in [PanelStyle::Classic, PanelStyle::Modern, PanelStyle::F16, PanelStyle::Uh60] {
+        for style in [
+            PanelStyle::Classic,
+            PanelStyle::Modern,
+            PanelStyle::F16,
+            PanelStyle::Uh60,
+            PanelStyle::Ah1z,
+        ] {
             let layout = PanelLayout::for_style(style);
             let k = atlas_scale(style);
             let slots =

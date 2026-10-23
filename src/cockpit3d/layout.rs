@@ -24,6 +24,8 @@ pub enum PanelStyle {
     F16,
     /// The UH-60A's: the modern faces after the UH-60M's panel, two MFDs.
     Uh60,
+    /// The AH-1Z's: the UH-60A's narrowed to a tandem cockpit.
+    Ah1z,
 }
 
 /// A rectangle in panel pixels.
@@ -149,6 +151,7 @@ impl PanelLayout {
             PanelStyle::Modern => Self::modern(),
             PanelStyle::F16 => Self::f16(),
             PanelStyle::Uh60 => Self::uh60(),
+            PanelStyle::Ah1z => Self::ah1z(),
         }
     }
 
@@ -572,6 +575,40 @@ impl PanelLayout {
         }
     }
 
+    /// The AH-1Z's panel: the UH-60A's (millimetres, life size; `tools/models/build_cockpit_ah1z.py`)
+    /// narrowed to the pilot's cockpit, after the AH-1Z's: the two MFDs side by side under the
+    /// warning lights, the standby airspeed indicator, altimeter and clock with the AOA and
+    /// vertical velocity tapes left of them, the engine gauges right of them, the standby
+    /// attitude indicator between the groups under them. The CDU, the cautions and the
+    /// countermeasures stay on the console (here the pedestal between the knees). No gear
+    /// lights (skids) and no AUTO cap.
+    pub fn ah1z() -> Self {
+        let u = Self::uh60();
+        let items = u
+            .items
+            .iter()
+            .filter(|p| !matches!(p.elem, Elem::GearLights | Elem::Lamp(LampId::Auto, _)))
+            .map(|p| {
+                let r = p.rect;
+                let at = |x: f32, y: f32| rect(x, y, r.w, r.h);
+                let rect = match p.elem {
+                    Elem::Dial(Dial::Aoa) => at(-372.0, -60.0),
+                    Elem::Dial(Dial::Vvi) => at(-372.0, -2.0),
+                    Elem::Dial(Dial::Airspeed) => at(-322.0, -60.0),
+                    Elem::Dial(Dial::Altimeter) => at(-322.0, -10.0),
+                    Elem::Dial(Dial::Clock) => at(-322.0, 40.0),
+                    Elem::Dial(Dial::Rpm) => at(280.0, -60.0),
+                    Elem::Dial(Dial::Ftit) => at(280.0, -10.0),
+                    Elem::Dial(Dial::Oil) => at(330.0, -60.0),
+                    Elem::Dial(Dial::Nozzle) => at(330.0, -10.0),
+                    _ => r,
+                };
+                Placed { rect, ..*p }
+            })
+            .collect();
+        Self { style: PanelStyle::Ah1z, items, adi: rect(-34.0, 110.0, 68.0, 68.0), ..u }
+    }
+
     /// The F-16C's panel (millimetres, x right and y down, unfolded), after the Block 50's:
     /// - The centre column (|x| <= 85): the up-front controls on a pedestal under the HUD
     ///   (y < -46): the round override buttons on top (COM1 = volume, LIST = menu, A-A, A-G),
@@ -818,8 +855,14 @@ mod tests {
     use super::*;
     use crate::mfd::{MfdState, RightMfd, osb};
 
-    fn all() -> [PanelLayout; 4] {
-        [PanelLayout::classic(), PanelLayout::modern(), PanelLayout::f16(), PanelLayout::uh60()]
+    fn all() -> [PanelLayout; 5] {
+        [
+            PanelLayout::classic(),
+            PanelLayout::modern(),
+            PanelLayout::f16(),
+            PanelLayout::uh60(),
+            PanelLayout::ah1z(),
+        ]
     }
 
     /// Faces and caps do not overlap each other or the screens.
@@ -868,7 +911,9 @@ mod tests {
     /// Every bezel function of every page has a button.
     #[test]
     fn bezel_buttons() {
-        for l in [PanelLayout::modern(), PanelLayout::f16(), PanelLayout::uh60()] {
+        for l in
+            [PanelLayout::modern(), PanelLayout::f16(), PanelLayout::uh60(), PanelLayout::ah1z()]
+        {
             bezel_buttons_of(&l);
         }
     }

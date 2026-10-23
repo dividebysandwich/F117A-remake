@@ -504,6 +504,7 @@ mod tests {
             (PanelStyle::F16, "cockpit_f16", "build_cockpit_f16"),
             (PanelStyle::Modern, "cockpit_modern", "build_cockpit_f117"),
             (PanelStyle::Uh60, "cockpit_uh60", "build_cockpit_uh60"),
+            (PanelStyle::Ah1z, "cockpit_ah1z", "build_cockpit_ah1z"),
         ] {
             let path =
                 format!("{}/assets-src/blend/{name}_layout.json", env!("CARGO_MANIFEST_DIR"));
@@ -527,6 +528,7 @@ mod tests {
             ("cockpit_classic", PanelStyle::Classic),
             ("cockpit_f16", PanelStyle::F16),
             ("cockpit_uh60", PanelStyle::Uh60),
+            ("cockpit_ah1z", PanelStyle::Ah1z),
         ] {
             let j = gltf_json(name);
             let nodes = j["nodes"].as_array().unwrap();
@@ -553,7 +555,7 @@ mod tests {
                 PanelStyle::Modern => {
                     vec!["screen_third", "ded", "trackcam_left", "trackcam_third", "label_NEAR"]
                 }
-                PanelStyle::Uh60 => vec!["ded", "trackcam_left", "label_NEAR"],
+                PanelStyle::Uh60 | PanelStyle::Ah1z => vec!["ded", "trackcam_left", "label_NEAR"],
                 PanelStyle::Classic => vec!["swatch", "label_MENU"],
             });
             for m in required {

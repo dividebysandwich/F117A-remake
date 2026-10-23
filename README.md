@@ -14,6 +14,27 @@ A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations with VR support
   <sub>Fly together, report bugs, share missions and follow development on the <a href="https://discord.gg/zjjGeKKpC">Stealth Mission 89 Discord</a>.</sub>
 </p>
 
+## Features
+* **Play in the browser** right on [stealth-mission.com](https://stealth-mission.com), no install needed
+* **Dynamic realtime campaign:** a living war with materiel and dynamic missions, strikes, CSAR, CAP, escort, etc.
+* **Career mode:** pilot records, tours of duty, ranks and medals
+* **Multiplayer:** coop campaigns for up to 64 players, hosted in-game or on a **dedicated server**
+* **Live map** of every public server's campaign on the [server list](https://sm-master.playspoon.com)
+* **VR:** great on Steam Frame (streaming and standalone), fully clickable cockpit, virtual joysticks,
+  working eject handle and kneeboard
+* **HOTAS** support - but also supports keyboard-only flight
+* **Head and Eye tracking** via FreeTrack
+* **Weather:** layered volumetric clouds and thunderstorms that block seekers and visual ID
+* **Theaters** including Ukraine 2026, with drone defense missions against Geran attack drones
+* **Tacview** export and real-time telemetry plus ACMI recording
+* **F-117A and F-16C**, each with its own cockpit and flight model
+* **Ukraine theater** with drone defense missions and famous landmarks like the Zaporizhzhia NPP
+* **Classic modes:** DOS era flight model, cockpit, HUD and rendering, switchable on their own
+
+<img width="1842" height="1269" alt="image" src="https://github.com/user-attachments/assets/5c706024-1f8b-46f8-ad07-95373a8a8056" />
+
+See the [User Manual](docs/manual.md) for details.
+
 ## Running
 ```sh
 cargo run --release
@@ -52,25 +73,24 @@ Command-line options:
 
 <img width="1173" height="727" alt="image" src="https://github.com/user-attachments/assets/affc6127-3d83-49a2-8cde-e128e941fa64" />
 
-## Weather
+## Dynamic campaign
 
-- **Sky:** a mix of up to three cloud layers, each with its own coverage:
-  - cumulus, drawn as ray-marched volumes;
-  - a stratus or stratocumulus layer, with gaps of clear sky placed by a noise field
-    thresholded to its coverage;
-  - cumulonimbus storm towers.
-- **Presets:** the menu's Weather choice (`--weather`) picks a realistic mix and rolls the
-  coverages. "Random cloud cover" off (`--cloud-cover <percent>`) sets the main layer's
-  coverage instead: stratus for overcast and storms, cumulus otherwise. The briefing lists
-  every layer.
-- **Storms:** towers bring rain, lightning, turbulence and shorter visibility near them,
-  whatever the stratus coverage.
-- **Clouds block optical lines of sight:**
-  - IR and AIM-9 seekers, the Maverick and laser-guided bombs lose their target behind cloud.
-  - Ground targets under cloud can't be designated ("Target obscured").
-  - Enemy pilots can't visually ID you or use their guns through cloud.
-  - IR SAMs and IR air-to-air missiles aren't launched at what their launcher can't see.
-- **Radar** sees through cloud.
+The war runs in real time, whether you fly or not. Pick sorties from the Ops screen's mission
+board, alone or with up to 64 players in coop.
+- **Winning:** the war is won when the enemy holds no airfield, and lost when the friendly side
+  holds neither an airfield nor a carrier.
+- **Materiel:** each side's AI repairs, flies sorties and buys aircraft with the materiel its
+  places and cities bring in every hour. Aircraft shot down are gone. Interdiction strikes on
+  enemy cities cut its income. Only the AI can run short; your own sorties never do.
+- **The enemy fights back:** helicopter attacks on weak spots along the front, escorted raids on
+  airfields, AWACS patrols and, in Ukraine, Geran drone waves. The board posts intercept and
+  defend missions for them. A bombed airfield launches no AI aircraft until it is repaired.
+- **CSAR:** eject over enemy territory and the board posts a rescue. Hold the air near the pilot
+  for 2 minutes to get them out, or they may be captured.
+- **Points and ranks:** objectives, kills and bringing the aircraft home earn points, ranks and
+  medals. Packages (two kinds of objective at one place within 15 minutes) earn a bonus.
+- **Weather** changes once or twice a day, from fair skies to thunderstorms.
+- **Rules:** a campaign keeps the realism rules it was started with.
 
 ## Ukraine theater
 
@@ -131,22 +151,6 @@ writes `assets/models/cockpit_*.glb`, which the game loads. The game finds its p
 material name (live displays, HUD glass, instrument atlas faces, palette-coloured solids) and by
 object custom properties (buttons, levers, lamps); the conventions are listed in
 `src/cockpit3d/model.rs`. A new cockpit starts as a copy of one of the files.
-
-## VR support
-* Tested on Steam Frame
-* Streaming and standalone supported
-* Control your aircraft with keyboard, HOTAS or virtual joysticks using hand controllers
-* All buttons operable in VR
-* Working eject handle
-
-## Classic modes
-* Classic flight model
-* Classic cockpit
-* Classic HUD
-* Classic rendering
-
-<img width="1842" height="1269" alt="image" src="https://github.com/user-attachments/assets/5c706024-1f8b-46f8-ad07-95373a8a8056" />
-
 
 ## Server list
 Coop servers report to a master server (`crates/stealth-master`, at sm-master.playspoon.com),

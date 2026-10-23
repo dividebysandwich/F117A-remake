@@ -23,7 +23,8 @@ SCALE = 512000.0 / 1048576.0 / 8.0
 # Grid cell (m) and outline tolerance (m).
 CELL = 0.02
 TOLERANCE = 0.05
-AIRCRAFT = [("F117_OUTLINE", "stflt_024"), ("F16_OUTLINE", "stflt_023")]
+# The helicopters' outlines leave the rotors (their `_part` nodes) out.
+AIRCRAFT = [("F117_OUTLINE", "stflt_024"), ("F16_OUTLINE", "stflt_023"), ("AH1Z_OUTLINE", "stflt_043_lod0")]
 
 
 def accessor(js, binary, i):
@@ -39,7 +40,7 @@ def accessor(js, binary, i):
 
 
 def triangles(js, binary, node):
-    """Triangles (n, 3, 3) of a node and its children, in model units."""
+    """Triangles (n, 3, 3) of a node and its children (not rotors), in model units."""
     n = js["nodes"][node]
     tris = []
     if "mesh" in n:
@@ -50,6 +51,8 @@ def triangles(js, binary, node):
             idx = accessor(js, binary, p["indices"]).astype(int).ravel() if "indices" in p else np.arange(len(pos))
             tris.append(pos[idx].reshape(-1, 3, 3))
     for c in n.get("children", []):
+        if "_part" in js["nodes"][c].get("name", ""):
+            continue
         tris.extend(triangles(js, binary, c))
     t = n.get("translation", [0, 0, 0])
     return [x + np.array(t) for x in tris]

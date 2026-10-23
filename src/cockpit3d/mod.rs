@@ -52,6 +52,7 @@ impl Plugin for Cockpit3dPlugin {
             MaterialPlugin::<hud_glass::HudGlassMaterial>::default(),
             MaterialPlugin::<hud_glass::HmdMaterial>::default(),
             MaterialPlugin::<shading::CockpitMaterial>::default(),
+            MaterialPlugin::<tooltips::TipScreenMaterial>::default(),
         ))
         .init_resource::<Hands>()
         .init_resource::<levers::CockpitAnchors>()

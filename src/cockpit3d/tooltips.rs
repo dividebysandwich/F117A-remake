@@ -6,7 +6,8 @@
 //! the view.
 //!
 //! In VR the part is the control a fingertip touches, else one just ahead of the fingertip; the
-//! box is drawn into an image shown on a small screen above the finger, facing the eye point.
+//! box is drawn into an image shown on a small screen above the finger, facing the eye point,
+//! drawn over the cockpit (readable where it goes into the panel).
 //!
 //! Every tooltip text is here (to translate them one day; the aviation terms stay English).
 
@@ -15,8 +16,15 @@ use std::sync::LazyLock;
 use bevy::camera::RenderTarget;
 use bevy::camera::visibility::RenderLayers;
 use bevy::light::NotShadowCaster;
+use bevy::mesh::MeshVertexBufferLayoutRef;
+use bevy::pbr::{
+    ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
+};
 use bevy::prelude::*;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
+use bevy::render::render_resource::{
+    AsBindGroup, CompareFunction, Extent3d, RenderPipelineDescriptor,
+    SpecializedMeshPipelineError, TextureDimension, TextureFormat, TextureUsages,
+};
 
 use super::controls::Control;
 use super::displays::{CanvasRole, Face};
@@ -414,11 +422,32 @@ pub(super) struct TipCamera;
 #[derive(Component)]
 pub(super) struct TipScreen;
 
+/// VR: the screen's material, drawn over whatever is in front of it.
+pub(super) type TipScreenMaterial = ExtendedMaterial<StandardMaterial, OnTop>;
+
+#[derive(Asset, AsBindGroup, TypePath, Clone, Debug, Default)]
+pub(super) struct OnTop {}
+
+impl MaterialExtension for OnTop {
+    fn specialize(
+        _pipeline: &MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialExtensionKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        if let Some(depth) = descriptor.depth_stencil.as_mut() {
+            depth.depth_compare = Some(CompareFunction::Always);
+            depth.depth_write_enabled = Some(false);
+        }
+        Ok(())
+    }
+}
+
 /// VR: the screen's mesh and material (the screen goes with the cockpit when it is rebuilt).
 #[derive(Resource)]
 pub(super) struct TipScreenLook {
     mesh: Handle<Mesh>,
-    material: Handle<StandardMaterial>,
+    material: Handle<TipScreenMaterial>,
 }
 
 /// VR: the fingertip (cockpit frame) whose part's tooltip shows.
@@ -432,7 +461,7 @@ pub(super) fn spawn_box(
     mut fonts: ResMut<Assets<Font>>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<TipScreenMaterial>>,
     mut font: Local<Option<Handle<Font>>>,
 ) {
     let font = font.get_or_insert_with(|| fonts.add(Font::from_bytes(FONT.to_vec()))).clone();
@@ -500,12 +529,15 @@ pub(super) fn spawn_box(
     let size = Vec2::new(VR_WIDTH, VR_WIDTH * VR_IMAGE.y as f32 / VR_IMAGE.x as f32);
     commands.insert_resource(TipScreenLook {
         mesh: meshes.add(Rectangle::from_size(size)),
-        material: materials.add(StandardMaterial {
-            base_color_texture: Some(image),
-            alpha_mode: AlphaMode::Blend,
-            unlit: true,
-            fog_enabled: false,
-            ..default()
+        material: materials.add(ExtendedMaterial {
+            base: StandardMaterial {
+                base_color_texture: Some(image),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                fog_enabled: false,
+                ..default()
+            },
+            extension: OnTop {},
         }),
     });
 }

@@ -160,6 +160,9 @@ pub struct AvionicsState {
     /// The gunship's helmet sight: where the pilot looks from the cockpit (world direction;
     /// None in the outside views).
     pub helmet: Option<Vec3>,
+    /// The smoothed helmet sight in the aircraft's frame (head tremor and tracking jitter
+    /// filtered out; the airframe's own motion is not delayed).
+    helmet_body: Option<Vec3>,
 }
 
 /// Where the targeting pod looks.
@@ -310,6 +313,7 @@ impl Default for AvionicsState {
             before_ils: None,
             tgp: default(),
             helmet: None,
+            helmet_body: None,
         }
     }
 }
@@ -1185,7 +1189,13 @@ fn update_pod(
     let soi = state.av.soi_format() == Some(Format::Tgp);
     // The gunship's slaved pod follows its sight whether its page is up or not (the page
     // shows what it looks at).
-    state.av.helmet = helmet_sight(&eyes, view.view).filter(|_| turret);
+    let sight = helmet_sight(&eyes, view.view).filter(|_| turret);
+    let body = sight.map(|d| {
+        let d = a.orientation.inverse() * d;
+        state.av.helmet_body.map_or(d, |s| smooth_sight(s, d, time.delta_secs()))
+    });
+    state.av.helmet_body = body;
+    state.av.helmet = body.map(|d| a.orientation * d);
     let looking = if turret {
         slaved_sight(combat.as_deref(), pos.0)
             .or(state.av.helmet)
@@ -1250,6 +1260,19 @@ fn helmet_sight(
     );
     let sum: Vec3 = eyes.iter().map(|t| t.forward().as_vec3()).sum();
     sum.try_normalize().filter(|_| cockpit)
+}
+
+/// Helmet sight smoothing: the time constant (seconds) while the head is nearly still, and
+/// the angle (radians) behind the head at which it is halved (a deliberate turn follows fast).
+const HELMET_LAG: f32 = 0.12;
+const HELMET_FOLLOW: f32 = 0.03;
+
+/// Moves the smoothed sight `s` toward the head's direction `d` (both unit vectors).
+fn smooth_sight(s: Vec3, d: Vec3, dt: f32) -> Vec3 {
+    let angle = s.angle_between(d);
+    let tau = HELMET_LAG / (1.0 + angle / HELMET_FOLLOW);
+    let k = 1.0 - (-dt / tau).exp();
+    s.slerp(d, k).try_normalize().unwrap_or(d)
 }
 
 /// Cursor speed at full slew (display pixels per second).

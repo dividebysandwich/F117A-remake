@@ -2,7 +2,9 @@
 //!
 //! VR: squeeze the grip near the stick to take it. Tilting the controller (relative to how it
 //! was held when grabbed) deflects pitch (tilt back = nose up) and roll; twisting it about the
-//! stick's axis is the rudder. Letting go re-centres the stick.
+//! stick's axis is the rudder. Letting go re-centres the stick. A long stick (a helicopter's
+//! centre cyclic) is moved by the hand instead: its grip follows the hand about the pivot, so it
+//! doesn't swing further than the hand holding it.
 //! Squeeze near the throttle handle and slide it along its rails: forward = more thrust; it stays where it is
 //! released, with a haptic tick every 10 %.
 //! The controller buttons are mapped in the input mapping (`InputConfig::vr_buttons`); a trigger
@@ -24,6 +26,9 @@ use crate::input::{Action, ActionEvent, FlightControls};
 const SLEW_DEADZONE: f32 = 0.15;
 /// Grip centre above the pivot, unless the model says (the stick's `grip`).
 const GRIP_HEIGHT: f32 = 0.11;
+/// Grip heights over which pitch and roll go from the controller's tilt (a short side stick) to
+/// the hand's position about the pivot (a long cyclic).
+const LONG_STICK: (f32, f32) = (0.2, 0.5);
 /// Full deflection (radians).
 const STICK_TILT: f32 = 0.35;
 const STICK_TWIST: f32 = 0.45;
@@ -107,6 +112,8 @@ pub(super) struct Grabs {
 
 struct StickGrab {
     rot0: Quat,
+    /// Hand position from the pivot when grabbed.
+    p0: Vec3,
     /// Twist outside the rudder deadzone.
     twisted: bool,
 }
@@ -143,6 +150,16 @@ fn twist_about(q: Quat, axis: Vec3) -> f32 {
 fn stick_angles(delta: Quat) -> (f32, f32) {
     let v = delta * Vec3::Y;
     (v.z.atan2(v.y), v.x.atan2(v.y))
+}
+
+/// Stick angles of the hand moving about the pivot from `p0` to `p` (as `stick_angles`).
+fn stick_angles_moved(p0: Vec3, p: Vec3) -> (f32, f32) {
+    (p.z.atan2(p.y) - p0.z.atan2(p0.y), p.x.atan2(p.y) - p0.x.atan2(p0.y))
+}
+
+/// How much the hand's position (rather than the controller's tilt) moves a stick this long.
+fn stick_follow(grip_height: f32) -> f32 {
+    ((grip_height - LONG_STICK.0) / (LONG_STICK.1 - LONG_STICK.0)).clamp(0.0, 1.0)
 }
 
 /// `Hand::buttons` bit of a controller input (the trigger is analog).
@@ -209,12 +226,19 @@ pub(super) fn grab_levers(
         && right.squeeze > 0.6
         && right.grip.translation.distance(grip_centre) < GRAB_REACH
     {
-        grabs.stick = Some(StickGrab { rot0: right.grip.rotation, twisted: false });
+        grabs.stick = Some(StickGrab {
+            rot0: right.grip.rotation,
+            p0: right.grip.translation - anchors.stick_pivot,
+            twisted: false,
+        });
         right.haptic = right.haptic.max(0.4);
     }
     if let Some(g) = &mut grabs.stick {
         let delta = right.grip.rotation * g.rot0.inverse();
-        let (p, r) = stick_angles(delta);
+        let (tp, tr) = stick_angles(delta);
+        let (mp, mr) = stick_angles_moved(g.p0, right.grip.translation - anchors.stick_pivot);
+        let w = stick_follow(anchors.grip_height);
+        let (p, r) = (tp + (mp - tp) * w, tr + (mr - tr) * w);
         controls.pitch = (p / STICK_TILT).clamp(-1.0, 1.0);
         controls.roll = (r / STICK_TILT).clamp(-1.0, 1.0);
         // Twisting clockwise (seen from above) = nose right.
@@ -375,5 +399,26 @@ pub(super) fn animate_levers(
         let t = controls.throttle.unwrap_or(a.set_thrust / 100.0);
         tf.translation = anchors.throttle_handle(t);
         tf.rotation = anchors.throttle_rotation(t);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A long cyclic's grip stays in the hand: moving the hand 10 cm back tilts the stick so its
+    /// grip moves 10 cm back. A short side stick still goes by the controller's tilt.
+    #[test]
+    fn long_stick_follows_the_hand() {
+        let height = 0.59;
+        assert_eq!(stick_follow(height), 1.0);
+        assert_eq!(stick_follow(0.11), 0.0);
+        let p0 = Vec3::Y * height;
+        let (pitch, roll) = stick_angles_moved(p0, p0 + Vec3::new(0.0, 0.0, 0.10));
+        let grip = Quat::from_rotation_x(pitch) * p0;
+        assert!((grip.z - 0.10).abs() < 0.005, "grip at {grip}");
+        assert!(roll.abs() < 1e-6);
+        let (_, roll) = stick_angles_moved(p0, p0 + Vec3::X * 0.05);
+        assert!(roll > 0.0, "hand right = roll right");
     }
 }

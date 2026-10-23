@@ -385,8 +385,9 @@ for key in ("left", "right"):
     hole = (x - 3.0, y - 3.0, w + 6.0, h + 6.0)
     frame("dark", outer, hole, 0.0, BEZEL - 0.002)
     frame("black", (outer[0] + 1.0, outer[1] + 1.0, outer[2] - 2.0, outer[3] - 2.0), hole, BEZEL - 0.002, BEZEL)
-    frame("black", hole, (x - 0.5, y - 0.5, w + 1.0, h + 1.0), BEZEL - 0.012, BEZEL - 0.001)
-    panel_box("black", "black", hole, 0.002, base=BEZEL - 0.012)
+    # The recess's back behind the targeting pod picture (3 mm behind the screen).
+    frame("black", hole, (x - 0.5, y - 0.5, w + 1.0, h + 1.0), BEZEL - 0.016, BEZEL - 0.001)
+    panel_box("black", "black", hole, 0.002, base=BEZEL - 0.016)
     for k in range(1, 5):
         for by in (y - 16.5, y + h + 6.5):
             panel_box("black", "black", (x + w * k / 5 - 1.0, by - 4.0, 2.0, 8.0), 0.003, base=BEZEL)

@@ -55,6 +55,7 @@ STATIONS = [
     (3.95, 0.66, 0.76, 1.32, 1.46, 1.50, 0.55, 0.92, 0.92, 0.75, 0.35),
     (3.62, 0.61, 0.74, 1.40, 1.56, 1.60, 0.70, 1.08, 1.06, 0.88, 0.40),  # windshield base
     (3.05, 0.58, 0.78, 1.70, 2.05, 2.17, 0.85, 1.18, 1.14, 0.95, 0.45),  # windshield top
+    (2.75, 0.58, 0.789, 1.815, 2.142, 2.253, 0.882, 1.189, 1.145, 0.982, 0.464),  # roof glazing ends (on the line between its neighbours)
     (2.40, 0.58, 0.80, 1.95, 2.25, 2.35, 0.92, 1.20, 1.15, 1.02, 0.48),  # cockpit door post
     (1.70, 0.58, 0.80, 1.95, 2.25, 2.58, 0.92, 1.20, 1.15, 1.02, 0.50),
     (0.42, 0.58, 0.80, 1.95, 2.25, 2.87, 0.92, 1.20, 1.15, 1.02, 0.55),
@@ -68,8 +69,9 @@ STATIONS = [
 ]
 # Segments (between station i and i+1) and ring quads that are glazed. Quads per ring:
 # 0/8 belly chamfer, 1/7 side, 2/6 upper side, 3/5 roof slope, 4 top strip, 9 belly.
-WINDSHIELD, COCKPIT = 3, 4
-GLAZED = {WINDSHIELD: {2, 3, 4, 5, 6}, COCKPIT: {2, 3, 5, 6}}
+# The roof over the pilots glazed back from the windshield's top, clear of their view up.
+WINDSHIELD, ROOF, COCKPIT = 3, 4, 5
+GLAZED = {WINDSHIELD: {2, 3, 4, 5, 6}, ROOF: {2, 3, 4, 5, 6}, COCKPIT: {2, 3, 5, 6}}
 
 MAST = (0.0, 0.0, 3.47)
 ROTOR_R, ROTOR_CHORD = 8.18, 0.53
@@ -166,7 +168,7 @@ def details(g):
     for sx in (-1, 1):
         g.line((sx * (side_x(0.9, 2.08) + 0.01), 0.9, 2.08), (sx * (side_x(-2.6, 2.08) + 0.01), -2.6, 2.08), SEAM)
     # Windshield centre post and the frame between windshield and side window.
-    a, b = ring(STATIONS[WINDSHIELD]), ring(STATIONS[COCKPIT])
+    a, b = ring(STATIONS[WINDSHIELD]), ring(STATIONS[ROOF])
     g.line((0, a[4].y, a[4].z + 0.01), (0, b[4].y, b[4].z + 0.01), SEAM)
     # Wire strike cutter on the cockpit roof.
     g.line((0, 2.6, 2.36), (0, 3.15, 2.62), DARK.hi)
@@ -179,11 +181,11 @@ def body(level):
         g.add(nacelles(True))
         details(g)
     elif level == 1:
-        st = [STATIONS[i] for i in (0, 1, 3, 4, 5, 7, 10, 11, 13, 14)]
-        g.add(heli.fuselage(st, BODY, GLASS, True, {2: GLAZED[WINDSHIELD], 3: GLAZED[COCKPIT]}))
+        st = [STATIONS[i] for i in (0, 1, 3, 4, 5, 6, 8, 11, 12, 14, 15)]
+        g.add(heli.fuselage(st, BODY, GLASS, True, {2: GLAZED[WINDSHIELD], 3: GLAZED[ROOF], 4: GLAZED[COCKPIT]}))
         g.add(nacelles(False))
     else:
-        st = [STATIONS[i] for i in (1, 3, 4, 7, 10, 11, 14)]
+        st = [STATIONS[i] for i in (1, 3, 4, 8, 11, 12, 15)]
         g.add(heli.fuselage(st, BODY, GLASS, False, {1: {1, 2, 3}}))
     g.add(pylon())
     g.add(stabilator(0.08 if level < 2 else 0.05))

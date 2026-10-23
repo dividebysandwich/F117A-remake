@@ -271,12 +271,87 @@ const STROKES: &[(char, &str)] = &[
     (';', "2,1.7 2,2|2,5 1.5,7"),
     ('\\', "0,0 4,6"),
     ('`', "1.5,0 2.5,1.5"),
+    ('_', "0,6 4,6"),
+    ('"', "1,0 1,1.5|3,0 3,1.5"),
+    ('^', "1,1.5 2,0 3,1.5"),
+    ('&', "4,6 1,2.5 1,0.5 1.5,0 2.5,0 3,0.5 3,1.5 0,4 0,6 2,6 4,3.5"),
+    ('$', "4,1 0,1 0,3 4,3 4,5 0,5|2,0 2,6"),
+    ('§', "3,0 1,0 1,2 3,3 3,4|1,2 1,3 3,4 3,6 1,6"),
+    ('²', "1,0 3,0 3,1.5 1,1.5 1,3 3,3"),
+    ('µ', "0,2 0,7|0,6 4,6 4,2"),
+    ('£', "4,1 3,0 2,0 1,1 1,5 0,6 4,6|0,3 3,3"),
+    ('¤', "1,2 3,2 3,4 1,4 1,2|0,1 1,2|4,1 3,2|0,5 1,4|4,5 3,4"),
+    ('¨', "1,0.5 1,0.8|3,0.5 3,0.8"),
+    ('°', "1.5,0 2.5,0 2.5,1 1.5,1 1.5,0"),
+    ('´', "1.5,1.5 2.5,0"),
+    ('~', "0.5,3.5 1.5,2.5 2.5,3.5 3.5,2.5"),
+    ('|', "2,-0.5 2,6.5"),
+    ('½', "0,1 1,0 1,3|0,6 4,0|2.5,3.5 4,3.5 4,4.8 2.5,4.8 2.5,6 4,6"),
+    ('º', "1,0 3,0 3,2 1,2 1,0|1,3 3,3"),
+    ('¡', "2,0 2,0.3|2,2 2,6"),
+    ('«', "2,1.5 0,3 2,4.5|4,1.5 2,3 4,4.5"),
+    ('»', "0,1.5 2,3 0,4.5|2,1.5 4,3 2,4.5"),
+    ('ß', "0,6 0,1 1,0 3,0 4,1 4,2 2,3 4,4 4,5 3,6 1,6"),
+    ('Æ', "0,6 0,2 2,0 4,0|2,0 2,6 4,6|0,3.5 2,3.5|2,3 3.5,3"),
+    ('Ø', "0,0 4,0 4,6 0,6 0,0|0,6.5 4,-0.5"),
 ];
 
-/// Whether the stroke font draws `ch` (upper-cased; a space is blank).
-pub fn stroke_has(ch: char) -> bool {
+/// Small letters (x-height 2 to 6, l and t rise to 0), the bases of the accented letters that
+/// the French, Italian, Hungarian, Czech and Slovak keycaps print in lower case.
+const SMALL: &[(char, &str)] = &[
+    ('a', "0,2 4,2 4,6 0,6 0,4 4,4"),
+    ('c', "4,2 0,2 0,6 4,6"),
+    ('e', "4,6 0,6 0,2 4,2 4,4 0,4"),
+    ('i', "2,2 2,6"),
+    ('l', "2,0 2,6"),
+    ('n', "0,6 0,2 4,2 4,6"),
+    ('o', "0,2 4,2 4,6 0,6 0,2"),
+    ('r', "0,6 0,2 4,2"),
+    ('s', "4,2 0,2 0,4 4,4 4,6 0,6"),
+    ('t', "2,0 2,6 4,6|0,2 4,2"),
+    ('u', "0,2 0,6 4,6 4,2"),
+    ('y', "0,2 0,4 4,4|4,2 4,7.5 1,7.5"),
+    ('z', "0,2 4,2 0,6 4,6"),
+];
+
+/// The diacritics: strokes over the x-height (y 0 to 1.3) or under the baseline, whether they
+/// are raised over a capital, and the base letters with their accented letters, char by char.
+const MARKS: &[(&str, bool, &str, &str)] = &[
+    ("1.5,1.3 2.5,0", true, "aeiouyAEIOUY", "áéíóúýÁÉÍÓÚÝ"),
+    ("1.5,0 2.5,1.3", true, "aeiouAEIOU", "àèìòùÀÈÌÒÙ"),
+    ("1,1.3 2,0 3,1.3", true, "aeiouAEIOU", "âêîôûÂÊÎÔÛ"),
+    ("1,0.5 1,0.8|3,0.5 3,0.8", true, "aeiouyAEIOU", "äëïöüÿÄËÏÖÜ"),
+    ("1,0 2,1.3 3,0", true, "censrzCENSRZLT", "čěňšřžČĚŇŠŘŽĽŤ"),
+    ("1,1.3 1.8,0|2.5,1.3 3.3,0", true, "ouOU", "őűŐŰ"),
+    ("1.5,0 2.5,0 2.5,1 1.5,1 1.5,0", true, "auAU", "åůÅŮ"),
+    ("0.5,1 1.5,0.3 2.5,1 3.5,0.3", true, "noNO", "ñõÑÕ"),
+    // The caron of ľ and ť is an apostrophe beside the stem.
+    ("3.5,0 3,1.3", false, "lt", "ľť"),
+    ("2,6 2.5,7 1.5,7.5", false, "cC", "çÇ"),
+];
+
+/// Raise of a diacritic over a capital (grid units).
+const CAPITAL_MARK: f32 = -1.7;
+
+/// The strokes of `ch` (ASCII upper-cased): its glyph, or an accented letter's base and its
+/// diacritic with the diacritic's vertical offset.
+fn glyph(ch: char) -> Option<(&'static str, Option<(&'static str, f32)>)> {
     let ch = ch.to_ascii_uppercase();
-    ch == ' ' || STROKES.iter().any(|(k, _)| *k == ch)
+    if let Some((_, g)) = STROKES.iter().find(|(k, _)| *k == ch) {
+        return Some((g, None));
+    }
+    MARKS.iter().find_map(|&(mark, raise, bases, accented)| {
+        let (base, _) = bases.chars().zip(accented.chars()).find(|&(_, a)| a == ch)?;
+        let table = if base.is_ascii_uppercase() { STROKES } else { SMALL };
+        let (_, g) = table.iter().find(|(k, _)| *k == base)?;
+        let dy = if raise && base.is_ascii_uppercase() { CAPITAL_MARK } else { 0.0 };
+        Some((*g, Some((mark, dy))))
+    })
+}
+
+/// Whether the stroke font draws `ch` (ASCII upper-cased; a space is blank).
+pub fn stroke_has(ch: char) -> bool {
+    ch == ' ' || glyph(ch).is_some()
 }
 
 /// Advance of the stroke font in grid units (4 wide + 2 apart).
@@ -288,33 +363,76 @@ pub fn stroke_width(s: &str, h: f32) -> f32 {
     if n == 0.0 { 0.0 } else { (n * STROKE_ADVANCE - 2.0) * h / 6.0 }
 }
 
+/// `ch` in capitals if the stroke font has its capital, else as it is ("ß", whose capital is
+/// "SS", and the micro sign, whose capital is Greek, stay).
+fn capital(ch: char) -> char {
+    let mut upper = ch.to_uppercase();
+    match (upper.next(), upper.next()) {
+        (Some(u), None) if glyph(u).is_some() => u,
+        _ => ch,
+    }
+}
+
 /// Draws `s` (upper-cased) with the stroke font, top-left at (x, y), glyph height `h`, pen
 /// width `w`. Returns the x after the text.
 pub fn stroke_text(c: &mut Canvas, x: f32, y: f32, s: &str, h: f32, w: f32, col: u8) -> f32 {
+    stroke_chars(c, x, y, s.chars().map(capital), h, w, col)
+}
+
+/// [`stroke_text`] keeping the accented small letters small: the key labels of the layouts
+/// that print them so ("é" on AZERTY), as the CONTROLS dialog shows them.
+pub fn stroke_text_keep_case(
+    c: &mut Canvas,
+    x: f32,
+    y: f32,
+    s: &str,
+    h: f32,
+    w: f32,
+    col: u8,
+) -> f32 {
+    stroke_chars(c, x, y, s.chars(), h, w, col)
+}
+
+fn stroke_chars(
+    c: &mut Canvas,
+    x: f32,
+    y: f32,
+    s: impl Iterator<Item = char>,
+    h: f32,
+    w: f32,
+    col: u8,
+) -> f32 {
     let u = h / 6.0;
     let mut x = x;
-    for ch in s.chars().map(|ch| ch.to_ascii_uppercase()) {
-        if let Some((_, g)) = STROKES.iter().find(|(k, _)| *k == ch) {
-            for poly in g.split('|') {
-                let pts: Vec<Vec2> = poly
-                    .split(' ')
-                    .filter_map(|p| p.split_once(','))
-                    .map(|(a, b)| {
-                        Vec2::new(
-                            x + a.parse::<f32>().unwrap_or(0.0) * u,
-                            y + b.parse::<f32>().unwrap_or(0.0) * u,
-                        )
-                    })
-                    .collect();
-                if pts.len() == 1 {
-                    c.stroke(pts[0], pts[0], w, col);
-                }
-                c.polyline(&pts, w, col);
+    for ch in s {
+        if let Some((g, mark)) = glyph(ch) {
+            stroke_polylines(c, Vec2::new(x, y), g, u, w, col);
+            if let Some((m, dy)) = mark {
+                stroke_polylines(c, Vec2::new(x, y + dy * u), m, u, w, col);
             }
         }
         x += STROKE_ADVANCE * u;
     }
     x
+}
+
+/// Draws a glyph's polylines (grid units of `u` pixels) from `origin`.
+fn stroke_polylines(c: &mut Canvas, origin: Vec2, g: &str, u: f32, w: f32, col: u8) {
+    for poly in g.split('|') {
+        let pts: Vec<Vec2> = poly
+            .split(' ')
+            .filter_map(|p| p.split_once(','))
+            .map(|(a, b)| {
+                origin
+                    + Vec2::new(a.parse::<f32>().unwrap_or(0.0), b.parse::<f32>().unwrap_or(0.0))
+                        * u
+            })
+            .collect();
+        if pts.len() == 1 {
+            c.stroke(pts[0], pts[0], w, col);
+        }
+        c.polyline(&pts, w, col);
+    }
 }
 
 /// Horizontal anchor of [`stroke_text_at`].
@@ -369,5 +487,29 @@ mod tests {
         for ch in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-+.,:/><()=".chars() {
             assert!(STROKES.iter().any(|(k, _)| *k == ch), "no stroke glyph for {ch:?}");
         }
+    }
+
+    /// The keycaps of the European layouts, as the CONTROLS dialog names them (the kneeboard's
+    /// key guide falls back to the US names for the others).
+    #[test]
+    fn stroke_font_covers_european_keys() {
+        for ch in crate::keyboard_layout::EUROPEAN_KEYCAPS.chars() {
+            assert!(stroke_has(ch), "no stroke glyph for {ch:?}");
+        }
+        for (_, _, bases, accented) in MARKS {
+            assert_eq!(bases.chars().count(), accented.chars().count(), "{accented}");
+        }
+        assert!(!stroke_has('ф'));
+    }
+
+    /// Text is drawn in capitals where the font has them.
+    #[test]
+    fn capitals() {
+        assert_eq!(capital('a'), 'A');
+        assert_eq!(capital('ç'), 'Ç');
+        assert_eq!(capital('ő'), 'Ő');
+        assert_eq!(capital('ß'), 'ß');
+        assert_eq!(capital('µ'), 'µ');
+        assert_eq!(capital('_'), '_');
     }
 }

@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 
 use crate::canvas::Canvas;
-use crate::font::{Align, stroke_has, stroke_text_at};
+use crate::font::{Align, stroke_has, stroke_text_at, stroke_text_keep_case};
 use crate::hotas::{ButtonTarget, InputConfig, VrHand};
 use crate::input::{Action, Mods};
 
@@ -230,10 +230,14 @@ fn keys_of(config: &InputConfig, target: ButtonTarget) -> String {
         .join(", ")
 }
 
+/// Stands for a key printed "_" in a key text (where `_` is a space), drawn as `_`.
+const UNDERSCORE: char = '\u{E000}';
+
 /// A key as the layout prints it if the stroke font has its characters, else by its US name.
 fn key_text(mods: Mods, key: KeyCode) -> String {
     let name = crate::keyboard_layout::key_name(key)
         .filter(|n| !n.trim().is_empty() && n.chars().all(stroke_has))
+        .map(|n| n.replace('_', &UNDERSCORE.to_string()))
         .unwrap_or_else(|| us_name(&crate::input::qwerty_key_label(Mods::None, key)));
     match mods {
         Mods::None => name,
@@ -376,15 +380,14 @@ pub fn draw(c: &mut Canvas, lines: &[Line], area: [f32; 4], scroll: &mut f32, st
                 let kc = if *bound { style.keys } else { style.dim };
                 for (j, s) in k.iter().enumerate() {
                     let mid = top + line * (j as f32 + 0.5);
-                    stroke_text_at(
+                    stroke_text_keep_case(
                         c,
                         keys_x,
-                        mid,
-                        &s.replace('_', " "),
+                        mid - text / 2.0,
+                        &s.replace('_', " ").replace(UNDERSCORE, "_"),
                         text,
                         pen,
                         kc,
-                        Align::Left,
                     );
                 }
                 for (j, s) in w.iter().enumerate() {
@@ -440,7 +443,10 @@ mod tests {
         let lines = lines(&InputConfig::default(), false);
         for l in &lines {
             if let Line::Row(keys, _, _) = l {
-                assert!(keys.chars().all(|c| c == '_' || stroke_has(c)), "{keys}");
+                assert!(
+                    keys.chars().all(|c| c == '_' || c == UNDERSCORE || stroke_has(c)),
+                    "{keys}"
+                );
                 let longest = keys.split_whitespace().map(|w| stroke_width(w, TEXT));
                 assert!(longest.fold(0.0, f32::max) <= KEYS_W, "{keys}");
             }

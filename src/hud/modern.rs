@@ -122,14 +122,19 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     let (h, down) = horizon_axes(f);
 
     // Flight path marker (caged to the field with an X when it would leave it).
-    let fpm_raw = project(inv * f.path_dir, f.scale);
+    // A slow helicopter has no meaningful flight path: the ladder centres on the boresight,
+    // the drift vector shows where it goes.
+    let hover = f.heli.is_some() && f.knots < HOVER_KNOTS;
+    let fpm_raw = if hover { Some(Vec2::new(CX, CY)) } else { project(inv * f.path_dir, f.scale) };
     let fpm = fpm_raw.map_or(Vec2::new(CX, FIELD.1.y), |p| p.clamp(FIELD.0, FIELD.1));
     let caged = fpm_raw.is_none_or(|p| !inside(p));
 
     if st.declutter < 2 || st.mode == HudMode::Nav {
         pitch_ladder(c, f, fpm, h, down);
     }
-    flight_path_marker(c, fpm, h, down, caged);
+    if !hover {
+        flight_path_marker(c, fpm, h, down, caged);
+    }
     // Gun cross at the boresight.
     for d in [Vec2::X, Vec2::Y] {
         c.stroke(Vec2::new(CX, CY) + d * 5.0, Vec2::new(CX, CY) + d * 15.0, PEN, INK);
@@ -147,20 +152,14 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     if st.declutter == 0 {
         bank_scale(c, down, f);
     }
-    if f.gear_down {
-        aoa_bracket(c, fpm, f.aoa);
-    }
-
-    // Upper left: load factor, Mach, maximum load factor.
-    let g = f.gees as f32 / 16.0;
-    text(c, 300.0, 100.0, &format!("{g:.1}"), Align::Left);
-    let mach = if f.mach < 1.0 {
-        format!(".{:02}", (f.mach * 100.0).round().min(99.0) as i32)
+    if let Some(heli) = &f.heli {
+        helicopter(c, f, heli);
     } else {
-        format!("{:.2}", f.mach)
-    };
-    text(c, 300.0, 126.0, &mach, Align::Left);
-    text(c, 300.0, 152.0, &format!("{:.1}", f.state.max_gees as f32 / 16.0), Align::Left);
+        if f.gear_down {
+            aoa_bracket(c, fpm, f.aoa);
+        }
+        load_and_mach(c, f);
+    }
 
     // Lower left: mode, stores, gun.
     let bomb = f.cues.bomb.filter(|_| st.mode == HudMode::Gnd);
@@ -231,6 +230,44 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
     }
     if let Some(r) = &f.cues.recon {
         text(c, CX, 157.0, &r.text("TGP"), Align::Centre);
+    }
+}
+
+/// Upper left: load factor, Mach, maximum load factor.
+fn load_and_mach(c: &mut Canvas, f: &HudFrame) {
+    let g = f.gees as f32 / 16.0;
+    text(c, 300.0, 100.0, &format!("{g:.1}"), Align::Left);
+    let mach = if f.mach < 1.0 {
+        format!(".{:02}", (f.mach * 100.0).round().min(99.0) as i32)
+    } else {
+        format!("{:.2}", f.mach)
+    };
+    text(c, 300.0, 126.0, &mach, Align::Left);
+    text(c, 300.0, 152.0, &format!("{:.1}", f.state.max_gees as f32 / 16.0), Align::Left);
+}
+
+/// Below this airspeed a helicopter's HUD shows the hover drift vector, not the flight path.
+const HOVER_KNOTS: i32 = 40;
+/// Drift vector: pixels per knot, from its circle below the boresight.
+const DRIFT_SCALE: f32 = 4.0;
+const DRIFT_CENTRE: Vec2 = Vec2::new(CX, CY + 110.0);
+
+/// A helicopter's readouts: torque and rotor speed (upper left), the radar altitude (under the
+/// altitude scale) and, slow, the drift over the ground from a circle below the boresight.
+fn helicopter(c: &mut Canvas, f: &HudFrame, h: &super::HeliHud) {
+    text(c, 300.0, 100.0, &format!("TRQ {:.0}", h.torque), Align::Left);
+    text(c, 300.0, 126.0, &format!("NR {:.0}", h.rotor), Align::Left);
+    if h.rotor < 95.0 && f.blink {
+        text(c, 300.0, 152.0, "LOW ROTOR", Align::Left);
+    }
+    if f.knots < HOVER_KNOTS {
+        c.ring(DRIFT_CENTRE, 6.0, PEN, INK);
+        let end =
+            (DRIFT_CENTRE + Vec2::new(h.drift.x, -h.drift.y) * DRIFT_SCALE).clamp(FIELD.0, FIELD.1);
+        if end.distance(DRIFT_CENTRE) > 8.0 {
+            c.stroke(DRIFT_CENTRE, end, PEN, INK);
+            c.ring(end, 4.0, THIN, INK);
+        }
     }
 }
 

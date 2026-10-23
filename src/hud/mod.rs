@@ -476,6 +476,19 @@ pub struct HudFrame {
     /// ILS on and a runway end ahead: the deviations from its approach (degrees): localizer
     /// (positive = right of the centreline) and glideslope (positive = above the glide path).
     pub ils: Option<(f32, f32)>,
+    /// A helicopter's readouts (`modern`: torque and rotor speed instead of g and Mach, a hover
+    /// drift vector instead of the flight path marker at low speed).
+    pub heli: Option<HeliHud>,
+}
+
+/// A helicopter's HUD readouts.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HeliHud {
+    /// Engine torque and rotor speed, percent.
+    pub torque: f32,
+    pub rotor: f32,
+    /// Ground speed over the ground in the aircraft's heading frame (knots, x right, y ahead).
+    pub drift: Vec2,
 }
 
 #[derive(SystemParam)]
@@ -581,6 +594,16 @@ impl HudParams<'_, '_> {
             steerpoint_dir: steer.map(|s| s.1),
             weapon_range_km: bay.filter(|b| b.range_km > 0.0).map(|b| b.range_km),
             target_range_km: self.cam.as_ref().and_then(|c| c.range_km),
+            heli: self.settings.aircraft.spec().helicopter.then(|| {
+                let v = path * knots;
+                let ahead = Vec3::new(h.sin(), 0.0, -h.cos());
+                let right = Vec3::new(h.cos(), 0.0, h.sin());
+                HeliHud {
+                    torque: a.torque() * 100.0,
+                    rotor: a.rotor_speed() * 100.0,
+                    drift: Vec2::new(v.dot(right), v.dot(ahead)),
+                }
+            }),
         })
     }
 }

@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Synthesizes the loops of other aircraft heard by the downed pilot (assets/sounds/*.flac).
+"""Synthesizes the loops of other aircraft heard by the downed pilot, and of the helicopter
+flown (assets/sounds/*.flac).
 
 - jet.flac: a jet's roar (broadband noise peaking at a few hundred Hz) with a slow turbulent
   swell and a faint turbine whine.
 - helicopter.flac: main rotor blade slap (4 blades at 258 rpm, 17.2 Hz), a tail rotor buzz
   and the turbine whine over a low rumble.
+- heli_rotor.flac: the flown UH-60A's rotor from inside: the blade passes' heavy thump through
+  the airframe, a duller slap (the game raises its volume with torque and translational lift),
+  the tail rotor and the main gearbox whine.
+- heli_turbine.flac: its two turbines: whine, a compressor tone and broadband hiss (pitched with
+  torque in the game).
 
 Both loop seamlessly: the noise is synthesized in the frequency domain (periodic in the loop
 length) and every tone and pulse train repeats a whole number of times per loop.
@@ -107,6 +113,45 @@ def helicopter():
     return 1.0 * thump / np.max(np.abs(thump)) + 0.9 * slap / np.max(np.abs(slap)) + 0.12 * tail / np.max(np.abs(tail)) + 0.025 * whine + 0.18 * rumble / np.max(np.abs(rumble))
 
 
+def blade_passes(t, passes, pulse, unevenness=(1.0, 0.82, 0.93, 0.78)):
+    """A train of `passes` pulses over the loop, the blades a little uneven."""
+    n = int(t * RATE)
+    out = np.zeros(n)
+    k = np.arange(len(pulse))
+    for i in range(passes):
+        idx = (int(round(i * n / passes)) + k) % n
+        out[idx] += unevenness[i % len(unevenness)] * pulse
+    return out
+
+
+def heli_rotor():
+    t = 3.0
+    passes = round(4 * 258 / 60 * t)
+    k = np.arange(int(0.09 * RATE))
+    # Felt more than heard inside: a deep thump per blade pass, a duller slap.
+    thump = np.sin(2 * np.pi * 42 * k / RATE) * np.exp(-k / (0.03 * RATE)) * (1 - np.exp(-k / (0.003 * RATE)))
+    thump = blade_passes(t, passes, thump)
+    slap_env = np.exp(-k / (0.012 * RATE)) * (1 - np.exp(-k / (0.001 * RATE)))
+    slap = blade_passes(t, passes, slap_env) * periodic_noise(t, lambda f: band(f, 120, 900, 2.0))
+    tail = sum(tone(t, 79.0 * h, h) / h for h in range(1, 6))
+    # Main gearbox: tones of the input and output stages.
+    gearbox = tone(t, 1210) + 0.6 * tone(t, 605, 0.5) + 0.3 * tone(t, 2420, 1.0)
+    rumble = periodic_noise(t, lambda f: band(f, 20, 250, 1.5))
+    norm = lambda x: x / np.max(np.abs(x))
+    return 1.0 * norm(thump) + 0.45 * norm(slap) + 0.08 * norm(tail) + 0.03 * gearbox + 0.35 * norm(rumble) * swell(t, 2.0, 0.2)
+
+
+def heli_turbine():
+    t = 2.0
+    whine = tone(t, 3100) + 0.5 * tone(t, 6200, 1.0) + 0.25 * tone(t, 4650, 2.0)
+    compressor = tone(t, 1550, 0.3) + 0.4 * tone(t, 775, 1.3)
+    hiss = periodic_noise(t, lambda f: band(f, 800, 8000, 1.5))
+    roar = periodic_noise(t, lambda f: band(f, 60, 700, 1.2))
+    return 0.25 * whine * swell(t, 1.0, 0.1) + 0.12 * compressor + 0.5 * hiss + 0.6 * roar
+
+
 if __name__ == "__main__":
     write("jet.flac", jet())
     write("helicopter.flac", helicopter())
+    write("heli_rotor.flac", heli_rotor())
+    write("heli_turbine.flac", heli_turbine())

@@ -1182,7 +1182,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
             }
         })
         .collect();
-    let gun = (!combat.lockheed).then(|| sim.gun_ammo().max(0) as u32);
+    let gun = sim.has_gun().then(|| sim.gun_ammo().max(0) as u32);
     let gun_selected = sim.gun_selected();
     if stores.selected != cur
         || stores.gun_selected != gun_selected

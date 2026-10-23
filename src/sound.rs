@@ -15,6 +15,9 @@
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
 //!   ejection, explosions and flares, and on the ground the emergency beacon (`beacon.flac`, two
 //!   chirps every 3 s at half volume) until the rescue ends.
+//! - A helicopter has no engine drone: its rotor (`heli_rotor.flac`) plays at the rotor speed,
+//!   louder with the torque and in translational lift (the blade slap), over the turbines
+//!   (`heli_turbine.flac`) pitched up with the torque.
 //! - Out of the cockpit under the chute and on the ground, the pilot hears the aircraft around
 //!   (`jet.flac`, `helicopter.flac`, tools/gen_aircraft_sounds.py), placed by direction with
 //!   stereo panning that follows the head, fading with distance, with a Doppler shift.
@@ -44,7 +47,7 @@ impl Plugin for SoundPlugin {
             .add_systems(Startup, load_bank)
             .add_systems(
                 Update,
-                (flight_sounds, play_sounds, engine_drone, beacon, fire_siren)
+                (flight_sounds, play_sounds, engine_drone, heli_sounds, beacon, fire_siren)
                     .chain()
                     .run_if(in_state(AppState::Flight)),
             )
@@ -138,6 +141,8 @@ struct SoundBank {
     siren: Option<Handle<AudioSource>>,
     jet: Option<Handle<AudioSource>>,
     helicopter: Option<Handle<AudioSource>>,
+    heli_rotor: Option<Handle<AudioSource>>,
+    heli_turbine: Option<Handle<AudioSource>>,
 }
 
 /// A playing one-shot sound (one instance per id at a time, like the single-voice driver).
@@ -165,6 +170,15 @@ struct DistantAircraft {
 struct EngineDrone {
     sample_knots: f32,
 }
+
+/// The flown helicopter's loops: rotor (false) and turbines (true).
+#[derive(Component)]
+struct HeliLoop(bool);
+
+/// Helicopter loop volumes at full level: the rotor at idle torque and its rise to full torque
+/// and in translational lift, the turbines.
+const ROTOR_VOLUME: (f32, f32, f32) = (0.45, 0.35, 0.2);
+const TURBINE_VOLUME: f32 = 0.35;
 
 /// Sound id of an anti-aircraft shell burst nearby (not an AdLib sound).
 pub const AIRBURST: u8 = 110;
@@ -210,6 +224,8 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     bank.siren = optional("fire_siren.flac");
     bank.jet = optional("jet.flac");
     bank.helicopter = optional("helicopter.flac");
+    bank.heli_rotor = optional("heli_rotor.flac");
+    bank.heli_turbine = optional("heli_turbine.flac");
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));
     commands.insert_resource(bank);
 }
@@ -278,26 +294,29 @@ fn flight_sounds(
     mut said_takeoff: Local<bool>,
     mut said_land: Local<bool>,
     mut been_away: Local<bool>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let Ok((a, pos)) = player.single() else { return };
+    let helicopter = settings.aircraft.spec().helicopter;
     for ActionEvent(act) in actions.read() {
         match act {
             Action::Gear if !a.on_ground => {
                 out.write(PlaySound { id: 19, priority: DIRECT });
             }
-            Action::ThrottleIdle => {
+            Action::ThrottleIdle if !helicopter => {
                 out.write(PlaySound { id: 12, priority: 0 });
             }
             _ => {}
         }
     }
     let (was_on_ground, prev_thrust) = prev.unwrap_or((a.on_ground, a.thrust));
-    // Spool up when the throttle is raised from zero actual thrust.
-    if prev_thrust == 0.0 && a.set_thrust > 0.0 {
+    // Spool up when the throttle is raised from zero actual thrust (a helicopter's turbines
+    // keep running).
+    if prev_thrust == 0.0 && a.set_thrust > 0.0 && !helicopter {
         out.write(PlaySound { id: 11, priority: 2 });
     }
-    // Touchdown in a landing corridor.
-    if a.on_ground && !was_on_ground && a.in_landing_corridor {
+    // Touchdown in a landing corridor (a helicopter's anywhere).
+    if a.on_ground && !was_on_ground && (a.in_landing_corridor || helicopter) {
         out.write(PlaySound { id: 10, priority: 2 });
     }
     // Stall horn while stalled (repeated every frame).
@@ -342,12 +361,14 @@ fn engine_drone(
     level: Res<SoundLevel>,
     player: Query<&Aircraft, With<Player>>,
     combat: Option<Res<crate::combat::Combat>>,
+    settings: Res<crate::settings::Settings>,
     mut drone: Query<(Entity, &EngineDrone, Option<&mut AudioSink>)>,
 ) {
     let Some(bank) = bank else { return };
     let Ok(a) = player.single() else { return };
     let knots = a.knots().min(768.0);
     let on = level.0 == 3
+        && !settings.aircraft.spec().helicopter
         && (a.set_thrust > 0.0 || !a.on_ground)
         && knots >= 2.0
         && a.ended.is_none()
@@ -396,6 +417,65 @@ fn spawn_drone(
         },
         EngineDrone { sample_knots },
     ));
+}
+
+/// The flown helicopter's rotor and turbines (instead of the engine drone), while the rotor
+/// turns.
+fn heli_sounds(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    player: Query<&Aircraft, With<Player>>,
+    combat: Option<Res<crate::combat::Combat>>,
+    settings: Res<crate::settings::Settings>,
+    mut loops: Query<(Entity, &HeliLoop, Option<&mut AudioSink>)>,
+) {
+    let Some(bank) = bank else { return };
+    let Ok(a) = player.single() else { return };
+    let nr = a.rotor_speed();
+    let on = level.0 == 3
+        && settings.aircraft.spec().helicopter
+        && nr > 0.05
+        && a.ended.is_none()
+        && !has_ejected(combat.as_deref());
+    if !on {
+        for (e, ..) in &loops {
+            commands.entity(e).despawn();
+        }
+        return;
+    }
+    let half = if level.1 { 0.5 } else { 1.0 };
+    let torque = a.torque().clamp(0.0, 1.2);
+    let rotor = (
+        nr.max(0.3),
+        half * nr
+            * (ROTOR_VOLUME.0 + ROTOR_VOLUME.1 * torque + ROTOR_VOLUME.2 * a.translational_lift()),
+    );
+    // The turbines run down with the fuel.
+    let turbine = (0.85 + 0.2 * torque, if a.fuel > 0.0 { half * TURBINE_VOLUME } else { 0.0 });
+    let mut have = [false; 2];
+    for (_, l, sink) in &mut loops {
+        have[l.0 as usize] = true;
+        let (speed, volume) = if l.0 { turbine } else { rotor };
+        if let Some(mut sink) = sink {
+            sink.set_speed(speed);
+            sink.set_volume(Volume::Linear(volume));
+        }
+    }
+    for (turbines, handle) in [(false, &bank.heli_rotor), (true, &bank.heli_turbine)] {
+        let Some(handle) = handle.clone().filter(|_| !have[turbines as usize]) else { continue };
+        let (speed, volume) = if turbines { turbine } else { rotor };
+        commands.spawn((
+            AudioPlayer(handle),
+            PlaybackSettings {
+                mode: PlaybackMode::Loop,
+                volume: Volume::Linear(volume),
+                speed,
+                ..default()
+            },
+            HeliLoop(turbines),
+        ));
+    }
 }
 
 /// The emergency beacon of the pilot on the ground waiting for the rescue: the first chirps on
@@ -609,8 +689,14 @@ fn unit_pitch(unit: usize) -> f32 {
     0.92 + 0.16 * (unit as f32 * 0.618).fract()
 }
 
-type FlightSound =
-    Or<(With<OneShot>, With<EngineDrone>, With<Beacon>, With<FireSiren>, With<DistantAircraft>)>;
+type FlightSound = Or<(
+    With<OneShot>,
+    With<EngineDrone>,
+    With<HeliLoop>,
+    With<Beacon>,
+    With<FireSiren>,
+    With<DistantAircraft>,
+)>;
 
 fn stop_all(mut commands: Commands, q: Query<Entity, FlightSound>) {
     for e in &q {

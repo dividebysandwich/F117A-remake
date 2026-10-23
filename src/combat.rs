@@ -145,7 +145,6 @@ pub struct Combat {
     launch_zone: (i32, Option<stealth_sim::dlz::LaunchZone>, ZoneKey),
     pub end: Option<EndInfo>,
     flight_end_timer: f32,
-    lockheed: bool,
     /// WLD names of the mission world (object type names).
     names: Vec<String>,
     log: bool,
@@ -372,7 +371,6 @@ fn start_combat(
         launch_zone: (-1, None, ZoneKey::default()),
         end: None,
         flight_end_timer: 0.0,
-        lockheed: m.settings.plane == stealth_mission::Plane::Lockheed,
         names,
         log: std::env::args().any(|a| a == "--log-flight" || a == "--log-sim"),
         record: default(),

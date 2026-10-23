@@ -10,7 +10,7 @@ use stealth_mission::{Mission, MissionKind, Seed};
 use stealth_sim::WorldDamage;
 use stealth_sim::score::{MissionReport, Outcome};
 
-use crate::menu::{AMBER, BRIGHT, DIM, GREEN, MenuState, THEATERS, big_button, section};
+use crate::menu::{AMBER, BRIGHT, DIM, GREEN, MenuState, THEATERS, big_button, group, section};
 use crate::mission::MissionData;
 use crate::settings::Settings;
 
@@ -329,26 +329,31 @@ pub fn career_ui(
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(210.0);
-                ui.add_enabled_ui(tour.is_none(), |ui| {
-                    crate::menu::theater_options(ui, &mut state.theater);
-                    crate::menu::opponent_options(ui, &mut state.opponents);
-                    crate::menu::situation_options(ui, &mut state.roe);
+                group(ui, "Tour", |ui| {
+                    ui.add_enabled_ui(tour.is_none(), |ui| {
+                        crate::menu::theater_options(ui, &mut state.theater);
+                        crate::menu::situation_options(ui, &mut state.roe);
+                        crate::menu::opponent_options(ui, &mut state.opponents);
+                    });
+                    if tour.is_some() {
+                        ui.label(egui::RichText::new("Set by the pilot's tour").small().color(DIM));
+                    }
                 });
-                if tour.is_some() {
-                    ui.label(egui::RichText::new("Set by the pilot's tour").small().color(DIM));
-                }
             });
             ui.vertical(|ui| {
-                ui.set_width(190.0);
-                let lockheed = tour.is_none().then_some(&mut state.lockheed);
-                crate::menu::aircraft_options(ui, settings, lockheed);
-                crate::menu::realism_options(ui, settings);
+                ui.set_width(210.0);
+                group(ui, "Conditions", |ui| {
+                    crate::menu::weather_options(ui, &mut state.weather, &mut state.cloud_cover);
+                    crate::menu::moon_options(ui, &mut state.moon);
+                });
+                group(ui, "Vehicle", |ui| {
+                    let lockheed = tour.is_none().then_some(&mut state.lockheed);
+                    crate::menu::vehicle_options(ui, settings, lockheed);
+                });
             });
             ui.vertical(|ui| {
-                ui.set_width(200.0);
-                crate::menu::weather_options(ui, &mut state.weather, &mut state.cloud_cover);
-                crate::menu::moon_options(ui, &mut state.moon);
-                crate::menu::classic_modern_options(ui, settings, head);
+                ui.set_width(220.0);
+                crate::menu::simulation_options(ui, settings, head, None);
             });
             ui.vertical(|ui| {
                 ui.set_width(260.0);

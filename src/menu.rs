@@ -561,6 +561,42 @@ pub(crate) fn section(ui: &mut egui::Ui, title: &str) {
     );
 }
 
+/// A framed group of sections under a bright title, filling the column.
+pub(crate) fn group<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let r = egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0, DIM))
+        .inner_margin(8.0)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(egui::RichText::new(title.to_ascii_uppercase()).size(16.0).color(BRIGHT));
+            add(ui)
+        })
+        .inner;
+    ui.add_space(6.0);
+    r
+}
+
+/// A dropdown over `options` (value, name, hover facts), the selected one's facts on the button.
+pub(crate) fn dropdown<T: PartialEq + Copy>(
+    ui: &mut egui::Ui,
+    id: &str,
+    value: &mut T,
+    options: impl IntoIterator<Item = (T, &'static str, &'static [&'static str])> + Clone,
+) {
+    let (name, f) =
+        options.clone().into_iter().find(|o| o.0 == *value).map_or(("", &[][..]), |o| (o.1, o.2));
+    let resp = egui::ComboBox::from_id_salt(id)
+        .selected_text(name)
+        .width(ui.available_width())
+        .show_ui(ui, |ui| {
+            for (v, name, f) in options {
+                facts(ui.selectable_value(value, v, name), f);
+            }
+        })
+        .response;
+    facts(resp, f);
+}
+
 /// A labelled CLASSIC / MODERN slide switch; `modern` is the right position.
 fn slide_switch(ui: &mut egui::Ui, label: &str, modern: &mut bool) -> egui::Response {
     two_way_switch(ui, label, modern, ("CLASSIC", "MODERN"))
@@ -640,16 +676,14 @@ pub(crate) fn theater_options(ui: &mut egui::Ui, theater: &mut usize) {
 
 pub(crate) fn opponent_options(ui: &mut egui::Ui, opponents: &mut u8) {
     section(ui, "Opponents");
-    for (i, (name, f)) in OPPONENTS.iter().enumerate() {
-        facts(ui.radio_value(opponents, i as u8, *name), f);
-    }
+    let options = OPPONENTS.iter().enumerate().map(|(i, (name, f))| (i as u8, *name, *f));
+    dropdown(ui, "opponents", opponents, options);
 }
 
 pub(crate) fn situation_options(ui: &mut egui::Ui, roe: &mut u8) {
     section(ui, "Situation");
-    for (i, (name, f)) in ROE.iter().enumerate() {
-        facts(ui.radio_value(roe, i as u8, *name), f);
-    }
+    let options = ROE.iter().enumerate().map(|(i, (name, f))| (i as u8, *name, *f));
+    dropdown(ui, "situation", roe, options);
 }
 
 fn mission_options(ui: &mut egui::Ui, state: &mut MenuState) {
@@ -658,11 +692,8 @@ fn mission_options(ui: &mut egui::Ui, state: &mut MenuState) {
     if !drones && state.kind == MissionKind::DroneDefense {
         state.kind = MissionKind::Air;
     }
-    for (kind, name, f) in KINDS {
-        if kind != MissionKind::DroneDefense || drones {
-            facts(ui.radio_value(&mut state.kind, kind, name), f);
-        }
-    }
+    let options = KINDS.into_iter().filter(|k| k.0 != MissionKind::DroneDefense || drones);
+    dropdown(ui, "mission", &mut state.kind, options);
 }
 
 /// The moon phases to choose from, in eighths of the cycle.
@@ -684,16 +715,11 @@ const MOON_PHASES: [(u8, &str, &[&str]); 8] = [
 /// The moon's phase (with the time of day switch on).
 pub(crate) fn moon_options(ui: &mut egui::Ui, moon: &mut Option<u8>) {
     section(ui, "Moon");
-    facts(
-        ui.radio_value(moon, None, "Mission date"),
-        &["The real moon of the briefing date", "Needs the time of day switch (modern)"],
-    );
-    let name = moon.map_or("Choose phase", |m| MOON_PHASES[m as usize % 8].1);
-    egui::ComboBox::from_id_salt("moon").selected_text(name).width(170.0).show_ui(ui, |ui| {
-        for (m, name, f) in MOON_PHASES {
-            facts(ui.selectable_value(moon, Some(m), name), f);
-        }
-    });
+    let date: &[&str] =
+        &["The real moon of the briefing date", "Needs the time of day switch (modern)"];
+    let options = std::iter::once((None, "Mission date", date))
+        .chain(MOON_PHASES.into_iter().map(|(m, name, f)| (Some(m), name, f)));
+    dropdown(ui, "moon", moon, options);
 }
 
 fn start_time_options(ui: &mut egui::Ui, state: &mut MenuState) {
@@ -719,13 +745,12 @@ fn start_time_options(ui: &mut egui::Ui, state: &mut MenuState) {
     }
 }
 
-/// The aircraft, with the switches that go with it; `lockheed` shows "Realistic weapons".
-pub(crate) fn aircraft_options(
+/// The aircraft, with its weapons switch; `lockheed` shows "Realistic weapons".
+pub(crate) fn vehicle_options(
     ui: &mut egui::Ui,
     settings: &mut SettingsMut,
     lockheed: Option<&mut bool>,
 ) {
-    section(ui, "Aircraft");
     let s = settings.bypass_change_detection();
     let mut picked = false;
     for (kind, f) in AIRCRAFT {
@@ -748,6 +773,28 @@ pub(crate) fn aircraft_options(
             ],
         );
     }
+}
+
+/// The realism switches with crash protection, the classic / modern switches, head tracking and
+/// Tacview: the simulation settings of the single player dialogs.
+pub(crate) fn simulation_options(
+    ui: &mut egui::Ui,
+    settings: &mut SettingsMut,
+    head: Option<crate::headtrack::Source>,
+    note: Option<&str>,
+) {
+    group(ui, "Simulation", |ui| {
+        realism_options(ui, settings);
+        crash_option(ui, settings);
+        if let Some(note) = note {
+            ui.label(egui::RichText::new(note).small().color(DIM));
+        }
+        classic_modern_options(ui, settings, head);
+        tacview_options(ui, settings);
+    });
+}
+
+fn crash_option(ui: &mut egui::Ui, settings: &mut SettingsMut) {
     let s = settings.bypass_change_detection();
     if facts(
         ui.checkbox(&mut s.no_crashes, "Crash protection"),
@@ -761,13 +808,17 @@ pub(crate) fn aircraft_options(
     {
         settings.set_changed();
     }
+}
+
+fn tacview_options(ui: &mut egui::Ui, settings: &mut SettingsMut) {
     // The browser build writes no files and cannot listen for Tacview.
     if cfg!(target_arch = "wasm32") {
         return;
     }
+    section(ui, "Tacview");
     let s = settings.bypass_change_detection();
     if facts(
-        ui.checkbox(&mut s.tacview, "Tacview export"),
+        ui.checkbox(&mut s.tacview, "Export"),
         &[
             "Saves each flight as a Tacview recording (.acmi)",
             "In the game's data folder, under tacview",
@@ -779,7 +830,7 @@ pub(crate) fn aircraft_options(
     }
     let s = settings.bypass_change_detection();
     if facts(
-        ui.checkbox(&mut s.tacview_real_time, "Tacview real-time telemetry"),
+        ui.checkbox(&mut s.tacview_real_time, "Real-time telemetry"),
         &[
             "Sends the flight to Tacview while you fly",
             "In Tacview: Record > Real-Time Telemetry",
@@ -841,10 +892,9 @@ pub(crate) fn weather_options(
     cloud_cover: &mut Option<u8>,
 ) {
     section(ui, "Weather");
-    facts(ui.radio_value(weather, None, "Random"), RANDOM_SKY_FACTS);
-    for sky in Sky::ALL {
-        facts(ui.radio_value(weather, Some(sky), sky.name()), sky_facts(sky));
-    }
+    let options = std::iter::once((None, "Random", RANDOM_SKY_FACTS))
+        .chain(Sky::ALL.into_iter().map(|sky| (Some(sky), sky.name(), sky_facts(sky))));
+    dropdown(ui, "weather", weather, options);
     // Coverage of the main layer (cumulus, or stratus for overcast and storms).
     let mut auto = cloud_cover.is_none();
     let r = facts(
@@ -1277,28 +1327,33 @@ fn menu_ui(
                     // Options: three narrow columns.
                     ui.vertical(|ui| {
                         ui.set_width(210.0);
-                        theater_options(ui, &mut state.theater);
-                        opponent_options(ui, &mut state.opponents);
-                        start_time_options(ui, &mut state);
-                        moon_options(ui, &mut state.moon);
+                        group(ui, "Mission", |ui| {
+                            theater_options(ui, &mut state.theater);
+                            situation_options(ui, &mut state.roe);
+                            opponent_options(ui, &mut state.opponents);
+                            mission_options(ui, &mut state);
+                        });
                     });
                     ui.vertical(|ui| {
-                        ui.set_width(190.0);
-                        situation_options(ui, &mut state.roe);
-                        mission_options(ui, &mut state);
-                        let was = settings.aircraft;
-                        aircraft_options(ui, &mut settings, Some(&mut state.lockheed));
-                        // A helicopter flies the same seed's targets as insertions.
-                        if settings.aircraft.spec().helicopter != was.spec().helicopter {
-                            state.regenerate();
-                        }
-                        realism_options(ui, &mut settings);
+                        ui.set_width(210.0);
+                        group(ui, "Conditions", |ui| {
+                            let state = &mut *state;
+                            weather_options(ui, &mut state.weather, &mut state.cloud_cover);
+                            start_time_options(ui, state);
+                            moon_options(ui, &mut state.moon);
+                        });
+                        group(ui, "Vehicle", |ui| {
+                            let was = settings.aircraft;
+                            vehicle_options(ui, &mut settings, Some(&mut state.lockheed));
+                            // A helicopter flies the same seed's targets as insertions.
+                            if settings.aircraft.spec().helicopter != was.spec().helicopter {
+                                state.regenerate();
+                            }
+                        });
                     });
                     ui.vertical(|ui| {
-                        ui.set_width(200.0);
-                        let state = &mut *state;
-                        weather_options(ui, &mut state.weather, &mut state.cloud_cover);
-                        classic_modern_options(ui, &mut settings, head.source);
+                        ui.set_width(220.0);
+                        simulation_options(ui, &mut settings, head.source, None);
                     });
                 }
                 // Mission summary in big type, the full briefing below in small type.

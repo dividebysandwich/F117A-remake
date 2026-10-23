@@ -6,7 +6,7 @@ use bevy_egui::{EguiContexts, egui};
 use stealth_campaign::CampaignSetup;
 
 use super::ActiveCampaign;
-use crate::menu::{AMBER, BRIGHT, DIM, MenuState, THEATERS, big_button, section};
+use crate::menu::{AMBER, BRIGHT, DIM, MenuState, THEATERS, big_button, dropdown, group, section};
 use crate::mission::MissionData;
 use crate::settings::{AppState, MissionSetup};
 
@@ -97,23 +97,58 @@ pub fn campaign_window(
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(210.0);
-                crate::menu::theater_options(ui, &mut state.theater);
-                crate::menu::opponent_options(ui, &mut state.opponents);
-                crate::menu::situation_options(ui, &mut state.roe);
+                group(ui, "Campaign", |ui| {
+                    crate::menu::theater_options(ui, &mut state.theater);
+                    crate::menu::situation_options(ui, &mut state.roe);
+                    crate::menu::opponent_options(ui, &mut state.opponents);
+                });
             });
             ui.vertical(|ui| {
-                ui.set_width(190.0);
-                crate::menu::aircraft_options(ui, &mut settings, None);
-                crate::menu::realism_options(ui, &mut settings);
+                ui.set_width(210.0);
+                group(ui, "Conditions", |ui| {
+                    section(ui, "Weather");
+                    dropdown(
+                        ui,
+                        "campaign_weather",
+                        &mut w.clear_sky,
+                        [
+                            (false, "Dynamic", &["The weather changes every 10-22 hours of the sky's clock", "Clouds block line of sight for both sides"][..]),
+                            (true, "Clear sky", &["No clouds for the whole campaign"][..]),
+                        ],
+                    );
+                    section(ui, "Start time");
+                    ui.add(
+                        egui::Slider::new(&mut w.start_hour, 0.0..=23.0)
+                            .step_by(1.0)
+                            .custom_formatter(|v, _| format!("{v:02.0}:00")),
+                    );
+                    section(ui, "Day and night");
+                    dropdown(
+                        ui,
+                        "campaign_sky_ratio",
+                        &mut w.sky_ratio,
+                        [
+                            (1.0, "Real time", &["A day lasts 24 hours"][..]),
+                            (12.0, "2 h / day", &["A day lasts 2 hours"][..]),
+                            (24.0, "1 h / day", &["A day lasts 1 hour"][..]),
+                            (48.0, "30 min / day", &["A day lasts 30 minutes"][..]),
+                        ],
+                    );
+                });
                 ui.label(
-                    egui::RichText::new("A saved campaign keeps the rules it was started with")
+                    egui::RichText::new("Conditions apply to a new campaign")
                         .small()
                         .color(DIM),
                 );
             });
             ui.vertical(|ui| {
-                ui.set_width(200.0);
-                crate::menu::classic_modern_options(ui, &mut settings, head.source);
+                ui.set_width(220.0);
+                crate::menu::simulation_options(
+                    ui,
+                    &mut settings,
+                    head.source,
+                    Some("A saved campaign keeps the rules it was started with"),
+                );
             });
             ui.vertical(|ui| {
             for line in [
@@ -131,35 +166,6 @@ pub fn campaign_window(
                 roe_name(state.roe),
                 ["green", "regular", "veteran", "elite"][state.opponents.min(3) as usize]
             ));
-            ui.horizontal(|ui| {
-                ui.label("Day and night:");
-                for (ratio, label) in [
-                    (1.0, "real time"),
-                    (12.0, "2 h / day"),
-                    (24.0, "1 h / day"),
-                    (48.0, "30 min / day"),
-                ] {
-                    if ui.selectable_label(w.sky_ratio == ratio, label).clicked() {
-                        w.sky_ratio = ratio;
-                    }
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.label("Starts at");
-                ui.add(
-                    egui::Slider::new(&mut w.start_hour, 0.0..=23.0)
-                        .step_by(1.0)
-                        .custom_formatter(|v, _| format!("{v:02.0}:00")),
-                );
-            });
-            ui.horizontal(|ui| {
-                ui.label("Weather:");
-                for (clear, label) in [(false, "dynamic"), (true, "clear sky")] {
-                    if ui.selectable_label(w.clear_sky == clear, label).clicked() {
-                        w.clear_sky = clear;
-                    }
-                }
-            });
             if ui.add(big_button("START")).clicked() {
                 let secs = web_time::SystemTime::now()
                     .duration_since(web_time::UNIX_EPOCH)

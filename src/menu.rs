@@ -170,7 +170,7 @@ fn vr_available() -> bool {
 }
 
 /// Flyable aircraft and their notes.
-const AIRCRAFT: [(AircraftKind, &[&str]); 2] = [
+const AIRCRAFT: [(AircraftKind, &[&str]); 3] = [
     (
         AircraftKind::F117,
         &["Stealth attack aircraft", "Subsonic, 7 g", "Modern and classic cockpit"],
@@ -178,6 +178,10 @@ const AIRCRAFT: [(AircraftKind, &[&str]); 2] = [
     (
         AircraftKind::F16,
         &["Multirole fighter", "Mach 2 class, 9 g, quick roll", "F-16 cockpit with RWR"],
+    ),
+    (
+        AircraftKind::UH60,
+        &["Utility helicopter", "Inserts troops: land near the target", "Cyclic and collective"],
     ),
 ];
 
@@ -663,7 +667,11 @@ fn mission_options(ui: &mut egui::Ui, state: &mut MenuState) {
 
 /// The moon phases to choose from, in eighths of the cycle.
 const MOON_PHASES: [(u8, &str, &[&str]); 8] = [
-    (0, "New moon", &["No moonlight: a black night, lights and stars only", "Enemy pilots see you at 2 km"]),
+    (
+        0,
+        "New moon",
+        &["No moonlight: a black night, lights and stars only", "Enemy pilots see you at 2 km"],
+    ),
     (1, "Waxing crescent", &["A thin moon in the evening sky, set before midnight"]),
     (2, "First quarter", &["Half lit, up in the evening, sets around midnight"]),
     (3, "Waxing gibbous", &["Bright, up from the afternoon until after midnight"]),
@@ -1078,7 +1086,8 @@ fn main_screen(
             } else {
                 "Join a server, or host a campaign and fly in it"
             };
-            if facts(ui.add(wide("MULTIPLAYER")), &["Coop in the dynamic campaign", how]).clicked() {
+            if facts(ui.add(wide("MULTIPLAYER")), &["Coop in the dynamic campaign", how]).clicked()
+            {
                 multiplayer.show();
             }
             if facts(
@@ -1106,10 +1115,7 @@ fn main_screen(
             #[cfg(target_arch = "wasm32")]
             if facts(
                 ui.add(wide("DISCORD")),
-                &[
-                    "Fly together, report bugs and share missions",
-                    "Follow development",
-                ],
+                &["Fly together, report bugs and share missions", "Follow development"],
             )
             .clicked()
             {

@@ -35,6 +35,7 @@ pub enum Aircraft {
     #[default]
     F117,
     F16,
+    UH60,
 }
 
 impl Aircraft {
@@ -42,7 +43,12 @@ impl Aircraft {
         match self {
             Aircraft::F117 => "F-117A",
             Aircraft::F16 => "F-16",
+            Aircraft::UH60 => "UH-60",
         }
+    }
+
+    pub fn helicopter(self) -> bool {
+        self == Aircraft::UH60
     }
 }
 

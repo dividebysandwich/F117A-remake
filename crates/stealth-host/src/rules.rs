@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use stealth_campaign::{Aircraft, CampaignRules};
-use stealth_sim::{LandingMode, SimOptions};
+use stealth_sim::{Airframe, LandingMode, SimOptions};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Rules {
@@ -61,12 +61,14 @@ impl Rules {
         }
     }
 
-    /// An aircraft's simulation traits under these rules: (the real F-117A without a cannon,
-    /// weapons outside).
-    pub fn airframe(&self, aircraft: Aircraft) -> (bool, bool) {
+    /// An aircraft's simulation traits under these rules (the real F-117A without a cannon).
+    pub fn airframe(&self, aircraft: Aircraft) -> Airframe {
         match aircraft {
-            Aircraft::F117 => (self.realistic_weapons, false),
-            Aircraft::F16 => (false, true),
+            Aircraft::F117 => Airframe { lockheed: self.realistic_weapons, ..Airframe::default() },
+            Aircraft::F16 => Airframe { external_stores: true, ..Airframe::default() },
+            Aircraft::UH60 => {
+                Airframe { external_stores: true, helicopter: true, ..Airframe::default() }
+            }
         }
     }
 }

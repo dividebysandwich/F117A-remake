@@ -13,6 +13,7 @@ pub enum AircraftKind {
     #[default]
     F117,
     F16,
+    UH60,
 }
 
 /// How the aircraft's shadow is drawn.
@@ -32,6 +33,10 @@ pub struct CockpitView {
     /// Box around the eye (aircraft frame, metres from the eye point, -Z forward): triangles
     /// with a corner or their centre inside are left out.
     pub cut: (Vec3, Vec3),
+    /// Also drawn from inside (back faces): a cabin without an interior model of its own.
+    pub two_sided: bool,
+    /// The rotors (the model's articulated parts) are drawn too, overhead.
+    pub rotors: bool,
 }
 
 pub struct AircraftSpec {
@@ -62,6 +67,9 @@ pub struct AircraftSpec {
     pub vr_hud_scale: f32,
     /// Weapons in a bay (else on pylons: always "open", seen by radars as the F-117A's open bay).
     pub bomb_bay: bool,
+    /// Flown by the helicopter flight model (`flight::heli`): lands anywhere flat, no gun and
+    /// no ejection seat.
+    pub helicopter: bool,
     flight: fn() -> FlightConstants,
 }
 
@@ -107,6 +115,7 @@ static F117: AircraftSpec = AircraftSpec {
     // About the F-16's angular size: the symbology in the middle half of the combiner.
     vr_hud_scale: 2.0 * crate::hud::modern::SCALE,
     bomb_bay: true,
+    helicopter: false,
     flight: FlightConstants::default,
 };
 
@@ -119,6 +128,8 @@ static F16: AircraftSpec = AircraftSpec {
     cockpit_view: Some(CockpitView {
         canopy_colours: &[144, 145],
         cut: (Vec3::new(-0.40, -1.15, -0.85), Vec3::new(0.40, 0.40, 0.80)),
+        two_sided: false,
+        rotors: false,
     }),
     cockpits: &[(PanelStyle::F16, "cockpit_f16")],
     shadow: Shadow::Flattened,
@@ -129,16 +140,52 @@ static F16: AircraftSpec = AircraftSpec {
     hud_scale: 2080.0,
     vr_hud_scale: 2080.0,
     bomb_bay: false,
+    helicopter: false,
     flight: FlightConstants::f16,
 };
 
+/// A point of the UH-60A model (tools/models/uh60.py: metres, x right, y forward, z up, origin
+/// on the ground under the mast, `K` model units per metre) in the aircraft frame.
+const fn uh60_point(x: f32, y: f32, z: f32) -> Vec3 {
+    const K: f32 = 16.38;
+    model_point(UH60_LIFT, x * K, z * K, -y * K)
+}
+
+/// The UH-60A's model origin is on the ground under its wheels; clear of the ground overlays.
+const UH60_LIFT: f32 = 0.05;
+
+static UH60: AircraftSpec = AircraftSpec {
+    model: "stflt_025",
+    model_lift: UH60_LIFT,
+    // The pilot's (right) seat, behind the windshield top (y 3.05) and ahead of the door post
+    // (y 2.40), head under the roof.
+    eye: uh60_point(0.52, 2.62, 1.90),
+    cockpit_view: Some(CockpitView {
+        // The windshield, the door and the cabin windows: open from inside.
+        canopy_colours: &[144, 145],
+        cut: (Vec3::ZERO, Vec3::ZERO),
+        two_sided: true,
+        rotors: true,
+    }),
+    cockpits: &[(PanelStyle::Modern, "cockpit_uh60")],
+    shadow: Shadow::Flattened,
+    vr_scale: 0.85 * 0.7,
+    vr_eye_height: None,
+    hud_scale: crate::hud::modern::SCALE,
+    vr_hud_scale: 2.0 * crate::hud::modern::SCALE,
+    bomb_bay: false,
+    helicopter: true,
+    flight: FlightConstants::uh60,
+};
+
 impl AircraftKind {
-    pub const ALL: [AircraftKind; 2] = [AircraftKind::F117, AircraftKind::F16];
+    pub const ALL: [AircraftKind; 3] = [AircraftKind::F117, AircraftKind::F16, AircraftKind::UH60];
 
     pub fn spec(self) -> &'static AircraftSpec {
         match self {
             AircraftKind::F117 => &F117,
             AircraftKind::F16 => &F16,
+            AircraftKind::UH60 => &UH60,
         }
     }
 
@@ -147,6 +194,7 @@ impl AircraftKind {
         match self {
             AircraftKind::F117 => "f117",
             AircraftKind::F16 => "f16",
+            AircraftKind::UH60 => "uh60",
         }
     }
 
@@ -156,6 +204,7 @@ impl AircraftKind {
             k.id() == s
                 || (s == "f117a" && *k == AircraftKind::F117)
                 || (s == "f16c" && *k == AircraftKind::F16)
+                || (matches!(s.as_str(), "uh60a" | "blackhawk") && *k == AircraftKind::UH60)
         })
     }
 
@@ -163,6 +212,7 @@ impl AircraftKind {
         match self {
             AircraftKind::F117 => "F-117A Nighthawk",
             AircraftKind::F16 => "F-16C Fighting Falcon",
+            AircraftKind::UH60 => "UH-60A Black Hawk",
         }
     }
 }
@@ -227,6 +277,19 @@ mod tests {
         );
     }
 
+    /// The UH-60A's eye: in the cockpit between the windshield top and the door post
+    /// (tools/models/uh60.py STATIONS), under the roof, inside the side.
+    #[test]
+    fn uh60_eye_in_the_cockpit() {
+        let spec = AircraftKind::UH60.spec();
+        let s = AIRCRAFT_MODEL_SCALE as f32 * 16.38;
+        let eye = (spec.eye - Vec3::Y * spec.model_lift) / s;
+        let (x, y, z) = (eye.x, -eye.z, eye.y);
+        assert!((2.40..3.05).contains(&y), "eye {y} m from the mast");
+        assert!((1.40..2.20).contains(&z), "eye {z} m high");
+        assert!(x.abs() < 1.0, "eye {x} m to the side");
+    }
+
     #[test]
     fn names_round_trip() {
         for k in AircraftKind::ALL {
@@ -234,6 +297,8 @@ mod tests {
             assert!(!k.spec().cockpits.is_empty());
         }
         assert_eq!(AircraftKind::parse("F-16"), Some(AircraftKind::F16));
+        assert_eq!(AircraftKind::parse("UH-60"), Some(AircraftKind::UH60));
+        assert_eq!(AircraftKind::parse("blackhawk"), Some(AircraftKind::UH60));
         assert_eq!(AircraftKind::F117.spec().eye, Vec3::new(0.0, 1.6, -3.0));
     }
 }

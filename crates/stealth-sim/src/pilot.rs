@@ -18,6 +18,9 @@ pub struct Pilot {
     /// The aircraft carries its weapons outside (`SimOptions::external_stores` for pilot 0).
     #[serde(default)]
     pub(crate) external_stores: bool,
+    /// The aircraft is a helicopter (`SimOptions::helicopter` for pilot 0).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) helicopter: bool,
     /// World object 0 while this pilot is parked: the tile object his tile lock points at.
     #[serde(default)]
     pub(crate) scratch0: GroundObject,
@@ -250,6 +253,7 @@ impl Sim {
         let mut p = Pilot {
             lockheed: p0.lockheed,
             external_stores: p0.external_stores,
+            helicopter: p0.helicopter,
             hits: 2,
             air_lock: -1,
             gnd_lock: -1,

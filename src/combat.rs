@@ -275,13 +275,15 @@ fn start_combat(
         .map(|t| t.damage);
     let prior_tiles = prior_damage.as_ref().map(|d| d.tiles.clone()).unwrap_or_default();
     let external_stores = !settings.aircraft.spec().bomb_bay;
+    let helicopter = settings.aircraft.spec().helicopter;
     let opts = match &campaign {
         // A campaign's rules are its host's (a coop server's for everybody).
-        Some(c) => SimOptions { external_stores, ..c.rules.sim_options() },
+        Some(c) => SimOptions { external_stores, helicopter, ..c.rules.sim_options() },
         None => SimOptions {
             landing,
             prior_damage,
             external_stores,
+            helicopter,
             realistic_damage: settings.realistic_damage,
             realistic_guidance: settings.realistic_guidance,
             air_defence: settings.air_defence,
@@ -403,7 +405,10 @@ fn collect_commands(
     mut pods: MessageReader<crate::avionics::PodDesignate>,
     mut combat: ResMut<Combat>,
     mut accel: ResMut<TimeAccel>,
+    settings: Res<crate::settings::Settings>,
+    mut msgs: ResMut<HudMessages>,
 ) {
+    let helicopter = settings.aircraft.spec().helicopter;
     let combat = &mut *combat;
     let c = &mut combat.pending;
     for crate::avionics::PodDesignate(x, y) in pods.read() {
@@ -435,6 +440,7 @@ fn collect_commands(
             Action::CamRight => c.camera_dir = Some(0x4000),
             Action::CamRear => c.camera_dir = Some(0x8000),
             Action::CamLeft => c.camera_dir = Some(0xC000),
+            Action::Eject if helicopter => msgs.show("NO EJECTION SEAT"),
             Action::Eject => c.eject = true,
             Action::Training => c.toggle_training ^= true,
             Action::Resupply => c.resupply = true,

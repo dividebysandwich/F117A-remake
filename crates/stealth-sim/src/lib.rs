@@ -319,6 +319,7 @@ impl Sim {
         let theater = s.theater;
         let seed = opts.seed.unwrap_or(m.rng.holdrand_exit);
         let external_stores = opts.external_stores;
+        let helicopter = opts.helicopter;
         let mut sim = Self {
             threats: data.threats.clone(),
             aircraft_types: data.aircraft.clone(),
@@ -351,6 +352,7 @@ impl Sim {
                 id: 0,
                 absent: false,
                 external_stores,
+                helicopter,
                 scratch0: GroundObject::default(),
                 rounds: Vec::new(),
                 missiles: Default::default(),
@@ -1029,9 +1031,9 @@ impl Sim {
         self.pl.gun_firing
     }
 
-    /// The aircraft has a cannon (the real F-117A has none).
+    /// The aircraft has a cannon (the real F-117A and the helicopter have none).
     pub fn has_gun(&self) -> bool {
-        !self.pl.lockheed
+        !self.pl.lockheed && !self.pl.helicopter
     }
 
     /// The cannon is the selected weapon.

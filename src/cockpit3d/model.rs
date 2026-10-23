@@ -30,7 +30,8 @@
 //!   while a VR fingertip touches the control.
 //! * `stick`, `throttle`: the levers (their origins: the stick pivot, the throttle handle at
 //!   idle; the stick's `grip`: its grip centre above the pivot, metres); `anchor:
-//!   "throttle_full"`: the handle at full thrust.
+//!   "throttle_full"`: the handle at full thrust; `anchor: "throttle_pivot"`: a collective's
+//!   pivot (the lever swings up about it instead of sliding).
 //! * `lamp` ([r, g, b], linear) and `range`: a flood lamp (with the local lights option).
 //! * `no_shadow`: casts no shadow.
 
@@ -225,6 +226,9 @@ impl<'a> Spawner<'a> {
         }
         if extras["anchor"].as_str() == Some("throttle_full") {
             self.anchors.throttle_full = at.translation;
+        }
+        if extras["anchor"].as_str() == Some("throttle_pivot") {
+            self.anchors.throttle_pivot = Some(at.translation);
         }
         if let Some(c) = extras["lamp"].as_array()
             && self.local_lights
@@ -520,6 +524,7 @@ mod tests {
             ("cockpit_modern", PanelStyle::Modern),
             ("cockpit_classic", PanelStyle::Classic),
             ("cockpit_f16", PanelStyle::F16),
+            ("cockpit_uh60", PanelStyle::Modern),
         ] {
             let j = gltf_json(name);
             let nodes = j["nodes"].as_array().unwrap();
@@ -558,16 +563,18 @@ mod tests {
                 extras.iter().any(|x| x["anchor"] == "throttle_full"),
                 "{name}: throttle_full anchor"
             );
-            // The throttle travels the whole rail: idle (its origin) to full well apart.
+            // The throttle travels the whole rail (a collective its arc): idle (its origin) to
+            // full well apart.
             let pos = |k: &str, v: serde_json::Value| {
                 let n = nodes
                     .iter()
                     .find(|n| n["extras"][k] == v)
                     .unwrap_or_else(|| panic!("{name}: no {k} node"));
-                n["translation"][2].as_f64().unwrap_or(0.0)
+                let c = |i: usize| n["translation"][i].as_f64().unwrap_or(0.0);
+                bevy::math::DVec3::new(c(0), c(1), c(2))
             };
             let travel =
-                (pos("throttle", true.into()) - pos("anchor", "throttle_full".into())).abs();
+                pos("throttle", true.into()).distance(pos("anchor", "throttle_full".into()));
             assert!(travel > 0.15, "{name}: throttle travel {travel} m");
             assert!(extras.iter().any(|x| x["kind"] == "eject"), "{name}: ejection handle");
             assert!(extras.iter().any(|x| x["control"] == "Action(Menu)"), "{name}: MENU button");

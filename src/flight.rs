@@ -18,6 +18,7 @@ use crate::input::{Action, ActionEvent, FlightControls};
 use crate::settings::{Settings, SetupSet};
 use crate::world::{Theater, WorldPos, bevy_to_wu, wu_to_bevy};
 
+pub mod heli;
 pub mod modern;
 
 pub struct FlightPlugin;
@@ -112,6 +113,8 @@ pub struct FlightConstants {
     pub roll_rate: f32,
     /// Modern model airframe.
     pub aero: modern::Aero,
+    /// Helicopters: the rotor, flown by the helicopter model (`heli`) instead.
+    pub heli: Option<heli::Rotor>,
 }
 
 impl Default for FlightConstants {
@@ -130,6 +133,7 @@ impl Default for FlightConstants {
             max_gees: 128.0,
             roll_rate: 1.0,
             aero: modern::Aero::F117,
+            heli: None,
         }
     }
 }
@@ -148,6 +152,11 @@ impl FlightConstants {
             aero: modern::Aero::F16,
             ..default()
         }
+    }
+
+    /// UH-60A: the helicopter model; 2400 lb of fuel.
+    pub fn uh60() -> Self {
+        Self { fuel: 2400.0, heli: Some(heli::Rotor::UH60), ..default() }
     }
 }
 
@@ -243,6 +252,8 @@ pub struct Aircraft {
     stopped_timer: f32,
     /// Modern model state (unused by the classic one).
     modern: modern::State,
+    /// Helicopter model state.
+    heli: heli::State,
 }
 
 impl Aircraft {
@@ -278,7 +289,28 @@ impl Aircraft {
             stopped_timer: 0.0,
             fpm: 0.0,
             modern: modern::State::default(),
+            heli: heli::State::turning(),
         }
+    }
+
+    /// Rotor speed (1 = 100%; helicopters).
+    pub fn rotor_speed(&self) -> f32 {
+        self.heli.nr
+    }
+
+    /// Main rotor angle as drawn (rad; helicopters).
+    pub fn rotor_angle(&self) -> f32 {
+        self.heli.angle
+    }
+
+    /// Engine torque (1 = 100%; helicopters).
+    pub fn torque(&self) -> f32 {
+        self.heli.torque
+    }
+
+    /// Translational lift 0..1 (helicopters): the blade slap in the rotor sound.
+    pub fn translational_lift(&self) -> f32 {
+        self.heli.etl
     }
 
     pub fn knots(&self) -> f32 {
@@ -293,7 +325,7 @@ impl Aircraft {
     /// Direction of flight (Bevy frame, unit vector): the modern model's velocity, or for the
     /// classic model the nose lowered by the angle of attack trim.
     pub fn path_dir(&self) -> Vec3 {
-        if let Some(v) = self.modern.velocity() {
+        if let Some(v) = self.modern.velocity().or(self.heli.velocity()) {
             return v;
         }
         let (h, p, _) = self.euler();
@@ -341,13 +373,20 @@ pub struct Player;
 fn handle_actions(
     mut actions: MessageReader<ActionEvent>,
     mut q: Query<&mut Aircraft, With<Player>>,
+    k: Res<FlightConstants>,
 ) {
     let Ok(mut a) = q.single_mut() else {
         actions.clear();
         return;
     };
+    let heli = k.heli.is_some();
     for ActionEvent(action) in actions.read() {
         match action {
+            // Helicopters: the collective moves while its keys are held
+            // (`FlightControls::collective_rate`); fixed gear, no autopilot, the brakes are the
+            // parking brake.
+            Action::ThrottleUp | Action::ThrottleDown | Action::Gear | Action::Autopilot
+                if heli => {}
             // '=' / '-' / '+' / '_' (they do not release the brakes in the F-117A).
             Action::ThrottleUp => {
                 a.set_thrust =
@@ -400,13 +439,15 @@ fn step_flight(
 ) {
     // Sub-steps (at most 1/60 s classic, 1/120 s modern) keep accelerated test runs accurate.
     let total = time.delta_secs().min(1.0);
-    let max_dt = if settings.classic_flight { 1.0 / 60.0 } else { 1.0 / 120.0 };
+    let max_dt = if settings.classic_flight && k.heli.is_none() { 1.0 / 60.0 } else { 1.0 / 120.0 };
     for (mut a, mut pos, mut tf) in &mut q {
         let mut remaining = total;
         while remaining > 1e-6 {
             let dt = remaining.min(max_dt);
             remaining -= dt;
-            if settings.classic_flight {
+            if let Some(r) = &k.heli {
+                heli::step(&mut a, &mut pos, &mut tf, dt, &controls, &k, r, theater.as_deref());
+            } else if settings.classic_flight {
                 step_one(&mut a, &mut pos, &mut tf, dt, &controls, &k, &tables, theater.as_deref());
             } else {
                 modern::step(&mut a, &mut pos, &mut tf, dt, &controls, &k, theater.as_deref());
@@ -589,7 +630,7 @@ fn step_one(
         east += (horiz * head2.sin() * dt) as f64;
         north += (horiz * head2.cos() * dt) as f64;
 
-        ground_contact(a, k, roll2, prev_alt, east, north, theater, dt);
+        ground_contact(a, k, false, roll2, prev_alt, east, north, theater, dt);
 
         a.roll_input = roll_input;
         a.pitch_input = pitch_input;
@@ -626,10 +667,12 @@ fn engine(a: &mut Aircraft, controls: &FlightControls, k: &FlightConstants, dt: 
 
 /// Ground altitude and landing corridor, touchdown, ground crashes and the safe landing end.
 /// `a.altitude` has been integrated from `prev_alt`; `a.climb_rate` is the sink at contact.
+/// A helicopter (`heli`) judges its own touchdowns, and its base is the whole airfield.
 #[allow(clippy::too_many_arguments)]
 fn ground_contact(
     a: &mut Aircraft,
     k: &FlightConstants,
+    heli: bool,
     roll: f32,
     prev_alt: f32,
     east: f64,
@@ -639,12 +682,12 @@ fn ground_contact(
 ) {
     // --- landing corridor at the nearest friendly base
     let (corridor, ground) =
-        theater.map(|t| landing_corridor(t, east, north, k.landing)).unwrap_or((false, 0.0));
+        theater.map(|t| landing_corridor(t, east, north, k.landing, heli)).unwrap_or((false, 0.0));
     a.in_landing_corridor = corridor;
     a.ground_altitude = ground;
     a.altitude = a.altitude.clamp(a.ground_altitude, 60000.0);
     let on_ground_now = a.altitude <= a.ground_altitude;
-    if on_ground_now && prev_alt > a.ground_altitude {
+    if on_ground_now && prev_alt > a.ground_altitude && !heli {
         touchdown(a, roll, k.landing as f32);
     }
     if on_ground_now {
@@ -685,8 +728,9 @@ fn touchdown(a: &mut Aircraft, roll: f32, l: f32) {
 }
 
 /// (in corridor, ground altitude): runway box around friendly bases (flags 0x500, not 0x800):
-/// |dx| <= 5, |dy| <= 64 map units (+4/+8 on easy); carriers 8 x 30 at deck height 128.
-fn landing_corridor(t: &Theater, east: f64, north: f64, landing: u8) -> (bool, f32) {
+/// |dx| <= 5, |dy| <= 64 map units (+4/+8 on easy); carriers 8 x 30 at deck height 128. A
+/// helicopter's is the whole airfield, |dx| <= 16 (the sim's `objectives`, keep in step).
+fn landing_corridor(t: &Theater, east: f64, north: f64, landing: u8, heli: bool) -> (bool, f32) {
     let (mx, my) = (east / 32.0, 32768.0 - north / 32.0);
     let (ex, ey) = if landing == 1 { (4.0, 8.0) } else { (0.0, 0.0) };
     for o in &t.world.objects {
@@ -695,13 +739,23 @@ fn landing_corridor(t: &Theater, east: f64, north: f64, landing: u8) -> (bool, f
             continue;
         }
         let carrier = flags & 0x200 != 0;
-        let (bx, by) = if carrier { (8.0, 30.0) } else { (5.0, 64.0) };
+        let (bx, by) = if carrier {
+            (8.0, 30.0)
+        } else if heli {
+            (HELI_BASE_HALF_WIDTH, 64.0)
+        } else {
+            (5.0, 64.0)
+        };
         if (mx - o.x as f64).abs() <= bx + ex && (my - o.y as f64).abs() <= by + ey {
             return (true, if carrier { 128.0 } else { 0.0 });
         }
     }
     (false, 0.0)
 }
+
+/// Half width (map units) of a base's landing area for helicopters: the airfield beside the
+/// runway (`landing_corridor`).
+pub const HELI_BASE_HALF_WIDTH: f64 = 16.0;
 
 #[cfg(test)]
 mod tests {

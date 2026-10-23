@@ -807,6 +807,7 @@ pub fn airframe_of(k: crate::aircraft::AircraftKind) -> Airframe {
     match k {
         crate::aircraft::AircraftKind::F117 => Airframe::F117,
         crate::aircraft::AircraftKind::F16 => Airframe::F16,
+        crate::aircraft::AircraftKind::UH60 => Airframe::UH60,
     }
 }
 
@@ -814,6 +815,7 @@ pub fn kind_of(a: Airframe) -> crate::aircraft::AircraftKind {
     match a {
         Airframe::F117 => crate::aircraft::AircraftKind::F117,
         Airframe::F16 => crate::aircraft::AircraftKind::F16,
+        Airframe::UH60 => crate::aircraft::AircraftKind::UH60,
     }
 }
 

@@ -34,7 +34,8 @@ const TWIST_HYSTERESIS: f32 = 0.03;
 
 /// Positions in the cockpit frame taken from the cockpit model: the stick pivot (`stick`
 /// object), the throttle handle at idle (`throttle` object) and at full thrust (the
-/// `throttle_full` anchor), and the ejection handle (the `eject` control).
+/// `throttle_full` anchor), and the ejection handle (the `eject` control). A helicopter's
+/// collective is a throttle lever swinging up about its pivot (the `throttle_pivot` anchor).
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct CockpitAnchors {
     pub stick_pivot: Vec3,
@@ -42,6 +43,8 @@ pub struct CockpitAnchors {
     pub grip_height: f32,
     pub throttle_idle: Vec3,
     pub throttle_full: Vec3,
+    /// The collective's pivot (none: the throttle slides along its rail).
+    pub throttle_pivot: Option<Vec3>,
     pub eject: Vec3,
 }
 
@@ -52,6 +55,7 @@ impl Default for CockpitAnchors {
             grip_height: GRIP_HEIGHT,
             throttle_idle: Vec3::new(-0.40, -0.40, -0.12),
             throttle_full: Vec3::new(-0.40, -0.40, -0.30),
+            throttle_pivot: None,
             eject: Vec3::new(0.0, -0.74, -0.20),
         }
     }
@@ -59,7 +63,21 @@ impl Default for CockpitAnchors {
 
 impl CockpitAnchors {
     fn throttle_handle(&self, t: f32) -> Vec3 {
-        self.throttle_idle.lerp(self.throttle_full, t.clamp(0.0, 1.0))
+        match self.throttle_pivot {
+            Some(p) => p + self.throttle_rotation(t) * (self.throttle_idle - p),
+            None => self.throttle_idle.lerp(self.throttle_full, t.clamp(0.0, 1.0)),
+        }
+    }
+
+    /// The collective's rotation about its pivot at setting `t` (none for a sliding throttle).
+    fn throttle_rotation(&self, t: f32) -> Quat {
+        let Some(p) = self.throttle_pivot else { return Quat::IDENTITY };
+        let (a, b) = (self.throttle_idle - p, self.throttle_full - p);
+        if a.length_squared() < 1e-6 || b.length_squared() < 1e-6 {
+            return Quat::IDENTITY;
+        }
+        Quat::IDENTITY
+            .slerp(Quat::from_rotation_arc(a.normalize(), b.normalize()), t.clamp(0.0, 1.0))
     }
 
     /// Throttle setting change for a hand movement (along the rail).
@@ -238,9 +256,11 @@ pub(super) fn grab_levers(
         if (t >= 1.0 && before < 1.0) || (t <= 0.0 && before > 0.0) {
             left.haptic = left.haptic.max(0.5);
         }
-        // Hysteresis so hand jitter on a detent doesn't buzz.
+        // Hysteresis so hand jitter on a detent doesn't buzz. A collective has none.
         let pos = t * THROTTLE_NOTCHES;
-        if pos >= (g.notch + 1) as f32 + 0.1 || pos < g.notch as f32 - 0.1 {
+        if anchors.throttle_pivot.is_none()
+            && (pos >= (g.notch + 1) as f32 + 0.1 || pos < g.notch as f32 - 0.1)
+        {
             g.notch = pos.floor() as i32;
             left.haptic = left.haptic.max(0.15);
         }
@@ -354,5 +374,6 @@ pub(super) fn animate_levers(
     if let (Ok(mut tf), Ok(a)) = (throttle.single_mut(), aircraft.single()) {
         let t = controls.throttle.unwrap_or(a.set_thrust / 100.0);
         tf.translation = anchors.throttle_handle(t);
+        tf.rotation = anchors.throttle_rotation(t);
     }
 }

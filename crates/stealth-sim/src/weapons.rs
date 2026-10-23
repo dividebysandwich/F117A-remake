@@ -503,7 +503,7 @@ impl Sim {
         let nb = self.n_bullets;
         // A round every frame while the trigger is held (classic mode fired every other frame);
         // each slot is reused after `nb` frames, which ends the round there.
-        if !self.pl.lockheed {
+        if self.has_gun() {
             let slot = (self.frame as usize) % nb;
             let trigger = ps.cmd.gun || (self.pl.gun_selected && ps.cmd.trigger);
             if trigger && self.pl.gun_ammo > 0 && self.pl.eject == 0 {

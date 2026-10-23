@@ -454,14 +454,9 @@ impl Host {
                 }
                 CampaignEvent::SortieStarted { player, sortie } => {
                     let base = sortie.base as usize;
-                    let (lockheed, external) = self.rules.airframe(sortie.aircraft);
-                    let mut start = sim.respawn_pilot(
-                        player.0,
-                        base,
-                        glue::sim_objective(sortie),
-                        lockheed,
-                        external,
-                    );
+                    let airframe = self.rules.airframe(sortie.aircraft);
+                    let mut start =
+                        sim.respawn_pilot(player.0, base, glue::sim_objective(sortie), airframe);
                     // Coop players taking off from the same base: a staggered formation on
                     // the runway, the first free place.
                     let carrier =

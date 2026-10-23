@@ -227,7 +227,9 @@ fn sixty_four_pilots_fit_in_a_frame() {
     let b = sim.objects()[base];
     let mut inputs = Vec::new();
     for id in 0..64u8 {
-        sim.respawn_pilot(id, base, None, false, id % 2 == 0);
+        let airframe =
+            stealth_sim::types::Airframe { external_stores: id % 2 == 0, ..Default::default() };
+        sim.respawn_pilot(id, base, None, airframe);
         // Half of them together near the base, the others spread out far away.
         let (dx, dy) = if id < 32 { (id as i32 * 8, 0) } else { (id as i32 * 0x300, 0x2000) };
         let (x, y) = Sim::map_to_world(b.x + dx, b.y - 0x400 - dy);

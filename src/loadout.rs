@@ -113,6 +113,37 @@ const F117_OUTLINE: &[(f32, f32)] = &[
     (-0.18, 0.34),
     (-0.02, 0.32),
 ];
+/// stflt_025 (tools/models/uh60.py) seen from above, without its rotors: half span (the
+/// stabilator) 2.16 m, length 15.1 m.
+const UH60_OUTLINE: &[(f32, f32)] = &[
+    (0.00, 0.00),
+    (0.55, 0.22),
+    (0.92, 0.57),
+    (1.08, 0.90),
+    (1.18, 1.47),
+    (1.20, 2.12),
+    (1.20, 7.37),
+    (0.41, 8.17),
+    (0.32, 10.02),
+    (0.21, 12.32),
+    (2.16, 13.32),
+    (2.16, 14.20),
+    (0.17, 13.90),
+    (0.10, 15.10),
+    (-0.10, 15.10),
+    (-0.17, 13.90),
+    (-2.16, 14.20),
+    (-2.16, 13.32),
+    (-0.21, 12.32),
+    (-0.32, 10.02),
+    (-0.41, 8.17),
+    (-1.20, 7.37),
+    (-1.20, 2.12),
+    (-1.18, 1.47),
+    (-1.08, 0.90),
+    (-0.92, 0.57),
+    (-0.55, 0.22),
+];
 /// stflt_023 seen from above: half span 5.12 m, length 17.12 m.
 const F16_OUTLINE: &[(f32, f32)] = &[
     (0.00, 0.00),
@@ -213,6 +244,9 @@ static F117_FANTASY_LAYOUT: Layout =
     Layout { outline: F117_OUTLINE, half_span: 4.86, length: 15.62, hardpoints: &F117_FANTASY };
 static F16_LAYOUT: Layout =
     Layout { outline: F16_OUTLINE, half_span: 5.12, length: 17.12, hardpoints: &F16_STATIONS };
+/// The UH-60A carries troops, no stores.
+static UH60_LAYOUT: Layout =
+    Layout { outline: UH60_OUTLINE, half_span: 2.16, length: 15.1, hardpoints: &[] };
 
 /// The hardpoints of an aircraft (`realistic`: the F-117A's real two bays).
 pub fn layout(aircraft: AircraftKind, realistic: bool) -> &'static Layout {
@@ -220,6 +254,7 @@ pub fn layout(aircraft: AircraftKind, realistic: bool) -> &'static Layout {
         AircraftKind::F117 if realistic => &F117_REAL_LAYOUT,
         AircraftKind::F117 => &F117_FANTASY_LAYOUT,
         AircraftKind::F16 => &F16_LAYOUT,
+        AircraftKind::UH60 => &UH60_LAYOUT,
     }
 }
 
@@ -255,6 +290,7 @@ impl PlannedLoadout {
                     *s = Some(w);
                 }
             }
+            AircraftKind::UH60 => {}
             AircraftKind::F16 => {
                 for w in briefed.chain([0]) {
                     // Stations preferred for each kind of store (pairs by their left station).

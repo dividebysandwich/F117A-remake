@@ -217,8 +217,11 @@ pub struct FlightControls {
     /// Rudder, -1 (nose left) .. 1 (nose right); 0 = yaw from the bank only.
     pub yaw: f32,
     /// Absolute throttle 0..1 while an analog throttle is held (VR throttle lever); None = the
-    /// throttle keys set the thrust.
+    /// throttle keys set the thrust. A helicopter's collective.
     pub throttle: Option<f32>,
+    /// Helicopters: the collective moving while its keys (the throttle keys) or the gamepad
+    /// triggers are held, -1 (down) .. 1 (up).
+    pub collective_rate: f32,
     /// Gun trigger held.
     pub gun: bool,
     /// Fire button held (fires the gun when it is the selected weapon).
@@ -404,6 +407,7 @@ fn read_keyboard(
         controls.mark = false;
         controls.yaw = 0.0;
         controls.throttle = None;
+        controls.collective_rate = 0.0;
         controls.slew = Vec2::ZERO;
         return;
     }
@@ -455,6 +459,8 @@ fn read_keyboard(
     controls.mark = held(Action::LockCursor);
     controls.yaw = yaw.clamp(-1.0, 1.0) * scale;
     controls.throttle = None;
+    controls.collective_rate =
+        held(Action::ThrottleUp) as i8 as f32 - held(Action::ThrottleDown) as i8 as f32;
     let mut slew = Vec2::ZERO;
     if mods == Mods::None {
         for &(key, x, y) in SLEW_KEYS {
@@ -472,8 +478,9 @@ pub fn stronger(current: f32, v: f32) -> f32 {
     if v.abs() > current.abs() { v } else { current }
 }
 
-/// Gamepad: left stick = stick, right stick X = rudder, triggers = throttle, A = fire, B = gun
-/// (unless turned off in the input mapping).
+/// Gamepad: left stick = stick, right stick X = rudder, triggers = throttle (a helicopter's
+/// collective, moving as far as they are pulled), A = fire, B = gun (unless turned off in the
+/// input mapping).
 fn read_gamepad(
     gamepads: Query<&Gamepad>,
     config: Res<crate::hotas::InputConfig>,
@@ -500,6 +507,12 @@ fn read_gamepad(
         if rx.abs() > 0.15 {
             controls.yaw = rx;
         }
+        let pull = |b: GamepadButton| {
+            pad.get(b).unwrap_or(0.0).max(if pad.pressed(b) { 1.0 } else { 0.0 })
+        };
+        let lt = pull(GamepadButton::LeftTrigger2).max(pull(GamepadButton::LeftTrigger));
+        let rt = pull(GamepadButton::RightTrigger2).max(pull(GamepadButton::RightTrigger));
+        controls.collective_rate = stronger(controls.collective_rate, rt - lt);
         controls.gun |= pad.pressed(GamepadButton::East);
         controls.fire |= pad.pressed(GamepadButton::South);
         for (b, a) in [

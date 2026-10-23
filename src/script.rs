@@ -8,7 +8,7 @@
 //! `alt<300:pitch=0.3` / `alt>8000:Autopilot` = below / above an altitude in feet,
 //! `msl<2:ViewChase` / `air<2:HudMode` = an enemy missile / an airborne aircraft within 2 km. The step `Screenshot` takes the
 //! `--screenshot` picture at that moment. `yaw=0.5` sets the rudder, `throttle=0.8` holds an
-//! absolute throttle, `trigger=1` / `trigger=0` holds / releases the fire button (`gun=1` / `gun=0` the gun trigger), `mark=1` / `mark=0` the lock cursor
+//! absolute throttle (`collective=0.6`: a helicopter's collective), `trigger=1` / `trigger=0` holds / releases the fire button (`gun=1` / `gun=0` the gun trigger), `mark=1` / `mark=0` the lock cursor
 //! target button, `lockpilot=1` locks another player's aircraft (pilot id 1, as a display
 //! lock does) and `press=Gear` pushes the 3D-cockpit control bound to that action.
 
@@ -106,7 +106,7 @@ fn parse_step(what: &str) -> Option<Step> {
         Step::SlewX(x.parse().ok()?)
     } else if let Some(x) = what.strip_prefix("slewy=") {
         Step::SlewY(x.parse().ok()?)
-    } else if let Some(x) = what.strip_prefix("throttle=") {
+    } else if let Some(x) = what.strip_prefix("throttle=").or(what.strip_prefix("collective=")) {
         Step::Throttle(x.parse().ok()?)
     } else if let Some(x) = what.strip_prefix("trigger=") {
         Step::Trigger(x.parse::<u8>().ok()? != 0)

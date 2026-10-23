@@ -1164,8 +1164,12 @@ fn world_model_state(
         Query<(&TileObject, &mut ModelState)>,
         Query<(&TileObject, &mut ModelState), Added<TileObject>>,
     )>,
-    mut own: Query<&mut ModelState, (Or<(With<OwnModel>, With<OwnLights>)>, Without<TileObject>)>,
+    mut own: Query<
+        &mut ModelState,
+        (Or<(With<OwnModel>, With<OwnLights>, With<crate::player::OwnRotor>)>, Without<TileObject>),
+    >,
     player: Query<&Aircraft, With<Player>>,
+    flight: Option<Res<crate::flight::FlightConstants>>,
 ) {
     // Slot 15 += 1152 and slot 16 += 1024 per sim frame time unit, ~15 per second.
     let dt = time.delta_secs() * crate::combat::FS as f32;
@@ -1204,7 +1208,16 @@ fn world_model_state(
     let brakes = (a.velocity != 0.0 && a.on_ground && a.brakes) as i16;
     let nav = combat.as_ref().is_some_and(|c| c.sim.player_lights());
     let [s18, s19, s20] = anticollision(time.elapsed_secs(), 0.0, nav);
+    // A helicopter's rotors turn with its rotor speed: its angle less the global spin added to
+    // every model's.
+    let rotor = flight.is_some_and(|k| k.heli.is_some()).then(|| {
+        let bam = (a.rotor_angle() / std::f32::consts::TAU * 65536.0) as i32 as u16 as i16;
+        bam.wrapping_sub(globals.angles[2])
+    });
     for mut s in &mut own {
+        if let Some(r) = rotor {
+            s.0[17] = r;
+        }
         let v = [
             (5, (c072 != 0) as i16),
             (6, c072 - 1),

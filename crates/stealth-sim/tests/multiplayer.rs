@@ -43,8 +43,8 @@ fn two_pilots() -> (Sim, usize) {
         .find(|&i| sim.objects()[i].flags & 0xF0F == 0x401)
         .expect("friendly base");
     sim.add_pilot(1);
-    sim.respawn_pilot(0, base, None, false, false);
-    sim.respawn_pilot(1, base, None, false, false);
+    sim.respawn_pilot(0, base, None, Airframe::default());
+    sim.respawn_pilot(1, base, None, Airframe::default());
     (sim, base)
 }
 

@@ -575,7 +575,7 @@ pub(super) fn step(
     east += (vel.x * dt) as f64;
     north += (-vel.z * dt) as f64;
     let (_, _, roll_now) = a.euler();
-    ground_contact(a, k, roll_now, prev_alt, east, north, theater, dt);
+    ground_contact(a, k, false, roll_now, prev_alt, east, north, theater, dt);
     if a.on_ground {
         vel.y = 0.0;
         if prev_alt > a.ground_altitude {

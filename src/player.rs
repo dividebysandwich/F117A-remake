@@ -219,6 +219,11 @@ pub struct OwnModelInterior;
 #[derive(Component)]
 pub struct OwnLights;
 
+/// The own helicopter's rotors as seen from the cockpit (inside `OwnModelInterior`), turning
+/// with the rotor speed like the exterior model's.
+#[derive(Component)]
+pub struct OwnRotor;
+
 fn attach_own_model(
     mut commands: Commands,
     mut library: ResMut<ModelLibrary>,
@@ -274,10 +279,15 @@ fn attach_own_model(
         if view.canopy_colours.contains(&colour) {
             continue;
         }
-        let kept: Vec<[Vec3; 3]> = tris
+        let mut kept: Vec<[Vec3; 3]> = tris
             .into_iter()
             .filter(|t| !t.iter().any(|&v| inside(v)) && !inside((t[0] + t[1] + t[2]) / 3.0))
             .collect();
+        if view.two_sided {
+            // The inside of the hull: each triangle again, facing in.
+            let inner: Vec<[Vec3; 3]> = kept.iter().map(|t| [t[0], t[2], t[1]]).collect();
+            kept.extend(inner);
+        }
         if kept.is_empty() {
             continue;
         }
@@ -297,6 +307,21 @@ fn attach_own_model(
                 e.insert(Mesh3d(h));
             }
         });
+    }
+    if view.rotors {
+        for part in ["_part1", "_part2"] {
+            let name = format!("{}_lod0{part}", spec.model);
+            if let Some(rotor) = assets.spawn(
+                &mut commands,
+                &file,
+                &name,
+                crate::palette_material::LEVEL_AIRCRAFT,
+                true,
+            ) {
+                commands.entity(rotor).insert(OwnRotor);
+                commands.entity(interior).add_child(rotor);
+            }
+        }
     }
 }
 

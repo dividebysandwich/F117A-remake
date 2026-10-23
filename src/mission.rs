@@ -170,8 +170,9 @@ pub fn from_args(app: &mut App) {
         .unwrap_or(MissionKind::Strike);
     let opponents = get("--opponents").and_then(|s| s.parse().ok()).unwrap_or(1);
     // Realistic weapons are the F-117A's limits.
-    let f16 = get("--aircraft").and_then(|s| crate::aircraft::AircraftKind::parse(&s))
-        == Some(crate::aircraft::AircraftKind::F16);
+    let f16 = get("--aircraft")
+        .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
+        .is_some_and(|k| k != crate::aircraft::AircraftKind::F117);
     let lockheed = args.iter().any(|a| a == "--lockheed") && !f16;
     let weather = crate::settings::weather_arg(&args);
     let cloud_cover = crate::settings::cover_arg(&args);

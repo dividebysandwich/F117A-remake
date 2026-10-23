@@ -350,20 +350,24 @@ impl Sim {
     /// photo or 2 destroy, object) in the primary slot. Returns the start state for the flight
     /// model.
     pub fn respawn_player(&mut self, base: usize, objective: Option<(i32, usize)>) -> PlayerState {
-        let (lockheed, external) = (self.pl.lockheed, self.pl.external_stores);
-        self.respawn_pilot(self.pl.id, base, objective, lockheed, external)
+        let airframe = Airframe {
+            lockheed: self.pl.lockheed,
+            external_stores: self.pl.external_stores,
+            helicopter: self.pl.helicopter,
+        };
+        self.respawn_pilot(self.pl.id, base, objective, airframe)
     }
 
     /// Campaign: pilot `id`'s new sortie (as [`Sim::respawn_player`]) in an aircraft with or
-    /// without a cannon (`lockheed`: the real F-117A) and with its weapons in a bay or outside.
+    /// without a cannon (the real F-117A), with its weapons in a bay or outside, or a helicopter.
     pub fn respawn_pilot(
         &mut self,
         id: u8,
         base: usize,
         objective: Option<(i32, usize)>,
-        lockheed: bool,
-        external_stores: bool,
+        airframe: Airframe,
     ) -> PlayerState {
+        let Airframe { lockheed, external_stores, helicopter } = airframe;
         if self.campaign.is_none() {
             return self.start_state();
         }
@@ -377,6 +381,7 @@ impl Sim {
         self.pl.absent = false;
         self.pl.lockheed = lockheed;
         self.pl.external_stores = external_stores;
+        self.pl.helicopter = helicopter;
         self.pl.damage = 0;
         self.pl.hits = 2;
         self.pl.control_fault = ControlFault::default();

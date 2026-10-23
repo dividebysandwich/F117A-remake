@@ -469,6 +469,17 @@ pub struct PlayerState {
     pub cmd: Commands,
 }
 
+/// A pilot's aircraft as the simulation sees it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Airframe {
+    /// The real F-117A: no cannon.
+    pub lockheed: bool,
+    /// Weapons outside (no bay).
+    pub external_stores: bool,
+    /// A helicopter (`SimOptions::helicopter`).
+    pub helicopter: bool,
+}
+
 /// Landing option.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum LandingMode {
@@ -494,6 +505,10 @@ pub struct SimOptions {
     /// their radar signature.
     #[serde(default)]
     pub external_stores: bool,
+    /// The aircraft is a helicopter: it lands anywhere flat (its base's landing area is the
+    /// whole airfield), has no cannon and judges its own touchdowns.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub helicopter: bool,
     /// Realistic weapon damage: a missile hit can destroy the aircraft
     /// outright, damages more systems, starts fires more often (a fire burns out or the aircraft
     /// explodes) and damaged control surfaces put the aircraft out of trim.
@@ -526,6 +541,7 @@ impl Default for SimOptions {
             seed: None,
             prior_damage: None,
             external_stores: false,
+            helicopter: false,
             realistic_damage: false,
             realistic_guidance: false,
             air_defence: false,

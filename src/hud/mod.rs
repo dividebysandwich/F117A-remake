@@ -119,6 +119,9 @@ pub struct Stores {
     pub gun_rounds: Option<u32>,
     /// The gun is the selected weapon (no bay is).
     pub gun_selected: bool,
+    /// What a turret gun is slaved to ("HMS": the helmet sight, "TGP": the targeting pod);
+    /// None for a fixed gun.
+    pub gun_slave: Option<&'static str>,
 }
 
 impl Default for Stores {
@@ -140,6 +143,7 @@ impl Default for Stores {
             selected: 0,
             gun_rounds: Some(650),
             gun_selected: false,
+            gun_slave: None,
         }
     }
 }
@@ -345,7 +349,8 @@ fn hud_keys(
                 }
             }
             Action::NearestTarget => {
-                let air = stores.gun_selected
+                // A turret gun is aimed at the ground as much as at aircraft.
+                let air = (stores.gun_selected && stores.gun_slave.is_none())
                     || stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
                 hud.mode = if air { HudMode::Air } else { HudMode::Gnd };
             }
@@ -451,6 +456,8 @@ pub struct HudFrame {
     pub weapon_air_to_air: bool,
     pub gun_rounds: Option<u32>,
     pub gun_selected: bool,
+    /// A turret gun's slave ("HMS" / "TGP", `Stores::gun_slave`).
+    pub gun_slave: Option<&'static str>,
     pub message: Option<String>,
     pub accel: bool,
     pub training: bool,
@@ -575,6 +582,7 @@ impl HudParams<'_, '_> {
             weapon_air_to_air: bay.is_some_and(|b| b.air_to_air),
             gun_rounds: self.stores.gun_rounds,
             gun_selected: self.stores.gun_selected,
+            gun_slave: self.stores.gun_slave,
             message: (self.messages.timer > 0.0).then(|| self.messages.text.clone()),
             accel: self.messages.accel,
             training: self.messages.training,

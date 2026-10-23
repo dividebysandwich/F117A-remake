@@ -157,6 +157,9 @@ pub struct AvionicsState {
     /// Right format before ILS was switched on.
     pub before_ils: Option<Format>,
     pub tgp: TgpState,
+    /// The gunship's helmet sight: where the pilot looks from the cockpit (world direction;
+    /// None in the outside views).
+    pub helmet: Option<Vec3>,
 }
 
 /// Where the targeting pod looks.
@@ -306,6 +309,7 @@ impl Default for AvionicsState {
             sms_ord: true,
             before_ils: None,
             tgp: default(),
+            helmet: None,
         }
     }
 }
@@ -1179,8 +1183,10 @@ fn update_pod(
     let soi = state.av.soi_format() == Some(Format::Tgp);
     // The gunship's slaved pod follows its sight whether its page is up or not (the page
     // shows what it looks at).
+    state.av.helmet = helmet_sight(&eyes, view.view).filter(|_| turret);
     let looking = if turret {
-        slaved_sight(combat.as_deref(), pos.0, &eyes, view.view)
+        slaved_sight(combat.as_deref(), pos.0)
+            .or(state.av.helmet)
             .or_else(|| Some(a.orientation * pod_dir(0.0, -0.05)))
     } else {
         camera.single().ok().filter(|_| shown && info.live).map(|t| t.forward().as_vec3())
@@ -1208,17 +1214,10 @@ fn update_pod(
     }
 }
 
-/// Where the gunship's slaved pod looks: at the lock, else where
-/// the pilot looks from the cockpit (the helmet sight: the eye camera, the headset in VR).
-/// None in the outside views.
-fn slaved_sight(
-    combat: Option<&crate::combat::Combat>,
-    eye: DVec3,
-    eyes: &Query<&GlobalTransform, (With<Camera3d>, Without<crate::camera::OffscreenCamera>)>,
-    view: crate::camera::View,
-) -> Option<Vec3> {
+/// Where the gunship's slaved pod looks: at the lock (else the helmet sight).
+fn slaved_sight(combat: Option<&crate::combat::Combat>, eye: DVec3) -> Option<Vec3> {
     // As the tracking camera: the ground lock, else the aircraft or pilot locked.
-    let lock = combat.and_then(|c| {
+    combat.and_then(|c| {
         let (sim, t) = (&c.sim, c.sim.targeting());
         let at = if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
             let (e, n) = crate::combat::map_wu(o.x, o.y);
@@ -1231,7 +1230,15 @@ fn slaved_sight(
             crate::world::wu_to_bevy(e, n, z)
         };
         (at - eye).as_vec3().try_normalize()
-    });
+    })
+}
+
+/// Where the pilot looks from the cockpit (the helmet sight: the eye camera, the headset in
+/// VR). None in the outside views.
+fn helmet_sight(
+    eyes: &Query<&GlobalTransform, (With<Camera3d>, Without<crate::camera::OffscreenCamera>)>,
+    view: crate::camera::View,
+) -> Option<Vec3> {
     let cockpit = matches!(
         view,
         crate::camera::View::Cockpit
@@ -1239,10 +1246,8 @@ fn slaved_sight(
             | crate::camera::View::LookRight
             | crate::camera::View::LookRear
     );
-    lock.or_else(|| {
-        let sum: Vec3 = eyes.iter().map(|t| t.forward().as_vec3()).sum();
-        sum.try_normalize().filter(|_| cockpit)
-    })
+    let sum: Vec3 = eyes.iter().map(|t| t.forward().as_vec3()).sum();
+    sum.try_normalize().filter(|_| cockpit)
 }
 
 /// Cursor speed at full slew (display pixels per second).

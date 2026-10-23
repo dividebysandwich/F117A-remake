@@ -61,7 +61,11 @@ fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8,
         fonts.text(c, 53, 85, &upper(&format!("{count} {name}")), col);
     }
     if let Some(rounds) = f.gun_rounds {
-        fonts.text(c, 239, 85, &upper(&format!("GUN {rounds}")), col);
+        let text = match f.gun_slave {
+            Some(s) => format!("GUN {rounds} {s}"),
+            None => format!("GUN {rounds}"),
+        };
+        fonts.text(c, 239, 85, &upper(&text), col);
     }
     // Flight path marker (NAV/GND): atlas (55,77) 11x7 at (154, y-4), y = 52 + fpm>>6.
     if st.mode != HudMode::Air {

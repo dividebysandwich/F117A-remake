@@ -1758,3 +1758,49 @@ fn turret_gun_follows_the_pod() {
     assert!(b.vx < 0 && b.vy > 0 && b.vy < -b.vx, "{b:?}");
     assert!(round(0x4000, false).is_none(), "the UH-60 has no cannon");
 }
+
+/// The AH-1Z's cannon is two weapon entries: slaved to the helmet sight, then to the pod; its
+/// turret follows the one it is slaved to.
+#[test]
+fn gunship_gun_slaved_to_helmet_then_pod() {
+    let (mut sim, _, _, mut p) = helicopter(true, false);
+    p.heading = 0;
+    let space = |sim: &mut Sim, p: &PlayerState| {
+        let mut q = p.clone();
+        q.cmd.next_bay = true;
+        sim.step(&q, 15);
+    };
+    // Hellfires, then the gun on the helmet, then on the pod, then the Hellfires again.
+    assert!(!sim.gun_selected());
+    space(&mut sim, &p);
+    assert!(sim.gun_selected() && !sim.gun_on_pod());
+    space(&mut sim, &p);
+    assert!(sim.gun_selected() && sim.gun_on_pod());
+    space(&mut sim, &p);
+    assert!(!sim.gun_selected() && sim.gun_on_pod(), "the turret stays on the pod");
+    space(&mut sim, &p);
+    assert!(sim.gun_selected() && !sim.gun_on_pod(), "selected again: on the helmet");
+    // The helmet looks east, the pod west.
+    p.helmet = Some(PodAim { heading: 0x4000, pitch: -0x400, ground: None });
+    p.pod = Some(PodAim { heading: 0xC000, pitch: -0x400, ground: None });
+    let fire = |sim: &mut Sim, p: &PlayerState| {
+        let mut q = p.clone();
+        q.cmd.gun = true;
+        sim.step(&q, 15);
+        let b = sim.bullets().0.iter().find(|b| b.x != 0).copied().expect("a round");
+        q.cmd.gun = false;
+        for _ in 0..30 {
+            sim.step(&q, 15);
+        }
+        b
+    };
+    assert!(fire(&mut sim, &p).vx > 0, "along the helmet");
+    space(&mut sim, &p);
+    assert!(fire(&mut sim, &p).vx < 0, "along the pod");
+    // No helmet sight (an outside view): along the pod.
+    space(&mut sim, &p);
+    space(&mut sim, &p);
+    assert!(!sim.gun_on_pod());
+    p.helmet = None;
+    assert!(fire(&mut sim, &p).vx < 0);
+}

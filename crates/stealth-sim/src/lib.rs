@@ -375,6 +375,7 @@ impl Sim {
                 bays,
                 cur_bay: 0,
                 gun_selected: false,
+                gun_pod: false,
                 stores: [
                     data.stores_init[0] as i32,
                     data.stores_init[1] as i32,
@@ -1043,6 +1044,11 @@ impl Sim {
     /// The cannon is the selected weapon.
     pub fn gun_selected(&self) -> bool {
         self.pl.gun_selected
+    }
+
+    /// A gunship's turret is slaved to the targeting pod (else to the helmet sight).
+    pub fn gun_on_pod(&self) -> bool {
+        self.pl.gunship && self.pl.gun_pod
     }
 
     /// Bays or stations (weapon index, count; -1 empty) and the selected one.

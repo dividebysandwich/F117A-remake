@@ -69,6 +69,10 @@ pub struct Pilot {
     /// stores, and the fire button fires it).
     #[serde(default)]
     pub(crate) gun_selected: bool,
+    /// A gunship's turret is slaved to the targeting pod, else to the helmet sight: the cannon
+    /// is selected slaved to the helmet, Space then slaves it to the pod.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) gun_pod: bool,
     /// Countermeasure stores ([1] flare, [2] chaff, [3] decoy).
     pub(crate) stores: [i32; 4],
     pub(crate) gun_ammo: i32,

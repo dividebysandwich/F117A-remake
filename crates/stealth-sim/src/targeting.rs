@@ -203,8 +203,9 @@ impl Sim {
         }
         self.pl.nearest_req -= 1;
         let spec = self.selected_spec();
-        // The gun looks for aircraft too.
-        let air = self.pl.gun_selected || (spec > 0 && self.missile(spec).class == 7);
+        // A fixed gun looks for aircraft too, a turret gun for ground targets.
+        let air = (self.pl.gun_selected && !self.pl.gunship)
+            || (spec > 0 && self.missile(spec).class == 7);
         let want = if air { HudMode::Air } else { HudMode::Gnd };
         if self.pl.hud_mode != want || self.pl.external_view {
             return;

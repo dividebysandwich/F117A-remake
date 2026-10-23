@@ -565,8 +565,11 @@ land if released now.
 wingtip rails and up to four launchers of four AGM-114 Hellfires on its stub wings. Its
 targeting pod is always up, with or without its MFD page: slaved, it looks at the locked
 target, or else wherever you look from the cockpit (a helmet sight: the mouse head look, or the
-headset in VR); slewed, it holds the ground point you put it on. The turret follows the pod as
-far as it turns (110 degrees either side, 50 degrees down, 20 up), and the gun pipper shows
+headset in VR); slewed, it holds the ground point you put it on. The cannon is two entries in
+the weapon cycle (Space): first slaved to the helmet sight (**GUN HMS**: the turret points
+wherever you look), then to the targeting pod (**GUN TGP**: the turret follows the pod); the next
+press goes on to the missiles. The HUD's gun line shows which (`GUN 650 HMS` / `GUN 650 TGP`).
+The turret turns 110 degrees either side, 50 degrees down and 20 up, and the gun pipper shows
 where its rounds land. A **Hellfire** rides the pod's laser spot for its whole flight: it flies
 to the object at the spot, or the plain ground there, and turns to wherever the pod looks
 next, so keep the pod on the target until it hits. It needs a line of sight from you to the

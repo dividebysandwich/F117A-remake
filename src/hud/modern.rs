@@ -174,14 +174,19 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
         },
     };
     text(c, 270.0, 392.0, mode, Align::Left);
+    // A turret gun with what it is slaved to.
+    let gun = |rounds: u32| match f.gun_slave {
+        Some(s) => format!("GUN {rounds} {s}"),
+        None => format!("GUN {rounds}"),
+    };
     if f.gun_selected {
-        text(c, 270.0, 418.0, &format!("GUN {}", f.gun_rounds.unwrap_or(0)), Align::Left);
+        text(c, 270.0, 418.0, &gun(f.gun_rounds.unwrap_or(0)), Align::Left);
     } else {
         if let Some((count, name)) = &f.weapon {
             text(c, 270.0, 418.0, &format!("{count} {name}"), Align::Left);
         }
         if let Some(rounds) = f.gun_rounds {
-            text(c, 270.0, 444.0, &format!("GUN {rounds}"), Align::Left);
+            text(c, 270.0, 444.0, &gun(rounds), Align::Left);
         }
     }
 

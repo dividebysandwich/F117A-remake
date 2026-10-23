@@ -511,6 +511,7 @@ fn player_state(
         hud_visible: view.view == View::Cockpit,
         ccrp: hud.ccrp,
         pod: pod_aim(&mfd.av.tgp),
+        helmet: mfd.av.helmet.map(|d| sight_aim(d, None)),
         cmd: SimCommands { gun, trigger, ..cmd },
     }
 }
@@ -518,14 +519,18 @@ fn player_state(
 /// The targeting pod's line of sight for the sim: its direction in BAM and the ground point
 /// (map units) it rests on.
 fn pod_aim(tgp: &crate::avionics::TgpState) -> Option<stealth_sim::PodAim> {
-    let d = tgp.los?;
+    Some(sight_aim(tgp.los?, tgp.los_ground))
+}
+
+/// A line of sight (world direction) and its ground point for the sim.
+fn sight_aim(d: Vec3, ground: Option<DVec3>) -> stealth_sim::PodAim {
     let heading = to_bam(d.x.atan2(-d.z)).round() as i32 as u16;
     let pitch = to_bam(d.y.clamp(-1.0, 1.0).asin()).round() as i32 as i16;
-    let ground = tgp.los_ground.map(|p| {
+    let ground = ground.map(|p| {
         let (e, n, _) = bevy_to_wu(p);
         ((e / 32.0).round() as i32, (0x8000 as f64 - n / 32.0).round() as i32)
     });
-    Some(stealth_sim::PodAim { heading, pitch, ground })
+    stealth_sim::PodAim { heading, pitch, ground }
 }
 
 #[derive(SystemParam)]
@@ -1214,8 +1219,14 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         .collect();
     let gun = sim.has_gun().then(|| sim.gun_ammo().max(0) as u32);
     let gun_selected = sim.gun_selected();
+    let gun_slave = settings.aircraft.spec().turret.then_some(if sim.gun_on_pod() {
+        "TGP"
+    } else {
+        "HMS"
+    });
     if stores.selected != cur
         || stores.gun_selected != gun_selected
+        || stores.gun_slave != gun_slave
         || stores.gun_rounds != gun
         || stores.bays.len() != new_bays.len()
         || stores.bays.iter().zip(&new_bays).any(|(a, b)| a.count != b.count || a.name != b.name)
@@ -1224,6 +1235,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         stores.selected = cur;
         stores.gun_rounds = gun;
         stores.gun_selected = gun_selected;
+        stores.gun_slave = gun_slave;
     }
 
     // Waypoints: the mission logic switches to the next one when an objective is done.
@@ -1632,7 +1644,10 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                 })
             };
             let ground_y = wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
-            let barrel = mfd.av.tgp.los.filter(|_| settings.aircraft.spec().turret);
+            // The turret along the sight the gun is slaved to (as `Sim::turret_aim`).
+            let sight =
+                if sim.gun_on_pod() { mfd.av.tgp.los } else { mfd.av.helmet.or(mfd.av.tgp.los) };
+            let barrel = sight.filter(|_| settings.aircraft.spec().turret);
             let barrel = barrel.map(|d| a.orientation * turret_dir(a.orientation.inverse() * d));
             new_cues.gun = Some(gun_cue(&a, pos, eye, target, air, ground_y, barrel));
         }

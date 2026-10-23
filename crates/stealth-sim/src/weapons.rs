@@ -140,6 +140,11 @@ impl Sim {
     /// skipped; classic mode steps through the 2 or 4 bays, the same with a different weapon in
     /// each).
     fn next_weapon(&mut self) {
+        // A gunship's cannon is two entries: slaved to the helmet, then to the pod.
+        if self.pl.gun_selected && self.pl.gunship && !self.pl.gun_pod {
+            self.pl.gun_pod = true;
+            return;
+        }
         // Entries: the first station of each weapon, then the cannon (index n).
         let n = self.pl.bays.len();
         let first_of =
@@ -152,7 +157,10 @@ impl Sim {
             if i == n { gun } else { first_of(&self.pl.bays, i) && self.pl.bays[i].0 != cur_w }
         });
         match next {
-            Some(i) if i == n => self.pl.gun_selected = true,
+            Some(i) if i == n => {
+                self.pl.gun_selected = true;
+                self.pl.gun_pod = false;
+            }
             Some(i) => {
                 self.pl.cur_bay = i;
                 self.pl.gun_selected = false;
@@ -524,10 +532,12 @@ impl Sim {
         Bullet { x: x + vx, y: y + vy, alt: (p.view_z - 2) * f + vz, vx, vy, vz }
     }
 
-    /// Where the active pilot's turret points: an attack helicopter's follows the targeting
-    /// pod as far as it turns (None: a fixed cannon, or no pod, along the nose).
+    /// Where the active pilot's turret points: an attack helicopter's follows the helmet sight
+    /// or the targeting pod (`gun_pod`) as far as it turns (None: a fixed cannon, or no sight,
+    /// along the nose).
     pub(crate) fn turret_aim(&self, ps: &PlayerState) -> Option<(i32, i32)> {
-        let pod = ps.pod.filter(|_| self.pl.gunship)?;
+        let sight = if self.pl.gun_pod { ps.pod } else { ps.helmet.or(ps.pod) };
+        let pod = sight.filter(|_| self.pl.gunship)?;
         let p = &self.pl.p;
         let az = s16(pod.heading as i32 - p.heading).clamp(-TURRET_AZIMUTH, TURRET_AZIMUTH);
         let el = s16(pod.pitch as i32 - p.pitch).clamp(-TURRET_DEPRESSION, TURRET_ELEVATION);

@@ -470,6 +470,10 @@ pub struct PlayerState {
     /// Hellfires.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pod: Option<PodAim>,
+    /// Where the pilot looks from the cockpit (the helmet sight; its ground point unused): an
+    /// attack helicopter's turret follows it with the cannon slaved to the helmet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helmet: Option<PodAim>,
     pub cmd: Commands,
 }
 

@@ -129,6 +129,25 @@ impl Rotor {
         max_knots: 45.0,
     };
 
+    /// AH-1Z: lighter and more powerful for its size, quicker on the cyclic and pedals, a
+    /// slimmer fuselage and a stiffer four-blade rotor that stalls later (the level speed tops
+    /// out near 180 kt).
+    pub const AH1Z: Rotor = Rotor {
+        thrust_flat: 0.40,
+        thrust_slope: 1.12,
+        ge_height: 30.0,
+        pitch_accel: 3.0,
+        roll_accel: 7.0,
+        pedal_accel: 3.0,
+        stall_knots: (170.0, 215.0),
+        stall_loss: 0.4,
+        torque_yaw: 1.0,
+        drag: Vec3::new(3.0e-4, 0.0, 4.5e-5),
+        rotor_lag: 1.2,
+        fuel_burn: 0.3,
+        ..Rotor::UH60
+    };
+
     /// Collective that hovers out of ground effect, in still air.
     pub fn hover_collective(&self) -> f32 {
         (1.0 - self.thrust_flat) / self.thrust_slope
@@ -375,12 +394,21 @@ mod tests {
 
     /// Flies the UH-60A for `secs` (no theater: flat ground at 0, no bases).
     fn fly(
+        a: Aircraft,
+        secs: f32,
+        landing: u8,
+        ctl: impl FnMut(&Aircraft, &mut FlightControls),
+    ) -> (Aircraft, Vec3) {
+        fly_as(FlightConstants::uh60(), a, secs, landing, ctl)
+    }
+
+    fn fly_as(
+        mut k: FlightConstants,
         mut a: Aircraft,
         secs: f32,
         landing: u8,
         mut ctl: impl FnMut(&Aircraft, &mut FlightControls),
     ) -> (Aircraft, Vec3) {
-        let mut k = FlightConstants::uh60();
         k.landing = landing;
         let r = k.heli.unwrap();
         let mut pos = WorldPos(wu_to_bevy(0.0, 0.0, a.view_z() as f64));
@@ -632,5 +660,39 @@ mod tests {
         assert!((a.set_thrust - COLLECTIVE_RATE).abs() < 1.0, "{}", a.set_thrust);
         let (a, _) = fly(a, 0.1, 1, |_, c| c.throttle = Some(0.7));
         assert!((a.set_thrust - 70.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn ah1z_hovers_and_outruns_the_uh60() {
+        let r = Rotor::AH1Z;
+        let hc = r.hover_collective();
+        let (a, _) = fly_as(FlightConstants::ah1z(), hovering(200.0), 10.0, 1, |a, c| {
+            c.throttle = Some(hc);
+            pilot(a, c, 0.0);
+        });
+        assert!((0.45..0.6).contains(&hc), "hover collective {hc}");
+        assert!(a.climb_rate.abs() < 2.0, "climb {}", a.climb_rate);
+        // Full collective, the nose held down: level speed between the UH-60's and 200 kt.
+        let full = |deg: f32| {
+            let mut a0 = hovering(3000.0);
+            a0.velocity = 120.0 * 27.0;
+            fly_as(FlightConstants::ah1z(), a0, 60.0, 1, |a, c| {
+                pilot(a, c, 0.0);
+                let (_, p, _) = a.euler();
+                c.pitch = (-8.0 * (p + deg.to_radians()) - 1.0 * a.heli.rates.x).clamp(-1.0, 1.0);
+                c.throttle = Some(1.0);
+            })
+            .0
+        };
+        let (fast, faster) = (full(14.0), full(19.0));
+        println!(
+            "AH-1Z full collective: {:.0} kt climb {:.1}, {:.0} kt climb {:.1}",
+            fast.knots(),
+            fast.climb_rate,
+            faster.knots(),
+            faster.climb_rate
+        );
+        assert!(fast.knots() > 160.0 && fast.climb_rate > 0.0);
+        assert!(faster.knots() < 230.0 && faster.climb_rate < 0.0);
     }
 }

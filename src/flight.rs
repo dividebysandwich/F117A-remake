@@ -158,6 +158,11 @@ impl FlightConstants {
     pub fn uh60() -> Self {
         Self { fuel: 2400.0, heli: Some(heli::Rotor::UH60), ..default() }
     }
+
+    /// AH-1Z: the helicopter model; 2600 lb of fuel.
+    pub fn ah1z() -> Self {
+        Self { fuel: 2600.0, heli: Some(heli::Rotor::AH1Z), ..default() }
+    }
 }
 
 /// Why the flight ended.

@@ -35,6 +35,9 @@
 //!   pivot (the lever swings up about it instead of sliding).
 //! * `lamp` ([r, g, b], linear) and `range`: a flood lamp (with the local lights option).
 //! * `no_shadow`: casts no shadow.
+//!
+//! Every mesh but the HUD glass is `Solid` (the mouse points at it); the levers, the displays
+//! and the atlas faces that are not buttons get their tooltips (`Tip`).
 
 use std::collections::HashMap;
 
@@ -45,11 +48,13 @@ use bevy::mesh::VertexAttributeValues;
 use bevy::prelude::*;
 
 use super::controls::{Control, Highlight, Moving};
-use super::displays::{self, CanvasRole, LitMaterial, PanelMaterials, TrackCamScreen};
+use super::displays::{self, CanvasRole, Face, LitMaterial, PanelMaterials, TrackCamScreen};
 use super::hud_glass::HudGlassMaterial;
 use super::layout::PanelLayout;
 use super::levers::{CockpitAnchors, Stick, ThrottleLever};
+use super::pick::Solid;
 use super::shading::{CockpitMaterial, cockpit_material};
+use super::tooltips;
 use super::{CockpitLamp, CockpitMaterials};
 use crate::font::Fonts;
 
@@ -114,6 +119,8 @@ pub(super) struct Spawner<'a> {
     /// screen's mesh.
     left_trackcam_missing: bool,
     pub anchors: CockpitAnchors,
+    /// The atlas faces by key (`atlas_face`).
+    faces: HashMap<String, Face>,
 }
 
 impl<'a> Spawner<'a> {
@@ -150,6 +157,10 @@ impl<'a> Spawner<'a> {
             modelled: HashMap::new(),
             left_trackcam_missing: false,
             anchors: CockpitAnchors::default(),
+            faces: displays::atlas_faces(layout)
+                .into_iter()
+                .map(|(f, _)| (format!("{f:?}"), f))
+                .collect(),
         }
     }
 
@@ -215,14 +226,14 @@ impl<'a> Spawner<'a> {
             ec.insert((Highlight, Visibility::Hidden));
         }
         if extras["stick"].as_bool() == Some(true) {
-            ec.insert(Stick);
+            ec.insert((Stick, tooltips::stick_tip()));
             self.anchors.stick_pivot = at.translation;
             if let Some(g) = extras["grip"].as_f64() {
                 self.anchors.grip_height = g as f32;
             }
         }
         if extras["throttle"].as_bool() == Some(true) {
-            ec.insert(ThrottleLever);
+            ec.insert((ThrottleLever, tooltips::throttle_tip()));
             self.anchors.throttle_idle = at.translation;
         }
         if extras["anchor"].as_str() == Some("throttle_full") {
@@ -267,6 +278,9 @@ impl<'a> Spawner<'a> {
                 self.primitive(commands, target, name, prim, &extras, assets);
                 let mut t = commands.entity(target);
                 t.insert(NoFrustumCulling);
+                if name != "hud_glass" {
+                    t.insert(Solid);
+                }
                 if no_shadow {
                     t.insert(NotShadowCaster);
                 }
@@ -296,6 +310,10 @@ impl<'a> Spawner<'a> {
                 if let Some(m) = self.atlas_mesh(&prim.mesh, extras) {
                     mesh = m;
                 }
+                let face = extras["atlas_face"].as_str().and_then(|k| self.faces.get(k));
+                if let Some(tip) = face.and_then(|&f| tooltips::face_tip(f)) {
+                    ec.insert(tip);
+                }
                 self.panel.atlas.clone()
             }
             "screen_left" | "screen_right" | "screen_third" | "adi" | "approach" | "screen_rwr"
@@ -313,6 +331,9 @@ impl<'a> Spawner<'a> {
                 let (tex, m) =
                     displays::screen(role, self.layout, self.hires, self.materials, self.images);
                 ec.insert((role, tex));
+                if let Some(tip) = tooltips::display_tip(role, self.layout.style) {
+                    ec.insert(tip);
+                }
                 if role == CanvasRole::Left && self.left_trackcam_missing {
                     self.left_trackcam(commands, e, &prim.mesh);
                 }

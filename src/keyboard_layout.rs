@@ -28,22 +28,37 @@ static LEARNED: LazyLock<Mutex<HashMap<KeyCode, String>>> = LazyLock::new(Defaul
 /// give the shifted symbol.
 fn learn_labels(mut events: MessageReader<KeyboardInput>, keys: Res<ButtonInput<KeyCode>>) {
     let shifted = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight, KeyCode::AltRight]);
+    let lower_accents = accents_lower();
     for ev in events.read() {
         if ev.state != ButtonState::Pressed || shifted || scancode(ev.key_code).is_none() {
             continue;
         }
         let Key::Character(text) = &ev.logical_key else { continue };
-        if let Some(label) = printable(text) {
+        if let Some(label) = printable(text, lower_accents) {
             LEARNED.lock().unwrap().insert(ev.key_code, label);
         }
     }
 }
 
-/// A single printable character, upper-cased.
-fn printable(text: &str) -> Option<String> {
+/// A single printable character as printed on a keycap: the letters A-Z in capitals; the other
+/// characters in capitals too, except on the layouts that print their accented letters in lower
+/// case (`lower_accents`: AZERTY's "é", "è", "ç", "à", "ù"). The API and the key events give
+/// capitals or small letters whatever the keycap says. A character whose capital is not a single
+/// character ("ß" -> "SS") is kept as it is.
+fn printable(text: &str, lower_accents: bool) -> Option<String> {
     let mut chars = text.chars();
     let c = chars.next().filter(|c| !c.is_control() && !c.is_whitespace())?;
-    chars.next().is_none().then(|| c.to_uppercase().collect())
+    if chars.next().is_some() {
+        return None;
+    }
+    if lower_accents && !c.is_ascii() {
+        return Some(c.to_lowercase().collect());
+    }
+    let mut upper = c.to_uppercase();
+    Some(match (upper.next(), upper.next()) {
+        (Some(u), None) => u.to_string(),
+        _ => c.to_string(),
+    })
 }
 
 /// The label of a character key on the current layout ("Z" for the key at QWERTY's W on an
@@ -55,11 +70,14 @@ pub fn key_name(key: KeyCode) -> Option<String> {
 }
 
 #[cfg(windows)]
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn MapVirtualKeyW(code: u32, map_type: u32) -> u32;
+    fn GetKeyboardLayout(thread: u32) -> isize;
+}
+
+#[cfg(windows)]
 fn layout_label(scancode: u32) -> Option<String> {
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn MapVirtualKeyW(code: u32, map_type: u32) -> u32;
-    }
     const MAPVK_VSC_TO_VK: u32 = 1;
     const MAPVK_VK_TO_CHAR: u32 = 2;
     // SAFETY: MapVirtualKeyW only reads its two integer arguments and the thread's keyboard layout.
@@ -71,12 +89,36 @@ fn layout_label(scancode: u32) -> Option<String> {
         MapVirtualKeyW(vk, MAPVK_VK_TO_CHAR)
     };
     // The top bit marks a dead key (^, ¨...): its character is still the printed one.
-    char::from_u32(ch & 0x7fff_ffff).filter(|c| *c != '\0').and_then(|c| printable(&c.to_string()))
+    let c = char::from_u32(ch & 0x7fff_ffff).filter(|c| *c != '\0')?;
+    printable(c.encode_utf8(&mut [0; 4]), accents_lower())
 }
 
 #[cfg(not(windows))]
 fn layout_label(_scancode: u32) -> Option<String> {
     None
+}
+
+/// Whether the current keyboard layout prints its accented letters in lower case on the keycaps
+/// (French, Italian, Hungarian, Czech, Slovak). The other layouts (German, Nordic, Spanish,
+/// Cyrillic, Greek...) print capitals. Only Windows tells the layout's language; elsewhere the
+/// capitals are kept.
+#[cfg(windows)]
+fn accents_lower() -> bool {
+    const LANG_CZECH: isize = 0x05;
+    const LANG_FRENCH: isize = 0x0c;
+    const LANG_HUNGARIAN: isize = 0x0e;
+    const LANG_ITALIAN: isize = 0x10;
+    const LANG_SLOVAK: isize = 0x1b;
+    // SAFETY: GetKeyboardLayout only reads the keyboard layout of the calling thread (id 0), the
+    // one MapVirtualKeyW uses.
+    let hkl = unsafe { GetKeyboardLayout(0) };
+    // The low word is the language id, whose low 10 bits are the primary language.
+    matches!(hkl & 0x3ff, LANG_CZECH | LANG_FRENCH | LANG_HUNGARIAN | LANG_ITALIAN | LANG_SLOVAK)
+}
+
+#[cfg(not(windows))]
+fn accents_lower() -> bool {
+    false
 }
 
 /// Set 1 scancode of the character keys (the layout-dependent ones).
@@ -148,11 +190,16 @@ mod tests {
     }
 
     #[test]
-    fn labels_are_single_upper_case_characters() {
-        assert_eq!(printable("w").as_deref(), Some("W"));
-        assert_eq!(printable("é").as_deref(), Some("É"));
-        assert_eq!(printable("ab"), None);
-        assert_eq!(printable(" "), None);
+    fn labels_are_single_characters() {
+        assert_eq!(printable("w", false).as_deref(), Some("W"));
+        assert_eq!(printable("w", true).as_deref(), Some("W"));
+        assert_eq!(printable("é", true).as_deref(), Some("é"));
+        assert_eq!(printable("É", true).as_deref(), Some("é"));
+        assert_eq!(printable("ü", false).as_deref(), Some("Ü"));
+        assert_eq!(printable("ф", false).as_deref(), Some("Ф"));
+        assert_eq!(printable("ß", false).as_deref(), Some("ß"));
+        assert_eq!(printable("ab", false), None);
+        assert_eq!(printable(" ", false), None);
     }
 
     /// On a Latin layout every letter position has a label.

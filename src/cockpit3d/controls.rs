@@ -9,9 +9,10 @@
 
 use bevy::prelude::*;
 
+use super::Hands;
 use super::layout::Effect;
-use super::{CockpitRoot, Hands};
-use crate::camera::{EyeCamera, View, ViewState};
+use super::pick::{Picker, Pointed};
+use crate::camera::{View, ViewState};
 use crate::flight::{Aircraft, Player};
 use crate::hud::{HudMode, HudState};
 use crate::input::{Action, ActionEvent};
@@ -23,7 +24,7 @@ pub struct PressControl(pub Action);
 
 impl Effect {
     /// The key action a script `press=` names for this control (None: blank bezel button).
-    fn action(self, mfd: &MfdState) -> Option<Action> {
+    pub(super) fn action(self, mfd: &MfdState) -> Option<Action> {
         Some(match self {
             Effect::Action(a) => a,
             Effect::HudMode(_) => Action::HudMode,
@@ -63,7 +64,7 @@ const TOUCH_MARGIN: f32 = 0.006;
 #[derive(Component)]
 pub(super) struct Control {
     kind: Kind,
-    effect: Effect,
+    pub(super) effect: Effect,
     half: Vec2,
     height: f32,
     travel: f32,
@@ -114,6 +115,20 @@ impl Control {
 
     pub(super) fn is_eject(&self) -> bool {
         self.kind == Kind::EjectHandle
+    }
+
+    /// Where the ray o + t d (cockpit frame, `tf` the control's) goes through the face
+    /// rectangle: t.
+    pub(super) fn face_hit(&self, tf: &Transform, o: Vec3, d: Vec3) -> Option<f32> {
+        let n = tf.rotation * Vec3::Z;
+        let plane = tf.translation + n * self.height;
+        let denom = d.dot(n);
+        if denom.abs() < 1e-9 {
+            return None;
+        }
+        let t = (plane - o).dot(n) / denom;
+        let local = tf.rotation.inverse() * (o + d * t - tf.translation);
+        (t > 0.0 && local.x.abs() <= self.half.x && local.y.abs() <= self.half.y).then_some(t)
     }
 }
 
@@ -228,9 +243,7 @@ pub(super) fn interact(
     mut fire: Fire,
     mut presses: MessageReader<PressControl>,
     buttons: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
-    cams: Query<(&Camera, &GlobalTransform), With<EyeCamera>>,
-    root: Query<&GlobalTransform, With<CockpitRoot>>,
+    mut picker: Picker,
     menu: Res<crate::flight_menu::FlightMenu>,
     hide: Option<Res<crate::camera::HideOwnAircraft>>,
 ) {
@@ -275,39 +288,20 @@ pub(super) fn interact(
     let cockpit_view =
         matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
 
-    // Mouse click: nearest control face under the cursor.
+    // Mouse click: the control under the cursor, unless something in front hides it.
     if !settings.vr
         && cockpit_view
         && buttons.just_pressed(MouseButton::Left)
-        && let (Ok(window), Ok((camera, cam_tf)), Ok(root_tf)) =
-            (windows.single(), cams.single(), root.single())
-        && let Some(cursor) = window.cursor_position()
-        && let Ok(ray) = camera.viewport_to_world(cam_tf, cursor)
+        && let Some(ray) = picker.cursor_ray()
     {
-        let inv = root_tf.affine().inverse();
-        let o = inv.transform_point3(ray.origin);
-        let d = inv.transform_vector3(*ray.direction).normalize();
-        let mut best: Option<(f32, Mut<Control>)> = None;
-        for (_, c, tf) in &mut controls {
-            if !usable(&c) {
-                continue;
-            }
-            let n = tf.rotation * Vec3::Z;
-            let plane = tf.translation + n * c.height;
-            let denom = d.dot(n);
-            if denom.abs() < 1e-5 {
-                continue;
-            }
-            let t = (plane - o).dot(n) / denom;
-            if t <= 0.0 || best.as_ref().is_some_and(|(bt, _)| *bt < t) {
-                continue;
-            }
-            let local = tf.rotation.inverse() * (o + d * t - tf.translation);
-            if local.x.abs() <= c.half.x && local.y.abs() <= c.half.y {
-                best = Some((t, c));
-            }
-        }
-        if let Some((_, mut c)) = best {
+        let picked = {
+            let all: Vec<_> = controls.iter().collect();
+            picker.pick(ray, &all, usable)
+        };
+        if let Some(Pointed::Control(e)) = picked
+            && let Ok((_, mut c, _)) = controls.get_mut(e)
+            && usable(&c)
+        {
             c.click = CLICK_SECONDS;
             fire.fire(c.effect);
         }

@@ -159,10 +159,23 @@ pub fn action_by_name(name: &str) -> Option<Action> {
 /// A key with the modifier held with it, as text: "Shift+F1", "Z". Character keys are named as
 /// the keyboard layout prints them (bindings are by position).
 pub fn key_label(mods: Mods, key: KeyCode) -> String {
-    let name = crate::keyboard_layout::key_name(key).unwrap_or_else(|| {
-        let name = format!("{key:?}");
-        name.strip_prefix("Key").or_else(|| name.strip_prefix("Digit")).unwrap_or(&name).to_string()
-    });
+    with_mods(mods, crate::keyboard_layout::key_name(key).unwrap_or_else(|| qwerty_name(key)))
+}
+
+/// As `key_label`, the key named as on a US keyboard (for a font that lacks the layout's
+/// characters).
+pub fn qwerty_key_label(mods: Mods, key: KeyCode) -> String {
+    with_mods(mods, qwerty_name(key))
+}
+
+/// "KeyB" -> "B", "Digit2" -> "2", "F10" -> "F10".
+fn qwerty_name(key: KeyCode) -> String {
+    let name = format!("{key:?}");
+    name.strip_prefix("Key").or_else(|| name.strip_prefix("Digit")).unwrap_or(&name).to_string()
+}
+
+/// The name with the modifier held with the key.
+fn with_mods(mods: Mods, name: String) -> String {
     match mods {
         Mods::None => name,
         Mods::Shift => format!("Shift+{name}"),

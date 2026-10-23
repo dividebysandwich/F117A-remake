@@ -132,6 +132,11 @@ pub struct Kneeboard {
 }
 
 impl Kneeboard {
+    /// Desktop: the board is shown large over the view.
+    pub fn overlay_shown(&self) -> bool {
+        self.overlay
+    }
+
     /// A new sortie (campaign): the maps are drawn again for its route.
     pub fn new_mission(&mut self) {
         self.route_map = None;
@@ -198,6 +203,12 @@ fn spawn(
             let board = commands
                 .spawn((
                     Board,
+                    crate::cockpit3d::Solid,
+                    crate::cockpit3d::Tip::new(
+                        "Kneeboard",
+                        "Maps and mission notes",
+                        &[crate::input::Action::Kneeboard],
+                    ),
                     tex,
                     Mesh3d(meshes.add(Rectangle::new(SIZE.x, SIZE.y))),
                     MeshMaterial3d(material),

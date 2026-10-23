@@ -46,9 +46,11 @@ board, alone or with up to 64 players in coop.
 - **Enemy attacks:** helicopter attacks on weak spots along the front, escorted raids on
   airfields, AWACS patrols and, in Ukraine, Geran drone waves. The board posts intercept and
   defend missions for them. A bombed airfield launches no AI aircraft until it is repaired.
-- **CSAR:** eject over enemy territory and the board posts a rescue mission. 
-  Hold the air near the pilot for 2 minutes to get them out, or they may be captured.
-  Player-flown helicopter missions are planned for the future.
+- **CSAR:** eject over enemy territory and the board posts a rescue mission.
+  Hold the air near the pilot for 2 minutes to get them out, or they may be captured. In the
+  UH-60, land within 200 m of the pilot, wait for them to board and land them at a friendly base.
+- **Insertions:** order one for the AI helicopter crews, or lead it yourself in the UH-60 Black
+  Hawk with AI wingmen: land within 1.5 km of the target and stay down while the troops get out.
 - **Points and ranks:** objectives, kills and bringing the aircraft home earn points, ranks and
   medals. Packages (two kinds of objective at one place within 15 minutes) earn a bonus.
 - **Weather** changes once or twice a day, from fair skies to thunderstorms.
@@ -87,7 +89,7 @@ In the browser (WebGPU; coop joins public servers through the master server): `t
 | `--weather random\|clear\|scattered\|broken\|overcast\|storm` | the mission's weather (default: rolled from the seed, odds by theater) |
 | `--cloud-cover <percent>` | coverage of the weather's main cloud layer (default: rolled) |
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
-| `--aircraft f117\|f16` | the aircraft to fly: the F-117A (default) or the F-16C, which has its own cockpit (with an RWR scope instead of the radar bar graph) and flight model |
+| `--aircraft f117\|f16\|uh60` | the aircraft to fly: the F-117A (default), the F-16C, which has its own cockpit (with an RWR scope instead of the radar bar graph) and flight model, or the UH-60A Black Hawk helicopter (cyclic and collective; the throttle controls move the collective; its missions are insertions: land near the targets) |
 | `--classic-avionics` | DOS era MFD pages instead of the F-16 style formats (HSD, HARM, targeting pod, map, stores on either MFD, with a slewable cursor) |
 | `--classic-hud` | DOS era low-resolution HUD instead of the green F-16 style one |
 | `--classic-cockpit` | DOS era panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons); F-117A only |

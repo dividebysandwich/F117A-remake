@@ -736,6 +736,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | **Time** | Time acceleration / normal | Shift Z / Shift X |
 | **Game** | Settings menu (pauses) / detail / sound level | Esc, Pause, Alt P, gamepad Start / Alt D / Alt V |
 | | Training / resupply / quit | Alt T / Alt R / Alt Q |
+| | Chat (multiplayer, chapter 13) | Y |
 
 ## 8. Aircraft, air defences and ships
 
@@ -1024,6 +1025,8 @@ or F-16) for each sortie on the briefing's LOADOUT page.
   sorties flown and objectives achieved, points and rank, and each player's ping; under it the
   leaderboard keeps every pilot's record, also of those who have left (a newcomer taking a free
   slot does not take the record with it), and the line at the bottom names the campaign's rules.
+- **CHAT** has every message of the game so far (newest at the bottom, the list scrolls) and a
+  field to write one: Enter or SEND sends it. In the headset a keyboard opens under the field.
 - **SAVE & EXIT** (top right, under the clock) leaves the campaign; as the host it also ends the
   game for the others. On a server that is not yours the button reads **DISCONNECT**: the war goes
   on on the server, and nothing is saved on your computer.
@@ -1031,6 +1034,15 @@ or F-16) for each sortie on the briefing's LOADOUT page.
   objectives count for the player whose weapon it was. Players taking off from the same base line
   up in a staggered formation on the runway: the first in the middle, far enough down the runway
   for the others, then rows of two behind him.
+
+### Chat
+
+Who joins and leaves, and what the players write, comes up on a panel next to the HUD's lower
+right corner, with the sender's name; it grows with the messages (the last six, the newest at the
+bottom) and fades out once they are a few seconds old. In flight, press **Y** to write: a field
+opens under the panel, which stays up while you type, and every key types into it (none of the
+other keys works meanwhile). Enter sends the message, Esc cancels it. What you send shows in the
+panel too.
 
 In the air the other players are friendly contacts on the MFD (blue on the classic map and TAC
 pages, a green ring on the modern MFD); their weapons in flight show as missiles. Their cannon

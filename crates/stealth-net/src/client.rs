@@ -41,6 +41,11 @@ pub enum ClientEvent {
     Campaign(Box<CampaignState>),
     Error(String),
     Roster(Vec<PlayerInfo>),
+    /// Another player's chat message.
+    Chat {
+        from: String,
+        text: String,
+    },
 }
 
 pub struct Client {
@@ -100,6 +105,14 @@ impl Client {
         }
         let seq = self.seq;
         self.recent.retain(|(s, _)| seq.wrapping_sub(*s) < REPEAT as u32);
+    }
+
+    /// A chat message to the others.
+    pub fn chat(&mut self, text: &str) {
+        let text = chat_text(text);
+        if self.id.is_some() && !text.is_empty() {
+            self.send(&ToServer::Chat { text });
+        }
     }
 
     /// Reports a hit of one of his own gun rounds.
@@ -165,6 +178,7 @@ impl Client {
             ToClient::Campaign(s) => ClientEvent::Campaign(Box::new(s)),
             ToClient::Error(e) => ClientEvent::Error(e),
             ToClient::Roster(r) => ClientEvent::Roster(r),
+            ToClient::Chat { from, text } => ClientEvent::Chat { from, text },
             ToClient::Shutdown(why) => {
                 self.closed = true;
                 ClientEvent::Closed(why)

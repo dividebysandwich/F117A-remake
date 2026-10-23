@@ -6,6 +6,7 @@ mod camera;
 mod campaign;
 mod canvas;
 mod career;
+mod chat;
 mod cockpit;
 mod cockpit3d;
 mod combat;
@@ -226,6 +227,7 @@ fn main() {
             campaign::CampaignPlugin,
             net::NetPlugin,
             player_notices::PlayerNoticesPlugin,
+            chat::ChatPlugin,
             multiplayer_menu::MultiplayerMenuPlugin,
         ));
     mission::from_args(&mut app);

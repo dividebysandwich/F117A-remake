@@ -125,6 +125,7 @@ pub fn action_text(a: Action) -> (String, &'static str) {
         LockCursor => ("Lock cursor target", "Lock what is under the sensor's cursor"),
         SwapSoi => ("Sensor of interest", "Moves to the other MFD"),
         Kneeboard => ("Kneeboard", "Show it over the view, next page, hide"),
+        Chat => ("Chat", "Type a message to the other players"),
         CameraZoomIn => ("Camera zoom in", ""),
         CameraZoomOut => ("Camera zoom out", ""),
         _ => return (crate::hotas::action_name(a), ""),

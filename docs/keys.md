@@ -54,4 +54,5 @@ grouped by topic, with the mouse (desktop) or the VR controllers.
 | Misc | pause (remake: settings menu, also Esc) / boss / quit | Alt P / Alt B / Alt Q |
 | | volume / detail level | Alt V / Alt D |
 | | kneeboard (remake): show, next page, hide | K |
+| | chat (remake, multiplayer): type a message, Enter sends, Esc cancels | Y |
 | Training | go to training / resupply / day-night / teleport | Alt T / Alt R / Alt N / Alt + arrows |

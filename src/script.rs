@@ -12,7 +12,8 @@
 //! target button, `lockpilot=1` locks another player's aircraft (pilot id 1, as a display
 //! lock does), `press=Gear` pushes the 3D-cockpit control bound to that action and `osb=r2`
 //! pushes an MFD bezel button (`l` / `r` / `t`: the left, right or third MFD; 0..4 along the
-//! top, 5..9 along the bottom).
+//! top, 5..9 along the bottom). In a coop game `say=Hello there` sends a chat message and
+//! `type=Hello` opens the chat field with that text (no commas in either).
 
 use bevy::prelude::*;
 
@@ -61,6 +62,9 @@ enum Step {
     LockPilot(u8),
     /// Pushes an MFD bezel button (`osb=r2`).
     Osb(crate::mfd::MfdSide, u8),
+    /// Sends a chat message (`say=`), opens the chat field with this text (`type=`).
+    Say(String),
+    Type(String),
 }
 
 #[derive(Clone, Copy)]
@@ -129,6 +133,10 @@ fn parse_step(what: &str) -> Option<Step> {
             _ => return None,
         };
         Step::Osb(side, x[1..].parse().ok()?)
+    } else if let Some(x) = what.strip_prefix("say=") {
+        Step::Say(x.to_string())
+    } else if let Some(x) = what.strip_prefix("type=") {
+        Step::Type(x.to_string())
     } else if let Some(x) = what.strip_prefix("press=") {
         Step::Press(x.to_string())
     } else {
@@ -178,6 +186,7 @@ fn apply(
     actions: &mut MessageWriter<ActionEvent>,
     presses: &mut MessageWriter<crate::cockpit3d::PressControl>,
     shot: &mut Option<ResMut<crate::autoshot::ShotRequest>>,
+    notices: &mut crate::player_notices::PlayerNotices,
 ) {
     match step {
         Step::Action(name) if name == "Screenshot" => {
@@ -196,6 +205,8 @@ fn apply(
         Step::Mark(t) => axes.mark = *t,
         Step::LockPilot(k) => axes.lock_pilot = Some(*k),
         Step::Osb(side, slot) => axes.osb = Some((*side, *slot)),
+        Step::Say(text) => notices.outbox.push(text.clone()),
+        Step::Type(text) => notices.typing = Some(text.clone()),
         Step::Press(name) => {
             if let Some(act) = crate::input::action_by_name(name) {
                 presses.write(crate::cockpit3d::PressControl(act));
@@ -227,6 +238,7 @@ fn run_script(
     mut hud: ResMut<crate::hud::HudState>,
     mfd: Res<crate::mfd::MfdState>,
     mut mfd_cmds: MessageWriter<crate::mfd::MfdCommand>,
+    mut notices: ResMut<crate::player_notices::PlayerNotices>,
 ) {
     if script.steps.is_empty() && script.conditional.is_empty() {
         return;
@@ -236,7 +248,14 @@ fn run_script(
     while script.next < script.steps.len() && script.steps[script.next].0 <= a.time {
         let i = script.next;
         script.next += 1;
-        apply(&script.steps[i].1, &mut script.axes, &mut actions, &mut presses, &mut shot);
+        apply(
+            &script.steps[i].1,
+            &mut script.axes,
+            &mut actions,
+            &mut presses,
+            &mut shot,
+            &mut notices,
+        );
     }
     let (e, n, _) = crate::world::bevy_to_wu(pos.0);
     let wp_km = |i: Option<usize>| {
@@ -269,7 +288,7 @@ fn run_script(
         if hit {
             *fired = true;
             println!("script t={:.1}: condition met, {}", a.time, step_name(step));
-            apply(step, &mut script.axes, &mut actions, &mut presses, &mut shot);
+            apply(step, &mut script.axes, &mut actions, &mut presses, &mut shot, &mut notices);
         }
     }
     if let Some(k) = script.axes.lock_pilot.take() {
@@ -314,6 +333,8 @@ fn step_name(s: &Step) -> String {
         Step::Mark(t) => format!("mark={}", *t as u8),
         Step::LockPilot(k) => format!("lockpilot={k}"),
         Step::Osb(side, slot) => format!("osb={side:?} {slot}"),
+        Step::Say(t) => format!("say={t}"),
+        Step::Type(t) => format!("type={t}"),
     }
 }
 

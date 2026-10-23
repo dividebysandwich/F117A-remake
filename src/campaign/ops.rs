@@ -27,6 +27,7 @@ pub enum Tab {
     Players,
     Debrief,
     Log,
+    Chat,
 }
 
 /// The Ops screen's own state.
@@ -46,6 +47,8 @@ pub struct OpsUi {
     briefing: Option<Briefing>,
     /// SAVE & EXIT asks first.
     confirm_exit: bool,
+    /// The chat message being typed on the CHAT tab.
+    chat: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,7 +186,7 @@ pub fn block_input(
     }
 }
 
-/// Test aids: `--campaign-tab board|map|forces|players|debrief|log` opens a tab, `--campaign-take <n>`
+/// Test aids: `--campaign-tab board|map|forces|players|debrief|log|chat` opens a tab, `--campaign-take <n>`
 /// takes the n-th mission of the board (0: the first) once the campaign is up.
 pub fn test_tab() -> Option<Tab> {
     let args: Vec<String> = std::env::args().collect();
@@ -194,6 +197,7 @@ pub fn test_tab() -> Option<Tab> {
         "debrief" => Tab::Debrief,
         "log" => Tab::Log,
         "players" => Tab::Players,
+        "chat" => Tab::Chat,
         _ => Tab::Board,
     })
 }
@@ -267,6 +271,8 @@ pub fn ops_ui(
     mut next: ResMut<NextState<AppState>>,
     mut unit_view: ResMut<super::UnitView>,
     weather: Res<crate::weather::WeatherState>,
+    mut notices: ResMut<crate::player_notices::PlayerNotices>,
+    settings: Res<crate::settings::Settings>,
 ) -> Result {
     if !c.screen_open() || c.exit {
         return Ok(());
@@ -367,7 +373,11 @@ pub fn ops_ui(
                             (Tab::Players, "PLAYERS"),
                             (Tab::Debrief, "DEBRIEF"),
                             (Tab::Log, "LOG"),
+                            (Tab::Chat, "CHAT"),
                         ] {
+                            if tab == Tab::Chat && c.role == Role::Local {
+                                continue;
+                            }
                             if ui.selectable_label(c.ui.tab == tab, label).clicked() {
                                 c.ui.tab = tab;
                             }
@@ -416,6 +426,7 @@ pub fn ops_ui(
                     Tab::Players => players(ui, c),
                     Tab::Debrief => debrief(ui, c),
                     Tab::Log => log(ui, c),
+                    Tab::Chat => chat(ui, c, &mut notices, settings.vr),
                 }
             });
             ui.separator();
@@ -1290,6 +1301,76 @@ fn log(ui: &mut egui::Ui, c: &ActiveCampaign) {
             });
         }
     });
+}
+
+/// A coop game's chat: every message so far, newest at the bottom, and a field to write one.
+fn chat(
+    ui: &mut egui::Ui,
+    c: &mut ActiveCampaign,
+    notices: &mut crate::player_notices::PlayerNotices,
+    vr: bool,
+) {
+    use crate::text_entry::{Charset, text_entry};
+    use stealth_net::protocol::MAX_CHAT;
+    section(ui, "Chat");
+    // The field's room under the list (in the headset with its keyboard).
+    let below = if vr { 330.0 } else { 60.0 };
+    let height = (ui.available_height() - below).max(120.0);
+    egui::ScrollArea::vertical()
+        .id_salt("chat")
+        .max_height(height)
+        .auto_shrink([false, false])
+        .stick_to_bottom(true)
+        .show(ui, |ui| {
+            if notices.log().is_empty() {
+                ui.label(egui::RichText::new("No messages yet").color(DIM));
+            }
+            for m in notices.log() {
+                ui.horizontal_wrapped(|ui| match &m.from {
+                    Some(from) => {
+                        let ink = if m.own { GREEN } else { AMBER };
+                        ui.label(egui::RichText::new(format!("{from}:")).color(ink));
+                        ui.label(egui::RichText::new(&m.text).color(BRIGHT));
+                    }
+                    None => {
+                        ui.label(egui::RichText::new(&m.text).color(FRIENDLY_BLUE));
+                    }
+                });
+            }
+        });
+    ui.add_space(8.0);
+    let mut send = false;
+    let mut field = |ui: &mut egui::Ui| {
+        let resp = if vr {
+            text_entry(ui, "ops_chat", &mut c.ui.chat, MAX_CHAT, Charset::Text, true, "Message")
+        } else {
+            let field = egui::TextEdit::singleline(&mut c.ui.chat)
+                .id(egui::Id::new("ops_chat"))
+                .char_limit(MAX_CHAT)
+                .hint_text(egui::RichText::new("Type a message, Enter sends").color(DIM))
+                .text_color(BRIGHT)
+                .font(egui::FontId::monospace(18.0))
+                .desired_width(ui.available_width() - 110.0);
+            ui.add(field)
+        };
+        notices.field_focus |= resp.has_focus();
+        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            send = true;
+            resp.request_focus();
+        }
+        if ui.add(big_button("SEND")).clicked() {
+            send = true;
+        }
+    };
+    // In the headset the keyboard opens under the field.
+    if vr {
+        field(ui);
+    } else {
+        ui.horizontal(field);
+    }
+    if send && !stealth_net::protocol::chat_text(&c.ui.chat).is_empty() {
+        notices.outbox.push(std::mem::take(&mut c.ui.chat));
+    }
 }
 
 /// The accepted mission's briefing: the route and what is known of the defences on a map, the

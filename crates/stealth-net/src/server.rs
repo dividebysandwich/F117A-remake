@@ -74,6 +74,8 @@ pub struct Server {
     last_pump: Option<Instant>,
     /// What happened, for a dedicated server's log.
     pub log: Vec<String>,
+    /// The players' chat messages (sender, text) for the listen server's own player.
+    chat: Vec<(String, String)>,
     /// On the public server list: its reporter, and the time since the last update.
     master: Option<crate::master::Reporter>,
     master_timer: f32,
@@ -105,6 +107,7 @@ impl Server {
             campaign_dirty: false,
             last_pump: None,
             log: Vec::new(),
+            chat: Vec::new(),
             master: None,
             master_timer: f32::MAX,
         })
@@ -246,6 +249,11 @@ impl Server {
                 sim.claim_hit(p.0, hit);
                 return Vec::new();
             }
+            (ToServer::Chat { text }, Some(p)) => {
+                let name = host.state.player_name(p).unwrap_or("?").to_string();
+                self.relay_chat(Some(conn), &name, &text);
+                return Vec::new();
+            }
             (ToServer::Rearm { stores }, Some(p)) => {
                 host.rearm(sim, p, &stores);
                 Ok(Vec::new())
@@ -277,6 +285,38 @@ impl Server {
                 Vec::new()
             }
         }
+    }
+
+    /// A chat message to every player but its sender (`from`: his connection; None for the
+    /// listen server's own player), and the log.
+    fn relay_chat(&mut self, from: Option<ConnId>, name: &str, text: &str) {
+        let text = chat_text(text);
+        if text.is_empty() {
+            return;
+        }
+        // A listen server's log is not read.
+        if self.local.is_none() {
+            self.log.push(format!("{name}: {text}"));
+        }
+        let msg = encode(&ToClient::Chat { from: name.to_string(), text: text.clone() });
+        for r in self.remotes.values() {
+            if r.player.is_some() && Some(r.conn) != from {
+                self.net.send(r.conn, Channel::Reliable, &msg);
+            }
+        }
+        if from.is_some() && self.local.is_some() {
+            self.chat.push((name.to_string(), text));
+        }
+    }
+
+    /// The listen server's own player says something.
+    pub fn say(&mut self, name: &str, text: &str) {
+        self.relay_chat(None, name, text);
+    }
+
+    /// The players' chat messages since the last call (sender, text): a listen server's.
+    pub fn take_chat(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.chat)
     }
 
     /// A player gone: off the plans he was on.

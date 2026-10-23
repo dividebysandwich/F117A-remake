@@ -116,6 +116,8 @@ pub enum Action {
     /// Kneeboard: desktop, shows it over the view and turns its pages; VR, shows or hides the
     /// board on the thigh.
     Kneeboard,
+    /// Multiplayer: type a chat message.
+    Chat,
     /// Tracking camera / targeting pod zoom.
     CameraZoomIn,
     CameraZoomOut,
@@ -344,6 +346,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (Alt, K::KeyR, Resupply),
         (Alt, K::KeyN, DayNight),
         (None, K::KeyK, Kneeboard),
+        (None, K::KeyY, Chat),
     ]
 };
 

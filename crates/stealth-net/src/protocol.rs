@@ -8,12 +8,14 @@ use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 /// Changes with every change of the messages: client and server must agree.
-pub const PROTOCOL: u16 = 14;
+pub const PROTOCOL: u16 = 15;
 pub const DEFAULT_PORT: u16 = 28989;
 /// Players a server takes at most.
 pub const MAX_PLAYERS: usize = stealth_sim::MAX_PILOTS;
 /// A player who dropped out keeps his aircraft this long for his return (seconds).
 pub const GRACE: f32 = 30.0;
+/// Characters a chat message has at most.
+pub const MAX_CHAT: usize = 120;
 
 /// A player's message to the server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,6 +65,10 @@ pub enum ToServer {
     },
     /// One of his own gun rounds hit (he flies them himself; the server checks).
     Hit(GunHit),
+    /// A chat message to the others.
+    Chat {
+        text: String,
+    },
     Bye,
 }
 
@@ -135,6 +141,11 @@ pub enum ToClient {
     /// A command failed.
     Error(String),
     Roster(Vec<PlayerInfo>),
+    /// Another player's chat message.
+    Chat {
+        from: String,
+        text: String,
+    },
     Shutdown(String),
 }
 
@@ -165,6 +176,12 @@ pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Option<T> {
         }
         _ => None,
     }
+}
+
+/// A chat message as it goes out: on one line, without control characters, `MAX_CHAT`
+/// characters at most (empty: nothing to send).
+pub fn chat_text(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control()).take(MAX_CHAT).collect::<String>().trim().to_string()
 }
 
 /// Adds frame `b`'s one-shot commands to `a`'s (keys pressed in either).
@@ -210,10 +227,19 @@ mod tests {
             route: vec![RoutePoint { x: 1, y: -2, kind: stealth_campaign::RouteKind::Land }],
         };
         assert_eq!(decode::<ToServer>(&encode(&plan)), Some(plan));
+        let chat = ToServer::Chat { text: "Wheels up".into() };
+        assert_eq!(decode::<ToServer>(&encode(&chat)), Some(chat));
         let big = ToClient::Error("x".repeat(5000));
         let bytes = encode(&big);
         assert!(bytes.len() < 500 && bytes[0] == 1);
         assert_eq!(format!("{:?}", decode::<ToClient>(&bytes)), format!("{:?}", Some(big)));
+    }
+
+    #[test]
+    fn chat_text_is_one_short_line() {
+        assert_eq!(chat_text("  Hi\nthere\t "), "Hithere");
+        assert_eq!(chat_text(&"x".repeat(500)).len(), MAX_CHAT);
+        assert_eq!(chat_text(" \r "), "");
     }
 
     #[test]

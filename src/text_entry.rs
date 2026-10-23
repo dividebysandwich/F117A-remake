@@ -1,5 +1,5 @@
-//! A single-line text field in the menu's terminal look: pilot names (career, multiplayer)
-//! and server addresses. In VR, where there is no keyboard at hand, a virtual keyboard in the
+//! A single-line text field in the menu's terminal look: pilot names (career, multiplayer),
+//! server addresses and chat messages. In VR, where there is no keyboard at hand, a virtual keyboard in the
 //! same look opens under the field when it is clicked; its keys are pressed with the laser
 //! pointer and edit the text at the field's cursor, which ← and → move.
 
@@ -16,6 +16,8 @@ pub enum Charset {
     /// Host names, IPv4 and IPv6 addresses with a port: letters, digits, `.`, `-`, `:`,
     /// `[`, `]`.
     Address,
+    /// Any text on one line (chat).
+    Text,
 }
 
 impl Charset {
@@ -23,6 +25,7 @@ impl Charset {
         match self {
             Charset::Name => c.is_alphanumeric() || " -_.'".contains(c),
             Charset::Address => c.is_ascii_alphanumeric() || ".-:[]".contains(c),
+            Charset::Text => !c.is_control(),
         }
     }
 }

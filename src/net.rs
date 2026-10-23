@@ -45,6 +45,8 @@ pub enum SimMsg {
 pub struct NetInbox {
     pub sim: Vec<SimMsg>,
     pub campaign: Vec<ClientEvent>,
+    /// Chat messages (sender, text).
+    pub chat: Vec<(String, String)>,
 }
 
 /// Something the menu tells the player when he is back (why a coop game ended).
@@ -76,6 +78,7 @@ fn pump_client(mut link: ResMut<NetLink>, mut inbox: ResMut<NetInbox>) {
             }
             ClientEvent::Slow(s) => inbox.sim.push(SimMsg::Slow(s)),
             ClientEvent::Events(e) => inbox.sim.push(SimMsg::Events(e)),
+            ClientEvent::Chat { from, text } => inbox.chat.push((from, text)),
             e => inbox.campaign.push(e),
         }
     }

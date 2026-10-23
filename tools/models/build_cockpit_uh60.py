@@ -66,6 +66,8 @@ CYCLIC_RAISE = 0.48
 COLLECTIVE_HANDLE = Vector((-0.27, 0.12, -0.62))
 COLLECTIVE_PIVOT = Vector((-0.27, -0.25, -0.70))
 COLLECTIVE_SWING = 28.0
+# Where the hand holds the collective's grip, in the grip's frame (mm, negated).
+GRIP_HAND = Vector((0.0, -50.0, 4.0))
 # MFD bezels standing BEZEL out of the panel, their margins round the screen (mm).
 BEZEL = 0.03
 MFD_SIDE, MFD_TOP = 22.0, 25.0
@@ -504,11 +506,147 @@ rod("stick_shaft", (0, 0, 0), (0, 0, CYCLIC_RAISE + 0.02), 0.012, "metal", stick
 # The boot at its foot (does not move with it).
 rod("cyclic_boot", CYCLIC_PIVOT, CYCLIC_PIVOT + Vector((0, 0, 0.05)), 0.04, "rubber")
 
-# --- collective
+# --- collective: the arm from the pivot up to the grip, the UH-60's grip on it (after its
+# drawings, mm): a knurled ring on the arm's end, the hand grip, the switch box ahead of it
+# with its face up (the hat, the rocker, the release button, the dimmer, the servo toggle, the
+# landing light hat). Built in its own frame (ring's front at the origin, y along the grip, z
+# up), then turned onto the arm with the hand at the lever's origin.
 throttle = objs["throttle"]
+for c in list(throttle.children):
+    drop(c)
 throttle.location = COLLECTIVE_HANDLE
 arm = COLLECTIVE_PIVOT - COLLECTIVE_HANDLE
-rod("throttle_arm", (0, 0, -0.03), (arm.x, arm.y, arm.z), 0.014, "metal", throttle)
+GRIP = Matrix.Rotation(math.atan2(-arm.z, -arm.y), 4, "X") @ Matrix.Scale(0.001, 4) @ Matrix.Translation(GRIP_HAND)
+
+
+def grip_mat(name, rgba):
+    m = mats.get(name) or mats.new(name)
+    m.diffuse_color = rgba
+    m.use_nodes = True
+    bsdf = m.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = rgba
+    bsdf.inputs["Roughness"].default_value = 0.4
+    return name
+
+
+def grip(name, me, m=Matrix.Identity(4), smooth=False):
+    """A grip part from its mesh in the grip frame (mm), moved by m first."""
+    me.transform(GRIP @ m)
+    for p in me.polygons:
+        p.use_smooth = smooth
+    return mesh_object(name, me, (0, 0, 0), parent=throttle)
+
+
+def loft(name, mat, sections, n=16, rib=1.0):
+    """Closed tube through elliptical sections (y, centre z, half width, half height); every
+    other vertex at `rib` times the radius (knurling)."""
+    me = bpy.data.meshes.new(name)
+    v = []
+    for y, z, hw, hh in sections:
+        for i in range(n):
+            a = 2 * math.pi * i / n
+            k = rib if i % 2 else 1.0
+            v.append((hw * k * math.cos(a), y, z + hh * k * math.sin(a)))
+    f = [tuple(range(n))[::-1], tuple(range(n * (len(sections) - 1), n * len(sections)))]
+    for s in range(len(sections) - 1):
+        for i in range(n):
+            j = (i + 1) % n
+            f.append((s * n + i, s * n + j, (s + 1) * n + j, (s + 1) * n + i))
+    me.from_pydata(v, [], f)
+    outward(me)
+    me.materials.append(mats[mat])
+    return me
+
+
+def outward(me):
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me)
+    bm.free()
+
+
+def slab(name, mat, top, z0, z1, shrink=1.0):
+    """A plate under the outline `top` [(x, y)] from z1 down to z0, its bottom outline shrunk
+    by `shrink` about its centre."""
+    cx = sum(p[0] for p in top) / len(top)
+    cy = sum(p[1] for p in top) / len(top)
+    bottom = [(cx + (x - cx) * shrink, cy + (y - cy) * shrink, z0) for x, y in top]
+    me = bpy.data.meshes.new(name)
+    n = len(top)
+    v = [(x, y, z1) for x, y in top] + bottom
+    f = [tuple(range(n)), tuple(range(n, 2 * n))[::-1]]
+    f += [(i, n + i, n + (i + 1) % n, (i + 1) % n) for i in range(n)]
+    me.from_pydata(v, [], f)
+    outward(me)
+    me.materials.append(mats[mat])
+    return me
+
+
+def at(x, y, z, rz=0.0):
+    return Matrix.Translation((x, y, z)) @ Matrix.Rotation(math.radians(rz), 4, "Z")
+
+
+def post(name, mat, x, y, z, r, h, n=KNOB):
+    """A cylinder up from (x, y, z) mm."""
+    grip(name, cylinder_mesh(name, r, h, mat, axis="Z", n=n), at(x, y, z))
+
+
+red = grip_mat("grip_red", (0.75, 0.02, 0.01, 1.0))
+blue = grip_mat("grip_blue", (0.05, 0.45, 0.9, 1.0))
+# The arm: from the ring's back to the pivot.
+back = GRIP @ Vector((0.0, -19.0, 0.0))
+rod("throttle_arm", back, arm, 0.016, "metal", throttle)
+# Knurled ring, the hand grip narrowing to a waist and dropping onto the switch box's hub.
+grip("throttle_ring", loft("throttle_ring", "rubber", [(-19.0, 0.0, 21.5, 21.5), (0.0, 0.0, 21.5, 21.5)], n=32, rib=0.94))
+grip("throttle_grip", loft("throttle_grip", "dark", [
+    (0.0, 0.0, 19.0, 19.0), (30.0, -2.0, 17.0, 19.0), (65.0, -6.0, 13.5, 16.0),
+    (100.0, -11.0, 15.0, 15.0), (128.0, -14.0, 15.0, 10.0),
+]), smooth=True)
+# The two buttons on top and on the outboard side near the ring.
+for y in (8.0, 38.0):
+    grip("throttle_button", cylinder_mesh("throttle_button", 3.5, 3.0, "metal", axis="Z"), at(0.0, y, 18.0 - y / 15))
+    grip("throttle_button", cylinder_mesh("throttle_button", 3.5, 3.0, "metal", axis="Z"),
+         at(-18.0 + y / 15, y, -2.0) @ Matrix.Rotation(math.radians(-90.0), 4, "Y"))
+# The web under the grip down to the box's back, the finger lever on it.
+me = bpy.data.meshes.new("throttle_web")
+web = [(55.0, -14.0), (98.0, -22.0), (98.0, -56.0), (86.0, -56.0)]
+me.from_pydata([(x, y, z) for x in (-7.0, 7.0) for y, z in web], [], [
+    (0, 1, 2, 3), (7, 6, 5, 4), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)])
+outward(me)
+me.materials.append(mats["dark"])
+grip("throttle_web", me)
+grip("throttle_lever", box_mesh("throttle_lever", (7.0, 6.0, 22.0), "black"),
+     Matrix.Translation((9.0, 72.0, -40.0)) @ Matrix.Rotation(math.radians(-25.0), 4, "Y"))
+# The switch box: its top outline (x across, inboard +, y along), the black face on it.
+face_top = [(-44.0, 125.0), (-44.0, 178.0), (-38.0, 182.0), (6.0, 182.0), (53.0, 151.0), (53.0, 102.0), (35.0, 97.0)]
+FACE = -15.0
+grip("throttle_box", slab("throttle_box", "dark", face_top, -60.0, FACE - 2.0, 0.9))
+inset = [(x * 0.97 + 0.5, (y - 140.0) * 0.97 + 140.0) for x, y in face_top]
+grip("throttle_face", slab("throttle_face", "black", inset, FACE - 2.0, FACE))
+for x, y in [(-39.0, 130.0), (-39.0, 176.0), (5.0, 177.0), (46.0, 151.0), (47.0, 106.0), (20.0, 104.0)]:
+    post("throttle_screw", "metal", x, y, FACE, 1.6, 0.8, n=6)
+# The hat on its collar where the grip meets the box.
+post("throttle_collar", "metal", 0.0, 136.0, FACE, 15.0, 8.0, n=ROUND)
+post("throttle_hat", "black", 0.0, 136.0, FACE + 8.0, 9.0, 8.0, n=ROUND)
+post("throttle_hat", "black", 0.0, 136.0, FACE + 16.0, 4.0, 3.0)
+# The ribbed rocker in its housing (outboard, aft).
+grip("throttle_rocker", box_mesh("throttle_rocker", (16.0, 18.0, 4.0), "dark", (-28.0, 140.0, FACE + 2.0)))
+grip("throttle_rocker", loft("throttle_rocker", "black", [(-6.0, 0.0, 7.0, 7.0), (6.0, 0.0, 7.0, 7.0)], n=16, rib=0.88),
+     Matrix.Translation((-28.0, 140.0, FACE + 3.0)))
+# The release button: red, in its blue ring (outboard, ahead).
+post("throttle_ring_lit", blue, -22.0, 165.0, FACE, 12.0, 1.5, n=ROUND)
+post("throttle_release", red, -22.0, 165.0, FACE + 1.5, 8.5, 6.0, n=ROUND)
+# The dimmer knob, star cut.
+post("throttle_dimmer", "dark", 12.0, 167.0, FACE, 9.5, 3.0, n=ROUND)
+grip("throttle_dimmer", loft("throttle_dimmer", "black", [(0.0, 0.0, 8.0, 8.0), (8.0, 0.0, 8.0, 8.0)], n=16, rib=0.75),
+     Matrix.Translation((12.0, 167.0, FACE + 3.0)) @ Matrix.Rotation(math.radians(90.0), 4, "X"))
+# The servo toggle in its slanted slot.
+grip("throttle_slot", box_mesh("throttle_slot", (9.0, 26.0, 4.0), "dark", (30.0, 147.0, FACE + 2.0), Euler((0.0, 0.0, math.radians(-35.0)))))
+grip("throttle_toggle", box_mesh("throttle_toggle", (3.5, 4.0, 12.0), "metal", (30.0, 147.0, FACE + 8.0), Euler((0.0, math.radians(15.0), 0.0))))
+# The landing light hat (inboard, aft).
+post("throttle_ldg", "dark", 39.0, 118.0, FACE, 9.5, 4.0, n=ROUND)
+post("throttle_ldg", "black", 39.0, 118.0, FACE + 4.0, 6.5, 6.0, n=ROUND)
 box("dark", "dark", COLLECTIVE_PIVOT + Vector((0, 0, -0.03)), (0.07, 0.07, 0.09))
 box("dark", "dark", COLLECTIVE_PIVOT + Vector((0, 0, (FLOOR - COLLECTIVE_PIVOT.z) / 2 - 0.04)), (0.05, 0.05, COLLECTIVE_PIVOT.z - FLOOR - 0.08))
 full = COLLECTIVE_PIVOT + Matrix.Rotation(math.radians(COLLECTIVE_SWING), 3, "X") @ -arm

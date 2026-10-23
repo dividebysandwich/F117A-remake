@@ -117,7 +117,9 @@ doors; the left thumbstick slews the displays' cursor.
 
 The view shows the head-up display (HUD) at the top and the instrument panel below it. Hold the
 **right mouse button** to look around; turn the **mouse wheel** while holding it to zoom in. **Click** a button on the panel to press it. Every button
-has a keyboard equivalent (chapter 7).
+has a keyboard equivalent (chapter 7). Rest the mouse on a button, display, instrument or warning
+light and a **tooltip** names it, says what it does and shows its keys; parts hidden behind the
+stick, the throttle or the glare shield can't be pointed at.
 
 **Head/eye tracking.** With *Head/Eye Tracking* on in the menu, the cockpit view follows your head
 movements, picked up by an infrared tracker (TrackIR, DelanClip, TrackHat, Grass Monkey

@@ -12,7 +12,9 @@
 //! The panel's lit buttons are physical caps showing their lamp face, so their state comes
 //! from the panel drawing code (`controls`). Controls are touched by VR fingertips (which
 //! highlights them) and pressed with the trigger, clicked with the mouse on the desktop, or by scripts (`press=Gear`).
-//! The stick and throttle are grabbed with the VR controllers (`levers`).
+//! The stick and throttle are grabbed with the VR controllers (`levers`). On the desktop the
+//! mouse points at the nearest part under the cursor (`pick`), and resting on one shows its
+//! tooltip (`tooltips`).
 //!
 //! VR input arrives through `Hands` (filled by the XR module, in the cockpit frame).
 
@@ -22,7 +24,9 @@ pub(crate) mod hud_glass;
 pub mod layout;
 pub mod levers;
 mod model;
+mod pick;
 mod shading;
+mod tooltips;
 
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::input::mouse::AccumulatedMouseMotion;
@@ -37,6 +41,8 @@ use crate::input::{Action, ActionEvent};
 use crate::settings::{AppState, Settings};
 
 pub use controls::PressControl;
+pub use pick::Solid;
+pub use tooltips::Tip;
 
 pub struct Cockpit3dPlugin;
 
@@ -46,11 +52,15 @@ impl Plugin for Cockpit3dPlugin {
             MaterialPlugin::<hud_glass::HudGlassMaterial>::default(),
             MaterialPlugin::<hud_glass::HmdMaterial>::default(),
             MaterialPlugin::<shading::CockpitMaterial>::default(),
+            MaterialPlugin::<tooltips::TipScreenMaterial>::default(),
         ))
         .init_resource::<Hands>()
         .init_resource::<levers::CockpitAnchors>()
+        .init_resource::<pick::Shapes>()
+        .init_resource::<tooltips::TipAnchor>()
         .add_message::<PressControl>()
         .add_systems(Startup, (setup_materials, initial_look, model::load_models))
+        .add_systems(OnEnter(AppState::Flight), tooltips::spawn_box)
         .add_systems(
             Update,
             (
@@ -60,6 +70,9 @@ impl Plugin for Cockpit3dPlugin {
                 sync_materials,
                 sync_shading,
                 cockpit_visibility,
+                pick::forget_shapes,
+                tooltips::hover,
+                tooltips::place_screen,
             )
                 .chain()
                 .run_if(in_state(AppState::Flight)),

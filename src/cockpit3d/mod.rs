@@ -26,7 +26,7 @@ pub mod levers;
 mod model;
 mod pick;
 mod shading;
-mod tooltips;
+pub mod tooltips;
 
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::input::mouse::AccumulatedMouseMotion;
@@ -152,6 +152,9 @@ pub struct Hand {
     pub lever: bool,
     /// Carries the kneeboard (the levers are not grabbed meanwhile).
     pub carrying: bool,
+    /// The thumbstick scrolls the kneeboard's key guide: it neither slews nor presses its
+    /// mapped stick directions.
+    pub scrolling: bool,
 }
 
 impl Hand {

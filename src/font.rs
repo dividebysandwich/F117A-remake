@@ -266,7 +266,18 @@ const STROKES: &[(char, &str)] = &[
     ('%', "0,6 4,0|0,0 1,0 1,1 0,1 0,0|3,5 4,5 4,6 3,6 3,5"),
     ('#', "1,0 1,6|3,0 3,6|0,2 4,2|0,4 4,4"),
     ('*', "2,1 2,5|0,2 4,4|0,4 4,2"),
+    ('[', "3,0 1,0 1,6 3,6"),
+    (']', "1,0 3,0 3,6 1,6"),
+    (';', "2,1.7 2,2|2,5 1.5,7"),
+    ('\\', "0,0 4,6"),
+    ('`', "1.5,0 2.5,1.5"),
 ];
+
+/// Whether the stroke font draws `ch` (upper-cased; a space is blank).
+pub fn stroke_has(ch: char) -> bool {
+    let ch = ch.to_ascii_uppercase();
+    ch == ' ' || STROKES.iter().any(|(k, _)| *k == ch)
+}
 
 /// Advance of the stroke font in grid units (4 wide + 2 apart).
 const STROKE_ADVANCE: f32 = 6.0;

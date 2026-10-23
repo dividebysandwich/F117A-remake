@@ -292,7 +292,7 @@ pub(super) fn grab_levers(
     }
 
     // --- sensor/cursor slew: the left thumbstick
-    if left.active && !block.0 && left.thumb.length() > SLEW_DEADZONE {
+    if left.active && !block.0 && !left.scrolling && left.thumb.length() > SLEW_DEADZONE {
         controls.slew = left.thumb.clamp(Vec2::splat(-1.0), Vec2::ONE);
     }
 
@@ -312,6 +312,14 @@ pub(super) fn grab_levers(
                 && (!hand.touching || grabs.brakes);
             let (held, pressed) = match m.input {
                 VrInput::Trigger if !holding && !brakes => continue,
+                VrInput::ThumbUp
+                | VrInput::ThumbDown
+                | VrInput::ThumbLeft
+                | VrInput::ThumbRight
+                    if hand.scrolling =>
+                {
+                    continue;
+                }
                 VrInput::Trigger => (hand.trigger > 0.7, hand.trigger_pulled()),
                 input => (hand.held(vr_bit(input)), hand.just_pressed(vr_bit(input))),
             };

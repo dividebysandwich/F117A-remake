@@ -28,6 +28,7 @@ mod hotas;
 mod hud;
 mod input;
 mod input_dialog;
+mod key_guide;
 mod keyboard_layout;
 mod kneeboard;
 mod lighting;

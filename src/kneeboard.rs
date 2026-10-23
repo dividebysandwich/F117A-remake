@@ -4,7 +4,11 @@
 //! one on the desktop). On the desktop K also shows it large over the view and turns its pages
 //! (after the last page it goes away); in VR the action shows or hides the board, and squeezing
 //! the grip on it picks it up: it floats wherever it is let go.
+//!
+//! The KEYS page is the key guide (`key_guide.rs`), scrolled with the mouse wheel over the board
+//! or, in VR, the thumbstick of the hand carrying it or with a fingertip over it.
 
+use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::light::NotShadowCaster;
 use bevy::math::DVec2;
 use bevy::prelude::*;
@@ -17,7 +21,9 @@ use crate::canvas::{Canvas, CanvasTexture};
 use crate::cockpit3d::{CockpitRoot, Hands};
 use crate::flight::Player;
 use crate::font::{Align, stroke_text_at, stroke_width};
+use crate::hotas::InputConfig;
 use crate::input::{Action, ActionEvent};
+use crate::key_guide;
 use crate::mission::{ActiveMission, PlannedRoute, RouteKind, RoutePoint, clean_text};
 use crate::recon::{PHOTO_H, PHOTO_W, ReconPhotos};
 use crate::settings::{AppState, Settings};
@@ -70,6 +76,10 @@ const TOUCH_BEHIND: f32 = 0.06;
 /// A VR grip picks the board up from this far beyond its edges and in front of or behind it.
 const GRAB_MARGIN: f32 = 0.04;
 const GRAB_DEPTH: f32 = 0.08;
+/// A VR fingertip up to this far in front of the board lets its thumbstick scroll the key guide.
+const SCROLL_REACH: f32 = 0.15;
+/// The key guide's area on the KEYS page.
+const GUIDE: [f32; 4] = [16.0, TABS + 12.0, W as f32 - 16.0, H as f32 - 52.0];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Page {
@@ -78,10 +88,11 @@ enum Page {
     Route,
     Map,
     Target,
+    Keys,
 }
 
 impl Page {
-    const ALL: [Page; 4] = [Page::Brief, Page::Route, Page::Map, Page::Target];
+    const ALL: [Page; 5] = [Page::Brief, Page::Route, Page::Map, Page::Target, Page::Keys];
 
     fn name(self) -> &'static str {
         match self {
@@ -89,6 +100,7 @@ impl Page {
             Page::Route => "ROUTE",
             Page::Map => "MAP",
             Page::Target => "TARGET",
+            Page::Keys => "KEYS",
         }
     }
 }
@@ -129,6 +141,8 @@ pub struct Kneeboard {
     placed: Option<Transform>,
     /// VR: the hand carrying the board and the board in that hand's grip frame.
     held: Option<(usize, Transform)>,
+    /// The key guide scrolled down this far (canvas pixels).
+    keys_scroll: f32,
 }
 
 impl Kneeboard {
@@ -206,7 +220,7 @@ fn spawn(
                     crate::cockpit3d::Solid,
                     crate::cockpit3d::Tip::new(
                         "Kneeboard",
-                        "Maps and mission notes",
+                        "Maps, mission notes and the key guide",
                         &[crate::input::Action::Kneeboard],
                     ),
                     tex,
@@ -318,15 +332,19 @@ fn to_canvas(local: Vec3) -> Option<Vec2> {
 
 /// Tab under a canvas pixel.
 fn tab_at(p: Vec2) -> Option<usize> {
-    (p.y >= 0.0 && p.y < TABS).then(|| ((p.x / W as f32 * 4.0) as usize).min(3))
+    let n = Page::ALL.len();
+    (p.y >= 0.0 && p.y < TABS).then(|| ((p.x / W as f32 * n as f32) as usize).min(n - 1))
 }
 
-/// Tabs: the mouse on the overlay or the board, VR fingertips on the board.
+/// Tabs: the mouse on the overlay or the board, VR fingertips on the board. The key guide
+/// scrolls with the wheel over it (not while looking around: that zooms) and the VR thumbsticks.
 #[allow(clippy::too_many_arguments)]
 fn interact(
     mut kb: ResMut<Kneeboard>,
     settings: Res<Settings>,
     mouse: Res<ButtonInput<MouseButton>>,
+    wheel: Res<AccumulatedMouseScroll>,
+    time: Res<Time<Real>>,
     mut hands: ResMut<Hands>,
     windows: Query<&Window>,
     cams: Query<(&Camera, &GlobalTransform), With<EyeCamera>>,
@@ -338,23 +356,28 @@ fn interact(
     menu: Res<crate::flight_menu::FlightMenu>,
 ) {
     let mut pick: Option<usize> = None;
+    // The canvas pixel under the mouse, on the overlay or on the board in the cockpit.
+    let mut pointed: Option<Vec2> = None;
+    let on_keys = kb.page == Page::Keys;
+    for hand in hands.hands.iter_mut() {
+        hand.scrolling = false;
+    }
     if let Ok((rel, mut vis)) = overlays.single_mut() {
         vis.set_if_neq(if kb.overlay { Visibility::Inherited } else { Visibility::Hidden });
         if kb.overlay
-            && mouse.just_pressed(MouseButton::Left)
             && rel.cursor_over()
             && let Some(n) = rel.normalized
         {
-            pick = tab_at(Vec2::new((n.x + 0.5) * W as f32, (n.y + 0.5) * H as f32));
+            pointed = Some(Vec2::new((n.x + 0.5) * W as f32, (n.y + 0.5) * H as f32));
         }
     }
     let Ok((gtf, tf, mut vis)) = boards.single_mut() else { return };
     vis.set_if_neq(if kb.hidden { Visibility::Hidden } else { Visibility::Inherited });
+    let mut scroll = 0.0;
     if !kb.hidden && !menu.open {
         let inv = gtf.affine().inverse();
         if !settings.vr
             && !kb.overlay
-            && mouse.just_pressed(MouseButton::Left)
             && let (Ok(window), Ok((camera, cam_tf))) = (windows.single(), cams.single())
             && let Some(cursor) = window.cursor_position()
             && let Ok(ray) = camera.viewport_to_world(cam_tf, cursor)
@@ -363,8 +386,14 @@ fn interact(
             let d = inv.transform_vector3(*ray.direction);
             if d.z.abs() > 1e-6 {
                 let t = -o.z / d.z;
-                pick = pick.or((t > 0.0).then(|| to_canvas(o + d * t)).flatten().and_then(tab_at));
+                pointed = (t > 0.0).then(|| to_canvas(o + d * t)).flatten();
             }
+        }
+        if pointed.is_some() && mouse.just_pressed(MouseButton::Left) {
+            pick = pointed.and_then(tab_at);
+        }
+        if on_keys && pointed.is_some() && !mouse.pressed(MouseButton::Right) {
+            scroll -= key_guide::wheel_notches(&wheel) * key_guide::WHEEL_STEP;
         }
         // A fingertip turns to a page when it reaches its tab (fingertips are in the cockpit
         // frame, the board's parent).
@@ -381,6 +410,20 @@ fn interact(
             }
             kb.touched[k] = tab;
         }
+        // The thumbstick of the hand carrying the board or with its fingertip over it.
+        for hand in hands.hands.iter_mut() {
+            let l = local_from_cockpit.transform_point3(hand.finger);
+            let over = to_canvas(l).is_some() && l.z < SCROLL_REACH && l.z > -TOUCH_BEHIND;
+            hand.scrolling = on_keys && hand.active && (hand.carrying || over);
+            if hand.scrolling && hand.thumb.y.abs() > 0.15 {
+                scroll -= hand.thumb.y * key_guide::SCROLL_SPEED * time.delta_secs();
+            }
+        }
+    }
+    if scroll != 0.0 {
+        // Kept within the list when it is drawn.
+        kb.keys_scroll = (kb.keys_scroll + scroll).max(0.0);
+        kb.dirty = true;
     }
     if let Some(i) = pick
         && kb.page != Page::ALL[i]
@@ -450,7 +493,7 @@ fn route_points(m: &stealth_mission::Mission, route: Option<&PlannedRoute>) -> V
 }
 
 /// Words of `text` in lines no wider than `width` pixels at height `h`.
-fn wrap(text: &str, width: f32, h: f32) -> Vec<String> {
+pub fn wrap(text: &str, width: f32, h: f32) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
     for word in text.split_whitespace() {
@@ -527,6 +570,8 @@ fn draw(
     combat: Option<Res<crate::combat::Combat>>,
     recon: Res<ReconPhotos>,
     sky: Res<crate::sky::Sky>,
+    config: Res<InputConfig>,
+    settings: Res<Settings>,
 ) {
     kb.timer += time.delta_secs();
     if recon.is_changed() {
@@ -546,11 +591,12 @@ fn draw(
     let c = &mut tex.canvas;
     c.clear(BG);
     // Tabs.
+    let n = Page::ALL.len();
     for (i, p) in Page::ALL.iter().enumerate() {
-        let x0 = (i * W / 4) as i32;
+        let x0 = (i * W / n) as i32;
         let on = *p == kb.page;
-        c.fill_rect(x0 + 4, 4, (W / 4) as i32 - 8, TABS as i32 - 8, if on { CYAN } else { TAB_BG });
-        let mid = x0 as f32 + W as f32 / 8.0;
+        c.fill_rect(x0 + 4, 4, (W / n) as i32 - 8, TABS as i32 - 8, if on { CYAN } else { TAB_BG });
+        let mid = x0 as f32 + W as f32 / (2 * n) as f32;
         stroke_text_at(
             c,
             mid,
@@ -803,6 +849,35 @@ fn draw(
                 w.para(&b.primary_summary, GREY);
             }
         }
+        Page::Keys => {
+            let lines = key_guide::lines(&config, settings.vr);
+            let style = key_guide::Style {
+                size: 1.0,
+                heading: CYAN,
+                bar: TAB_BG,
+                keys: GREEN,
+                text: WHITE,
+                dim: GREY,
+            };
+            let mut scroll = kb.keys_scroll;
+            key_guide::draw(c, &lines, GUIDE, &mut scroll, &style);
+            kb.keys_scroll = scroll;
+            let hint = if settings.vr {
+                "SCROLL: THUMBSTICK, FINGER ON THE BOARD"
+            } else {
+                "SCROLL: MOUSE WHEEL OVER THE BOARD"
+            };
+            stroke_text_at(
+                c,
+                W as f32 / 2.0,
+                H as f32 - 26.0,
+                hint,
+                16.0,
+                2.2,
+                GREY,
+                Align::Centre,
+            );
+        }
     }
     tex.dirty = true;
 }
@@ -821,7 +896,7 @@ mod tests {
     #[test]
     fn tabs_and_board_pixels() {
         assert_eq!(tab_at(Vec2::new(10.0, 10.0)), Some(0));
-        assert_eq!(tab_at(Vec2::new(W as f32 - 1.0, 10.0)), Some(3));
+        assert_eq!(tab_at(Vec2::new(W as f32 - 1.0, 10.0)), Some(Page::ALL.len() - 1));
         assert_eq!(tab_at(Vec2::new(10.0, TABS + 1.0)), None);
         // The board's top-left corner is the canvas origin.
         let p = to_canvas(Vec3::new(-SIZE.x / 2.0 + 1e-4, SIZE.y / 2.0 - 1e-4, 0.0)).unwrap();

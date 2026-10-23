@@ -11,7 +11,7 @@ use crate::hotas::{
     AxisControl, ButtonTarget, Hotas, InputConfig, Source, VrHand, VrInput, action_name,
     default_vr_buttons,
 };
-use crate::input::{Mods, all_actions, default_key_mappings};
+use crate::input::{Mods, default_key_mappings};
 use crate::menu::{AMBER, BRIGHT, DIM, GREEN};
 
 #[derive(Resource, Default)]
@@ -303,8 +303,13 @@ pub fn show(
                     ui.label("");
                     ui.label(egui::RichText::new("JOYSTICK").color(GREEN));
                     ui.end_row();
-                    let targets = std::iter::once(ButtonTarget::Gun).chain(all_actions().into_iter().map(ButtonTarget::Action));
-                    for target in targets {
+                    for (target, title) in crate::key_guide::groups().into_iter().flat_map(|(title, targets)| {
+                        targets.into_iter().enumerate().map(move |(i, t)| (t, (i == 0).then_some(title)))
+                    }) {
+                        if let Some(title) = title {
+                            ui.label(egui::RichText::new(title).color(AMBER).strong());
+                            ui.end_row();
+                        }
                         let key = Binding::Key(target);
                         ui.label(key.name());
                         let capturing_key = dialog.capture.as_ref().is_some_and(|c| c.what == key);
@@ -381,13 +386,10 @@ fn vr_buttons(ui: &mut egui::Ui, config: &mut InputConfig) {
             .small(),
     );
     // The stick keys are for the keyboard and joystick buttons: VR has the real stick.
-    let targets: Vec<ButtonTarget> = std::iter::once(ButtonTarget::Gun)
-        .chain(
-            all_actions()
-                .into_iter()
-                .filter(|a| a.stick_direction().is_none())
-                .map(ButtonTarget::Action),
-        )
+    let targets: Vec<ButtonTarget> = crate::key_guide::groups()
+        .into_iter()
+        .flat_map(|(_, targets)| targets)
+        .filter(|t| !matches!(t, ButtonTarget::Action(a) if a.stick_direction().is_some()))
         .collect();
     egui::Grid::new("vr_buttons").num_columns(3).spacing([14.0, 4.0]).striped(true).show(
         ui,

@@ -22,8 +22,8 @@ use bevy::pbr::{
 };
 use bevy::prelude::*;
 use bevy::render::render_resource::{
-    AsBindGroup, CompareFunction, Extent3d, RenderPipelineDescriptor,
-    SpecializedMeshPipelineError, TextureDimension, TextureFormat, TextureUsages,
+    AsBindGroup, CompareFunction, Extent3d, RenderPipelineDescriptor, SpecializedMeshPipelineError,
+    TextureDimension, TextureFormat, TextureUsages,
 };
 
 use super::controls::Control;
@@ -72,7 +72,7 @@ impl Tip {
 }
 
 /// An action's name and what it does.
-fn action_text(a: Action) -> (String, &'static str) {
+pub fn action_text(a: Action) -> (String, &'static str) {
     use Action::*;
     let (title, detail) = match a {
         Gear => ("Landing gear", "Gear up / down (the lever shows the position)"),

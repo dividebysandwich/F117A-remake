@@ -8,6 +8,10 @@
 //! Enter / A / X. In VR a fingertip on the screen highlights an entry and the trigger presses it
 //! (a trigger pulled away from the screen and the cockpit controls presses the highlighted entry).
 //!
+//! KEY GUIDE shows the key bindings and the mouse or VR controllers (`key_guide.rs`) on the
+//! screen, scrolled with the arrow keys, the mouse wheel, the gamepad d-pad or a VR thumbstick;
+//! Esc, Enter, a click or the trigger go back to the entries.
+//!
 //! END MISSION keeps the flight paused and shows EXITING... until the debrief takes over.
 //!
 //! In a dynamic campaign the world goes on while the menu is open (nothing pauses), and END
@@ -17,6 +21,7 @@
 //! the head, also in the outside views.
 
 use bevy::audio::{AudioSink, AudioSinkPlayback};
+use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 use bevy::ui::RelativeCursorPosition;
@@ -39,7 +44,7 @@ impl Plugin for FlightMenuPlugin {
             .add_systems(OnExit(AppState::Flight), close_on_exit)
             .add_systems(
                 Update,
-                (toggle, spawn_screen, navigate, draw, vr_end_screen)
+                (toggle, spawn_screen, scroll_guide, navigate, draw, vr_end_screen)
                     .chain()
                     .run_if(in_state(AppState::Flight)),
             );
@@ -61,6 +66,9 @@ pub struct FlightMenu {
     /// entry (the click on the cockpit's MENU button that opened it must not, and the desktop
     /// overlay's cursor position is stale until it is drawn again).
     mouse_armed: bool,
+    /// The key guide is shown instead of the entries, scrolled down this far (canvas pixels).
+    guide: bool,
+    guide_scroll: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -74,11 +82,12 @@ enum Item {
     Avionics,
     CockpitSize,
     Tooltips,
+    KeyGuide,
     Resume,
     EndMission,
 }
 
-const ITEMS: [Item; 11] = [
+const ITEMS: [Item; 12] = [
     Item::Shaders,
     Item::Shadows,
     Item::Lighting,
@@ -88,6 +97,7 @@ const ITEMS: [Item; 11] = [
     Item::Avionics,
     Item::CockpitSize,
     Item::Tooltips,
+    Item::KeyGuide,
     Item::Resume,
     Item::EndMission,
 ];
@@ -104,6 +114,7 @@ impl Item {
             Item::Avionics => "AVIONICS",
             Item::CockpitSize => "COCKPIT SIZE",
             Item::Tooltips => "TOOLTIPS",
+            Item::KeyGuide => "KEY GUIDE",
             Item::Resume => "RESUME",
             Item::EndMission => "END MISSION",
         }
@@ -122,6 +133,7 @@ impl Item {
             Item::Avionics => style(s.classic_avionics),
             Item::CockpitSize => format!("< {:.0}% >", s.vr_cockpit_scale * 100.0),
             Item::Tooltips => on(s.tooltips),
+            Item::KeyGuide => ">".to_string(),
             Item::Resume | Item::EndMission => String::new(),
         }
     }
@@ -145,7 +157,9 @@ const W: usize = 768;
 const H: usize = 512;
 /// Rows of the entries.
 const TOP: f32 = 104.0;
-const ROW: f32 = 36.0;
+const ROW: f32 = 33.0;
+/// The key guide's area.
+const GUIDE: [f32; 4] = [24.0, 70.0, W as f32 - 24.0, H as f32 - 40.0];
 /// Palette colours: background, bright and dim green (the panel's lamp greens), dark row.
 const BG: u8 = 5;
 const BRIGHT: u8 = 47;
@@ -191,7 +205,10 @@ fn toggle(
     campaign: Option<Res<crate::campaign::ActiveCampaign>>,
 ) {
     let pressed = actions.read().filter(|a| a.0 == Action::Menu).count() % 2 == 1;
-    if pressed && !menu.exiting {
+    // Esc in the key guide goes back to the entries.
+    if pressed && menu.open && menu.guide {
+        menu.guide = false;
+    } else if pressed && !menu.exiting {
         let open = !menu.open;
         let pause = campaign.is_none();
         set_open(&mut menu, open, pause, &settings, &mut time, &mut block, &sinks);
@@ -214,6 +231,7 @@ fn set_open(
         return;
     }
     menu.open = open;
+    menu.guide = false;
     block.0 = open;
     if open {
         menu.mouse_armed = false;
@@ -336,6 +354,41 @@ fn item_at(p: Vec2) -> Option<(usize, bool)> {
     (p.y >= TOP && (i as usize) < ITEMS.len()).then(|| (i as usize, p.x > W as f32 / 2.0))
 }
 
+/// The key guide scrolls: arrow keys (held), PgUp / PgDn, the mouse wheel, the gamepad d-pad,
+/// a VR thumbstick.
+fn scroll_guide(
+    mut menu: ResMut<FlightMenu>,
+    keys: Res<ButtonInput<KeyCode>>,
+    wheel: Res<AccumulatedMouseScroll>,
+    gamepads: Query<&Gamepad>,
+    hands: Res<Hands>,
+    time: Res<Time<Real>>,
+) {
+    if !menu.open || !menu.guide {
+        return;
+    }
+    let held =
+        |k: KeyCode, b: GamepadButton| keys.pressed(k) || gamepads.iter().any(|g| g.pressed(b));
+    let mut speed = held(KeyCode::ArrowDown, GamepadButton::DPadDown) as i8 as f32
+        - held(KeyCode::ArrowUp, GamepadButton::DPadUp) as i8 as f32;
+    for hand in hands.hands.iter().filter(|h| h.active && h.thumb.y.abs() > 0.15) {
+        speed -= hand.thumb.y;
+    }
+    let page = GUIDE[3] - GUIDE[1] - 40.0;
+    let mut d = speed * crate::key_guide::SCROLL_SPEED * time.delta_secs()
+        - crate::key_guide::wheel_notches(&wheel) * crate::key_guide::WHEEL_STEP;
+    if keys.just_pressed(KeyCode::PageDown) {
+        d += page;
+    }
+    if keys.just_pressed(KeyCode::PageUp) {
+        d -= page;
+    }
+    if d != 0.0 {
+        // Kept within the list when it is drawn.
+        menu.guide_scroll = (menu.guide_scroll + d).max(0.0);
+    }
+}
+
 /// Keyboard, gamepad, VR thumbsticks and buttons, VR fingertips and the mouse.
 #[allow(clippy::too_many_arguments)]
 fn navigate(
@@ -402,6 +455,14 @@ fn navigate(
         if hand.just_pressed(BUTTON_PRIMARY) {
             select = true;
         }
+    }
+    // The key guide: anything that presses an entry goes back to the entries.
+    if menu.guide {
+        let trigger = hands.hands.iter().any(|h| h.active && h.trigger_pulled());
+        if select || close || click || trigger {
+            menu.guide = false;
+        }
+        return;
     }
     if step != 0 {
         menu.cursor = (menu.cursor as i32 + step).rem_euclid(n as i32) as usize;
@@ -478,11 +539,11 @@ fn navigate(
         }
         return;
     }
-    // Left / right only change values; they don't press Resume or End mission.
+    // Left / right only change values; they don't press Resume, the key guide or End mission.
     if adjust != 0
         && clicked.is_none()
         && !select
-        && matches!(item, Item::Resume | Item::EndMission)
+        && matches!(item, Item::Resume | Item::KeyGuide | Item::EndMission)
     {
         return;
     }
@@ -507,6 +568,10 @@ fn navigate(
             s.vr_cockpit_scale = (s.vr_cockpit_scale + 0.05 * dir as f32)
                 .clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
         }
+        Item::KeyGuide => {
+            menu.guide = true;
+            menu.guide_scroll = 0.0;
+        }
         Item::Resume => close = true,
         // A campaign sortie ends; the flight goes on with the campaign's board.
         Item::EndMission if !pause => {
@@ -528,10 +593,11 @@ fn navigate(
 }
 
 fn draw(
-    menu: Res<FlightMenu>,
+    mut menu: ResMut<FlightMenu>,
     settings: Res<Settings>,
     mut q: Query<(&mut CanvasTexture, &mut Visibility), With<MenuScreen>>,
     campaign: Option<Res<crate::campaign::ActiveCampaign>>,
+    config: Res<crate::hotas::InputConfig>,
 ) {
     let Ok((mut tex, mut vis)) = q.single_mut() else { return };
     vis.set_if_neq(if menu.open { Visibility::Inherited } else { Visibility::Hidden });
@@ -552,6 +618,29 @@ fn draw(
             BRIGHT,
             Align::Centre,
         );
+        tex.dirty = true;
+        return;
+    }
+    if menu.guide {
+        stroke_text_at(c, W as f32 / 2.0, 42.0, "KEY GUIDE", 22.0, 2.8, BRIGHT, Align::Centre);
+        let lines = crate::key_guide::lines(&config, settings.vr);
+        let style = crate::key_guide::Style {
+            size: 0.72,
+            heading: BRIGHT,
+            bar: ROW_BG,
+            keys: BRIGHT,
+            text: 46,
+            dim: DIM,
+        };
+        let mut scroll = menu.guide_scroll;
+        crate::key_guide::draw(c, &lines, GUIDE, &mut scroll, &style);
+        menu.guide_scroll = scroll;
+        let hint = if settings.vr {
+            "STICK: SCROLL    TRIGGER: BACK"
+        } else {
+            "WHEEL, ARROWS: SCROLL    ESC, CLICK: BACK"
+        };
+        stroke_text_at(c, W as f32 / 2.0, H as f32 - 22.0, hint, 12.0, 1.8, DIM, Align::Centre);
         tex.dirty = true;
         return;
     }

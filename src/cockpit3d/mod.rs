@@ -314,7 +314,9 @@ fn sync_shading(
         Vec4::new(
             if m.extension.bright { 0.0 } else { dark },
             nvg as u32 as f32,
-            daylight,
+            // Pictures (the tracking camera) are lit by themselves: the goggles' daylight gain,
+            // the night's would wash them out.
+            if m.extension.bright { 1.0 } else { daylight },
             !settings.modern_shading as u32 as f32,
         )
     };

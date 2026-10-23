@@ -64,6 +64,11 @@ const MOUNTAIN_AMPLITUDE: [f32; 3] = [0.07, 0.045, 0.03];
 /// which it gets a third subdivision.
 const MOUNTAIN_MIN_M: f64 = 1400.0;
 const MOUNTAIN_FINE_M: f64 = 12_000.0;
+/// Height in metres of a model unit of lift between stacked flat overlays, at most: the
+/// converter lifts coplanar polygons by fractions of a unit (painter's order), which on the
+/// coarse levels is metres, and from the lower polygon's side the step to a higher neighbour
+/// shows the background through as a thin line.
+const OVERLAY_LIFT_M: f64 = 0.5;
 
 #[allow(clippy::too_many_arguments)]
 fn refine(
@@ -98,12 +103,15 @@ fn refine(
         classify(remap.get(c as usize).copied().unwrap_or(0xFF00 | c as u16), &palette.theater.day)
     };
 
-    // Finest detail level each shape is placed on (its model unit in metres).
+    // Finest and coarsest detail level each shape is placed on (its model unit in metres).
     let mut level: HashMap<usize, usize> = HashMap::new();
+    let mut coarsest: HashMap<usize, usize> = HashMap::new();
     for (lod, tiles) in theater.tiles.tiles.iter().enumerate().skip(1) {
         for o in tiles.iter().flatten() {
             let l = level.entry(o.shape as usize).or_insert(lod);
             *l = (*l).min(lod);
+            let c = coarsest.entry(o.shape as usize).or_insert(lod);
+            *c = (*c).max(lod);
         }
     }
 
@@ -130,6 +138,10 @@ fn refine(
             let mut changed = false;
             if coast(&mut geo, &class) {
                 coasts += 1;
+                changed = true;
+            }
+            let lift = OVERLAY_LIFT_M / (LEVEL_UNIT[coarsest[&shape]] * WU);
+            if lift < 1.0 && flatten_lifts(&mut geo, lift as f32) {
                 changed = true;
             }
             let unit_m = LEVEL_UNIT[lod] * WU;
@@ -338,6 +350,24 @@ impl Geometry {
             });
         }
     }
+}
+
+/// Scales the lifts of the flat overlays (and flat lines) by `k`, keeping their order; false
+/// when the detail level has none.
+fn flatten_lifts(geo: &mut Geometry, k: f32) -> bool {
+    let mut any = false;
+    for prim in &mut geo.prims {
+        let flat =
+            |vs: &[Vec3]| vs.iter().all(|v| v.y.abs() < 1.0) && vs.iter().any(|v| v.y != 0.0);
+        let tris = prim.tris.iter_mut().filter(|t| flat(&t[..])).flatten();
+        let lines = prim.lines.iter_mut().filter(|l| flat(&l[..])).flatten();
+        for v in tris.chain(lines) {
+            v.y *= k;
+            prim.changed = true;
+            any = true;
+        }
+    }
+    any
 }
 
 // ------------------------------------------------------------------------------------------

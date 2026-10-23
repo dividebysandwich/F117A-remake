@@ -2,13 +2,16 @@
 //! like the HUD (assets/shaders/hud_glass.wgsl) and carried by the head (the eye camera with the
 //! mouse head look, a headset camera in VR), shown in the cockpit views:
 //!
-//! - the line of sight reticle at the centre (where a helmet-slaved gun points);
+//! - the line of sight reticle (where a helmet-slaved gun points): the smoothed helmet sight,
+//!   so head tremor does not shake it, else the centre;
 //! - the horizon line;
 //! - the locked target: a box on a ground target, a diamond on an aircraft; off the visor, an
 //!   arrow from the reticle towards it;
 //! - the turret gun's pipper (where its rounds go, selected or not);
 //! - the targeting pod's line of sight (a small diamond) when it is not slaved;
 //! - the gun line (rounds and what it is slaved to) under the reticle.
+//!
+//! The horizon, lock, pipper and pod sight are drawn where they are in the world.
 //!
 //! Canvas pixels are angular as on the modern HUD (`hud::modern`): (x, y) is the direction
 //! (x - CX, CY - y) / SCALE in the tangent plane one unit in front of the head.
@@ -173,6 +176,7 @@ fn draw(
     let frame = Frame {
         to_head: head.inverse(),
         aircraft: a.orientation,
+        sight: mfd.av.helmet,
         lock: cues.helmet_lock,
         gun: cues.turret_gun.map(|g| g.dir),
         pod: (mfd.av.tgp.mode != crate::avionics::TgpMode::Slaved)
@@ -191,6 +195,8 @@ struct Frame {
     to_head: Quat,
     /// The aircraft's attitude (the cues are in its frame).
     aircraft: Quat,
+    /// The smoothed helmet sight (world).
+    sight: Option<Vec3>,
     /// The locked target (aircraft frame) and whether it is an aircraft.
     lock: Option<(Vec3, bool)>,
     /// The turret gun's pipper (aircraft frame).
@@ -204,7 +210,10 @@ struct Frame {
 fn draw_visor(c: &mut Canvas, f: &Frame) {
     c.reset_clip();
     let head = |d_aircraft: Vec3| f.to_head * (f.aircraft * d_aircraft);
-    let centre = Vec2::new(CX, CY);
+    let lo = Vec2::splat(MARGIN);
+    let hi = Vec2::new(WIDTH as f32, HEIGHT as f32) - MARGIN;
+    let centre =
+        f.sight.and_then(|d| project(f.to_head * d)).map_or(Vec2::new(CX, CY), |p| p.clamp(lo, hi));
     // Line of sight reticle.
     for d in [Vec2::X, Vec2::Y, Vec2::NEG_X, Vec2::NEG_Y] {
         c.stroke(centre + d * 6.0, centre + d * 18.0, PEN, INK);
@@ -234,8 +243,6 @@ fn draw_visor(c: &mut Canvas, f: &Frame) {
     }
     if let Some(g) = f.gun.and_then(|d| project(head(d))) {
         // Kept on the visor, crossed out when it is not where the rounds go.
-        let lo = Vec2::splat(MARGIN);
-        let hi = Vec2::new(WIDTH as f32, HEIGHT as f32) - MARGIN;
         let q = g.clamp(lo, hi);
         let r = 20.0;
         c.ring(q, r, PEN, INK);
@@ -246,7 +253,7 @@ fn draw_visor(c: &mut Canvas, f: &Frame) {
         }
     }
     if let Some(s) = &f.gun_line {
-        stroke_text_at(c, CX, CY + 150.0, s, TEXT, PEN * 0.85, INK, Align::Centre);
+        stroke_text_at(c, centre.x, centre.y + 150.0, s, TEXT, PEN * 0.85, INK, Align::Centre);
     }
 }
 
@@ -301,6 +308,7 @@ mod tests {
         Frame {
             to_head: head.inverse(),
             aircraft: Quat::IDENTITY,
+            sight: None,
             lock: None,
             gun: None,
             pod: None,
@@ -351,5 +359,17 @@ mod tests {
         let (cx, cy) = (CX as usize, CY as usize);
         assert!(ink(&c, cx + 60, cx + 100, cy - 4, cy + 4) > 0);
         assert_eq!(ink(&c, cx - 100, cx - 60, cy - 4, cy + 4), 0);
+    }
+
+    /// The reticle sits on the smoothed sight, not the centre of the head.
+    #[test]
+    fn reticle_on_the_sight() {
+        let mut f = frame(Quat::IDENTITY);
+        f.sight = Some(Vec3::new(0.05, 0.0, -1.0).normalize());
+        let mut c = Canvas::new(WIDTH, HEIGHT);
+        draw_visor(&mut c, &f);
+        let (x, cy) = ((CX + SCALE * 0.05) as usize, CY as usize);
+        assert!(ink(&c, x + 6, x + 18, cy - 2, cy + 2) > 0);
+        assert_eq!(ink(&c, CX as usize - 4, CX as usize + 4, cy - 30, cy - 6), 0);
     }
 }

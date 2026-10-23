@@ -39,20 +39,20 @@ See the [User Manual](docs/manual.md) for details.
 
 The war runs in real time, whether you fly or not. Pick sorties from the Ops screen's mission
 board, alone or with up to 64 players in coop.
-- **Winning:** the war is won when the enemy holds no airfield, and lost when the friendly side
+- **Goal:** the war is won when the enemy holds no airfield, and lost when the friendly side
   holds neither an airfield nor a carrier.
-- **Materiel:** each side's AI repairs, flies sorties and buys aircraft with the materiel its
-  places and cities bring in every hour. Aircraft shot down are gone. Interdiction strikes on
-  enemy cities cut its income. Only the AI can run short; your own sorties never do.
-- **The enemy fights back:** helicopter attacks on weak spots along the front, escorted raids on
+- **Resources:** each side's AI repairs, flies sorties and buys aircraft with the materiel its
+  places and cities bring in every hour. Interdiction strikes on enemy cities cut income.
+- **Enemy attacks:** helicopter attacks on weak spots along the front, escorted raids on
   airfields, AWACS patrols and, in Ukraine, Geran drone waves. The board posts intercept and
   defend missions for them. A bombed airfield launches no AI aircraft until it is repaired.
-- **CSAR:** eject over enemy territory and the board posts a rescue. Hold the air near the pilot
-  for 2 minutes to get them out, or they may be captured.
+- **CSAR:** eject over enemy territory and the board posts a rescue mission. 
+  Hold the air near the pilot for 2 minutes to get them out, or they may be captured.
+  Player-flown helicopter missions are planned for the future.
 - **Points and ranks:** objectives, kills and bringing the aircraft home earn points, ranks and
   medals. Packages (two kinds of objective at one place within 15 minutes) earn a bonus.
 - **Weather** changes once or twice a day, from fair skies to thunderstorms.
-- **Rules:** a campaign keeps the realism rules it was started with.
+- **Rules:** configurable by the host, including enemy strength, weather and realism.
 
 <img width="1615" height="938" alt="image" src="https://github.com/user-attachments/assets/731ba65f-3876-4166-9252-40cc4cfa0f4b" />
 
@@ -67,7 +67,7 @@ missions follow Central Europe's rules (`--theater ua`).
   and behind the front lie in ruins, and the Donbas mining towns have their slag heaps.
 - The steppe is farmland: autumn fields (stubble, ploughland, winter wheat) with shelterbelts.
 - The Zaporizhzhia, South Ukraine, Rostov, Kursk and Novovoronezh nuclear power plants.
-- Fires and smoke burn along the whole front line and in the ruined towns in every mission.
+- Fires and smoke burn along the whole front line and in the ruined towns.
 
 ## Running
 ```sh

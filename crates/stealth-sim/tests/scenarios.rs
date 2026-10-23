@@ -1840,7 +1840,7 @@ fn helmet_seeker_locks_in_its_circle() {
     };
     // Looking north: the one ahead, the nearer one outside the circle.
     let t = look(&mut sim, 0);
-    assert!(sim.helmet_seeker());
+    assert!(sim.helmet_seeker().is_some());
     assert_eq!(t.air, Some(1));
     // Towards the other: the first leaves the circle, the seeker takes the second.
     assert_eq!(look(&mut sim, 0x1555).air, Some(2));
@@ -1848,4 +1848,41 @@ fn helmet_seeker_locks_in_its_circle() {
     let t = look(&mut sim, 0x4000);
     assert_eq!(t.air, None);
     assert!(!t.lock_valid);
+}
+
+#[test]
+fn helmet_seeker_stops_at_its_gimbals() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 2);
+    let opts = SimOptions { helicopter: true, gunship: true, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    // An An-72 3 km off, 70 degrees right of the nose.
+    {
+        let u = &mut sim.flights_mut()[1];
+        *u = FlightUnit {
+            x: mx + 180,
+            y: my - 66,
+            alt: 5000,
+            spec: 9,
+            flags: 0x43,
+            speed: 200,
+            timer: 30000,
+            wp: 3,
+            ..Default::default()
+        };
+        u.wx = u.x << 5;
+        u.wy = u.y << 5;
+    }
+    sim.set_bay(0, 0, 4);
+    sim.select_bay(0);
+    let mut p = player_at(mx, my, 5000, 0, 0);
+    p.hud_mode = HudMode::Air;
+    // Looking at it: the seeker stops at its gimbal limit off the nose and sees nothing.
+    let heading = (70.0f64 / 360.0 * 65536.0) as u16;
+    p.helmet = Some(PodAim { heading, pitch: 0, ground: None });
+    sim.step(&p, 15);
+    let los = sim.helmet_seeker().expect("seeker");
+    assert!((los[1].acos() - SEEKER_GIMBAL).abs() < 1e-3, "{los:?}");
+    assert_eq!(sim.targeting().air, None);
 }

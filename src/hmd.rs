@@ -9,8 +9,8 @@
 //!   arrow from the reticle towards it;
 //! - the turret gun's pipper (where its rounds go, selected or not) while it is slaved to the
 //!   helmet;
-//! - with Sidewinders selected, their seeker's circle round the reticle (the seeker follows the
-//!   helmet sight and locks the nearest hostile aircraft in it);
+//! - with Sidewinders selected, their seeker's circle (the seeker follows the helmet sight as
+//!   far as its gimbals turn and locks the nearest hostile aircraft in it);
 //! - the targeting pod's line of sight (a small diamond) when it is not slaved;
 //! - the gun line (rounds and what it is slaved to) under the reticle, but not with Sidewinders
 //!   selected.
@@ -187,7 +187,10 @@ fn draw(
         sight: mfd.av.helmet,
         lock: cues.helmet_lock,
         gun: cues.turret_gun.filter(|_| stores.gun_slave == Some("HMS")).map(|g| g.dir),
-        seeker: combat.is_some_and(|c| c.sim.helmet_seeker()),
+        // East, north, up to the world frame (x east, y up, -z north).
+        seeker: combat
+            .and_then(|c| c.sim.helmet_seeker())
+            .map(|[e, n, u]| Vec3::new(e as f32, u as f32, -n as f32)),
         pod: (mfd.av.tgp.mode != crate::avionics::TgpMode::Slaved)
             .then_some(mfd.av.tgp.los)
             .flatten(),
@@ -213,8 +216,8 @@ struct Frame {
     lock: Option<(Vec3, bool)>,
     /// The turret gun's pipper (aircraft frame) while it is slaved to the helmet.
     gun: Option<Vec3>,
-    /// The Sidewinder seeker's circle round the reticle.
-    seeker: bool,
+    /// Where the Sidewinder seeker looks (world).
+    seeker: Option<Vec3>,
     /// The targeting pod's line of sight (world) when it is not slaved.
     pod: Option<Vec3>,
     gun_line: Option<String>,
@@ -232,8 +235,8 @@ fn draw_visor(c: &mut Canvas, f: &Frame) {
     for d in [Vec2::X, Vec2::Y, Vec2::NEG_X, Vec2::NEG_Y] {
         c.stroke(centre + d * 6.0, centre + d * 18.0, PEN, INK);
     }
-    if f.seeker {
-        c.ring(centre, stealth_sim::HELMET_SEEKER.tan() as f32 * SCALE, THIN, INK);
+    if let Some(p) = f.seeker.and_then(|d| project(f.to_head * d)) {
+        c.ring(p, stealth_sim::HELMET_SEEKER.tan() as f32 * SCALE, THIN, INK);
     }
     horizon(c, f.to_head);
     if let Some(p) = f.pod.and_then(|d| project(f.to_head * d)).filter(|&p| on_visor(p)) {
@@ -328,7 +331,7 @@ mod tests {
             sight: None,
             lock: None,
             gun: None,
-            seeker: false,
+            seeker: None,
             pod: None,
             gun_line: None,
             blink: true,

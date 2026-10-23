@@ -32,7 +32,7 @@ pub use data::{
 pub use pilot::{Pilot, PilotEvent};
 pub use radar::emv;
 pub use rng::Rng;
-pub use targeting::HELMET_SEEKER;
+pub use targeting::{HELMET_SEEKER, SEEKER_GIMBAL};
 pub use types::*;
 
 use math::{s16, view_z};
@@ -416,7 +416,7 @@ impl Sim {
                 launches: 0,
                 air_lock: -1,
                 pilot_lock: None,
-                helmet_seeker: false,
+                helmet_seeker: None,
                 gnd_lock: -1,
                 targeting: TargetingState::default(),
                 gnd_cooldown: 0,
@@ -1126,9 +1126,10 @@ impl Sim {
         self.pl.targeting
     }
 
-    /// A gunship's Sidewinder seeker follows the helmet sight (`HELMET_SEEKER`): it locks the
-    /// nearest hostile aircraft in its circle and loses it when it leaves the circle.
-    pub fn helmet_seeker(&self) -> bool {
+    /// Where a gunship's Sidewinder seeker looks (unit vector east, north, up), None unless it
+    /// follows the helmet sight: as far as its gimbals turn (`SEEKER_GIMBAL`), locking the
+    /// nearest hostile aircraft in its circle (`HELMET_SEEKER`) and losing it when it leaves.
+    pub fn helmet_seeker(&self) -> Option<[f64; 3]> {
         self.pl.helmet_seeker
     }
 

@@ -4,9 +4,29 @@ use crate::{Sim, ballistics};
 
 /// The helmet-slaved Sidewinder seeker's circle: its radius round the helmet sight (rad).
 pub const HELMET_SEEKER: f64 = 6.0 * std::f64::consts::PI / 180.0;
+/// How far the Sidewinder's seeker head turns off the nose (rad): it follows the helmet sight
+/// only that far.
+pub const SEEKER_GIMBAL: f64 = 40.0 * std::f64::consts::PI / 180.0;
 
-fn bam_rad(a: i32) -> f64 {
-    s16(a) as f64 * std::f64::consts::PI / 32768.0
+/// Unit vector (east, north, up) of a BAM heading and pitch.
+fn bam_dir(heading: i32, pitch: i32) -> [f64; 3] {
+    let rad = |a: i32| s16(a) as f64 * std::f64::consts::PI / 32768.0;
+    let (h, p) = (rad(heading), rad(pitch));
+    [h.sin() * p.cos(), h.cos() * p.cos(), p.sin()]
+}
+
+/// `d` turned towards `axis` (unit vectors) to within `limit` (rad) of it.
+fn gimbal(d: [f64; 3], axis: [f64; 3], limit: f64) -> [f64; 3] {
+    let cos = d.iter().zip(axis).map(|(a, b)| a * b).sum::<f64>();
+    if cos >= limit.cos() {
+        return d;
+    }
+    // The part of `d` across the axis (any way across when it points straight back).
+    let w = [d[0] - axis[0] * cos, d[1] - axis[1] * cos, d[2] - axis[2] * cos];
+    let n = w.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let w = if n > 1e-9 { w.map(|v| v / n) } else { [axis[1], -axis[0], 0.0] };
+    let (s, c) = limit.sin_cos();
+    [axis[0] * c + w[0] * s, axis[1] * c + w[1] * s, axis[2] * c + w[2] * s]
 }
 
 impl Sim {
@@ -388,8 +408,9 @@ impl Sim {
         self.pl.lights.lock = oval && (red || self.frame & 1 != 0);
     }
 
-    /// A gunship's Sidewinder seeker slaved to the helmet sight: the lock is the nearest hostile
-    /// aircraft within `HELMET_SEEKER` of the sight and is broken when it leaves that circle.
+    /// A gunship's Sidewinder seeker slaved to the helmet sight (as far as its gimbals turn,
+    /// `SEEKER_GIMBAL`): the lock is the nearest hostile aircraft within `HELMET_SEEKER` of where
+    /// it looks and is broken when it leaves that circle.
     fn update_helmet_seeker(&mut self, ps: &PlayerState) {
         let spec = self.selected_spec();
         let (_, count) = self.selected_weapon();
@@ -402,11 +423,11 @@ impl Sim {
                 && !self.pl.external_view
         });
         let Some(sight) = sight else {
-            self.pl.helmet_seeker = false;
+            self.pl.helmet_seeker = None;
             return;
         };
-        let (h, p) = (bam_rad(sight.heading as i32), bam_rad(sight.pitch as i32));
-        let los = [h.sin() * p.cos(), h.cos() * p.cos(), p.sin()];
+        let nose = bam_dir(self.pl.p.heading, self.pl.p.pitch);
+        let los = gimbal(bam_dir(sight.heading as i32, sight.pitch as i32), nose, SEEKER_GIMBAL);
         let (mx, my, vz) = (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z);
         // Off the sight (rad) and range (map units) of a point (map units, viewZ).
         let off = |x: i32, y: i32, alt: i32| {
@@ -454,7 +475,7 @@ impl Sim {
         }
         // The oval as on the HUD: the lock within twice the missile's lock range, red within it.
         let lock = self.missile(spec).lock_range as f64 * 32.0;
-        self.pl.helmet_seeker = true;
+        self.pl.helmet_seeker = Some(los);
         let t = &mut self.pl.targeting;
         t.lock_valid = range.is_some_and(|r| r < lock * 2.0);
         t.in_range = range.is_some_and(|r| r < lock);

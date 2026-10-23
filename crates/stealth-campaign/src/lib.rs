@@ -70,6 +70,9 @@ pub struct PlayerPos {
     pub x: i32,
     pub y: i32,
     pub airborne: bool,
+    /// A helicopter stopped on the ground (anywhere).
+    #[serde(default)]
+    pub landed: bool,
 }
 
 /// Something that happened in the simulation.

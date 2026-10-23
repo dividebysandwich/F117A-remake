@@ -56,7 +56,8 @@ impl CampaignState {
                 ins.alive[h] = false;
                 let left = ins.alive.iter().filter(|&&a| a).count();
                 let side = ins.side;
-                if ins.state == InsertionState::Enroute && left == 0 {
+                // A player's helicopter carries on alone.
+                if ins.state == InsertionState::Enroute && left == 0 && ins.pilots.is_empty() {
                     self.insertion_failed(k, "all helicopters lost", ev);
                 } else if ins.state == InsertionState::Enroute {
                     ev.push(CampaignEvent::Message(if side == Side::Blue {
@@ -90,7 +91,7 @@ impl CampaignState {
                 let ins = &mut self.insertions[k];
                 let h = ins.helicopters.iter().position(|&t| t == tag).expect("contains");
                 ins.alive[h] = false;
-                if ins.alive.iter().all(|a| !a) {
+                if ins.alive.iter().all(|a| !a) && ins.pilots.is_empty() {
                     self.insertion_failed(k, "the helicopters landed short", ev);
                 }
             }
@@ -99,7 +100,7 @@ impl CampaignState {
     }
 
     /// Insertion `k` in the air failed (`why`, for the friendly side's log).
-    fn insertion_failed(&mut self, k: usize, why: &str, ev: &mut Vec<CampaignEvent>) {
+    pub(crate) fn insertion_failed(&mut self, k: usize, why: &str, ev: &mut Vec<CampaignEvent>) {
         let ins = &mut self.insertions[k];
         ins.state = InsertionState::Failed;
         let (id, place, side) = (ins.id, ins.place, ins.side);
@@ -116,7 +117,7 @@ impl CampaignState {
     }
 
     /// Insertion `k` landed: its place changes hands.
-    fn capture(&mut self, k: usize, ev: &mut Vec<CampaignEvent>) {
+    pub(crate) fn capture(&mut self, k: usize, ev: &mut Vec<CampaignEvent>) {
         let (id, place) = (self.insertions[k].id, self.insertions[k].place);
         self.insertions[k].state = InsertionState::Captured;
         let side = self.insertions[k].side;
@@ -222,6 +223,7 @@ impl CampaignState {
             scrambled: false,
             ordered_by: by,
             enroute_at: None,
+            pilots: Vec::new(),
         });
         let base = self.site(from).map(|s| s.name.clone()).unwrap_or_default();
         let mins = (lead / 60.0).round();
@@ -234,6 +236,75 @@ impl CampaignState {
         self.note(text.clone());
         self.board_at = f64::MIN;
         Ok(vec![CampaignEvent::Message(text)])
+    }
+
+    /// A player flies an insertion at `place` in his helicopter from `base`: he joins the one
+    /// under way there, else leads a new one, his wingmen lifting off with him. Returns its id.
+    pub(crate) fn fly_insertion(
+        &mut self,
+        player: PlayerId,
+        place: PlaceId,
+        base: ObjectId,
+    ) -> Result<(u32, Vec<CampaignEvent>), String> {
+        if let Some(i) = self.insertions.iter_mut().find(|i| {
+            i.place == place
+                && i.side == Side::Blue
+                && matches!(i.state, InsertionState::Pending { .. } | InsertionState::Enroute)
+        }) {
+            i.pilots.push(player);
+            return Ok((i.id, Vec::new()));
+        }
+        let Some(p) = self.places.get(place as usize) else { return Err("No such place".into()) };
+        if p.owner != Side::Red {
+            return Err(format!("{} is not held by the enemy", p.name));
+        }
+        let target = p.airfield.or(p.members.first().copied()).ok_or("Nothing to land at")?;
+        let name = p.name.clone();
+        let id = self.id();
+        self.insertions.push(Insertion {
+            id,
+            side: Side::Blue,
+            place,
+            from: base,
+            target,
+            helicopters: Vec::new(),
+            alive: Vec::new(),
+            state: InsertionState::Pending { launch_at: self.clock },
+            scrambled: false,
+            ordered_by: Some(player),
+            enroute_at: None,
+            pilots: vec![player],
+        });
+        let who = self.player_name(player).unwrap_or("A pilot").to_string();
+        let text = format!("Insertion at {name}: {who} leads the helicopters");
+        self.note(text.clone());
+        self.board_at = f64::MIN;
+        Ok((id, vec![CampaignEvent::Message(text)]))
+    }
+
+    /// A player's sortie on insertion `id` ended: it goes on with the helicopters left, fails
+    /// without any.
+    pub(crate) fn left_insertion(
+        &mut self,
+        player: PlayerId,
+        id: u32,
+        ev: &mut Vec<CampaignEvent>,
+    ) {
+        let Some(k) = self.insertions.iter().position(|i| i.id == id) else { return };
+        let ins = &mut self.insertions[k];
+        ins.pilots.retain(|&p| p != player);
+        if ins.pilots.is_empty() && ins.alive.iter().all(|a| !a) {
+            match ins.state {
+                InsertionState::Enroute => {
+                    self.insertion_failed(k, "the helicopters were lost", ev)
+                }
+                InsertionState::Pending { .. } => {
+                    ins.state = InsertionState::CalledOff;
+                    self.settle_insertion(id, InsertionState::CalledOff);
+                }
+                _ => {}
+            }
+        }
     }
 
     fn active_insertion(&self, place: PlaceId) -> bool {
@@ -272,13 +343,15 @@ impl CampaignState {
                         self.insertion_called_off(k, ev);
                         continue;
                     };
-                    // From the side's helicopters; a player's order always gets the reserve.
+                    // From the side's helicopters; a player's order always gets the reserve. A
+                    // player flying it leads the rest (alone, if there are none).
                     let left = self.forces(side).helicopters as usize;
-                    let mut n = left.min(INSERTION_HELOS);
-                    if ins.ordered_by.is_some() {
+                    let flown = !ins.pilots.is_empty();
+                    let mut n = left.min(INSERTION_HELOS - flown as usize);
+                    if ins.ordered_by.is_some() && !flown {
                         n = n.max(RESERVE_HELICOPTERS);
                     }
-                    if n == 0 {
+                    if n == 0 && !flown {
                         self.insertion_called_off(k, ev);
                         continue;
                     }

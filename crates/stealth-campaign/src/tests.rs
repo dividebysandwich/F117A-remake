@@ -28,7 +28,7 @@ const P0: PlayerId = PlayerId(0);
 fn be_there(c: &mut CampaignState, p: PlayerId, at: ObjectId) {
     let s = c.site(at).unwrap();
     let me = WorldView {
-        players: vec![PlayerPos { id: p, x: s.x, y: s.y, airborne: true }],
+        players: vec![PlayerPos { id: p, x: s.x, y: s.y, airborne: true, landed: false }],
         ..Default::default()
     };
     c.tick(tuning::PRESENCE_SECONDS + 1.0, &me, &[]);
@@ -884,7 +884,7 @@ fn eject_over(c: &mut CampaignState, name: &str) -> (Vec<CampaignEvent>, i32, i3
     let p = &c.places[place_named(c, name) as usize];
     let (x, y) = (p.x + 30, p.y);
     let view = WorldView {
-        players: vec![PlayerPos { id: P0, x, y, airborne: true }],
+        players: vec![PlayerPos { id: P0, x, y, airborne: true, landed: false }],
         ..Default::default()
     };
     c.tick(1.0, &view, &[]);
@@ -908,7 +908,7 @@ fn a_pilot_down_behind_the_lines_is_rescued() {
     c.apply(b, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::F16 })
         .unwrap();
     let over = WorldView {
-        players: vec![PlayerPos { id: b, x: x + 0x40, y, airborne: true }],
+        players: vec![PlayerPos { id: b, x: x + 0x40, y, airborne: true, landed: false }],
         ..Default::default()
     };
     let mut rescued = false;
@@ -1231,7 +1231,7 @@ fn a_cap_survives_a_friendly_loss() {
     let (_, obj) = take(&mut c, P0, MissionKind::Cap);
     let Objective::Cap { x, y } = obj else { unreachable!() };
     let me = WorldView {
-        players: vec![PlayerPos { id: P0, x, y, airborne: true }],
+        players: vec![PlayerPos { id: P0, x, y, airborne: true, landed: false }],
         ..Default::default()
     };
     c.tick(300.0, &me, &[]);
@@ -1340,4 +1340,122 @@ fn the_reserve_helicopters_do_not_swell_the_pool() {
         tags.iter().map(|&tag| Report::FlightLanded { tag, x: 0, y: 0 }).collect();
     c.tick(1.0, &WorldView::default(), &home);
     assert_eq!(c.blue.helicopters, most);
+}
+
+/// Player 0 at (x, y): in the air or landed in his helicopter.
+fn heli_at(x: i32, y: i32, landed: bool) -> WorldView {
+    WorldView {
+        players: vec![PlayerPos { id: P0, x, y, airborne: !landed, landed }],
+        ..Default::default()
+    }
+}
+
+/// Player 0 takes the board's insertion in the UH-60 and lifts off with his wingmen: the
+/// insertion, its target and the wingmen's tags.
+fn fly_insertion(c: &mut CampaignState) -> (u32, ObjectId, Vec<u32>) {
+    c.tick(1.0, &WorldView::default(), &[]);
+    let offer = c.board.iter().find(|o| o.kind == MissionKind::Insertion).unwrap().id;
+    c.apply(P0, Command::TakeMission { offer, base: None, aircraft: Aircraft::UH60 }).unwrap();
+    let ev = c.tick(1.0, &WorldView::default(), &[]);
+    let (id, target, tags) = ev
+        .iter()
+        .find_map(|e| match e {
+            CampaignEvent::InsertionLaunched { id, target, tags, .. } => {
+                Some((*id, *target, tags.clone()))
+            }
+            _ => None,
+        })
+        .expect("launched");
+    assert_eq!(tags.len(), tuning::INSERTION_HELOS - 1, "the wingmen");
+    assert_eq!(c.insertion(id).unwrap().pilots, vec![P0]);
+    (id, target, tags)
+}
+
+#[test]
+fn the_helicopter_flies_insertions_and_rescues() {
+    let mut c = campaign("ce", 3);
+    c.tick(1.0, &WorldView::default(), &[]);
+    let insertion = c.board.iter().find(|o| o.kind == MissionKind::Insertion).unwrap().id;
+    let recon = c.board.iter().find(|o| o.kind == MissionKind::Recon).unwrap().id;
+    let take = |c: &mut CampaignState, offer, aircraft| {
+        c.apply(P0, Command::TakeMission { offer, base: None, aircraft })
+    };
+    assert!(take(&mut c, recon, Aircraft::UH60).is_err());
+    assert!(take(&mut c, insertion, Aircraft::F16).is_err());
+    assert!(
+        MissionKind::Csar.flyable_by(Aircraft::UH60) && MissionKind::Csar.flyable_by(Aircraft::F16)
+    );
+    take(&mut c, insertion, Aircraft::UH60).unwrap();
+}
+
+#[test]
+fn a_player_insertion_takes_the_place_by_landing() {
+    let mut c = campaign("ce", 3);
+    let (id, target, _) = fly_insertion(&mut c);
+    let place = c.insertion(id).unwrap().place;
+    let t = c.site(target).unwrap().clone();
+    // Hovering over it takes nothing.
+    for _ in 0..4 {
+        c.tick(10.0, &heli_at(t.x + 0x20, t.y, false), &[]);
+    }
+    assert_eq!(c.places[place as usize].owner, Side::Red);
+    // Landed within the capture radius: the troops are out after the unload time.
+    c.tick(10.0, &heli_at(t.x + 0x20, t.y, true), &[]);
+    assert_eq!(c.places[place as usize].owner, Side::Red);
+    let ev = c.tick(10.0, &heli_at(t.x + 0x20, t.y, true), &[]);
+    assert_eq!(c.places[place as usize].owner, Side::Blue);
+    assert_eq!(c.insertion(id).unwrap().state, InsertionState::Captured);
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { player: P0, .. })));
+}
+
+#[test]
+fn a_player_insertion_goes_on_without_the_wingmen_and_fails_with_him() {
+    let mut c = campaign("ce", 3);
+    let (id, _, tags) = fly_insertion(&mut c);
+    let reports: Vec<Report> = tags
+        .iter()
+        .map(|&tag| Report::FlightDestroyed { tag, side: Side::Blue, x: 0, y: 0, by: None })
+        .collect();
+    c.tick(1.0, &WorldView::default(), &reports);
+    assert_eq!(c.insertion(id).unwrap().state, InsertionState::Enroute);
+    c.apply(P0, Command::EndSortie { end: SortieEnd::Crashed }).unwrap();
+    assert_eq!(c.insertion(id).unwrap().state, InsertionState::Failed);
+}
+
+#[test]
+fn a_helicopter_rescue_lands_by_the_pilot_and_brings_him_home() {
+    for lost in [false, true] {
+        let mut c = campaign("ce", 3);
+        let (_, x, y) = eject_over(&mut c, "Tabor");
+        let d = c.downed[0].id;
+        c.tick(tuning::BOARD_REFRESH, &WorldView::default(), &[]);
+        let offer = c.board.iter().find(|o| o.kind == MissionKind::Csar).unwrap().clone();
+        c.apply(P0, Command::TakeMission { offer: offer.id, base: None, aircraft: Aircraft::UH60 })
+            .unwrap();
+        // Hovering over him (long enough to cover a jet's rescue): he waits.
+        for _ in 0..20 {
+            c.tick(10.0, &heli_at(x + 5, y, false), &[]);
+        }
+        assert_eq!(c.downed_pilot(d).unwrap().state, DownedState::Waiting);
+        // Landed by him: he boards.
+        for _ in 0..4 {
+            c.tick(10.0, &heli_at(x + 5, y, true), &[]);
+        }
+        assert_eq!(c.downed_pilot(d).unwrap().state, DownedState::Aboard);
+        // Long past the rescue window: he stays aboard.
+        c.tick(tuning::RESCUE_WINDOW, &heli_at(x + 0x400, y, false), &[]);
+        assert_eq!(c.downed_pilot(d).unwrap().state, DownedState::Aboard);
+        if lost {
+            c.apply(P0, Command::EndSortie { end: SortieEnd::Crashed }).unwrap();
+            assert_eq!(c.downed_pilot(d).unwrap().state, DownedState::Captured);
+            continue;
+        }
+        // Landed at home.
+        let home = c.site(offer.base).unwrap().clone();
+        let ev = c.tick(1.0, &heli_at(home.x, home.y, true), &[]);
+        assert!(
+            ev.iter().any(|e| matches!(e, CampaignEvent::ObjectiveAchieved { player: P0, .. }))
+        );
+        assert_eq!(c.downed_pilot(d).unwrap().state, DownedState::Rescued);
+    }
 }

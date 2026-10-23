@@ -616,8 +616,13 @@ fn tick(mut c: ResMut<ActiveCampaign>, mut s: Session) {
         && let Some(n) = ops::test_take()
         && !std::mem::replace(&mut c.ui.test_taken, true)
     {
-        let flown: Vec<u32> =
-            c.state().board.iter().filter(|o| !o.kind.ai_flown()).map(|o| o.id).collect();
+        let flown: Vec<u32> = c
+            .state()
+            .board
+            .iter()
+            .filter(|o| o.kind.flyable_by(c.aircraft))
+            .map(|o| o.id)
+            .collect();
         if let Some(&offer) = flown.get(n.min(flown.len().saturating_sub(1))) {
             let loadout = briefed_loadout(c, offer, None, c.aircraft);
             if let Some(loadout) = loadout {

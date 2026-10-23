@@ -167,9 +167,28 @@ impl MissionKind {
         }
     }
 
-    /// Flown by the AI (the player orders it, he does not fly it).
+    /// Flown by the AI when ordered (the player may also fly it, in the helicopter).
     pub fn ai_flown(self) -> bool {
         self == MissionKind::Insertion
+    }
+
+    /// Who may fly it: insertions only the helicopter, which flies nothing but them and
+    /// rescues (it picks the pilot up, the others cover it).
+    pub fn flyable_by(self, aircraft: Aircraft) -> bool {
+        match self {
+            MissionKind::Insertion => aircraft.helicopter(),
+            MissionKind::Csar => true,
+            _ => !aircraft.helicopter(),
+        }
+    }
+
+    /// Why an aircraft may not fly it.
+    pub fn not_flyable(self, aircraft: Aircraft) -> &'static str {
+        if aircraft.helicopter() {
+            "The UH-60 flies insertions and rescues"
+        } else {
+            "Insertions are flown in the UH-60, or ordered for the helicopter crews"
+        }
     }
 
     /// Points for achieving the objective.
@@ -182,10 +201,10 @@ impl MissionKind {
             | MissionKind::AntiShip
             | MissionKind::Intercept
             | MissionKind::Defend
-            | MissionKind::Csar => 150,
+            | MissionKind::Csar
+            | MissionKind::Insertion => 150,
             MissionKind::Interdiction => 200,
             MissionKind::Awacs => 250,
-            MissionKind::Insertion => 0,
         }
     }
 }
@@ -306,6 +325,9 @@ pub struct Insertion {
     /// When the helicopters lifted off.
     #[serde(default)]
     pub enroute_at: Option<f64>,
+    /// Players flying it in their helicopters (it goes on while one does).
+    #[serde(default)]
+    pub pilots: Vec<PlayerId>,
 }
 
 /// How a sortie ended for the pilot (who never dies in a dynamic campaign).
@@ -354,6 +376,19 @@ pub struct Progress {
     /// intercepts, defences, rescues: only who was there earns them).
     #[serde(default)]
     pub near_secs: f64,
+    /// Flown in the helicopter: the player's own insertion (its id), seconds landed where it
+    /// counts (unloading the troops, the downed pilot boarding), the downed pilot aboard and
+    /// brought home.
+    #[serde(default)]
+    pub heli: bool,
+    #[serde(default)]
+    pub insertion: Option<u32>,
+    #[serde(default)]
+    pub landed_secs: f64,
+    #[serde(default)]
+    pub aboard: bool,
+    #[serde(default)]
+    pub delivered: bool,
 }
 
 impl Progress {
@@ -603,6 +638,8 @@ impl Forces {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DownedState {
     Waiting,
+    /// In a player's helicopter on the way home.
+    Aboard,
     Rescued,
     Captured,
 }

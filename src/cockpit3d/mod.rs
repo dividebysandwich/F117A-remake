@@ -157,10 +157,10 @@ impl Hand {
 pub struct HudGlass;
 
 /// Root of the cockpit model (child of the aircraft at the design eye point), with the panel
-/// layout it was built with, whether it has its lamps (local lights option) and whether its MFDs
-/// are the high-resolution ones.
+/// layout it was built with, whether it has its lamps (local lights option), whether its MFDs
+/// are the high-resolution ones and its model (another aircraft's may share the layout).
 #[derive(Component)]
-pub struct CockpitRoot(pub layout::PanelStyle, pub bool, pub bool);
+pub struct CockpitRoot(pub layout::PanelStyle, pub bool, pub bool, pub &'static str);
 
 /// Keeps the cockpit at the eye point (in VR it follows the cockpit size).
 fn follow_eye(
@@ -182,9 +182,12 @@ fn respawn_on_style_change(
     settings: Res<Settings>,
     roots: Query<(Entity, &CockpitRoot)>,
 ) {
-    let want = settings.cockpit().0;
+    let (want, stem) = settings.cockpit();
     for (e, root) in &roots {
-        if root.0 != want || root.1 != settings.local_lights || root.2 != settings.hires_displays()
+        if root.0 != want
+            || root.1 != settings.local_lights
+            || root.2 != settings.hires_displays()
+            || root.3 != stem
         {
             commands.entity(e).despawn();
         }
@@ -406,7 +409,7 @@ fn spawn_cockpit(
     let layout = layout::PanelLayout::for_style(style);
     let root = commands
         .spawn((
-            CockpitRoot(layout.style, settings.local_lights, settings.hires_displays()),
+            CockpitRoot(layout.style, settings.local_lights, settings.hires_displays(), stem),
             Transform::from_translation(settings.cockpit_eye()),
             Visibility::default(),
         ))

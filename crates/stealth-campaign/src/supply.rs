@@ -252,7 +252,7 @@ impl CampaignState {
         let now = self.clock;
         for k in 0..self.downed.len() {
             let d = &self.downed[k];
-            if d.state != DownedState::Waiting || now < d.until {
+            if d.state != DownedState::Waiting || now < d.until || self.heli_rescue(d.id) {
                 continue;
             }
             let (id, name) = (d.id, d.name.clone());
@@ -273,13 +273,38 @@ impl CampaignState {
             self.settle_rescue(id, lucky);
         }
         // Old rescues go (the debriefs have them).
-        self.downed.retain(|d| d.state == DownedState::Waiting || now - d.until < RESCUE_WINDOW);
+        self.downed.retain(|d| {
+            matches!(d.state, DownedState::Waiting | DownedState::Aboard)
+                || now - d.until < RESCUE_WINDOW
+        });
+    }
+
+    /// A player's helicopter is on its way for downed pilot `id` (he waits for it).
+    fn heli_rescue(&self, id: u32) -> bool {
+        self.players.iter().filter_map(|p| p.sortie.as_ref()).any(|s| {
+            s.progress.heli
+                && matches!(s.offer.objective, Objective::Rescue { downed } if downed == id)
+        })
+    }
+
+    /// The helicopter with downed pilot `id` aboard was lost: he is captured.
+    pub(crate) fn lost_aboard(&mut self, id: u32, ev: &mut Vec<CampaignEvent>) {
+        let Some(d) = self.downed.iter_mut().find(|d| d.id == id) else { return };
+        if d.state != DownedState::Aboard {
+            return;
+        }
+        d.state = DownedState::Captured;
+        let text = format!("{} was lost with the helicopter", d.name);
+        self.lose(Side::Blue, CAPTURE_COST);
+        self.note(text.clone());
+        ev.push(CampaignEvent::Message(text));
+        self.settle_rescue(id, false);
     }
 
     /// A rescue sortie covered the helicopter in: the pilot is out.
     pub(crate) fn rescued(&mut self, id: u32, ev: &mut Vec<CampaignEvent>) {
         let Some(d) = self.downed.iter_mut().find(|d| d.id == id) else { return };
-        if d.state != DownedState::Waiting {
+        if !matches!(d.state, DownedState::Waiting | DownedState::Aboard) {
             return;
         }
         d.state = DownedState::Rescued;

@@ -67,7 +67,10 @@ pub fn world_view(sim: &Sim) -> WorldView {
     let players = (0..sim.pilot_count() as u8)
         .filter_map(|id| {
             let p = sim.pilot_view(id)?;
-            Some(PlayerPos { id: PlayerId(id), x: p.mx, y: p.my, airborne: p.alt > 50 })
+            // A helicopter flies low: off the ground is airborne.
+            let landed = sim.pilot_landed(id);
+            let airborne = if sim.pilot_helicopter(id) { !landed } else { p.alt > 50 };
+            Some(PlayerPos { id: PlayerId(id), x: p.mx, y: p.my, airborne, landed })
         })
         .collect();
     WorldView { aaa, flights, players }
@@ -209,7 +212,7 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     s.shape_name = String::new();
     s.place_name = String::new();
     s.special_model = None;
-    let what = describe(o.kind);
+    let what = if sortie.aircraft.helicopter() { describe_heli(o.kind) } else { describe(o.kind) };
     m.briefing.title = o.title.clone();
     m.briefing.primary_summary = summary(state, sortie);
     m.briefing.primary_objective = what.to_string();
@@ -225,8 +228,13 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     ];
     m.loadout.bays =
         stores(o.kind).iter().map(|&w| Bay { weapon: w, name: String::new(), count: 1 }).collect();
-    m.loadout.usable_bays =
-        if m.settings.plane == stealth_mission::Plane::Lockheed { 2 } else { 4 };
+    m.loadout.usable_bays = if sortie.aircraft.helicopter() {
+        0
+    } else if m.settings.plane == stealth_mission::Plane::Lockheed {
+        2
+    } else {
+        4
+    };
     m
 }
 
@@ -333,6 +341,19 @@ pub fn describe(kind: MissionKind) -> &'static str {
         MissionKind::Awacs => {
             "Shoot down the enemy AWACS: while it is up the enemy sends more patrols, and sends them at you"
         }
+    }
+}
+
+/// What a kind of mission asks of the helicopter pilot (insertions and rescues).
+pub fn describe_heli(kind: MissionKind) -> &'static str {
+    match kind {
+        MissionKind::Insertion => {
+            "Fly the troops in, your wingmen with you: land within 1.5 km of the target and stay on the ground for 15 s while they get out to take the place"
+        }
+        MissionKind::Csar => {
+            "Land within 200 m of the downed pilot and wait 30 s for him to board, then land him at a friendly base"
+        }
+        k => describe(k),
     }
 }
 

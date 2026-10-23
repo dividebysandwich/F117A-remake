@@ -317,7 +317,7 @@ pub fn ops_ui(
     // Test aid: `--campaign-accept map|loadout` opens the first mission's briefing.
     if let Some(page) = test_accept()
         && !std::mem::replace(&mut c.ui.test_taken, true)
-        && let Some(o) = c.state().board.iter().find(|o| !o.kind.ai_flown()).cloned()
+        && let Some(o) = c.state().board.iter().find(|o| o.kind.flyable_by(c.aircraft)).cloned()
     {
         let sortie = preview(&o, o.base, c.aircraft);
         let m = sortie_mission(&c.mission, c.state(), &sortie);
@@ -605,11 +605,16 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
                 ui.label(egui::RichText::new(text).color(MISSILE_RED));
             }
             for d in &c.state().downed {
-                if d.state != stealth_campaign::DownedState::Waiting {
-                    continue;
-                }
+                let text = match d.state {
+                    stealth_campaign::DownedState::Waiting => {
+                        format!("DOWN: {} - rescue within {:.0} min", d.name, mins(d.until))
+                    }
+                    stealth_campaign::DownedState::Aboard => {
+                        format!("ABOARD: {} - on the way home", d.name)
+                    }
+                    _ => continue,
+                };
                 any = true;
-                let text = format!("DOWN: {} - rescue within {:.0} min", d.name, mins(d.until));
                 ui.label(egui::RichText::new(text).color(MISSILE_RED));
             }
             if !any {
@@ -655,9 +660,15 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
                     c.ui.error = None;
                     c.actions.push(Action::OrderInsertion { place });
                 }
-                ui.label(egui::RichText::new("Fly the escort to cover them").small().color(DIM));
-                return;
+                ui.label(
+                    egui::RichText::new("Fly the escort to cover them, or lead them in the UH-60")
+                        .small()
+                        .color(DIM),
+                );
+                ui.add_space(6.0);
             }
+            // The aircraft that flies it: the one last flown if it can, else the first that can.
+            let aircraft = flyable(&o, c.aircraft);
             // From which base.
             let mut bases: Vec<(u16, String, i32)> = c
                 .state()
@@ -711,19 +722,20 @@ fn board(ui: &mut egui::Ui, c: &mut ActiveCampaign, width: f32) {
                     ui.label(egui::RichText::new("Planned by the group").small().color(DIM));
                 }
             });
-            let sortie = preview(&o, chosen, c.aircraft);
+            let sortie = preview(&o, chosen, aircraft);
             let m = sortie_mission(&c.mission, c.state(), &sortie);
-            let loadout = crate::loadout::PlannedLoadout::of(&m, kind_of(c.aircraft));
+            let loadout = crate::loadout::PlannedLoadout::of(&m, kind_of(aircraft));
             ui.label(egui::RichText::new(format!("Stores: {}", loadout.summary())).color(DIM));
             support_button(ui, c, &o);
             ui.add_space(10.0);
-            if ui.add(big_button("ACCEPT MISSION").fill(DIM)).clicked() {
+            let accept = if o.kind.ai_flown() { "FLY THE UH-60" } else { "ACCEPT MISSION" };
+            if ui.add(big_button(accept).fill(DIM)).clicked() {
                 c.ui.error = None;
                 if c.role != Role::Local {
                     c.actions.push(Action::SelectMission { offer: Some(o.id), base: chosen });
                 }
                 c.ui.briefing =
-                    Some(Briefing::new(o.id, chosen, c.aircraft, loadout, BriefPage::Map));
+                    Some(Briefing::new(o.id, chosen, aircraft, loadout, BriefPage::Map));
             }
         });
     });
@@ -786,6 +798,14 @@ fn describe_offer(c: &ActiveCampaign, o: &MissionOffer) -> &'static str {
     }
 }
 
+/// The aircraft an offer is flown in: `last` if it may fly it, else the first that may.
+pub fn flyable(o: &MissionOffer, last: Airframe) -> Airframe {
+    [last, Airframe::F117, Airframe::F16, Airframe::UH60]
+        .into_iter()
+        .find(|a| o.kind.flyable_by(*a))
+        .unwrap_or(last)
+}
+
 /// The other offers at an offer's place: flown together, they are a package.
 fn package_info(ui: &mut egui::Ui, c: &ActiveCampaign, o: &MissionOffer) {
     use stealth_campaign::tuning::{PACKAGE_BONUS, PACKAGE_WINDOW};
@@ -794,7 +814,7 @@ fn package_info(ui: &mut egui::Ui, c: &ActiveCampaign, o: &MissionOffer) {
     let mut kinds: Vec<&str> = st
         .board
         .iter()
-        .filter(|x| x.id != o.id && !x.kind.ai_flown() && x.kind != o.kind)
+        .filter(|x| x.id != o.id && x.kind != MissionKind::Insertion && x.kind != o.kind)
         .filter(|x| st.objective_place(&x.objective) == Some(place))
         .map(|x| x.kind.name())
         .collect();
@@ -1362,7 +1382,10 @@ fn briefing(
                     BriefPage::Loadout => {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("AIRCRAFT").color(DIM));
-                            for a in [Airframe::F117, Airframe::F16] {
+                            let flyable = [Airframe::F117, Airframe::F16, Airframe::UH60]
+                                .into_iter()
+                                .filter(|a| o.kind.flyable_by(*a));
+                            for a in flyable {
                                 let label = kind_of(a).name();
                                 if ui.selectable_label(b.aircraft == a, label).clicked()
                                     && b.aircraft != a

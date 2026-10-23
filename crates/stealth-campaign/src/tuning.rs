@@ -174,6 +174,14 @@ pub const RESCUE_RADIUS: i32 = 0x140;
 pub const RESCUE_AI_CHANCE: i32 = 40;
 pub const CAPTURE_COST: f64 = 30.0;
 
+/// Flown in the helicopter: an insertion's troops get out in this many seconds landed within
+/// `CAPTURE_RADIUS` of the target; a downed pilot boards in this many seconds landed within
+/// this radius of him (about 200 m), and is home landed this near a friendly base.
+pub const UNLOAD_SECONDS: f64 = 15.0;
+pub const BOARD_SECONDS: f64 = 30.0;
+pub const BOARD_RADIUS: i32 = 13;
+pub const HOME_RADIUS: i32 = 0x40;
+
 /// Points: each aircraft and ground kill, an aircraft brought home (on top of the objective's,
 /// see `MissionKind::points`).
 pub const POINTS_AIR_KILL: i32 = 50;

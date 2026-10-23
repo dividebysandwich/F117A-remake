@@ -1,20 +1,28 @@
 //! Tooltips (desktop): with the mouse still over a cockpit control, display, instrument or
 //! warning light, a box by the cursor names it, says what it does and which keys do the same.
 //! It follows the view: whatever comes under the cursor while the head turns, unless something
-//! in front hides it (`pick`). No tooltips when switched off (in-flight menu), in VR, outside the
+//! in front hides it (`pick`). No tooltips when switched off (in-flight menu), outside the
 //! cockpit views, while looking around (right button held), with the menu or the kneeboard over
 //! the view.
+//!
+//! In VR the part is the control a fingertip touches, else one just ahead of the fingertip; the
+//! box is drawn into an image shown on a small screen above the finger, facing the eye point.
 //!
 //! Every tooltip text is here (to translate them one day; the aviation terms stay English).
 
 use std::sync::LazyLock;
 
+use bevy::camera::RenderTarget;
+use bevy::camera::visibility::RenderLayers;
+use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 
 use super::controls::Control;
 use super::displays::{CanvasRole, Face};
 use super::layout::{Dial, Effect, Elem, PanelStyle};
 use super::pick::{Picker, Pointed};
+use super::{CockpitRoot, Hands};
 use crate::camera::{View, ViewState};
 use crate::hotas::{ButtonTarget, InputConfig};
 use crate::input::{Action, key_label, qwerty_key_label};
@@ -29,6 +37,16 @@ const LINGER: f32 = 0.3;
 /// Longest tooltip line (characters): longer texts are wrapped here, not by the text layout
 /// (which would size the box for one line).
 const LINE_CHARS: usize = 46;
+
+/// VR: the box's image (pixels; the box is drawn twice as large as on the desktop), the screen's
+/// width (metres), how far a part ahead of the fingertip is pointed at (metres) and where the
+/// screen is from the fingertip (metres up and towards the eye).
+const VR_IMAGE: UVec2 = UVec2::new(1024, 512);
+const VR_SCALE: f32 = 2.0;
+const VR_WIDTH: f32 = 0.26;
+const VR_REACH: f32 = 0.05;
+const VR_RAISE: f32 = 0.07;
+const VR_TOWARDS_EYE: f32 = 0.04;
 
 /// Tooltip of a cockpit part (the controls' come from their effect): its name, what it does
 /// and the actions whose keys do the same.
@@ -388,19 +406,44 @@ pub(super) struct TipBox;
 #[derive(Component)]
 pub(super) struct TipLine(usize);
 
+/// VR: the camera drawing the box into its image.
+#[derive(Component)]
+pub(super) struct TipCamera;
+
+/// VR: the screen showing the box's image (a child of the cockpit root).
+#[derive(Component)]
+pub(super) struct TipScreen;
+
+/// VR: the screen's mesh and material (the screen goes with the cockpit when it is rebuilt).
+#[derive(Resource)]
+pub(super) struct TipScreenLook {
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+}
+
+/// VR: the fingertip (cockpit frame) whose part's tooltip shows.
+#[derive(Resource, Default)]
+pub(super) struct TipAnchor(Option<Vec3>);
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn spawn_box(
     mut commands: Commands,
+    settings: Res<Settings>,
     mut fonts: ResMut<Assets<Font>>,
+    mut images: ResMut<Assets<Image>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut font: Local<Option<Handle<Font>>>,
 ) {
     let font = font.get_or_insert_with(|| fonts.add(Font::from_bytes(FONT.to_vec()))).clone();
+    let k = if settings.vr { VR_SCALE } else { 1.0 };
     let line = |i: usize, size: f32, color: Color| {
         (
             TipLine(i),
             Text::new(""),
             TextFont {
                 font: font.clone().into(),
-                font_size: bevy::text::FontSize::Px(size),
+                font_size: bevy::text::FontSize::Px(size * k),
                 ..default()
             },
             TextColor(color),
@@ -408,26 +451,63 @@ pub(super) fn spawn_box(
             Node::default(),
         )
     };
-    commands.spawn((
-        TipBox,
-        Node {
-            position_type: PositionType::Absolute,
-            flex_direction: FlexDirection::Column,
-            row_gap: px(2),
-            padding: UiRect::axes(px(8), px(5)),
+    let tip_box = commands
+        .spawn((
+            TipBox,
+            Node {
+                position_type: PositionType::Absolute,
+                flex_direction: FlexDirection::Column,
+                row_gap: px(2.0 * k),
+                padding: UiRect::axes(px(8.0 * k), px(5.0 * k)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.02, 0.03, 0.04, 0.88)),
+            Outline::new(px(k), Val::ZERO, Color::srgba(1.0, 0.85, 0.3, 0.5)),
+            GlobalZIndex(10),
+            Visibility::Hidden,
+            DespawnOnExit(AppState::Flight),
+            children![
+                line(0, 17.0, Color::srgb(1.0, 0.85, 0.3)),
+                line(1, 14.0, Color::srgb(0.85, 0.87, 0.9)),
+                line(2, 13.0, Color::srgb(0.55, 0.6, 0.65)),
+            ],
+        ))
+        .id();
+    if !settings.vr {
+        return;
+    }
+    // VR: the box is drawn into an image (only while it shows) for the screen by the finger.
+    let mut image = Image::new_fill(
+        Extent3d { width: VR_IMAGE.x, height: VR_IMAGE.y, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        &[0, 0, 0, 0],
+        TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::default(),
+    );
+    image.texture_descriptor.usage |= TextureUsages::RENDER_ATTACHMENT;
+    let image = images.add(image);
+    let camera = commands
+        .spawn((
+            TipCamera,
+            Camera2d,
+            Camera { order: -2, is_active: false, clear_color: Color::NONE.into(), ..default() },
+            RenderTarget::Image(image.clone().into()),
+            RenderLayers::none(),
+            DespawnOnExit(AppState::Flight),
+        ))
+        .id();
+    commands.entity(tip_box).insert(UiTargetCamera(camera));
+    let size = Vec2::new(VR_WIDTH, VR_WIDTH * VR_IMAGE.y as f32 / VR_IMAGE.x as f32);
+    commands.insert_resource(TipScreenLook {
+        mesh: meshes.add(Rectangle::from_size(size)),
+        material: materials.add(StandardMaterial {
+            base_color_texture: Some(image),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            fog_enabled: false,
             ..default()
-        },
-        BackgroundColor(Color::srgba(0.02, 0.03, 0.04, 0.88)),
-        Outline::new(px(1), Val::ZERO, Color::srgba(1.0, 0.85, 0.3, 0.5)),
-        GlobalZIndex(10),
-        Visibility::Hidden,
-        DespawnOnExit(AppState::Flight),
-        children![
-            line(0, 17.0, Color::srgb(1.0, 0.85, 0.3)),
-            line(1, 14.0, Color::srgb(0.85, 0.87, 0.9)),
-            line(2, 13.0, Color::srgb(0.55, 0.6, 0.65)),
-        ],
-    ));
+        }),
+    });
 }
 
 pub(super) struct Hover {
@@ -460,24 +540,30 @@ pub(super) fn hover(
     mfd: Res<MfdState>,
     input: Res<InputConfig>,
     mut state: Local<Hover>,
+    (hands, mut anchor): (Res<Hands>, ResMut<TipAnchor>),
     mut boxes: Query<(&mut Node, &mut Visibility, &ComputedNode), With<TipBox>>,
     mut lines: Query<(&TipLine, &mut Text, &mut Node), Without<TipBox>>,
 ) {
     let dt = time.delta_secs();
     let cockpit_view =
         matches!(view.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear);
-    let active = settings.tooltips
-        && !settings.vr
-        && cockpit_view
-        && !menu.open
-        && !hide.is_some_and(|h| h.0)
-        && !kneeboard.is_some_and(|k| k.overlay_shown())
-        && !buttons.pressed(MouseButton::Right)
-        && !buttons.pressed(MouseButton::Left);
-    let pointed = active
-        .then(|| picker.cursor_ray())
-        .flatten()
-        .and_then(|ray| picker.pick(ray, &controls.iter().collect::<Vec<_>>(), |_| true));
+    let pressing = if settings.vr {
+        hands.hands.iter().any(|h| h.trigger > 0.7)
+    } else {
+        kneeboard.is_some_and(|k| k.overlay_shown())
+            || buttons.pressed(MouseButton::Right)
+            || buttons.pressed(MouseButton::Left)
+    };
+    let active =
+        settings.tooltips && cockpit_view && !menu.open && !hide.is_some_and(|h| h.0) && !pressing;
+    let all: Vec<_> = if active { controls.iter().collect() } else { Vec::new() };
+    let (pointed, finger) = if !active {
+        (None, None)
+    } else if settings.vr {
+        finger_pointed(&hands, &mut picker, &all).unzip()
+    } else {
+        (picker.cursor_ray().and_then(|ray| picker.pick(ray, &all, |_| true)), None)
+    };
     if buttons.just_pressed(MouseButton::Left) {
         // A click puts the tooltip away until the mouse rests again.
         state.since_shown = f32::INFINITY;
@@ -496,6 +582,7 @@ pub(super) fn hover(
     });
     let show = tip.is_some() && (state.resting >= DELAY || state.since_shown < LINGER);
     state.since_shown = if show { 0.0 } else { state.since_shown + dt };
+    anchor.0 = finger.filter(|_| show);
 
     let Ok((mut node, mut vis, computed)) = boxes.single_mut() else { return };
     vis.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
@@ -511,15 +598,93 @@ pub(super) fn hover(
             line.display = display;
         }
     }
-    // By the cursor, inside the window (above the cursor near the bottom).
-    let (Some(cursor), Some(window)) = (picker.cursor(), picker.window_size()) else { return };
     let size = computed.size() * computed.inverse_scale_factor();
-    let x = (cursor.x + 14.0).min(window.x - size.x - 4.0).max(4.0);
-    let below = cursor.y + 22.0;
-    let y = if below + size.y > window.y - 4.0 { cursor.y - size.y - 8.0 } else { below }.max(4.0);
+    let (x, y) = if settings.vr {
+        // In the middle of the image, so in the middle of the screen.
+        ((VR_IMAGE.as_vec2() - size) / 2.0).max(Vec2::ZERO).into()
+    } else {
+        // By the cursor, inside the window (above the cursor near the bottom).
+        let (Some(cursor), Some(window)) = (picker.cursor(), picker.window_size()) else { return };
+        let x = (cursor.x + 14.0).min(window.x - size.x - 4.0).max(4.0);
+        let below = cursor.y + 22.0;
+        let y = if below + size.y > window.y - 4.0 { cursor.y - size.y - 8.0 } else { below };
+        (x, y.max(4.0))
+    };
     if node.left != px(x) || node.top != px(y) {
         node.left = px(x);
         node.top = px(y);
+    }
+}
+
+/// VR: what a fingertip points at, and the fingertip: the control it touches, else the part
+/// just ahead of it (along the controller from the grip to the fingertip). Not while the hand
+/// holds a lever or the kneeboard.
+fn finger_pointed(
+    hands: &Hands,
+    picker: &mut Picker,
+    controls: &[(Entity, &Control, &Transform)],
+) -> Option<(Pointed, Vec3)> {
+    let free = || hands.hands.iter().filter(|h| h.active && !h.lever && !h.carrying);
+    if let Some(&(e, ..)) = controls.iter().find(|(_, c, _)| c.touched())
+        && let Some(hand) = free().find(|h| h.touching)
+    {
+        return Some((Pointed::Control(e), hand.finger));
+    }
+    free().find_map(|hand| {
+        let along = (hand.finger - hand.grip.translation).normalize_or_zero();
+        let (ray, reach) =
+            picker.segment(hand.finger - along * VR_REACH, hand.finger + along * VR_REACH)?;
+        // Controls are pointed at by touching them only.
+        match picker.pick_within(ray, reach, controls, |_| false)? {
+            p @ Pointed::Tip(_) => Some((p, hand.finger)),
+            Pointed::Control(_) => None,
+        }
+    })
+}
+
+/// VR: the screen above the fingertip, facing the eye point (the cockpit's origin), drawn while
+/// the tooltip shows.
+pub(super) fn place_screen(
+    mut commands: Commands,
+    anchor: Res<TipAnchor>,
+    look: Option<Res<TipScreenLook>>,
+    roots: Query<Entity, With<CockpitRoot>>,
+    mut screens: Query<(Entity, &ChildOf, &mut Transform, &mut Visibility), With<TipScreen>>,
+    mut cams: Query<&mut Camera, With<TipCamera>>,
+) {
+    let Some(look) = look else { return };
+    let Ok(root) = roots.single() else { return };
+    if let Ok(mut cam) = cams.single_mut()
+        && cam.is_active != anchor.0.is_some()
+    {
+        cam.is_active = anchor.0.is_some();
+    }
+    let Some(finger) = anchor.0 else {
+        for (.., mut vis) in &mut screens {
+            vis.set_if_neq(Visibility::Hidden);
+        }
+        return;
+    };
+    let to_eye = (-finger).normalize_or_zero();
+    let at = finger + to_eye * VR_TOWARDS_EYE + Vec3::Y * VR_RAISE;
+    // The screen's front (+Z) faces the eye.
+    let place = Transform::from_translation(at).looking_to(at, Vec3::Y);
+    match screens.iter_mut().find(|(_, parent, ..)| parent.parent() == root) {
+        Some((_, _, mut tf, mut vis)) => {
+            *tf = place;
+            vis.set_if_neq(Visibility::Inherited);
+        }
+        // The first time, and after the cockpit was rebuilt (the old screen went with it).
+        None => {
+            commands.spawn((
+                TipScreen,
+                Mesh3d(look.mesh.clone()),
+                MeshMaterial3d(look.material.clone()),
+                place,
+                NotShadowCaster,
+                ChildOf(root),
+            ));
+        }
     }
 }
 

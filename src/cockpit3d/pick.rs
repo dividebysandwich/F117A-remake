@@ -162,6 +162,14 @@ impl Picker<'_, '_> {
         camera.viewport_to_world(cam_tf, self.cursor()?).ok()
     }
 
+    /// The segment between two points of the cockpit frame as a world ray, and its length.
+    pub fn segment(&self, from: Vec3, to: Vec3) -> Option<(Ray3d, f32)> {
+        let root_tf = self.root.single().ok()?;
+        let (a, b) = (root_tf.transform_point(from), root_tf.transform_point(to));
+        let (dir, len) = Dir3::new_and_length(b - a).ok()?;
+        Some((Ray3d::new(a, dir), len))
+    }
+
     /// The nearest cockpit part along the ray: a control, a part with a tooltip, or None
     /// (nothing, or a bare part of the cockpit in front). Only the `usable` controls are hit on
     /// their face rectangles; the others' meshes still hide what is behind them.
@@ -171,10 +179,21 @@ impl Picker<'_, '_> {
         controls: &[(Entity, &Control, &Transform)],
         usable: impl Fn(&Control) -> bool,
     ) -> Option<Pointed> {
+        self.pick_within(ray, f32::INFINITY, controls, usable)
+    }
+
+    /// As `pick`, only the parts within `reach` (metres along the ray).
+    pub fn pick_within(
+        &mut self,
+        ray: Ray3d,
+        reach: f32,
+        controls: &[(Entity, &Control, &Transform)],
+        usable: impl Fn(&Control) -> bool,
+    ) -> Option<Pointed> {
         let Ok(root_tf) = self.root.single() else { return None };
         // Distances are along the world ray in every frame (directions are not normalized).
         let (o, d) = (ray.origin, *ray.direction);
-        let mut best = f32::INFINITY;
+        let mut best = reach;
         let mut face: Option<Entity> = None;
         let inv = root_tf.affine().inverse();
         let (ro, rd) = (inv.transform_point3(o), inv.transform_vector3(d));

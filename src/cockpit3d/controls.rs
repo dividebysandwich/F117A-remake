@@ -117,6 +117,11 @@ impl Control {
         self.kind == Kind::EjectHandle
     }
 
+    /// A VR fingertip touches it.
+    pub(super) fn touched(&self) -> bool {
+        self.touched
+    }
+
     /// Where the ray o + t d (cockpit frame, `tf` the control's) goes through the face
     /// rectangle: t.
     pub(super) fn face_hit(&self, tf: &Transform, o: Vec3, d: Vec3) -> Option<f32> {

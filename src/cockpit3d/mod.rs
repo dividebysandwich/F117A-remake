@@ -56,6 +56,7 @@ impl Plugin for Cockpit3dPlugin {
         .init_resource::<Hands>()
         .init_resource::<levers::CockpitAnchors>()
         .init_resource::<pick::Shapes>()
+        .init_resource::<tooltips::TipAnchor>()
         .add_message::<PressControl>()
         .add_systems(Startup, (setup_materials, initial_look, model::load_models))
         .add_systems(OnEnter(AppState::Flight), tooltips::spawn_box)
@@ -70,6 +71,7 @@ impl Plugin for Cockpit3dPlugin {
                 cockpit_visibility,
                 pick::forget_shapes,
                 tooltips::hover,
+                tooltips::place_screen,
             )
                 .chain()
                 .run_if(in_state(AppState::Flight)),

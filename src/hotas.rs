@@ -429,6 +429,18 @@ fn assign_keys(devices: &mut HashMap<gilrs::GamepadId, Device>) {
     }
 }
 
+/// Drops gilrs' fallback Xbox layout from a device without an SDL mapping (every HOTAS): it
+/// turns four axis slots into triggers, which arrive as button events, so a throttle there
+/// couldn't be bound as an axis.
+fn raw_mapping(g: &mut gilrs::Gilrs, id: gilrs::GamepadId) {
+    if g.gamepad(id).mapping_source() != gilrs::MappingSource::Driver {
+        return;
+    }
+    if let Err(e) = g.set_mapping(usize::from(id), &gilrs::Mapping::new(), None) {
+        warn!("joystick {}: can't clear the default mapping: {e}", g.gamepad(id).name());
+    }
+}
+
 /// Raw joystick state, read through our own gilrs instance (Bevy's gamepad layer drops the
 /// buttons and axes a standard gamepad doesn't have).
 #[derive(Resource)]
@@ -441,7 +453,7 @@ pub struct Hotas {
 
 impl Hotas {
     fn new() -> Self {
-        let gilrs = match gilrs::GilrsBuilder::new()
+        let mut gilrs = match gilrs::GilrsBuilder::new()
             .with_default_filters(false)
             .set_update_state(false)
             .build()
@@ -453,9 +465,11 @@ impl Hotas {
             }
         };
         let mut devices = HashMap::new();
-        if let Some(g) = &gilrs {
-            for (id, pad) in g.gamepads() {
-                devices.insert(id, Device::new(pad));
+        if let Some(g) = &mut gilrs {
+            let ids: Vec<_> = g.gamepads().map(|(id, _)| id).collect();
+            for id in ids {
+                raw_mapping(g, id);
+                devices.insert(id, Device::new(g.gamepad(id)));
             }
         }
         assign_keys(&mut devices);
@@ -501,6 +515,7 @@ impl Hotas {
         while let Some(ev) = g.next_event() {
             use gilrs::EventType as E;
             if matches!(ev.event, E::Connected) {
+                raw_mapping(g, ev.id);
                 self.devices.entry(ev.id).or_insert_with(|| Device::new(g.gamepad(ev.id)));
                 assign_keys(&mut self.devices);
                 info!("joystick connected: {}", self.devices[&ev.id].key);

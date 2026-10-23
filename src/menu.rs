@@ -309,12 +309,13 @@ fn spawn_menu_camera(
             &mut materials,
             root,
             MenuCamera,
+            *state.get() == AppState::Menu,
         );
         return;
     }
     let _ = (&settings, &root, &mut images, &mut meshes, &mut materials);
     // Over the scene behind the main menu (menu_scene.rs), else on black.
-    let clear_color = if *state.get() == AppState::Menu && crate::menu_scene::shown(&settings) {
+    let clear_color = if *state.get() == AppState::Menu {
         ClearColorConfig::None
     } else {
         ClearColorConfig::Custom(Color::BLACK)

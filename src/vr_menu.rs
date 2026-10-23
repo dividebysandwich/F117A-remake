@@ -42,7 +42,7 @@ pub struct WorldPanel;
 const W: u32 = 1600;
 const H: u32 = 1000;
 const PANEL: Vec2 = Vec2::new(1.6, 1.0);
-const DISTANCE: f32 = 1.3;
+pub(crate) const DISTANCE: f32 = 1.3;
 
 /// The panel showing the menu (child of the XR tracking root, in its tracking space).
 #[derive(Component, Default)]
@@ -73,6 +73,8 @@ const PRESS_HOLD: f32 = 45.0;
 
 /// Spawns the menu's egui context drawing into an image, the panel showing it in the headset
 /// and the desktop mirror; every entity gets `tag` (despawned with the menu camera).
+/// `see_through`: only the menu's windows show on the panel (the scene behind the main menu,
+/// menu_scene.rs), else the panel is black around them.
 pub fn spawn(
     commands: &mut Commands,
     images: &mut Assets<Image>,
@@ -80,7 +82,9 @@ pub fn spawn(
     materials: &mut Assets<StandardMaterial>,
     root: Option<Entity>,
     tag: impl Bundle + Clone,
+    see_through: bool,
 ) {
+    let clear = if see_through { Color::NONE } else { Color::BLACK };
     let mut image = Image::new_fill(
         Extent3d { width: W, height: H, depth_or_array_layers: 1 },
         TextureDimension::D2,
@@ -93,7 +97,7 @@ pub fn spawn(
     // The egui context renders into the image (the primary one: the menu code draws into it).
     commands.spawn((
         Camera2d,
-        Camera { order: -1, clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() },
+        Camera { order: -1, clear_color: ClearColorConfig::Custom(clear), ..default() },
         RenderTarget::Image(image.clone().into()),
         RenderLayers::none(),
         PrimaryEguiContext,
@@ -106,6 +110,7 @@ pub fn spawn(
             Mesh3d(meshes.add(Rectangle::new(PANEL.x, PANEL.y))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color_texture: Some(image.clone()),
+                alpha_mode: if see_through { AlphaMode::Blend } else { AlphaMode::Opaque },
                 unlit: true,
                 cull_mode: None,
                 fog_enabled: false,

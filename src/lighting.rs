@@ -272,7 +272,10 @@ fn update_sun(
     mut fill: Query<(&mut DirectionalLight, &mut Transform), With<FillLight>>,
     mut ambient: ResMut<GlobalAmbientLight>,
     weather: Res<crate::weather::WeatherState>,
+    scene: Option<Res<crate::menu_scene::MenuScene>>,
 ) {
+    // The scene behind the menu always has them.
+    let shadows_on = settings.shadows || scene.is_some();
     let Some(palette) = palette else { return };
     // Sky colour 0x8F (top band) as a daylight measure.
     let sky = palette.color(0x8F).to_linear();
@@ -284,7 +287,7 @@ fn update_sun(
     let shade = weather.shade.max(weather.whiteout);
     // The balance balance, also for classic shaders with shadows (the classic one leaves
     // shadows faint, the more so with the sun low).
-    let balance = (settings.modern_shading || settings.shadows).then(modern_balance);
+    let balance = (settings.modern_shading || shadows_on).then(modern_balance);
     // How far the sun is up: 0 below the horizon .. 1 a few degrees above it (without the
     // moving sun, from the sky colour).
     let sun_up = if celestial.on {
@@ -318,7 +321,7 @@ fn update_sun(
     state.moon = moon_dir.extend(moon_strength);
     // The moon casts the shadows when it is the brighter one.
     let moon_key = moon_strength > strength;
-    let flags = (settings.shadows as u32 * LIGHT_SHADOWS)
+    let flags = (shadows_on as u32 * LIGHT_SHADOWS)
         | (settings.local_lights as u32 * LIGHT_LOCAL)
         | (moon_key as u32 * LIGHT_MOON_KEY);
     state.ambient = match balance {
@@ -353,7 +356,7 @@ fn update_sun(
         Color::linear_rgb(0.75, 0.85, 1.0),
     );
     let (k, f) = if moon_key { (moon_light, sun_light) } else { (sun_light, moon_light) };
-    let shadows = settings.shadows && shade < 0.5;
+    let shadows = shadows_on && shade < 0.5;
     let set = |light: &mut DirectionalLight,
                tf: &mut Transform,
                (dir, lux, colour): (Vec3, f32, Color)| {

@@ -148,6 +148,7 @@ pub fn overlay(
             &mut materials,
             root,
             OpsCamera,
+            false,
         );
         commands.insert_resource(crate::vr_menu::WorldPanel);
         return;

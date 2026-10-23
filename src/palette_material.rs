@@ -310,10 +310,12 @@ pub const TAG_DOT_FAR: u32 = 1 << 31;
 /// (also materials created later).
 pub fn sync_lighting(
     settings: Res<crate::settings::Settings>,
+    scene: Option<Res<crate::menu_scene::MenuScene>>,
     mut materials: ResMut<Assets<PaletteMaterial>>,
 ) {
-    let lit =
-        (settings.shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);
+    // The scene behind the menu always has shadows.
+    let shadows = settings.shadows || scene.is_some();
+    let lit = (shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);
     let stale: Vec<_> =
         materials.iter().filter(|(_, m)| m.params.lit != lit).map(|(id, _)| id).collect();
     for id in stale {

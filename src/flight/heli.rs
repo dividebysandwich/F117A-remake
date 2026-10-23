@@ -11,6 +11,8 @@
 //!   damps the rates but holds no attitude (released, the helicopter stays where it was left
 //!   and drifts). Flapback pitches the nose up with forward speed and rolls away from sideways
 //!   drift; the tail fin weathervanes the nose into the wind with speed, so turns coordinate.
+//! - Speed: past about 140 kt the retreating blade stalls: thrust falls away (full collective no
+//!   longer holds the altitude), the nose pitches up and rolls left.
 //! - Torque: grows with the collective (less in translational lift); its reaction yaws the nose
 //!   right (the rotor turns anticlockwise seen from above) beyond the tail rotor's rigging, so
 //!   raising the collective needs left pedal. Past the torque limit the rotor speed droops. Out
@@ -62,6 +64,14 @@ pub struct Rotor {
     /// Flapback: nose-up per ft/s forward, roll away per ft/s sideways (rad/s^2).
     pub flapback: f32,
     pub dihedral: f32,
+    /// Retreating blade stall: between these airspeeds (knots) the blade going back (on the
+    /// left) stalls, losing this fraction of the thrust at the upper one, pitching the nose up
+    /// and rolling left (rad/s^2 there). Past the lower one full collective no longer holds the
+    /// altitude: the maximum level speed.
+    pub stall_knots: (f32, f32),
+    pub stall_loss: f32,
+    pub stall_pitch: f32,
+    pub stall_roll: f32,
     /// Torque reaction: yaw (nose right) per torque fraction beyond the tail rotor's rigging.
     pub torque_yaw: f32,
     pub torque_rigging: f32,
@@ -100,6 +110,10 @@ impl Rotor {
         sas: Vec3::new(4.0, 2.2, 5.0),
         flapback: 0.002,
         dihedral: 0.004,
+        stall_knots: (140.0, 190.0),
+        stall_loss: 0.35,
+        stall_pitch: 1.2,
+        stall_roll: 1.5,
         torque_yaw: 1.2,
         torque_rigging: 0.55,
         torque_flat: 0.12,
@@ -241,8 +255,12 @@ pub(super) fn step(
     let torque = st.torque;
 
     // --- forces (accelerations, ft/s^2)
-    let thrust =
-        (r.thrust_flat + r.thrust_slope * c).max(0.0) * nr2 * (1.0 + r.etl_gain * etl) * ge;
+    let stall = smoothstep(r.stall_knots.0, r.stall_knots.1, vel.length() / KNOT);
+    let thrust = (r.thrust_flat + r.thrust_slope * c).max(0.0)
+        * nr2
+        * (1.0 + r.etl_gain * etl)
+        * ge
+        * (1.0 - r.stall_loss * stall);
     let up = a.orientation * Vec3::Y;
     let mut accel_body = Vec3::Y * thrust * G;
     // Drag along the body's side and fore-aft axes.
@@ -257,11 +275,13 @@ pub(super) fn step(
     // --- rotation
     let fin = smoothstep(15.0, 60.0, horizontal);
     let mut rate_dot = Vec3::new(
-        r.pitch_accel * pitch * nr2 + r.flapback * (-vb.z) - r.sas.x * rates.x,
+        r.pitch_accel * pitch * nr2 + r.flapback * (-vb.z) + r.stall_pitch * stall * nr2
+            - r.sas.x * rates.x,
         -r.pedal_accel * pedal * nr2 - r.torque_yaw * (torque - r.torque_rigging) * nr2
             + r.weathervane * fin * (-vb.x)
             - r.sas.y * rates.y,
-        -r.roll_accel * roll * nr2 + r.dihedral * vb.x - r.sas.z * rates.z,
+        -r.roll_accel * roll * nr2 + r.dihedral * vb.x + r.stall_roll * stall * nr2
+            - r.sas.z * rates.z,
     );
 
     // --- ground: wheels on flat ground hold it level and stop it sliding
@@ -536,6 +556,27 @@ mod tests {
         );
         assert!(sunk.climb_rate < -8.0, "climb {}", sunk.climb_rate);
         assert!(more > trim + 0.04, "collective {trim} -> {more}");
+    }
+
+    #[test]
+    fn maximum_level_speed() {
+        // Full collective, the nose held down: climbs at 150 kt, past 160 kt the retreating
+        // blade stalls and it sinks.
+        let full = |deg: f32| {
+            let mut a0 = hovering(3000.0);
+            a0.velocity = 100.0 * 27.0;
+            cruise(a0, 60.0, -deg.to_radians(), None, 1.0).0
+        };
+        let (fast, faster) = (full(13.0), full(17.0));
+        println!(
+            "full collective: {:.0} kt climb {:.1}, {:.0} kt climb {:.1}",
+            fast.knots(),
+            fast.climb_rate,
+            faster.knots(),
+            faster.climb_rate
+        );
+        assert!(fast.knots() > 145.0 && fast.climb_rate > 5.0);
+        assert!(faster.knots() > 160.0 && faster.climb_rate < -10.0);
     }
 
     #[test]

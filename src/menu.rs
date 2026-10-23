@@ -150,7 +150,7 @@ impl Default for MenuState {
 }
 
 #[derive(Component, Clone)]
-struct MenuCamera;
+pub(crate) struct MenuCamera;
 
 /// An OpenXR runtime is there, so "Fly in VR" can relaunch the game with `--vr`.
 #[derive(Resource)]
@@ -291,6 +291,7 @@ fn settings_args(cmd: &mut std::process::Command, settings: &crate::settings::Se
 
 fn spawn_menu_camera(
     mut commands: Commands,
+    state: Res<State<AppState>>,
     settings: Res<crate::settings::Settings>,
     root: Option<Res<crate::camera::XrRoot>>,
     mut images: ResMut<Assets<Image>>,
@@ -312,9 +313,15 @@ fn spawn_menu_camera(
         return;
     }
     let _ = (&settings, &root, &mut images, &mut meshes, &mut materials);
+    // Over the scene behind the main menu (menu_scene.rs), else on black.
+    let clear_color = if *state.get() == AppState::Menu && crate::menu_scene::shown(&settings) {
+        ClearColorConfig::None
+    } else {
+        ClearColorConfig::Custom(Color::BLACK)
+    };
     commands.spawn((
         Camera2d,
-        Camera { clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() },
+        Camera { order: 1, clear_color, ..default() },
         MenuCamera,
         PrimaryEguiContext,
     ));

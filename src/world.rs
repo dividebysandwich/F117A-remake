@@ -29,10 +29,22 @@ fn load_theater(
     mut streamed: ResMut<StreamedCells>,
     mut overrides: ResMut<TileOverrides>,
 ) {
-    let theater = Theater::load(&setup.theater);
+    let mission = mission.as_deref().map(|m| &m.0);
+    insert_theater(&mut commands, &setup.theater, mission, &mut streamed, &mut overrides);
+}
+
+/// Loads a theater for drawing (a mission's special target models in it).
+pub(crate) fn insert_theater(
+    commands: &mut Commands,
+    id: &str,
+    mission: Option<&stealth_mission::Mission>,
+    streamed: &mut StreamedCells,
+    overrides: &mut TileOverrides,
+) {
+    let theater = Theater::load(id);
     streamed.cells.clear();
     *overrides = TileOverrides::default();
-    let handles = ShapeHandles::new(&theater, mission.as_deref().map(|m| &m.0), &mut overrides);
+    let handles = ShapeHandles::new(&theater, mission, overrides);
     commands.insert_resource(handles);
     commands.insert_resource(Ships(theater.ships()));
     commands.insert_resource(theater);
@@ -85,7 +97,7 @@ impl ShapeHandles {
     }
 }
 
-fn unload_theater(mut commands: Commands, mut streamed: ResMut<StreamedCells>) {
+pub(crate) fn unload_theater(mut commands: Commands, mut streamed: ResMut<StreamedCells>) {
     for (_, (_, entities)) in streamed.cells.drain() {
         for e in entities {
             commands.entity(e).try_despawn();
@@ -363,7 +375,7 @@ impl Theater {
 }
 
 #[derive(Resource, Default)]
-struct StreamedCells {
+pub(crate) struct StreamedCells {
     /// (lod, col, row) -> (only the ships spawned, the entities).
     cells: HashMap<(usize, i32, i32), (bool, Vec<Entity>)>,
     pending: bool,

@@ -33,10 +33,12 @@ impl Plugin for LightingPlugin {
         app.init_resource::<LightingState>()
             .add_systems(OnEnter(AppState::Flight), spawn_sun)
             .add_systems(OnExit(AppState::Flight), despawn_lights)
+            // The scene behind the menu (menu_scene.rs) has them too.
+            .add_systems(OnExit(AppState::Menu), despawn_lights)
             // Before the cascades are built (PostUpdate) so a shadow toggle applies at once.
             .add_systems(
                 Update,
-                (update_sun, sync_mirror_lights).run_if(in_state(AppState::Flight)),
+                (update_sun, sync_mirror_lights).run_if(crate::settings::world_shown),
             )
             // Before the light frusta and shadow visibility are worked out from the cascades.
             .add_systems(
@@ -51,7 +53,7 @@ impl Plugin for LightingPlugin {
                     .chain()
                     .in_set(LightingSystems)
                     .after(TransformSystems::Propagate)
-                    .run_if(in_state(AppState::Flight)),
+                    .run_if(crate::settings::world_shown),
             );
     }
 }
@@ -169,6 +171,11 @@ fn shadow_cascades(vr: bool) -> bevy::light::CascadeShadowConfig {
 }
 
 fn spawn_sun(mut commands: Commands, settings: Res<Settings>) {
+    spawn_lights(&mut commands, &settings);
+}
+
+/// The sun and the moon's lights (and the mirrored point lights with the local lighting).
+pub fn spawn_lights(commands: &mut Commands, settings: &Settings) {
     commands.spawn((
         KeyLight,
         DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, ..default() },
@@ -191,7 +198,7 @@ fn spawn_sun(mut commands: Commands, settings: Res<Settings>) {
     // loop to work in every lit pixel, and on the Steam Frame (Turnip, Adreno 750) that loop
     // hangs the GPU.
     if settings.local_lights {
-        spawn_mirror_lights(&mut commands);
+        spawn_mirror_lights(commands);
     }
 }
 

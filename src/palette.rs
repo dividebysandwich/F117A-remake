@@ -199,33 +199,45 @@ fn setup_palette(
     mut tod: ResMut<TimeOfDay>,
 ) {
     *tod = TimeOfDay { night_mission: setup.night, seed: setup.tod_seed, ..default() };
-    let theater = load_theater_palettes(&setup.theater);
-    let remaps: Vec<RemapTable> = crate::asset_path::load_ron("palettes/remap.ron");
-    let globals = buffers.add(ShaderBuffer::from(Globals::default()));
-    let active = tod.initial(&theater);
-    let mut palette = Palette {
-        active,
-        theater,
-        remaps,
-        remap: REMAP_DETAIL_HIGH,
-        materials: vec![],
-        line_materials: vec![],
-        background: Handle::default(),
-        background_flir: Handle::default(),
-        globals: globals.clone(),
-    };
-    let mk = |word: u16, flags: u32| PaletteMaterial {
-        params: PaletteParams { word: word as u32, flags, ..default() },
-        globals: globals.clone(),
-    };
-    palette.materials = (0..=255u8).map(|c| materials.add(mk(palette.word(c), 0))).collect();
-    palette.line_materials = (0..=255u8)
-        .map(|c| materials.add(mk(0xFF00 | (palette.word(c) & 0xFF), palette.line_flags(c))))
-        .collect();
-    palette.background = materials.add(mk(0, FLAG_BACKGROUND));
-    palette.background_flir =
-        materials.add(mk(0, FLAG_BACKGROUND | crate::palette_material::FLAG_FLIR));
-    commands.insert_resource(palette);
+    commands.insert_resource(Palette::new(&setup.theater, &tod, &mut materials, &mut buffers));
+}
+
+impl Palette {
+    /// A theater's palette and materials, the live palette as the time of day starts.
+    pub fn new(
+        theater: &str,
+        tod: &TimeOfDay,
+        materials: &mut Assets<PaletteMaterial>,
+        buffers: &mut Assets<ShaderBuffer>,
+    ) -> Self {
+        let theater = load_theater_palettes(theater);
+        let remaps: Vec<RemapTable> = crate::asset_path::load_ron("palettes/remap.ron");
+        let globals = buffers.add(ShaderBuffer::from(Globals::default()));
+        let active = tod.initial(&theater);
+        let mut palette = Palette {
+            active,
+            theater,
+            remaps,
+            remap: REMAP_DETAIL_HIGH,
+            materials: vec![],
+            line_materials: vec![],
+            background: Handle::default(),
+            background_flir: Handle::default(),
+            globals: globals.clone(),
+        };
+        let mk = |word: u16, flags: u32| PaletteMaterial {
+            params: PaletteParams { word: word as u32, flags, ..default() },
+            globals: globals.clone(),
+        };
+        palette.materials = (0..=255u8).map(|c| materials.add(mk(palette.word(c), 0))).collect();
+        palette.line_materials = (0..=255u8)
+            .map(|c| materials.add(mk(0xFF00 | (palette.word(c) & 0xFF), palette.line_flags(c))))
+            .collect();
+        palette.background = materials.add(mk(0, FLAG_BACKGROUND));
+        palette.background_flir =
+            materials.add(mk(0, FLAG_BACKGROUND | crate::palette_material::FLAG_FLIR));
+        palette
+    }
 }
 
 fn step_time_of_day(

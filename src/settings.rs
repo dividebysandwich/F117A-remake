@@ -24,6 +24,14 @@ pub enum SetupSet {
     Spawn,
 }
 
+/// The world is drawn: in flight, or behind the menu (menu_scene.rs).
+pub fn world_shown(
+    state: Res<State<AppState>>,
+    scene: Option<Res<crate::menu_scene::MenuScene>>,
+) -> bool {
+    *state.get() == AppState::Flight || scene.is_some()
+}
+
 pub fn configure(app: &mut App) {
     for s in [AppState::Flight, AppState::Viewer] {
         app.configure_sets(

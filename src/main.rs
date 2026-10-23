@@ -34,6 +34,7 @@ mod lightning;
 mod loadout;
 mod map_draw;
 mod menu;
+mod menu_scene;
 mod mfd;
 mod mission;
 mod models;
@@ -169,7 +170,12 @@ fn main() {
             dots::DotsPlugin,
             canvas::CanvasPlugin,
         ))
-        .add_plugins((menu::MenuPlugin, debrief::DebriefPlugin, viewer::ViewerPlugin))
+        .add_plugins((
+            menu::MenuPlugin,
+            menu_scene::MenuScenePlugin,
+            debrief::DebriefPlugin,
+            viewer::ViewerPlugin,
+        ))
         .add_plugins((
             world::WorldPlugin,
             freecam::FreeCamPlugin,

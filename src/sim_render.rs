@@ -38,12 +38,19 @@ impl Plugin for SimRenderPlugin {
                     sync_aaa.run_if(resource_exists::<Combat>),
                     sync_remote_pilots.run_if(resource_exists::<Combat>),
                     own_muzzle_flash.run_if(resource_exists::<Combat>),
-                    world_model_state,
                     own_shadow,
                 )
                     .in_set(SimRenderSystems)
                     .after(CombatSystems)
                     .run_if(in_state(AppState::Flight)),
+            )
+            // Also the lights of the scene behind the menu.
+            .add_systems(
+                Update,
+                world_model_state
+                    .in_set(SimRenderSystems)
+                    .after(CombatSystems)
+                    .run_if(crate::settings::world_shown),
             );
     }
 }

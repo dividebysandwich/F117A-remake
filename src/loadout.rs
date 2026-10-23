@@ -553,7 +553,7 @@ pub fn editor(
     height: f32,
 ) {
     let lay = lo.layout();
-    w.selected = w.selected.min(lay.hardpoints.len() - 1);
+    w.selected = w.selected.min(lay.hardpoints.len().saturating_sub(1));
     let mirror = w.mirror.get_or_insert(true);
     let size = egui::vec2(ui.available_width(), height);
     ui.horizontal_top(|ui| {
@@ -564,7 +564,11 @@ pub fn editor(
         }
         ui.vertical(|ui| {
             ui.set_width(side);
-            let hp = &lay.hardpoints[w.selected];
+            let Some(hp) = lay.hardpoints.get(w.selected) else {
+                section(ui, "No hardpoints");
+                ui.label(egui::RichText::new("This aircraft carries no stores").color(DIM));
+                return;
+            };
             section(ui, hp.name);
             if hp.fantasy {
                 ui.label(egui::RichText::new("Not on the real aircraft").small().color(AMBER));
@@ -759,6 +763,20 @@ mod tests {
             let main = m.loadout.bays[0].weapon as u8;
             assert_eq!(lo.stores[lo.first_choice(&m)], Some(main), "seed {seed}");
             assert_eq!(lo.stores[0], Some(0));
+        }
+    }
+
+    #[test]
+    fn the_editor_draws_every_aircraft() {
+        let m = mission(7, false);
+        for a in [AircraftKind::F117, AircraftKind::F16, AircraftKind::UH60, AircraftKind::AH1Z] {
+            let mut lo = PlannedLoadout::of(&m, a);
+            let mut w = LoadoutWindow::opened(true);
+            let ctx = egui::Context::default();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                editor(ui, &mut w, &mut lo, &m, 600.0);
+            });
+            out.textures_delta.clear();
         }
     }
 }

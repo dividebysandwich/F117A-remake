@@ -78,7 +78,8 @@ impl Source {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AxisMapping {
     pub control: AxisControl,
-    /// Device name as the OS reports it.
+    /// The device's `Device::key` (older mappings: its name, which only counts while one
+    /// connected device has it).
     pub device: String,
     /// Platform event code of the axis.
     pub code: u32,
@@ -383,6 +384,11 @@ impl InputConfig {
 #[derive(Debug, Default, Clone)]
 pub struct Device {
     pub name: String,
+    /// What mappings name the device by: the name, the USB vendor and product ids, and "#2",
+    /// "#3" for further devices of the same model (Windows calls every stick, throttle and
+    /// pedal set "HID-compliant game controller").
+    pub key: String,
+    usb_id: Option<(u16, u16)>,
     pub axes: BTreeMap<u32, f32>,
     pub buttons: BTreeSet<u32>,
     prev_buttons: BTreeSet<u32>,
@@ -390,6 +396,11 @@ pub struct Device {
 }
 
 impl Device {
+    fn new(pad: gilrs::Gamepad) -> Self {
+        let usb_id = pad.vendor_id().zip(pad.product_id());
+        Self { name: pad.name().to_string(), usb_id, ..default() }
+    }
+
     fn active(&self, source: Source, prev: bool) -> bool {
         let (buttons, axes) =
             if prev { (&self.prev_buttons, &self.prev_axes) } else { (&self.buttons, &self.axes) };
@@ -398,6 +409,23 @@ impl Device {
             Source::AxisPositive(c) => axes.get(&c).is_some_and(|v| *v > 0.5),
             Source::AxisNegative(c) => axes.get(&c).is_some_and(|v| *v < -0.5),
         }
+    }
+}
+
+/// Sets each device's `key`; devices of the same model are numbered in connection order.
+fn assign_keys(devices: &mut HashMap<gilrs::GamepadId, Device>) {
+    let mut ids: Vec<_> = devices.keys().copied().collect();
+    ids.sort_by_key(|id| usize::from(*id));
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    for id in ids {
+        let d = devices.get_mut(&id).unwrap();
+        let base = match d.usb_id {
+            Some((v, p)) => format!("{} [{v:04x}:{p:04x}]", d.name),
+            None => d.name.clone(),
+        };
+        let n = seen.entry(base.clone()).or_default();
+        *n += 1;
+        d.key = if *n == 1 { base } else { format!("{base} #{n}") };
     }
 }
 
@@ -427,27 +455,40 @@ impl Hotas {
         let mut devices = HashMap::new();
         if let Some(g) = &gilrs {
             for (id, pad) in g.gamepads() {
-                info!("joystick: {}", pad.name());
-                devices.insert(id, Device { name: pad.name().to_string(), ..default() });
+                devices.insert(id, Device::new(pad));
             }
+        }
+        assign_keys(&mut devices);
+        for d in devices.values() {
+            info!("joystick: {}", d.key);
         }
         Self { gilrs: gilrs.map(SyncCell::new), devices, throttle_applied: None }
     }
 
-    /// Connected devices, sorted by name.
+    /// Connected devices, sorted by key.
     pub fn devices(&self) -> Vec<&Device> {
         let mut v: Vec<_> = self.devices.values().collect();
-        v.sort_by(|a, b| a.name.cmp(&b.name));
+        v.sort_by(|a, b| a.key.cmp(&b.key));
         v
+    }
+
+    /// The device a mapping names, by key or (older mappings) by a name no other device has.
+    fn mapped<'a>(&'a self, device: &'a str) -> impl Iterator<Item = &'a Device> {
+        let by_key = self.devices.values().find(|d| d.key == device);
+        let by_name = || {
+            let mut named = self.devices.values().filter(|d| d.name == device);
+            named.next().filter(|_| named.next().is_none())
+        };
+        by_key.or_else(by_name).into_iter()
     }
 
     /// Current raw value of a device axis (None until it has moved).
     pub fn axis(&self, device: &str, code: u32) -> Option<f32> {
-        self.devices.values().filter(|d| d.name == device).find_map(|d| d.axes.get(&code).copied())
+        self.mapped(device).find_map(|d| d.axes.get(&code).copied())
     }
 
     fn active(&self, device: &str, source: Source, prev: bool) -> bool {
-        self.devices.values().any(|d| d.name == device && d.active(source, prev))
+        self.mapped(device).any(|d| d.active(source, prev))
     }
 
     fn poll(&mut self) {
@@ -460,13 +501,14 @@ impl Hotas {
         while let Some(ev) = g.next_event() {
             use gilrs::EventType as E;
             if matches!(ev.event, E::Connected) {
-                let name = g.gamepad(ev.id).name().to_string();
-                info!("joystick connected: {name}");
-                self.devices.entry(ev.id).or_insert_with(|| Device { name, ..default() });
+                self.devices.entry(ev.id).or_insert_with(|| Device::new(g.gamepad(ev.id)));
+                assign_keys(&mut self.devices);
+                info!("joystick connected: {}", self.devices[&ev.id].key);
                 continue;
             }
             if matches!(ev.event, E::Disconnected) {
                 self.devices.remove(&ev.id);
+                assign_keys(&mut self.devices);
                 continue;
             }
             let Some(d) = self.devices.get_mut(&ev.id) else { continue };

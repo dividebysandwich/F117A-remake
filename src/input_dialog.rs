@@ -62,8 +62,8 @@ impl Capture {
     fn new(what: Binding, hotas: &Hotas) -> Self {
         let mut c = Self { what, axes: HashMap::new(), buttons: HashSet::new() };
         for d in hotas.devices() {
-            c.axes.extend(d.axes.iter().map(|(code, v)| ((d.name.clone(), *code), *v)));
-            c.buttons.extend(d.buttons.iter().map(|code| (d.name.clone(), *code)));
+            c.axes.extend(d.axes.iter().map(|(code, v)| ((d.key.clone(), *code), *v)));
+            c.buttons.extend(d.buttons.iter().map(|code| (d.key.clone(), *code)));
         }
         c
     }
@@ -73,17 +73,17 @@ impl Capture {
         let mut found = None;
         for d in hotas.devices() {
             // Buttons held at the start count again once released.
-            self.buttons.retain(|(n, c)| *n != d.name || d.buttons.contains(c));
+            self.buttons.retain(|(n, c)| *n != d.key || d.buttons.contains(c));
             for &code in &d.buttons {
                 if matches!(self.what, Binding::Button(_))
-                    && !self.buttons.contains(&(d.name.clone(), code))
+                    && !self.buttons.contains(&(d.key.clone(), code))
                 {
-                    found = found.or(Some((d.name.clone(), Found::Button(Source::Button(code)))));
+                    found = found.or(Some((d.key.clone(), Found::Button(Source::Button(code)))));
                 }
             }
             for (&code, &v) in &d.axes {
                 // An axis seen for the first time is its own baseline.
-                let base = *self.axes.entry((d.name.clone(), code)).or_insert(v);
+                let base = *self.axes.entry((d.key.clone(), code)).or_insert(v);
                 if (v - base).abs() > 0.5 {
                     let input = match self.what {
                         Binding::Axis(_) => Found::Axis(code),
@@ -92,7 +92,7 @@ impl Capture {
                         Binding::Button(_) => continue,
                         Binding::Key(_) => continue,
                     };
-                    found = found.or(Some((d.name.clone(), input)));
+                    found = found.or(Some((d.key.clone(), input)));
                 }
             }
         }
@@ -100,9 +100,11 @@ impl Capture {
     }
 }
 
+/// "Device: Axis 1", the device name shortened but its ids and number kept.
 fn binding_label(device: &str, source: &str) -> String {
-    let device: String = device.chars().take(28).collect();
-    format!("{device}: {source}")
+    let (name, ids) = device.rfind(" [").map_or((device, ""), |i| device.split_at(i));
+    let name: String = name.chars().take(28usize.saturating_sub(ids.len()).max(12)).collect();
+    format!("{name}{ids}: {source}")
 }
 
 /// Modifier keys, which only count together with another key.
@@ -237,7 +239,7 @@ pub fn show(
                         ui.colored_label(AMBER, "NO JOYSTICKS DETECTED  (connect a device; it shows up here)");
                     } else {
                         for d in &devices {
-                            ui.label(egui::RichText::new(format!("> {}", d.name)).color(GREEN));
+                            ui.label(egui::RichText::new(format!("> {}", d.key)).color(GREEN));
                         }
                     }
                     ui.checkbox(&mut config.gamepad_defaults, "Standard gamepad layout")

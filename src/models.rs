@@ -480,17 +480,17 @@ impl ModelAssets<'_> {
                 e.insert(CollisionHull { planes, radius, surface });
             }
         }
+        let mut rotor = None;
         if suffix_number(name, "_part").is_some() {
             let mut slot = extras["state_slot"].as_u64().unwrap_or(0) as usize;
             if slot == 16 && TILE_HELICOPTERS.iter().any(|h| name.starts_with(h)) {
                 slot = 17;
             }
-            e.insert(ArticulatedPart {
-                root,
-                slot,
-                axis: extras["axis"].as_u64().unwrap_or(0) as u8,
-                rest: node.transform.rotation,
-            });
+            let axis = extras["axis"].as_u64().unwrap_or(0) as u8;
+            e.insert(ArticulatedPart { root, slot, axis, rest: node.transform.rotation });
+            if slot == 17 && !lights_only {
+                rotor = self.rotor_shape(node, material_names, axis).map(|r| (axis, r));
+            }
         }
         let conds = parse_conds(name);
         if !conds.is_empty() && !name.contains("_pal_") {
@@ -520,7 +520,7 @@ impl ModelAssets<'_> {
                     }
                 }
             } else if !lights_only {
-                for prim in &mesh.primitives {
+                for (i, prim) in mesh.primitives.iter().enumerate() {
                     let prim_color = prim
                         .material
                         .as_ref()
@@ -556,8 +556,26 @@ impl ModelAssets<'_> {
                             .entity(child)
                             .insert((LodMesh(l), bevy::camera::visibility::RenderLayers::layer(0)));
                     }
+                    if rotor.as_ref().is_some_and(|(_, r)| r.blade_prims[i]) {
+                        commands.entity(child).insert(crate::rotor_blur::RotorBlade { root });
+                    }
                     commands.entity(entity).add_child(child);
                 }
+            }
+        }
+        if let Some((axis, shape)) = &rotor {
+            let disc = crate::rotor_blur::spawn_disc(
+                commands,
+                entity,
+                root,
+                *axis,
+                shape,
+                self.palette.globals.clone(),
+            );
+            if let Some(l) = lod {
+                commands
+                    .entity(disc)
+                    .insert((LodMesh(l), bevy::camera::visibility::RenderLayers::layer(0)));
             }
         }
         for c in &node.children {
@@ -576,6 +594,32 @@ impl ModelAssets<'_> {
         entity
     }
 
+    /// A rotor part's blades and hub (`rotor_blur::rotor_shape`), by its primitives.
+    fn rotor_shape(
+        &self,
+        node: &GltfNode,
+        material_names: &HashMap<AssetId<GltfMaterial>, &str>,
+        axis: u8,
+    ) -> Option<crate::rotor_blur::RotorShape> {
+        let mesh = self.meshes.get(node.mesh.as_ref()?)?;
+        let node_color = index_from_name(&node.name);
+        let prims: Vec<(u8, Vec<[Vec3; 3]>)> = mesh
+            .primitives
+            .iter()
+            .map(|prim| {
+                let colour = node_color
+                    .or(prim
+                        .material
+                        .as_ref()
+                        .and_then(|m| material_names.get(&m.id()))
+                        .and_then(|n| index_from_name(n)))
+                    .unwrap_or(15);
+                (colour, self.triangles(&prim.mesh))
+            })
+            .collect();
+        crate::rotor_blur::rotor_shape(axis, &prims)
+    }
+
     /// The triangles of a model node's own meshes (not its children's), by palette colour
     /// (model units).
     pub fn node_triangles(&self, file: &Handle<Gltf>, name: &str) -> Vec<(u8, Vec<[Vec3; 3]>)> {
@@ -588,27 +632,32 @@ impl ModelAssets<'_> {
             g.named_materials.iter().map(|(n, h)| (h.id(), n.as_ref())).collect();
         let mut out = Vec::new();
         for prim in &mesh.primitives {
-            let Some(m) = self.mesh_data.get(&prim.mesh) else { continue };
+            if self.mesh_data.get(&prim.mesh).is_none() {
+                continue;
+            }
             let colour = prim
                 .material
                 .as_ref()
                 .and_then(|m| names.get(&m.id()))
                 .and_then(|n| index_from_name(n))
                 .unwrap_or(15);
-            let p = self.positions(&prim.mesh);
-            let idx: Vec<usize> = match m.indices() {
-                Some(i) => i.iter().collect(),
-                None => (0..p.len()).collect(),
-            };
-            let tris = idx
-                .as_chunks::<3>()
-                .0
-                .iter()
-                .filter_map(|t| Some([*p.get(t[0])?, *p.get(t[1])?, *p.get(t[2])?]))
-                .collect();
-            out.push((colour, tris));
+            out.push((colour, self.triangles(&prim.mesh)));
         }
         out
+    }
+
+    fn triangles(&self, mesh: &Handle<Mesh>) -> Vec<[Vec3; 3]> {
+        let Some(m) = self.mesh_data.get(mesh) else { return vec![] };
+        let p = self.positions(mesh);
+        let idx: Vec<usize> = match m.indices() {
+            Some(i) => i.iter().collect(),
+            None => (0..p.len()).collect(),
+        };
+        idx.as_chunks::<3>()
+            .0
+            .iter()
+            .filter_map(|t| Some([*p.get(t[0])?, *p.get(t[1])?, *p.get(t[2])?]))
+            .collect()
     }
 
     /// A model node's triangles flattened onto its ground plane (y = 0), as one mesh.

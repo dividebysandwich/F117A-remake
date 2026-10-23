@@ -51,6 +51,7 @@ mod prefs;
 mod profile;
 mod recon;
 mod recorder;
+mod rotor_blur;
 mod rwr;
 mod scenery;
 mod script;
@@ -195,6 +196,7 @@ fn main() {
             sim_render::SimRenderPlugin,
             trackcam::TrackCamPlugin,
             trails::TrailsPlugin,
+            rotor_blur::RotorBlurPlugin,
             explosions::ExplosionsPlugin,
             flight_menu::FlightMenuPlugin,
             kneeboard::KneeboardPlugin,

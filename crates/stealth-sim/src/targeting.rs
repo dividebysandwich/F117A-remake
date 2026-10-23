@@ -412,7 +412,7 @@ impl Sim {
     }
 
     /// A gunship's Sidewinder seeker slaved to the helmet sight (as far as its gimbals turn,
-    /// `SEEKER_GIMBAL`): the lock is the hostile aircraft nearest the middle of its circle
+    /// `SEEKER_GIMBAL`): the lock is the aircraft nearest the middle of its circle
     /// (`HELMET_SEEKER` round where it looks) and is broken when it leaves the circle.
     fn update_helmet_seeker(&mut self, ps: &PlayerState) {
         let spec = self.selected_spec();
@@ -447,13 +447,18 @@ impl Sim {
             seen(p.mx, p.my, p.view_z)
         });
         let mut range = air.flatten().or(pilot.flatten()).map(|(_, r)| r);
-        // Nothing locked: the hostile aircraft nearest the middle of the circle.
+        // Nothing locked: the aircraft (or other pilot) nearest the middle of the circle; the
+        // seeker tells no friend from foe.
         let best = range.is_none().then(|| {
-            self.flights
-                .iter()
-                .enumerate()
-                .filter(|&(j, u)| !self.friendly_unit(j, u.spec))
-                .filter_map(|(j, u)| unit(u).filter(|&(_, r)| r < 0x12C0 as f64).map(|o| (j, o)))
+            let units =
+                self.flights.iter().enumerate().filter_map(|(j, u)| Some((Ok(j), unit(u)?)));
+            let pilots = self
+                .other_pilots()
+                .into_iter()
+                .filter_map(|(k, p)| Some((Err(k), seen(p.mx, p.my, p.view_z)?)));
+            units
+                .chain(pilots)
+                .filter(|&(_, (_, r))| r < 0x12C0 as f64)
                 .min_by(|a, b| a.1.0.total_cmp(&b.1.0))
         });
         // A lock that leaves the circle is broken.
@@ -463,9 +468,17 @@ impl Sim {
         if pilot == Some(None) {
             self.pl.pilot_lock = None;
         }
-        if let Some((j, (_, r))) = best.flatten() {
-            self.pl.air_lock = j as i32;
-            self.pl.pilot_lock = None;
+        if let Some((who, (_, r))) = best.flatten() {
+            match who {
+                Ok(j) => {
+                    self.pl.air_lock = j as i32;
+                    self.pl.pilot_lock = None;
+                }
+                Err(k) => {
+                    self.pl.air_lock = -1;
+                    self.pl.pilot_lock = Some(k);
+                }
+            }
             range = Some(r);
         }
         // The oval as on the HUD: the lock within twice the missile's lock range, red within it.

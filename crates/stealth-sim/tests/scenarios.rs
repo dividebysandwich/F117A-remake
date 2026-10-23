@@ -1922,3 +1922,39 @@ fn helmet_seeker_locks_the_one_it_looks_at() {
         assert_eq!(sim.targeting().air, Some(2));
     }
 }
+
+#[test]
+fn helmet_seeker_locks_any_aircraft() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 2);
+    let opts = SimOptions { helicopter: true, gunship: true, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    // An aircraft of a type the nearest-target key passes over, 3 km ahead.
+    let spec = (0..sim.aircraft_types.len() as i32)
+        .find(|&s| sim.friendly_aircraft(s))
+        .expect("a friendly type");
+    {
+        let u = &mut sim.flights_mut()[1];
+        *u = FlightUnit {
+            x: mx,
+            y: my - 192,
+            alt: 5000,
+            spec,
+            flags: 0x43,
+            speed: 200,
+            timer: 30000,
+            wp: 3,
+            ..Default::default()
+        };
+        u.wx = u.x << 5;
+        u.wy = u.y << 5;
+    }
+    sim.set_bay(0, 0, 4);
+    sim.select_bay(0);
+    let mut p = player_at(mx, my, 5000, 0, 0);
+    p.hud_mode = HudMode::Air;
+    p.helmet = Some(PodAim { heading: 0, pitch: 0, ground: None });
+    sim.step(&p, 15);
+    assert_eq!(sim.targeting().air, Some(1));
+}

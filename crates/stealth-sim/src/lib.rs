@@ -1128,7 +1128,7 @@ impl Sim {
 
     /// Where a gunship's Sidewinder seeker looks (unit vector east, north, up), None unless it
     /// follows the helmet sight: as far as its gimbals turn (`SEEKER_GIMBAL`), locking the
-    /// hostile aircraft nearest the middle of its circle (`HELMET_SEEKER`) and losing it when it
+    /// aircraft nearest the middle of its circle (`HELMET_SEEKER`) and losing it when it
     /// leaves.
     pub fn helmet_seeker(&self) -> Option<[f64; 3]> {
         self.pl.helmet_seeker

@@ -277,14 +277,16 @@ fn start_combat(
     let prior_tiles = prior_damage.as_ref().map(|d| d.tiles.clone()).unwrap_or_default();
     let external_stores = !settings.aircraft.spec().bomb_bay;
     let helicopter = settings.aircraft.spec().helicopter;
+    let gunship = settings.aircraft.spec().turret;
     let opts = match &campaign {
         // A campaign's rules are its host's (a coop server's for everybody).
-        Some(c) => SimOptions { external_stores, helicopter, ..c.rules.sim_options() },
+        Some(c) => SimOptions { external_stores, helicopter, gunship, ..c.rules.sim_options() },
         None => SimOptions {
             landing,
             prior_damage,
             external_stores,
             helicopter,
+            gunship,
             realistic_damage: settings.realistic_damage,
             realistic_guidance: settings.realistic_guidance,
             air_defence: settings.air_defence,
@@ -500,8 +502,22 @@ fn player_state(
         external_view: !is_cockpit_view(view.view),
         hud_visible: view.view == View::Cockpit,
         ccrp: hud.ccrp,
+        pod: pod_aim(&mfd.av.tgp),
         cmd: SimCommands { gun, trigger, ..cmd },
     }
+}
+
+/// The targeting pod's line of sight for the sim: its direction in BAM and the ground point
+/// (map units) it rests on.
+fn pod_aim(tgp: &crate::avionics::TgpState) -> Option<stealth_sim::PodAim> {
+    let d = tgp.los?;
+    let heading = to_bam(d.x.atan2(-d.z)).round() as i32 as u16;
+    let pitch = to_bam(d.y.clamp(-1.0, 1.0).asin()).round() as i32 as i16;
+    let ground = tgp.los_ground.map(|p| {
+        let (e, n, _) = bevy_to_wu(p);
+        ((e / 32.0).round() as i32, (0x8000 as f64 - n / 32.0).round() as i32)
+    });
+    Some(stealth_sim::PodAim { heading, pitch, ground })
 }
 
 #[derive(SystemParam)]
@@ -876,6 +892,7 @@ struct Outputs<'w, 's> {
     ships: Option<Res<'w, crate::world::Ships>>,
     tiles: Res<'w, TileOverrides>,
     time: Res<'w, Time>,
+    mfd: Res<'w, MfdState>,
 }
 
 /// Map units -> world units (east, north).
@@ -903,7 +920,9 @@ pub fn remote_motion(combat: &Combat, id: u8) -> Option<((f64, f64, f64), DVec3,
     let r = std::f64::consts::TAU / 65536.0;
     let (h, pitch) = ((v.heading as u16) as f64 * r, (v.pitch as i16) as f64 * r);
     let dir = DVec3::new(h.sin() * pitch.cos(), pitch.sin(), -h.cos() * pitch.cos());
-    let name = if p.helicopter {
+    let name = if p.gunship {
+        "AH-1Z"
+    } else if p.helicopter {
         "UH-60A"
     } else if p.external_stores {
         "F-16"
@@ -1138,6 +1157,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         ships,
         tiles,
         time: _,
+        mfd,
     } = out;
     let eye = settings.cockpit_eye();
     let sim = &combat.sim;
@@ -1604,7 +1624,9 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                 })
             };
             let ground_y = wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
-            new_cues.gun = Some(gun_cue(&a, pos, eye, target, air, ground_y));
+            let barrel = mfd.av.tgp.los.filter(|_| settings.aircraft.spec().turret);
+            let barrel = barrel.map(|d| a.orientation * turret_dir(a.orientation.inverse() * d));
+            new_cues.gun = Some(gun_cue(&a, pos, eye, target, air, ground_y, barrel));
         }
     }
     *cam = info;
@@ -1618,6 +1640,17 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
 ///
 /// Unless an aircraft is locked (`air`), when the rounds reach the ground (at height `ground_y`)
 /// within `GROUND_RANGE` the pipper is where they hit it, with the range to that point.
+/// A turret's barrel (aircraft frame) pointed as near `d` as it turns
+/// (`stealth_sim::TURRET_*`).
+fn turret_dir(d: Vec3) -> Vec3 {
+    let bam = |b: i32| b as f32 * std::f32::consts::TAU / 65536.0;
+    let (az, el) = crate::avionics::pod_angles(d);
+    let az = az.clamp(-bam(stealth_sim::TURRET_AZIMUTH), bam(stealth_sim::TURRET_AZIMUTH));
+    let el = el.clamp(-bam(stealth_sim::TURRET_DEPRESSION), bam(stealth_sim::TURRET_ELEVATION));
+    crate::avionics::pod_dir(az, el)
+}
+
+/// `barrel`: a turret's (world direction), else the cannon fires along the nose.
 fn gun_cue(
     a: &Aircraft,
     pos: &WorldPos,
@@ -1625,6 +1658,7 @@ fn gun_cue(
     target: Option<(DVec3, DVec3)>,
     air: bool,
     ground_y: f64,
+    barrel: Option<Vec3>,
 ) -> crate::hud::GunCue {
     const DEFAULT_RANGE: f64 = 1000.0;
     /// Range the rounds are effective to (m).
@@ -1634,7 +1668,10 @@ fn gun_cue(
     let from = pos.0 + (a.orientation * eye).as_dvec3();
     let nose = (a.orientation * Vec3::NEG_Z).as_dvec3();
     let speed = a.knots() as f64 * 0.514_444;
-    let u = nose * (stealth_sim::GUN_MUZZLE_SPEED + speed);
+    let u = match barrel {
+        Some(b) => b.as_dvec3() * stealth_sim::GUN_MUZZLE_SPEED + nose * speed,
+        None => nose * (stealth_sim::GUN_MUZZLE_SPEED + speed),
+    };
     let g = DVec3::new(0.0, -stealth_sim::GUN_GRAVITY, 0.0);
     let cue = |d: DVec3, range: f64, range_m: Option<f32>, in_range: bool| {
         let dir = d.normalize_or_zero();
@@ -1875,7 +1912,15 @@ mod tests {
         let (a, pos) = level(400.0);
         let v = DVec3::new(0.0, 0.0, -400.0 * 0.514_444);
         let at = |m: f64| {
-            gun_cue(&a, &pos, Vec3::ZERO, Some((pos.0 + DVec3::new(0.0, 0.0, -m), v)), true, 0.0)
+            gun_cue(
+                &a,
+                &pos,
+                Vec3::ZERO,
+                Some((pos.0 + DVec3::new(0.0, 0.0, -m), v)),
+                true,
+                0.0,
+                None,
+            )
         };
         let (near, far) = (mils(at(500.0).dir), mils(at(1500.0).dir));
         // A target flying along: the rounds' drop only (g t / 2 v at 1050 m/s).
@@ -1898,6 +1943,7 @@ mod tests {
             Some((pos.0 + DVec3::new(0.0, 0.0, -1000.0), DVec3::new(200.0, 0.0, 0.0))),
             true,
             0.0,
+            None,
         );
         let (right, _) = mils(cue.dir);
         let t = 1000.0 / (1050.0 + 400.0 * 0.514_444);
@@ -1905,7 +1951,7 @@ mod tests {
         assert!((right - want).abs() < 3.0, "{right} mils, want {want}");
         // No target: a target 1000 m ahead flying along.
         // No target, the ground far below the rounds' reach: a target 1000 m ahead flying along.
-        let free = gun_cue(&a, &pos, Vec3::ZERO, None, false, 0.0);
+        let free = gun_cue(&a, &pos, Vec3::ZERO, None, false, 0.0, None);
         assert!(free.range_m.is_none() && !free.in_range);
         assert!(mils(free.dir).0.abs() < 0.01 && mils(free.dir).1 < 0.0);
     }
@@ -1916,7 +1962,7 @@ mod tests {
         a.orientation = Quat::from_rotation_x(-30f32.to_radians());
         // 1000 m up in a 30 degree dive: the rounds hit the ground about 2000 m away, a little
         // short of the boresight.
-        let cue = gun_cue(&a, &pos, Vec3::ZERO, None, false, 0.0);
+        let cue = gun_cue(&a, &pos, Vec3::ZERO, None, false, 0.0, None);
         let range = cue.range_m.expect("ground impact") as f64;
         assert!((1900.0..2000.0).contains(&range), "{range}");
         let hit = pos.0 + (a.orientation * cue.dir).as_dvec3() * range;
@@ -1924,9 +1970,9 @@ mod tests {
         assert!(mils(cue.dir).1 < 0.0 && !cue.in_range);
         // A ground target locked: SHOOT within the gun's range.
         let target = Some((hit, DVec3::ZERO));
-        assert!(gun_cue(&a, &pos, Vec3::ZERO, target, false, 0.0).in_range);
+        assert!(gun_cue(&a, &pos, Vec3::ZERO, target, false, 0.0, None).in_range);
         // The ground 600 m higher: the impact is that much nearer.
-        assert!(gun_cue(&a, &pos, Vec3::ZERO, None, false, 600.0).range_m.unwrap() < 900.0);
+        assert!(gun_cue(&a, &pos, Vec3::ZERO, None, false, 600.0, None).range_m.unwrap() < 900.0);
     }
 }
 

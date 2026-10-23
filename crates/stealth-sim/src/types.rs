@@ -466,8 +466,34 @@ pub struct PlayerState {
     /// the fire button releases the bomb when the target passes the release point.
     #[serde(default)]
     pub ccrp: bool,
+    /// The targeting pod's line of sight, followed by an attack helicopter's turret cannon and
+    /// Hellfires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pod: Option<PodAim>,
     pub cmd: Commands,
 }
+
+/// Where the targeting pod looks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PodAim {
+    /// Direction in BAM: heading clockwise from north, pitch up.
+    pub heading: u16,
+    pub pitch: i16,
+    /// The ground point it rests on (map units), within the pod's range.
+    pub ground: Option<(i32, i32)>,
+}
+
+/// An attack helicopter's turret: how far it turns from the nose and how far its gun lowers
+/// and raises (BAM; the AH-1Z's: 110 degrees each side, 50 down, 20 up).
+pub const TURRET_AZIMUTH: i32 = 20025;
+pub const TURRET_DEPRESSION: i32 = 9102;
+pub const TURRET_ELEVATION: i32 = 3641;
+/// The Hellfire's missile table entry.
+pub const HELLFIRE_SPEC: i32 = 47;
+/// An object this close to the Hellfire's laser spot (map units) is what it homes on.
+pub const HELLFIRE_SPOT_RADIUS: i32 = 6;
+/// How far off its heading the Hellfire's seeker sees the spot (BAM, 45 degrees).
+pub const HELLFIRE_SEEKER: i32 = 0x2000;
 
 /// A pilot's aircraft as the simulation sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -478,6 +504,9 @@ pub struct Airframe {
     pub external_stores: bool,
     /// A helicopter (`SimOptions::helicopter`).
     pub helicopter: bool,
+    /// An attack helicopter (`SimOptions::gunship`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gunship: bool,
 }
 
 /// Landing option.
@@ -509,6 +538,10 @@ pub struct SimOptions {
     /// whole airfield), has no cannon and judges its own touchdowns.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub helicopter: bool,
+    /// The helicopter is a gunship (the AH-1Z): it has its turret cannon, aimed with the
+    /// targeting pod, flies no insertions and carries no troops.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gunship: bool,
     /// Realistic weapon damage: a missile hit can destroy the aircraft
     /// outright, damages more systems, starts fires more often (a fire burns out or the aircraft
     /// explodes) and damaged control surfaces put the aircraft out of trim.
@@ -542,6 +575,7 @@ impl Default for SimOptions {
             prior_damage: None,
             external_stores: false,
             helicopter: false,
+            gunship: false,
             realistic_damage: false,
             realistic_guidance: false,
             air_defence: false,

@@ -69,6 +69,12 @@ impl Rules {
             Aircraft::UH60 => {
                 Airframe { external_stores: true, helicopter: true, ..Airframe::default() }
             }
+            Aircraft::AH1Z => Airframe {
+                external_stores: true,
+                helicopter: true,
+                gunship: true,
+                ..Airframe::default()
+            },
         }
     }
 }

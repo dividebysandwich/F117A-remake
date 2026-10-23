@@ -248,9 +248,13 @@ impl AcmiWriter {
                 deg(s.heading, false),
             );
             if self.samples == 0 {
+                let rotorcraft = crate::aircraft::AircraftKind::ALL
+                    .iter()
+                    .any(|k| k.name() == aircraft && k.spec().helicopter);
                 let _ = write!(
                     w,
-                    ",Type=Air+FixedWing,Name={},Pilot=Player,Coalition=Allies,Color=Blue",
+                    ",Type=Air+{},Name={},Pilot=Player,Coalition=Allies,Color=Blue",
+                    if rotorcraft { "Rotorcraft" } else { "FixedWing" },
                     escape(aircraft)
                 );
             }

@@ -177,7 +177,7 @@ impl Sim {
     pub(crate) fn selected_spec(&self) -> i32 {
         match self.selected_weapon().0 {
             w if w < 0 => 0,
-            w => self.weapon_types[(w as usize).min(19)].spec as i32,
+            w => self.weapon_types[(w as usize).min(self.weapon_types.len() - 1)].spec as i32,
         }
     }
 
@@ -302,7 +302,7 @@ impl Sim {
                 bay = i;
             }
         }
-        let wt = self.weapon_types[(w.max(0) as usize).min(19)].clone();
+        let wt = self.weapon_types[(w.max(0) as usize).min(self.weapon_types.len() - 1)].clone();
         let spec = wt.spec as i32;
         if spec == 0 || spec == -1 {
             return;
@@ -335,7 +335,20 @@ impl Sim {
             self.pl.maverick_view = true;
         }
         let gl = self.pl.gnd_lock;
-        if gl >= 0 && (gl as usize) < self.objects.len() {
+        if spec == HELLFIRE_SPEC {
+            // At the targeting pod's spot, whatever is locked: its seeker sees the spot on the
+            // rail, so it pitches onto it as it leaves.
+            self.proj[slot] = pr;
+            self.follow_spot(slot);
+            pr = self.proj[slot];
+            if pr.target >= 0 && pr.tgt_x >= 0 {
+                let o = self.obj(pr.target);
+                let (pos, _) = self.launch_motion();
+                let to =
+                    [o.x as f64 * 32.0 + 16.0 - pos[0], o.y as f64 * 32.0 + 16.0 - pos[1], -pos[2]];
+                (pr.heading, pr.pitch) = crate::guidance::heading_pitch(to);
+            }
+        } else if gl >= 0 && (gl as usize) < self.objects.len() {
             if self.pl.targeting.lock_valid {
                 let c = mt.class as i32;
                 if c == 6
@@ -383,7 +396,12 @@ impl Sim {
             if mt.class == 7 && lock >= 0 && (lock as usize) < self.flights.len() {
                 self.proj[slot].target = lock;
             }
-            let (pos, vel) = self.launch_motion();
+            let (pos, mut vel) = self.launch_motion();
+            if spec == HELLFIRE_SPEC {
+                let speed = vel.iter().map(|v| v * v).sum::<f64>().sqrt();
+                let m = self.proj[slot];
+                vel = crate::guidance::direction(m.heading, m.pitch).map(|d| d * speed);
+            }
             self.start_flight(slot, pos, vel);
         }
         self.pl.last_missile_slot = slot as i32;
@@ -488,13 +506,32 @@ impl Sim {
         (GUN_GRAVITY / WU_METRES * ROUND_FINE as f64 / (fs * fs) as f64).round() as i32
     }
 
-    /// A round leaving the cannon of an aircraft at `p`, one frame out.
-    pub fn gun_round(p: &PlayerView, fs: i32) -> Bullet {
+    /// A round leaving the cannon of an aircraft at `p`, one frame out: along the nose, or
+    /// along the turret's `aim` (BAM heading, pitch) with the aircraft's own speed added.
+    pub fn gun_round(p: &PlayerView, aim: Option<(i32, i32)>, fs: i32) -> Bullet {
         let f = ROUND_FINE;
-        let (vx, vy, vz) = Self::gun_round_velocity(p.heading, p.pitch, p.knots, fs);
+        let (vx, vy, vz) = match aim {
+            None => Self::gun_round_velocity(p.heading, p.pitch, p.knots, fs),
+            Some((h, pitch)) => {
+                let (mx, my, mz) = Self::gun_round_velocity(h, pitch, 0, fs);
+                let (ax, ay, az) = Self::gun_round_velocity(p.heading, p.pitch, p.knots, fs);
+                let (bx, by, bz) = Self::gun_round_velocity(p.heading, p.pitch, 0, fs);
+                (mx + ax - bx, my + ay - by, mz + az - bz)
+            }
+        };
         let (vx, vy, vz) = (vx.round() as i32, vy.round() as i32, vz.round() as i32);
         let (x, y) = (p.wx * f, (0x100000 - p.wy) * f);
         Bullet { x: x + vx, y: y + vy, alt: (p.view_z - 2) * f + vz, vx, vy, vz }
+    }
+
+    /// Where the active pilot's turret points: an attack helicopter's follows the targeting
+    /// pod as far as it turns (None: a fixed cannon, or no pod, along the nose).
+    pub(crate) fn turret_aim(&self, ps: &PlayerState) -> Option<(i32, i32)> {
+        let pod = ps.pod.filter(|_| self.pl.gunship)?;
+        let p = &self.pl.p;
+        let az = s16(pod.heading as i32 - p.heading).clamp(-TURRET_AZIMUTH, TURRET_AZIMUTH);
+        let el = s16(pod.pitch as i32 - p.pitch).clamp(-TURRET_DEPRESSION, TURRET_ELEVATION);
+        Some((s16(p.heading + az), s16(p.pitch + el)))
     }
 
     /// The active pilot's cannon and gun rounds: move, then the hit tests (his kills).
@@ -509,7 +546,9 @@ impl Sim {
             if trigger && self.pl.gun_ammo > 0 && self.pl.eject == 0 {
                 self.pl.gun_ammo = clamp_v(self.pl.gun_ammo + cdiv(-20, fs), 0, 1000);
                 self.sound(6, 2);
-                self.bullets[slot] = Self::gun_round(&self.pl.p, fs);
+                let aim = self.turret_aim(ps);
+                self.bullets[slot] = Self::gun_round(&self.pl.p, aim, fs);
+                self.pl.gun_aim = aim;
                 self.pl.gun_firing = true;
                 self.pl.fired_step = self.steps;
             } else {

@@ -542,6 +542,7 @@ Ground targets under cloud cannot be designated (*Target obscured*). IR and opti
 | Mk 82-0 Slick, Mk 122 Fireye | Free-fall bombs | – |
 | 135 mm camera | Reconnaissance photos of the target | – |
 | Extra fuel | 1900 lbs, transferred on release | – |
+| AGM-114 Hellfire (AH-1Z) | Laser guided: flies to where the targeting pod looks | 8 |
 
 **Unguided bombs** leave with the aircraft's speed and direction and fall under gravity and
 air drag. Free-fall bombs keep most of their speed and land far ahead of the release point
@@ -551,6 +552,17 @@ open fins or a chute: they lose their speed within seconds and fall on a short, 
 blast by then. Throwing a bomb in a
 climb (loft) makes it fly farther. The CCIP pipper always shows where the selected bomb would
 land if released now.
+
+**The AH-1Z Viper** carries a 20 mm cannon in a chin turret, up to two AIM-9 Sidewinders on its
+wingtip rails and up to four launchers of four AGM-114 Hellfires on its stub wings. Its
+targeting pod is always up, with or without its MFD page: slaved, it looks at the locked
+target, or else wherever you look from the cockpit (a helmet sight: the mouse head look, or the
+headset in VR); slewed, it holds the ground point you put it on. The turret follows the pod as
+far as it turns (110 degrees either side, 50 degrees down, 20 up), and the gun pipper shows
+where its rounds land. A **Hellfire** rides the pod's laser spot for its whole flight: it flies
+to the object at the spot, or the plain ground there, and turns to wherever the pod looks
+next, so keep the pod on the target until it hits. It needs a line of sight from you to the
+spot; without one it flies on to where the spot last was.
 
 ## 6. Radar, detection and evasion
 

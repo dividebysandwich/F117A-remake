@@ -648,24 +648,24 @@ fn state_hash(sim: &Sim) -> u64 {
 #[test]
 fn classic_state_golden() {
     const GOLDEN: [u64; 18] = [
-        0x345cb460d07140f3,
-        0x4d400b6c21db6210,
-        0x664bb4c9c1278d76,
-        0x924e9fe20220f2e2,
-        0xdcf2f4ee3c107cc8,
-        0x8239ddd2bea814fe,
-        0x229a7eab87f4a1df,
-        0x035f1648d1aedd41,
-        0xba589aadaab5186c,
-        0x33e7b9bfe07b0528,
-        0xfd625b48088f0682,
-        0x06baf572471839c6,
-        0x7ee058ea48de94d8,
-        0xfbb3c5d8eafa75ff,
-        0x04fe778c03c5d65c,
-        0xfbb76d94c3c44bec,
-        0x35e34cf510358e87,
-        0xbead70e3c45aaca0,
+        0xa540e20af6dbaf48,
+        0x5649e6e18af28b9f,
+        0xa3ffca7fdeb5c6bb,
+        0xa3701fa4c151d667,
+        0xcd3f7a3882299fb9,
+        0xd8de8d2b41c0386f,
+        0x0b42ccd03052c9c4,
+        0xe13634d6e5a429e8,
+        0x05c467c23d29d6d7,
+        0xfa3000665715bef7,
+        0x76c997ba7386a37f,
+        0x68823a5c222b3f49,
+        0x88b326349fc0b953,
+        0x83af8682dfce38b4,
+        0xfa9126d047bb8cfd,
+        0x2781a504e2640ab9,
+        0x1a458d5b4b9a5214,
+        0x02bd67088fb9b96d,
     ];
     let d = data();
     let mut got = Vec::new();
@@ -1674,4 +1674,87 @@ fn helicopter_inserts_troops_off_base() {
     let f = inserted.expect("troops inserted");
     assert!((15 * 9..15 * 12).contains(&f), "after {f} frames");
     assert!(sim.objectives().primary_done && sim.mission_end().is_none());
+}
+
+/// The AH-1Z (else the UH-60) in a sandbox, hovering 1000 ft up heading northeast with
+/// Hellfires on a pylon.
+fn helicopter(gunship: bool, guided: bool) -> (Sim, i32, i32, PlayerState) {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let opts = SimOptions {
+        external_stores: true,
+        helicopter: true,
+        gunship,
+        realistic_guidance: guided,
+        ..Default::default()
+    };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    sim.set_training(true);
+    sim.set_loadout(&[(20, 4)]);
+    let p = player_at(mx, my, 1000, 0x2000, 0);
+    (sim, mx, my, p)
+}
+
+/// A Hellfire flies to wherever the targeting pod looks: fired at one target with the pod on
+/// it, it hits the other one the pod is moved to during its flight.
+#[test]
+fn hellfire_follows_the_pod() {
+    for guided in [false, true] {
+        let (mut sim, mx, my, mut p) = helicopter(true, guided);
+        let (first, second) = (5, 6);
+        let place = |sim: &mut Sim, t: usize, x: i32, y: i32| {
+            let o = &mut sim.objects_mut()[t];
+            o.x = x;
+            o.y = y;
+            o.flags = 0;
+        };
+        place(&mut sim, first, mx + 100, my - 100);
+        place(&mut sim, second, mx + 110, my - 88);
+        p.altitude = 500;
+        let pod =
+            |x: i32, y: i32| Some(PodAim { heading: 0x2000, pitch: -0x400, ground: Some((x, y)) });
+        p.pod = pod(mx + 100, my - 100);
+        sim.step(&p, 15);
+        p.cmd.fire = true;
+        sim.step(&p, 15);
+        p.cmd = Commands::default();
+        let slot = (8..12).find(|&s| sim.projectiles()[s].ttl != 0).expect("Hellfire fired");
+        assert_eq!(sim.projectiles()[slot].target, first as i32);
+        let mut at = None;
+        for frame in 0..15 * 30 {
+            if frame == 15 {
+                p.pod = pod(mx + 110, my - 88);
+            }
+            for e in sim.step(&p, 15) {
+                if let SimEvent::Explosion { x, y, .. } = e {
+                    at.get_or_insert((x, y));
+                }
+            }
+            if at.is_some() {
+                break;
+            }
+        }
+        assert_eq!(at, Some((mx + 110, my - 88)), "guided {guided}");
+    }
+}
+
+/// The AH-1Z's cannon fires where the pod looks, as far as its turret turns; the UH-60 has none.
+#[test]
+fn turret_gun_follows_the_pod() {
+    let round = |pod_heading: u16, gunship: bool| {
+        let (mut sim, _, _, mut p) = helicopter(gunship, false);
+        p.heading = 0;
+        p.pod = Some(PodAim { heading: pod_heading, pitch: -0x800, ground: None });
+        p.cmd.gun = true;
+        sim.step(&p, 15);
+        sim.bullets().0.iter().find(|b| b.x != 0).copied()
+    };
+    // East and down: the round flies east (x grows), falling.
+    let b = round(0x4000, true).expect("a round");
+    assert!(b.vx > 0 && b.vy.abs() < b.vx / 50 && b.vz < 0, "{b:?}");
+    // Straight behind: the turret stops 110 degrees left (west and a little aft, south).
+    let b = round(0x8000, true).expect("a round");
+    assert!(b.vx < 0 && b.vy > 0 && b.vy < -b.vx, "{b:?}");
+    assert!(round(0x4000, false).is_none(), "the UH-60 has no cannon");
 }

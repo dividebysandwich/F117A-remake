@@ -8,7 +8,7 @@ use stealth_sim::net::{PilotSnap, PilotTick, WorldFast, WorldSlow};
 use stealth_sim::{Commands, PlayerState, SimEvent};
 
 /// Changes with every change of the messages: client and server must agree.
-pub const PROTOCOL: u16 = 13;
+pub const PROTOCOL: u16 = 14;
 pub const DEFAULT_PORT: u16 = 28989;
 /// Players a server takes at most.
 pub const MAX_PLAYERS: usize = stealth_sim::MAX_PILOTS;
@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn other_pilots_keep_their_missile_slots_and_smoke() {
+    fn other_pilots_keep_their_missile_slots_smoke_and_turret() {
         use stealth_sim::Projectile;
         use stealth_sim::net::RemotePilot;
         let p = RemotePilot {
@@ -229,7 +229,9 @@ mod tests {
             lockheed: false,
             external_stores: true,
             helicopter: true,
+            gunship: true,
             gun_firing: true,
+            gun_aim: Some((0x4000, -0x800)),
             burning: false,
             smoke: 3,
             chute: None,

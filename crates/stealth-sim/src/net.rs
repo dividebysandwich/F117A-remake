@@ -40,9 +40,12 @@ pub struct RemotePilot {
     /// The aircraft type: the real F-117A (no cannon), and weapons outside (F-16).
     pub lockheed: bool,
     pub external_stores: bool,
-    /// A helicopter (UH-60A).
+    /// A helicopter (UH-60A), an attack helicopter (AH-1Z).
     pub helicopter: bool,
+    pub gunship: bool,
     pub gun_firing: bool,
+    /// Where his turret points while it fires (BAM heading, pitch), else along the nose.
+    pub gun_aim: Option<(i32, i32)>,
     pub burning: bool,
     /// Damage smoke: 0 none, 1 light, 2 heavy (badly hit), 3 on fire.
     pub smoke: u8,
@@ -56,9 +59,9 @@ pub struct RemotePilot {
 
 /// [`RemotePilot`] as a sequence without field names: id, view (wx, wy, mx, my, alt, view_z,
 /// heading, pitch, roll, velocity, knots, climb), flags (gear up, on the ground, F-117A as it
-/// was, external stores, gun firing, burning, damage smoke in two bits, helicopter), bay doors,
-/// parachute,
-/// missiles by slot, the live countermeasures by slot.
+/// was, external stores, gun firing, burning, damage smoke in two bits, helicopter, gunship),
+/// bay doors, parachute, missiles by slot, the live countermeasures by slot, the turret's aim.
+
 #[derive(Serialize, Deserialize)]
 struct RemoteWire(
     u8,
@@ -68,6 +71,7 @@ struct RemoteWire(
     Option<(i32, i32, i32)>,
     Vec<(u8, Projectile)>,
     Vec<(u8, Countermeasure)>,
+    #[serde(default)] Option<(i32, i32)>,
 );
 
 impl From<RemotePilot> for RemoteWire {
@@ -79,7 +83,8 @@ impl From<RemotePilot> for RemoteWire {
                 .enumerate()
                 .fold(0u16, |f, (k, &b)| f | (b as u16) << k)
                 | (p.smoke.min(3) as u16) << 6
-                | (p.helicopter as u16) << 8;
+                | (p.helicopter as u16) << 8
+                | (p.gunship as u16) << 9;
         RemoteWire(
             p.id,
             [
@@ -94,13 +99,14 @@ impl From<RemotePilot> for RemoteWire {
                 .filter(|&k| p.cms[k as usize].ttl != 0)
                 .map(|k| (k, p.cms[k as usize]))
                 .collect(),
+            p.gun_aim.filter(|_| p.gun_firing),
         )
     }
 }
 
 impl From<RemoteWire> for RemotePilot {
     fn from(w: RemoteWire) -> Self {
-        let RemoteWire(id, v, flags, door_anim, chute, missiles, live) = w;
+        let RemoteWire(id, v, flags, door_anim, chute, missiles, live, gun_aim) = w;
         let [wx, wy, mx, my, alt, view_z, heading, pitch, roll, velocity, knots, climb] = v;
         let bit = |k: u8| flags & (1 << k) != 0;
         let mut cms = [Countermeasure::default(); 4];
@@ -134,6 +140,8 @@ impl From<RemoteWire> for RemotePilot {
             burning: bit(5),
             smoke: (flags >> 6) as u8 & 3,
             helicopter: bit(8),
+            gunship: bit(9),
+            gun_aim,
             chute,
             missiles,
             cms,
@@ -282,7 +290,9 @@ impl Sim {
                     lockheed: p.lockheed,
                     external_stores: p.external_stores,
                     helicopter: p.helicopter,
+                    gunship: p.gunship,
                     gun_firing: p.gun_firing,
+                    gun_aim: p.gun_aim,
                     burning: p.fire_frames > 0 || p.breakup_frames > 0,
                     smoke: if p.damage & dmg::FIRE != 0 {
                         3
@@ -607,7 +617,7 @@ impl Sim {
             *age < nb && b.alt > 0
         });
         for p in self.remote.iter().filter(|p| p.gun_firing && !p.lockheed && p.chute.is_none()) {
-            self.remote_rounds.push((Self::gun_round(&p.view, fs), 0));
+            self.remote_rounds.push((Self::gun_round(&p.view, p.gun_aim, fs), 0));
         }
         let dt = 1.0 / fs as f64;
         let fly = |s: &mut Shell| {

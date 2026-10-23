@@ -186,7 +186,7 @@ pub fn from_args(app: &mut App) {
     if f16
         && get("--aircraft")
             .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
-            .is_some_and(|k| k.spec().helicopter)
+            .is_some_and(|k| k.spec().transport())
     {
         stealth_mission::insertion::for_helicopter(&mut m);
     }
@@ -255,7 +255,7 @@ pub fn from_args(app: &mut App) {
         .insert_state(crate::settings::AppState::Flight);
 }
 
-/// OnEnter(Flight), after `ensure_mission`: a helicopter flies the mission's targets as
+/// OnEnter(Flight), after `ensure_mission`: a troop helicopter flies the mission's targets as
 /// insertions (a campaign's sorties are set up by the campaign).
 pub fn helicopter_mission(
     settings: Res<crate::settings::Settings>,
@@ -264,7 +264,7 @@ pub fn helicopter_mission(
 ) {
     if let Some(mut m) = mission
         && campaign.is_none()
-        && settings.aircraft.spec().helicopter
+        && settings.aircraft.spec().transport()
     {
         stealth_mission::insertion::for_helicopter(&mut m.0);
     }

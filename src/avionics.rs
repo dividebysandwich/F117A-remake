@@ -176,6 +176,9 @@ pub struct TgpState {
     idle: f32,
     /// The ground point on the pod's line of sight (Bevy world position), when it is up.
     pub los_ground: Option<DVec3>,
+    /// The pod's line of sight (world direction), when it is up: the gunship's turret and
+    /// Hellfires follow it.
+    pub los: Option<Vec3>,
     /// CZ pressed: the pod is to look ahead instead of at the current lock.
     cz: bool,
     /// After CZ: the (ground, air) lock the pod no longer looks at; a new lock ends it. The
@@ -1142,11 +1145,16 @@ fn update_pod(
     mut hud: ResMut<HudState>,
     aircraft: Query<(&Aircraft, &WorldPos), With<Player>>,
     camera: Query<&Transform, With<crate::trackcam::TrackCamera>>,
+    eyes: Query<&GlobalTransform, (With<Camera3d>, Without<crate::camera::OffscreenCamera>)>,
+    view: Res<crate::camera::ViewState>,
+    settings: Res<crate::settings::Settings>,
     combat: Option<Res<crate::combat::Combat>>,
     mut designate: MessageWriter<PodDesignate>,
 ) {
     let lock = actions.read().any(|a| a.0 == Action::LockCursor);
-    if !state.modern {
+    // The gunship's pod is always up (its turret and Hellfires follow it).
+    let turret = settings.aircraft.spec().turret;
+    if !state.modern && !turret {
         return;
     }
     if let Some(combat) = &combat {
@@ -1161,14 +1169,21 @@ fn update_pod(
     let Ok((a, pos)) = aircraft.single() else { return };
     let shown = state.camera_shown();
     let soi = state.av.soi_format() == Some(Format::Tgp);
-    let looking =
-        camera.single().ok().filter(|_| shown && info.live).map(|t| t.forward().as_vec3());
+    // The gunship's slaved pod follows its sight whether its page is up or not (the page
+    // shows what it looks at).
+    let looking = if turret {
+        slaved_sight(&state, combat.as_deref(), pos.0, &eyes, view.view)
+            .or_else(|| Some(a.orientation * pod_dir(0.0, -0.05)))
+    } else {
+        camera.single().ok().filter(|_| shown && info.live).map(|t| t.forward().as_vec3())
+    };
     let ground_y = crate::world::wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
     let zoom = state.cam_zoom.unwrap_or(info.zoom.saturating_sub(1));
     let slew = if soi && shown { controls.slew } else { Vec2::ZERO };
     let tgp = &mut state.av.tgp;
     let los = pod_step(tgp, slew, time.delta_secs(), zoom, a.orientation, pos.0, looking, ground_y);
-    tgp.los_ground = los.filter(|_| shown);
+    tgp.los_ground = los.filter(|_| shown || turret);
+    tgp.los = pod_direction(tgp, a.orientation, pos.0).or(looking).filter(|_| shown || turret);
     if lock && soi && tgp.mode != TgpMode::Slaved {
         match los {
             Some(p) => {
@@ -1184,6 +1199,44 @@ fn update_pod(
             None => tgp.mode = TgpMode::Slaved,
         }
     }
+}
+
+/// Where the gunship's slaved pod looks: at the lock (unless CZ zeroed it), else where
+/// the pilot looks from the cockpit (the helmet sight: the eye camera, the headset in VR).
+/// None in the outside views.
+fn slaved_sight(
+    state: &MfdState,
+    combat: Option<&crate::combat::Combat>,
+    eye: DVec3,
+    eyes: &Query<&GlobalTransform, (With<Camera3d>, Without<crate::camera::OffscreenCamera>)>,
+    view: crate::camera::View,
+) -> Option<Vec3> {
+    // As the tracking camera: the ground lock, else the aircraft or pilot locked.
+    let lock = combat.filter(|_| state.av.tgp.zeroed.is_none()).and_then(|c| {
+        let (sim, t) = (&c.sim, c.sim.targeting());
+        let at = if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
+            let (e, n) = crate::combat::map_wu(o.x, o.y);
+            crate::world::wu_to_bevy(e + 16.0, n - 16.0, 0.0)
+        } else if let Some((i, u)) = t.air.and_then(|i| sim.flights().get(i).map(|u| (i, *u))) {
+            let (e, n, z) = crate::combat::unit_position(c.prev_flights.get(i), &u, c.alpha);
+            crate::world::wu_to_bevy(e, n, z)
+        } else {
+            let ((e, n, z), _, _) = t.pilot.and_then(|k| crate::combat::remote_motion(c, k))?;
+            crate::world::wu_to_bevy(e, n, z)
+        };
+        (at - eye).as_vec3().try_normalize()
+    });
+    let cockpit = matches!(
+        view,
+        crate::camera::View::Cockpit
+            | crate::camera::View::LookLeft
+            | crate::camera::View::LookRight
+            | crate::camera::View::LookRear
+    );
+    lock.or_else(|| {
+        let sum: Vec3 = eyes.iter().map(|t| t.forward().as_vec3()).sum();
+        sum.try_normalize().filter(|_| cockpit)
+    })
 }
 
 /// Cursor speed at full slew (display pixels per second).

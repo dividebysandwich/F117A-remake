@@ -30,6 +30,40 @@ impl Sim {
         true
     }
 
+    /// The Hellfire in slot `s` takes the targeting pod's spot as its target: the object at it
+    /// (within `HELLFIRE_SPOT_RADIUS`), else the plain ground there (scratch object 0). Kept
+    /// while the pod sees no ground or the pilot has no line of sight to it.
+    pub(crate) fn follow_spot(&mut self, s: usize) {
+        let Some((x, y)) = self.pl.last_input.pod.and_then(|p| p.ground) else { return };
+        if !self.player_sees(x, y, 0) {
+            return;
+        }
+        let m = self.proj[s];
+        if (m.tgt_x, m.tgt_y) == (x, y) && m.target > 0 {
+            return;
+        }
+        let near = (1..self.objects.len())
+            .filter(|&i| self.objects[i].flags & oflags::DESTROYED == 0)
+            .map(|i| (i, approx(self.objects[i].x - x, self.objects[i].y - y)))
+            .filter(|&(_, d)| d <= HELLFIRE_SPOT_RADIUS)
+            .min_by_key(|&(_, d)| d);
+        let t = match near {
+            Some((i, _)) => i as i32,
+            None => {
+                if let Some(o) = self.objects.get_mut(0) {
+                    o.x = x;
+                    o.y = y;
+                    o.flags = 0;
+                }
+                0
+            }
+        };
+        let m = &mut self.proj[s];
+        m.target = t;
+        m.tgt_x = x;
+        m.tgt_y = y;
+    }
+
     pub(crate) fn update_missiles(&mut self, present: &[usize]) {
         let mut saved0 = Vec::new();
         for &k in present {
@@ -260,7 +294,26 @@ impl Sim {
                 aim = self.proj[s].heading;
             }
             let t = self.proj[s].target;
-            if matches!(cls, 4..=6) && t != -1 {
+            if spec == HELLFIRE_SPEC {
+                // The Hellfire rides the laser spot: wherever the targeting pod looks now, while
+                // the pilot sees it (else on to where it last was).
+                // Its seeker sees the spot wider than the Maverick's sees its target.
+                self.follow_spot(s);
+                let t = self.proj[s].target;
+                if t >= 0 && self.proj[s].tgt_x >= 0 {
+                    let o = self.obj(t);
+                    let (r, a, off) = seeker_geometry(&self.proj[s], o.x, o.y);
+                    self.acq_aim = a;
+                    if off <= HELLFIRE_SEEKER {
+                        self.acq_range = r;
+                        aim = a;
+                        best = r;
+                        hit = t;
+                        alt0 = 0;
+                        locked = true;
+                    }
+                }
+            } else if matches!(cls, 4..=6) && t != -1 {
                 if t == 0 {
                     let (gx, gy) = (self.proj[s].tgt_x, self.proj[s].tgt_y);
                     if self.objects.first().is_some_and(|o| (o.x, o.y) != (gx, gy)) {
@@ -414,6 +467,13 @@ impl Sim {
                         self.proj[s].ttl = 0;
                     }
                 }
+            } else if hit == 0 && spec == HELLFIRE_SPEC {
+                // On the plain ground at the spot.
+                let o = self.obj(0);
+                self.flash = Flash { x: o.x, y: o.y, alt: 0, timer: 0x10 };
+                self.emit(SimEvent::Explosion { x: o.x, y: o.y, alt: 0, kind: 0x10 });
+                self.proj[s].ttl = 0;
+                self.msg(format!("{} impact", mt.name));
             } else if hit >= 0 {
                 let o = self.obj(hit);
                 self.flash = Flash { x: o.x, y: o.y, alt: 0, timer: 0x10 };
@@ -534,7 +594,9 @@ impl Sim {
         self.proj[s].ttl = 0;
         self.flash = Flash { x: ex, y: ey, alt: ealt, timer: -6 };
         let long = if s >= 8 {
-            self.weapon_types[(m.weapon.max(0) as usize).min(19)].long_name.clone()
+            self.weapon_types[(m.weapon.max(0) as usize).min(self.weapon_types.len() - 1)]
+                .long_name
+                .clone()
         } else {
             String::new()
         };

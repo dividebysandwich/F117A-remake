@@ -912,6 +912,14 @@
       "class": 0,
       "turn": 6,
       "model": 1
+    },
+    {
+      "name": "AGM-114",
+      "lock_range": 8,
+      "max_speed": 1000,
+      "class": 6,
+      "turn": 4,
+      "model": 10
     }
   ],
   "weapons": [
@@ -1034,6 +1042,12 @@
       "long_name": "Guns",
       "spec": 0,
       "picture": 5
+    },
+    {
+      "short_name": "AGM-114",
+      "long_name": "Hellfire",
+      "spec": 47,
+      "picture": 16
     }
   ],
   "compat": [
@@ -1395,6 +1409,24 @@
       0,
       0,
       0,
+      0
+    ],
+    [
+      2,
+      0,
+      2,
+      3,
+      4,
+      4,
+      3,
+      3,
+      4,
+      4,
+      4,
+      0,
+      4,
+      0,
+      6,
       0
     ]
   ],

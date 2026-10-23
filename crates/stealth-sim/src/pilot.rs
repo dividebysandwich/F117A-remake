@@ -25,6 +25,9 @@ pub struct Pilot {
     /// The aircraft is a helicopter (`SimOptions::helicopter` for pilot 0).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) helicopter: bool,
+    /// The helicopter is a gunship (`SimOptions::gunship` for pilot 0): a turret cannon.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) gunship: bool,
     /// Frames landed near each insertion target (mission type 9).
     #[serde(default, skip_serializing_if = "none_unloading")]
     pub(crate) unload: [i32; 2],
@@ -70,6 +73,9 @@ pub struct Pilot {
     pub(crate) stores: [i32; 4],
     pub(crate) gun_ammo: i32,
     pub(crate) gun_firing: bool,
+    /// Where the turret points while it fires (BAM heading, pitch), else along the nose.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) gun_aim: Option<(i32, i32)>,
     pub(crate) fire_cooldown: i32,
     pub(crate) prev_fire: bool,
     /// CCRP: ground distance (ft) the bomb's impact point still had to go to the target last
@@ -261,6 +267,7 @@ impl Sim {
             lockheed: p0.lockheed,
             external_stores: p0.external_stores,
             helicopter: p0.helicopter,
+            gunship: p0.gunship,
             hits: 2,
             air_lock: -1,
             gnd_lock: -1,

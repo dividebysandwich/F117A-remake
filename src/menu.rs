@@ -170,7 +170,7 @@ fn vr_available() -> bool {
 }
 
 /// Flyable aircraft and their notes.
-const AIRCRAFT: [(AircraftKind, &[&str]); 3] = [
+const AIRCRAFT: [(AircraftKind, &[&str]); 4] = [
     (
         AircraftKind::F117,
         &["Stealth attack aircraft", "Subsonic, 7 g", "Modern and classic cockpit"],
@@ -182,6 +182,10 @@ const AIRCRAFT: [(AircraftKind, &[&str]); 3] = [
     (
         AircraftKind::UH60,
         &["Utility helicopter", "Inserts troops: land near the target", "Cyclic and collective"],
+    ),
+    (
+        AircraftKind::AH1Z,
+        &["Attack helicopter", "Turret gun, Hellfires, AIM-9", "Gun and Hellfires follow the pod"],
     ),
 ];
 
@@ -1248,11 +1252,11 @@ fn menu_ui(
             );
             mission_settings.start_hour = state.start_hour;
             mission_settings.moon = state.moon;
-            let helicopter = settings.aircraft.spec().helicopter;
+            let transport = settings.aircraft.spec().transport();
             state.mission = Some(
                 crate::mission::generate(&data, &mission_settings, state.seed)
                     .map(|mut m| {
-                        if helicopter {
+                        if transport {
                             stealth_mission::insertion::for_helicopter(&mut m);
                         }
                         m
@@ -1345,8 +1349,8 @@ fn menu_ui(
                         group(ui, "Vehicle", |ui| {
                             let was = settings.aircraft;
                             vehicle_options(ui, &mut settings, Some(&mut state.lockheed));
-                            // A helicopter flies the same seed's targets as insertions.
-                            if settings.aircraft.spec().helicopter != was.spec().helicopter {
+                            // A troop helicopter flies the same seed's targets as insertions.
+                            if settings.aircraft.spec().transport() != was.spec().transport() {
                                 state.regenerate();
                             }
                         });

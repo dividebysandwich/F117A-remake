@@ -29,7 +29,7 @@ impl CampaignState {
         if !self.player_bases().contains(&base) {
             return Err("Not a friendly base".into());
         }
-        let mut progress = Progress { heli: aircraft.helicopter(), ..Progress::default() };
+        let mut progress = Progress { heli: aircraft.transport(), ..Progress::default() };
         let mut ev = Vec::new();
         if let Objective::Insertion { place } = o.objective {
             let (id, e) = self.fly_insertion(player, place, base)?;

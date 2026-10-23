@@ -105,7 +105,7 @@ pub struct SimData {
     pub aircraft: Vec<AircraftType>,
     pub missiles: Vec<MissileType>,
     pub weapons: Vec<WeaponType>,
-    /// Weapon-vs-category effectiveness `compat[w][cat]`, 20 rows.
+    /// Weapon-vs-category effectiveness `compat[w][cat]`, a row per weapon.
     pub compat: Vec<[i8; 16]>,
     /// Dogfight manoeuvre table, 3 x 8 x 8 int16.
     pub maneuver: Vec<i16>,

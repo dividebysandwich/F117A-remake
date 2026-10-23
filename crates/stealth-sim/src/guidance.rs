@@ -76,6 +76,7 @@ pub fn profile(spec: i32) -> Option<Profile> {
         25 => cruise(1e9, 10.0),      // Penguin: a sustainer the whole way
         26 => cruise(3.0, 10.0),      // Harpoon: booster, then its turbojet
         27 => rocket(4.0, 1.0, 15.0), // Maverick
+        47 => rocket(2.5, 1.0, 20.0), // Hellfire
         31 => rocket(15.0, 4.0, 25.0), // AIM-7
         41 => vertical(15.0, 4.0, 25.0), // SA-21
         43 => rocket(2.0, 2.0, 30.0), // SA-22: a booster, then the dart glides
@@ -148,6 +149,11 @@ fn len(a: V3) -> f64 {
 /// The part of `a` across the unit vector `n`.
 fn across(a: V3, n: V3) -> V3 {
     sub(a, mul(n, dot(a, n)))
+}
+
+/// Heading and pitch (BAM) of a direction (east, south, up).
+pub fn heading_pitch(d: V3) -> (i32, i32) {
+    (s16((d[0].atan2(-d[1]) * BAM) as i32), s16((d[2].atan2(d[0].hypot(d[1])) * BAM) as i32))
 }
 
 /// Unit vector of a heading and pitch (BAM): east, south, up.

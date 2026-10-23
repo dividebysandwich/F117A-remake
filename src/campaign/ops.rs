@@ -800,7 +800,7 @@ fn describe_offer(c: &ActiveCampaign, o: &MissionOffer) -> &'static str {
 
 /// The aircraft an offer is flown in: `last` if it may fly it, else the first that may.
 pub fn flyable(o: &MissionOffer, last: Airframe) -> Airframe {
-    [last, Airframe::F117, Airframe::F16, Airframe::UH60]
+    [last, Airframe::F117, Airframe::F16, Airframe::UH60, Airframe::AH1Z]
         .into_iter()
         .find(|a| o.kind.flyable_by(*a))
         .unwrap_or(last)
@@ -1382,9 +1382,10 @@ fn briefing(
                     BriefPage::Loadout => {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("AIRCRAFT").color(DIM));
-                            let flyable = [Airframe::F117, Airframe::F16, Airframe::UH60]
-                                .into_iter()
-                                .filter(|a| o.kind.flyable_by(*a));
+                            let flyable =
+                                [Airframe::F117, Airframe::F16, Airframe::UH60, Airframe::AH1Z]
+                                    .into_iter()
+                                    .filter(|a| o.kind.flyable_by(*a));
                             for a in flyable {
                                 let label = kind_of(a).name();
                                 if ui.selectable_label(b.aircraft == a, label).clicked()

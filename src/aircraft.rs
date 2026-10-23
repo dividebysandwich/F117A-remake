@@ -14,6 +14,7 @@ pub enum AircraftKind {
     F117,
     F16,
     UH60,
+    AH1Z,
 }
 
 /// How the aircraft's shadow is drawn.
@@ -67,15 +68,24 @@ pub struct AircraftSpec {
     pub vr_hud_scale: f32,
     /// Weapons in a bay (else on pylons: always "open", seen by radars as the F-117A's open bay).
     pub bomb_bay: bool,
-    /// Flown by the helicopter flight model (`flight::heli`): lands anywhere flat, no gun and
-    /// no ejection seat.
+    /// Flown by the helicopter flight model (`flight::heli`): lands anywhere flat, no ejection
+    /// seat, and no gun unless it has a turret.
     pub helicopter: bool,
+    /// A turret cannon aimed with the targeting pod, and no troops (the AH-1Z).
+    pub turret: bool,
+    /// The cannon's muzzle (aircraft frame, m), where it is not at the nose.
+    pub muzzle: Option<Vec3>,
     flight: fn() -> FlightConstants,
 }
 
 impl AircraftSpec {
     pub fn flight(&self) -> FlightConstants {
         (self.flight)()
+    }
+
+    /// A troop helicopter: its missions are insertions.
+    pub fn transport(&self) -> bool {
+        self.helicopter && !self.turret
     }
 
     /// The cockpit flown with the cockpit style setting (aircraft with one cockpit ignore it).
@@ -116,6 +126,8 @@ static F117: AircraftSpec = AircraftSpec {
     vr_hud_scale: 2.0 * crate::hud::modern::SCALE,
     bomb_bay: true,
     helicopter: false,
+    turret: false,
+    muzzle: None,
     flight: FlightConstants::default,
 };
 
@@ -141,6 +153,8 @@ static F16: AircraftSpec = AircraftSpec {
     vr_hud_scale: 2080.0,
     bomb_bay: false,
     helicopter: false,
+    turret: false,
+    muzzle: None,
     flight: FlightConstants::f16,
 };
 
@@ -176,17 +190,57 @@ static UH60: AircraftSpec = AircraftSpec {
     vr_hud_scale: 2.0 * crate::hud::modern::SCALE,
     bomb_bay: false,
     helicopter: true,
+    turret: false,
+    muzzle: None,
     flight: FlightConstants::uh60,
 };
 
+/// A point of the AH-1Z model (tools/models/ah1z.py, as `uh60_point`) in the aircraft frame.
+const fn ah1z_point(x: f32, y: f32, z: f32) -> Vec3 {
+    const K: f32 = 16.38;
+    model_point(AH1Z_LIFT, x * K, z * K, -y * K)
+}
+
+/// The AH-1Z's model origin is on the ground under its skids; clear of the ground overlays.
+const AH1Z_LIFT: f32 = 0.05;
+
+static AH1Z: AircraftSpec = AircraftSpec {
+    model: "stflt_043",
+    model_lift: AH1Z_LIFT,
+    // The pilot's (rear) seat: behind the step of the canopy (y 2.30) and ahead of its aft end
+    // (y 1.10), the head under the roof (z 2.50), the sills (z 1.5) at the elbows.
+    eye: ah1z_point(0.0, 1.70, 2.12),
+    cockpit_view: Some(CockpitView {
+        // The canopy: open from inside; the hull drawn from inside round the tandem cockpits.
+        canopy_colours: &[144, 145],
+        cut: (Vec3::ZERO, Vec3::ZERO),
+        two_sided: true,
+        rotors: true,
+    }),
+    cockpits: &[(PanelStyle::Ah1z, "cockpit_ah1z")],
+    shadow: Shadow::Flattened,
+    vr_scale: 1.25 * 0.7,
+    vr_eye_height: None,
+    hud_scale: crate::hud::modern::SCALE,
+    vr_hud_scale: 2.0 * crate::hud::modern::SCALE,
+    bomb_bay: false,
+    helicopter: true,
+    turret: true,
+    // The chin turret's barrels.
+    muzzle: Some(ah1z_point(0.0, 5.30, 0.58)),
+    flight: FlightConstants::ah1z,
+};
+
 impl AircraftKind {
-    pub const ALL: [AircraftKind; 3] = [AircraftKind::F117, AircraftKind::F16, AircraftKind::UH60];
+    pub const ALL: [AircraftKind; 4] =
+        [AircraftKind::F117, AircraftKind::F16, AircraftKind::UH60, AircraftKind::AH1Z];
 
     pub fn spec(self) -> &'static AircraftSpec {
         match self {
             AircraftKind::F117 => &F117,
             AircraftKind::F16 => &F16,
             AircraftKind::UH60 => &UH60,
+            AircraftKind::AH1Z => &AH1Z,
         }
     }
 
@@ -196,6 +250,7 @@ impl AircraftKind {
             AircraftKind::F117 => "f117",
             AircraftKind::F16 => "f16",
             AircraftKind::UH60 => "uh60",
+            AircraftKind::AH1Z => "ah1z",
         }
     }
 
@@ -206,6 +261,7 @@ impl AircraftKind {
                 || (s == "f117a" && *k == AircraftKind::F117)
                 || (s == "f16c" && *k == AircraftKind::F16)
                 || (matches!(s.as_str(), "uh60a" | "blackhawk") && *k == AircraftKind::UH60)
+                || (matches!(s.as_str(), "ah1" | "viper") && *k == AircraftKind::AH1Z)
         })
     }
 
@@ -214,6 +270,7 @@ impl AircraftKind {
             AircraftKind::F117 => "F-117A Nighthawk",
             AircraftKind::F16 => "F-16C Fighting Falcon",
             AircraftKind::UH60 => "UH-60A Black Hawk",
+            AircraftKind::AH1Z => "AH-1Z Viper",
         }
     }
 }
@@ -291,6 +348,19 @@ mod tests {
         assert!(x.abs() < 1.0, "eye {x} m to the side");
     }
 
+    /// The AH-1Z's eye: in the pilot's cockpit between the canopy's step and its aft end
+    /// (tools/models/ah1z.py STATIONS), under the roof, above the sills.
+    #[test]
+    fn ah1z_eye_in_the_cockpit() {
+        let spec = AircraftKind::AH1Z.spec();
+        let s = AIRCRAFT_MODEL_SCALE as f32 * 16.38;
+        let eye = (spec.eye - Vec3::Y * spec.model_lift) / s;
+        let (x, y, z) = (eye.x, -eye.z, eye.y);
+        assert!((1.10..2.30).contains(&y), "eye {y} m from the mast");
+        assert!((1.60..2.45).contains(&z), "eye {z} m high");
+        assert!(x.abs() < 0.3, "eye {x} m to the side");
+    }
+
     #[test]
     fn names_round_trip() {
         for k in AircraftKind::ALL {
@@ -300,6 +370,8 @@ mod tests {
         assert_eq!(AircraftKind::parse("F-16"), Some(AircraftKind::F16));
         assert_eq!(AircraftKind::parse("UH-60"), Some(AircraftKind::UH60));
         assert_eq!(AircraftKind::parse("blackhawk"), Some(AircraftKind::UH60));
+        assert_eq!(AircraftKind::parse("AH-1Z"), Some(AircraftKind::AH1Z));
+        assert_eq!(AircraftKind::parse("viper"), Some(AircraftKind::AH1Z));
         assert_eq!(AircraftKind::F117.spec().eye, Vec3::new(0.0, 1.6, -3.0));
     }
 }

@@ -1378,8 +1378,9 @@ fn own_muzzle_flash(
     let firing = sim.gun_firing() && sim.has_gun() && !view.first_person();
     let flash = firing && muzzle_flash_on(&time, sim.active_pilot());
     if let Ok((mut wp, mut v)) = q.get_mut(e) {
-        // At the nose of the model as drawn (lifted off the flight model's point).
-        let nose = Vec3::new(0.0, settings.aircraft.spec().model_lift, -MUZZLE_AHEAD);
+        // At the nose of the model as drawn (lifted off the flight model's point), or the turret.
+        let spec = settings.aircraft.spec();
+        let nose = spec.muzzle.unwrap_or(Vec3::new(0.0, spec.model_lift, -MUZZLE_AHEAD));
         wp.0 = pos.0 + (a.orientation * nose).as_dvec3();
         v.set_if_neq(if flash { Visibility::Inherited } else { Visibility::Hidden });
     }
@@ -1448,7 +1449,9 @@ fn sync_remote_pilots(
         if p.chute.is_some() {
             continue;
         }
-        let kind = if p.helicopter {
+        let kind = if p.gunship {
+            crate::aircraft::AircraftKind::AH1Z
+        } else if p.helicopter {
             crate::aircraft::AircraftKind::UH60
         } else if p.external_stores {
             crate::aircraft::AircraftKind::F16
@@ -1475,7 +1478,9 @@ fn sync_remote_pilots(
             ));
             let dot = spawn_spot_dot(&mut commands, &assets, e, SPOT_METRES);
             let tag = mesh_tag(LEVEL_AIRCRAFT, 0, true) | dot_size_tenths(OTHER_GUN_DOT_TENTHS);
-            let nose = Vec3::NEG_Z * MUZZLE_AHEAD / AIRCRAFT_MODEL_SCALE as f32;
+            let nose =
+                spec.muzzle.map_or(Vec3::NEG_Z * MUZZLE_AHEAD, |m| m - Vec3::Y * spec.model_lift)
+                    / AIRCRAFT_MODEL_SCALE as f32;
             let material = solid_material(&mut vis.materials, &mut materials, &globals, TRACER);
             let muzzle = commands
                 .spawn((

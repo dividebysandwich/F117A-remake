@@ -136,6 +136,7 @@ pub(crate) fn update_camera(
     combat: Option<Res<Combat>>,
     mfd: Res<MfdState>,
     view: Res<ViewState>,
+    settings: Res<crate::settings::Settings>,
     mut info: ResMut<TrackCam>,
     papi: Res<crate::scenery::PapiSites>,
     mut sites: ResMut<crate::world::StreamSites>,
@@ -236,6 +237,8 @@ pub(crate) fn update_camera(
     };
     let dir = match target {
         Some(p) if (p - eye).length() > 1.0 => (p - eye).as_vec3().normalize(),
+        // The gunship's slaved pod: along its sight.
+        _ if let Some(d) = mfd.av.tgp.los.filter(|_| settings.aircraft.spec().turret) => d,
         _ => {
             let (h, _, _) = a.euler();
             let d = match mfd.cam_dir {

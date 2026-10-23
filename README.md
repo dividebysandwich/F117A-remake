@@ -27,7 +27,7 @@ A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations with VR support
 * **Weather:** layered volumetric clouds and thunderstorms that block seekers and visual ID
 * **Theaters** including Ukraine 2026, with drone defense missions against Geran attack drones
 * **Tacview** export and real-time telemetry plus ACMI recording
-* **F-117A and F-16C**, each with its own cockpit and flight model
+* **F-117A, F-16C, UH-60A and AH-1Z**, each with its own cockpit and flight model
 * **Ukraine theater** with drone defense missions and famous landmarks like the Zaporizhzhia NPP
 * **Classic modes:** DOS era flight model, cockpit, HUD and rendering, switchable on their own
 
@@ -89,7 +89,7 @@ In the browser (WebGPU; coop joins public servers through the master server): `t
 | `--weather random\|clear\|scattered\|broken\|overcast\|storm` | the mission's weather (default: rolled from the seed, odds by theater) |
 | `--cloud-cover <percent>` | coverage of the weather's main cloud layer (default: rolled) |
 | `--modern` | modern rendering touches (smooth gradients and haze, subtle shading, MSAA) |
-| `--aircraft f117\|f16\|uh60` | the aircraft to fly: the F-117A (default), the F-16C, which has its own cockpit (with an RWR scope instead of the radar bar graph) and flight model, or the UH-60A Black Hawk helicopter (cyclic and collective; the throttle controls move the collective; its missions are insertions: land near the targets) |
+| `--aircraft f117\|f16\|uh60\|ah1z` | the aircraft to fly: the F-117A (default), the F-16C, which has its own cockpit (with an RWR scope instead of the radar bar graph) and flight model, the UH-60A Black Hawk helicopter (cyclic and collective; the throttle controls move the collective; its missions are insertions: land near the targets), or the AH-1Z Viper attack helicopter (a turret gun and Hellfires that follow the targeting pod, AIM-9s; it flies the normal missions) |
 | `--classic-avionics` | DOS era MFD pages instead of the F-16 style formats (HSD, HARM, targeting pod, map, stores on either MFD, with a slewable cursor) |
 | `--classic-hud` | DOS era low-resolution HUD instead of the green F-16 style one |
 | `--classic-cockpit` | DOS era panel arrangement with 77x60 displays, instead of the modern panel (high-resolution map and displays, labelled MFD bezel buttons); F-117A only |

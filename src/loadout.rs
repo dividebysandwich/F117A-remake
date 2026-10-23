@@ -1,6 +1,6 @@
 //! Loadout editor (otherwise the mission generator picks the stores): the stores on each
 //! hardpoint, the F-117A's bays (two real ones, two more inside the wings without realistic
-//! weapons) or the F-16's nine pylon stations.
+//! weapons), the F-16's nine pylon stations or the AH-1Z's six.
 
 use bevy::prelude::*;
 use bevy_egui::egui;
@@ -11,7 +11,7 @@ use crate::aircraft::AircraftKind;
 use crate::menu::{AMBER, BRIGHT, DIM, GREEN, MenuState, big_button, facts, section};
 
 /// The weapons (index = weapon type): name, what it is for.
-pub const WEAPONS: [(&str, &str); 19] = [
+pub const WEAPONS: [(&str, &str); 21] = [
     ("AIM-9M Sidewinder", "Air-to-air, infrared homing, short range"),
     ("AIM-120A AMRAAM", "Air-to-air, radar homing, medium range"),
     ("AGM-88A HARM", "Anti-radiation missile: radars and SAM sites"),
@@ -31,13 +31,21 @@ pub const WEAPONS: [(&str, &str); 19] = [
     ("135 mm IR camera", "Reconnaissance photos of the target"),
     ("1900 lbs fuel", "Extra fuel, transferred when released"),
     ("Special equipment", "Supplies or cargo for the mission"),
+    ("20 mm cannon", "The gun (not a store)"),
+    (
+        "AGM-114 Hellfire",
+        "Laser guided anti-armour missile: flies to where the targeting pod looks",
+    ),
 ];
 /// Weapon types kept out of the real F-117A's bays (realistic weapons).
 const AIR_TO_AIR: [u8; 2] = [0, 1];
 /// Rounds of each weapon a bay holds.
-const BAY_QTY: [u8; 19] = [4, 3, 1, 2, 1, 2, 2, 2, 2, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1];
-/// Rounds on a pylon (with a triple ejector rack for the 500 lb bombs).
-const PYLON_QTY: [u8; 19] = [1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3, 2, 2, 1, 2, 1, 1, 1, 1];
+const BAY_QTY: [u8; 21] = [4, 3, 1, 2, 1, 2, 2, 2, 2, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 1, 4];
+/// Rounds on a pylon (with a triple ejector rack for the 500 lb bombs, a four-rail launcher for
+/// the Hellfires).
+const PYLON_QTY: [u8; 21] = [1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3, 2, 2, 1, 2, 1, 1, 1, 1, 1, 4];
+/// The Hellfire's weapon type.
+pub const HELLFIRE: u8 = 20;
 
 /// A bay or a pylon.
 pub struct Hardpoint {
@@ -112,6 +120,70 @@ const F117_OUTLINE: &[(f32, f32)] = &[
     (-0.22, 0.88),
     (-0.18, 0.34),
     (-0.02, 0.32),
+];
+/// stflt_043 (tools/models/ah1z.py) seen from above, without its rotors: half span (the
+/// wingtip rails) 2.32 m, length 15.16 m.
+const AH1Z_OUTLINE: &[(f32, f32)] = &[
+    (0.00, 0.00),
+    (0.18, 0.02),
+    (0.30, 0.20),
+    (0.24, 0.56),
+    (0.34, 0.66),
+    (0.44, 1.12),
+    (0.50, 4.10),
+    (1.10, 4.10),
+    (1.10, 2.70),
+    (1.16, 2.68),
+    (1.18, 5.04),
+    (2.24, 5.14),
+    (2.30, 4.80),
+    (2.32, 5.20),
+    (2.30, 6.44),
+    (2.24, 6.36),
+    (1.18, 6.44),
+    (1.18, 7.74),
+    (0.98, 7.76),
+    (1.14, 8.62),
+    (0.88, 8.80),
+    (0.72, 8.82),
+    (0.56, 8.48),
+    (0.36, 8.48),
+    (0.28, 8.72),
+    (0.16, 11.84),
+    (1.58, 12.00),
+    (1.60, 12.78),
+    (0.14, 12.76),
+    (0.12, 14.02),
+    (0.00, 15.16),
+    (-0.12, 14.02),
+    (-0.14, 12.76),
+    (-1.60, 12.78),
+    (-1.58, 12.00),
+    (-0.16, 11.84),
+    (-0.28, 8.72),
+    (-0.36, 8.48),
+    (-0.56, 8.48),
+    (-0.72, 8.82),
+    (-0.88, 8.80),
+    (-1.14, 8.62),
+    (-0.98, 7.76),
+    (-1.18, 7.74),
+    (-1.18, 6.44),
+    (-2.24, 6.36),
+    (-2.30, 6.44),
+    (-2.32, 5.20),
+    (-2.30, 4.80),
+    (-2.24, 5.14),
+    (-1.18, 5.04),
+    (-1.16, 2.68),
+    (-1.10, 2.70),
+    (-1.10, 4.10),
+    (-0.50, 4.10),
+    (-0.44, 1.12),
+    (-0.34, 0.66),
+    (-0.24, 0.56),
+    (-0.30, 0.20),
+    (-0.18, 0.02),
 ];
 /// stflt_025 (tools/models/uh60.py) seen from above, without its rotors: half span (the
 /// stabilator) 2.16 m, length 15.1 m.
@@ -244,6 +316,20 @@ static F117_FANTASY_LAYOUT: Layout =
     Layout { outline: F117_OUTLINE, half_span: 4.86, length: 15.62, hardpoints: &F117_FANTASY };
 static F16_LAYOUT: Layout =
     Layout { outline: F16_OUTLINE, half_span: 5.12, length: 17.12, hardpoints: &F16_STATIONS };
+/// The AH-1Z's stations 1 (left wingtip rail) to 6 (right wingtip rail).
+static AH1Z_STATIONS: [Hardpoint; 6] = [
+    pylon("Station 1, left wingtip rail", "1", -2.30, 5.6, Some(5), &SIDEWINDER),
+    pylon("Station 2, left outer pylon", "2", -1.75, 5.5, Some(4), &HELLFIRES),
+    pylon("Station 3, left inner pylon", "3", -1.05, 5.4, Some(3), &HELLFIRES),
+    pylon("Station 4, right inner pylon", "4", 1.05, 5.4, Some(2), &HELLFIRES),
+    pylon("Station 5, right outer pylon", "5", 1.75, 5.5, Some(1), &HELLFIRES),
+    pylon("Station 6, right wingtip rail", "6", 2.30, 5.6, Some(0), &SIDEWINDER),
+];
+const SIDEWINDER: [u8; 1] = [0];
+const HELLFIRES: [u8; 1] = [HELLFIRE];
+
+static AH1Z_LAYOUT: Layout =
+    Layout { outline: AH1Z_OUTLINE, half_span: 2.32, length: 15.16, hardpoints: &AH1Z_STATIONS };
 /// The UH-60A carries troops, no stores.
 static UH60_LAYOUT: Layout =
     Layout { outline: UH60_OUTLINE, half_span: 2.16, length: 15.1, hardpoints: &[] };
@@ -255,6 +341,7 @@ pub fn layout(aircraft: AircraftKind, realistic: bool) -> &'static Layout {
         AircraftKind::F117 => &F117_FANTASY_LAYOUT,
         AircraftKind::F16 => &F16_LAYOUT,
         AircraftKind::UH60 => &UH60_LAYOUT,
+        AircraftKind::AH1Z => &AH1Z_LAYOUT,
     }
 }
 
@@ -278,7 +365,8 @@ pub const LOADOUT_FILE: &str = "loadout.json";
 
 impl PlannedLoadout {
     /// The generator's stores: in the F-117A's bays as they are, on the F-16 each on the
-    /// first free pair of stations that carries it, and Sidewinders on the free wingtips.
+    /// first free pair of stations that carries it, and Sidewinders on the free wingtips; the
+    /// AH-1Z full.
     pub fn of(m: &Mission, aircraft: AircraftKind) -> Self {
         let realistic = m.settings.plane == Plane::Lockheed;
         let lay = layout(aircraft, realistic);
@@ -291,6 +379,13 @@ impl PlannedLoadout {
                 }
             }
             AircraftKind::UH60 => {}
+            // Whatever the briefing: the Sidewinders on the rails, a full launcher of Hellfires
+            // on every pylon.
+            AircraftKind::AH1Z => {
+                for (s, h) in stores.iter_mut().zip(lay.hardpoints) {
+                    *s = h.loads.first().copied();
+                }
+            }
             AircraftKind::F16 => {
                 for w in briefed.chain([0]) {
                     // Stations preferred for each kind of store (pairs by their left station).
@@ -624,8 +719,9 @@ mod tests {
     fn weapon_tables_match_the_sim_data() {
         let data = crate::mission::MissionData::load().expect("mission data");
         let t = &data.0.tables;
-        for (w, &qty) in BAY_QTY.iter().enumerate() {
-            assert_eq!(t.weapon_qty[w], qty, "{}", t.weapon_names[w]);
+        // The remake's own weapons (the Hellfire) are not in the generator's tables.
+        for (w, (&qty, &want)) in BAY_QTY.iter().zip(&t.weapon_qty).enumerate() {
+            assert_eq!(want, qty, "{}", t.weapon_names[w]);
         }
     }
 

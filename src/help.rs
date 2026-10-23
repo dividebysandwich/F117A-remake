@@ -42,7 +42,8 @@ Starting
                                view direction (default 0, -15)
 
 Aircraft and rules
-  --aircraft f117|f16          the flown aircraft (default f117)
+  --aircraft f117|f16|uh60|ah1z
+                               the flown aircraft (default f117)
   --lockheed                   realistic weapons: the real F-117A's 2 bays, no air-to-air
                                missiles, no carrier operations
   --realistic-guidance         realistic missile guidance

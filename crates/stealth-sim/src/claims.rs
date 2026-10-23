@@ -195,7 +195,11 @@ impl Sim {
         let slot = self.local_round % nb;
         self.local_round = (self.local_round + 1) % nb;
         let fire = self.has_gun() && trigger && self.pl.gun_ammo > 0 && self.pl.eject == 0;
-        self.bullets[slot] = if fire { Self::gun_round(&self.pl.p, fs) } else { Bullet::default() };
+        self.bullets[slot] = if fire {
+            Self::gun_round(&self.pl.p, self.turret_aim(ps), fs)
+        } else {
+            Bullet::default()
+        };
         let g = Self::gun_round_gravity(fs);
         for b in self.bullets[..nb].iter_mut().filter(|b| b.x != 0) {
             b.x += b.vx;

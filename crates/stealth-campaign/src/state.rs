@@ -36,6 +36,7 @@ pub enum Aircraft {
     F117,
     F16,
     UH60,
+    AH1Z,
 }
 
 impl Aircraft {
@@ -44,10 +45,16 @@ impl Aircraft {
             Aircraft::F117 => "F-117A",
             Aircraft::F16 => "F-16",
             Aircraft::UH60 => "UH-60",
+            Aircraft::AH1Z => "AH-1Z",
         }
     }
 
     pub fn helicopter(self) -> bool {
+        matches!(self, Aircraft::UH60 | Aircraft::AH1Z)
+    }
+
+    /// The troop helicopter: flies insertions and picks downed pilots up.
+    pub fn transport(self) -> bool {
         self == Aircraft::UH60
     }
 }
@@ -172,19 +179,19 @@ impl MissionKind {
         self == MissionKind::Insertion
     }
 
-    /// Who may fly it: insertions only the helicopter, which flies nothing but them and
-    /// rescues (it picks the pilot up, the others cover it).
+    /// Who may fly it: insertions only the troop helicopter, which flies nothing but them and
+    /// rescues (it picks the pilot up, the others cover it). The gunship flies the rest.
     pub fn flyable_by(self, aircraft: Aircraft) -> bool {
         match self {
-            MissionKind::Insertion => aircraft.helicopter(),
+            MissionKind::Insertion => aircraft.transport(),
             MissionKind::Csar => true,
-            _ => !aircraft.helicopter(),
+            _ => !aircraft.transport(),
         }
     }
 
     /// Why an aircraft may not fly it.
     pub fn not_flyable(self, aircraft: Aircraft) -> &'static str {
-        if aircraft.helicopter() {
+        if aircraft.transport() {
             "The UH-60 flies insertions and rescues"
         } else {
             "Insertions are flown in the UH-60, or ordered for the helicopter crews"

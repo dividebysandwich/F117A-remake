@@ -212,7 +212,7 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     s.shape_name = String::new();
     s.place_name = String::new();
     s.special_model = None;
-    let what = if sortie.aircraft.helicopter() { describe_heli(o.kind) } else { describe(o.kind) };
+    let what = if sortie.aircraft.transport() { describe_heli(o.kind) } else { describe(o.kind) };
     m.briefing.title = o.title.clone();
     m.briefing.primary_summary = summary(state, sortie);
     m.briefing.primary_objective = what.to_string();
@@ -228,7 +228,7 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     ];
     m.loadout.bays =
         stores(o.kind).iter().map(|&w| Bay { weapon: w, name: String::new(), count: 1 }).collect();
-    m.loadout.usable_bays = if sortie.aircraft.helicopter() {
+    m.loadout.usable_bays = if sortie.aircraft.transport() {
         0
     } else if m.settings.plane == stealth_mission::Plane::Lockheed {
         2

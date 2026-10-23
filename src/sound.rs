@@ -21,8 +21,9 @@
 //! - Out of the cockpit under the chute and on the ground, the pilot hears the aircraft around
 //!   (`jet.flac`, `helicopter.flac`, tools/gen_aircraft_sounds.py), placed by direction with
 //!   stereo panning that follows the head, fading with distance, with a Doppler shift.
-//! - With Sidewinders selected in the air-to-air HUD mode, the seeker growls (`aim9_growl.flac`,
-//!   tools/gen_sidewinder_tones.py): quietly with nothing in its view, louder and higher with the
+//! - With Sidewinders selected in the air-to-air HUD mode, the seeker growls (cut from a
+//!   recording of the real tones by tools/cut_sidewinder_tones.py): the low growl
+//!   (`aim9_growl.flac`) with nothing in its view, the higher one (`aim9_seen.flac`) with the
 //!   locked target in the seeker (the LOCK oval), and the steady lock tone (`aim9_tone.flac`)
 //!   once the target is in range.
 
@@ -155,8 +156,8 @@ struct SoundBank {
     helicopter: Option<Handle<AudioSource>>,
     heli_rotor: Option<Handle<AudioSource>>,
     heli_turbine: Option<Handle<AudioSource>>,
-    aim9_growl: Option<Handle<AudioSource>>,
-    aim9_tone: Option<Handle<AudioSource>>,
+    /// The Sidewinder seeker's loops, by `SeekerTone`.
+    aim9: [Option<Handle<AudioSource>>; 3],
 }
 
 /// A playing one-shot sound (one instance per id at a time, like the single-voice driver).
@@ -185,14 +186,15 @@ struct EngineDrone {
     sample_knots: f32,
 }
 
-/// The Sidewinder seeker's loops: growl (false) and lock tone (true).
+/// A Sidewinder seeker loop: 0 the search growl, 1 the growl with the target in the seeker,
+/// 2 the lock tone.
 #[derive(Component)]
-struct SeekerTone(bool);
+struct SeekerTone(usize);
 
-/// Sidewinder seeker volumes and growl pitch: searching, the target in the seeker; the lock tone.
-const GROWL_SEARCH: (f32, f32) = (0.12, 1.0);
-const GROWL_SEEN: (f32, f32) = (0.3, 1.12);
-const LOCK_TONE_VOLUME: f32 = 0.25;
+const AIM9_FILES: [&str; 3] = ["aim9_growl.flac", "aim9_seen.flac", "aim9_tone.flac"];
+
+/// Sidewinder seeker volume (the loops keep the recording's relative loudness).
+const SEEKER_VOLUME: f32 = 0.3;
 /// How long (real seconds) the seeker has to see or lose the target before its sound changes,
 /// so the target at the edge of the seeker's view doesn't chop it.
 const SEEKER_HOLD: f32 = 0.15;
@@ -255,8 +257,7 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     bank.helicopter = optional("helicopter.flac");
     bank.heli_rotor = optional("heli_rotor.flac");
     bank.heli_turbine = optional("heli_turbine.flac");
-    bank.aim9_growl = optional("aim9_growl.flac");
-    bank.aim9_tone = optional("aim9_tone.flac");
+    bank.aim9 = AIM9_FILES.map(optional);
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));
     commands.insert_resource(bank);
 }
@@ -639,42 +640,33 @@ fn sidewinder_tones(
         }
     }
     let (seen, locked) = held.0;
-    let (growl_volume, growl_speed) = if seen { GROWL_SEEN } else { GROWL_SEARCH };
-    let mut have = [false; 2];
+    let tone = if locked { 2 } else { seen as usize };
+    let mut have = false;
     for (e, l, sink) in &mut loops {
-        if l.0 != locked {
+        if l.0 != tone {
             commands.entity(e).despawn();
             continue;
         }
-        have[l.0 as usize] = true;
-        let Some(mut sink) = sink else { continue };
-        if !l.0 {
-            sink.set_speed(growl_speed);
-            sink.set_volume(Volume::Linear(growl_volume));
-        }
-        if virt.is_paused() != sink.is_paused() {
+        have = true;
+        if let Some(sink) = sink
+            && virt.is_paused() != sink.is_paused()
+        {
             if virt.is_paused() { sink.pause() } else { sink.play() }
         }
     }
-    if have[locked as usize] {
+    if have {
         return;
     }
-    let (handle, volume, speed) = if locked {
-        (&bank.as_ref().and_then(|b| b.aim9_tone.clone()), LOCK_TONE_VOLUME, 1.0)
-    } else {
-        (&bank.as_ref().and_then(|b| b.aim9_growl.clone()), growl_volume, growl_speed)
-    };
-    if let Some(handle) = handle.clone() {
-        debug!("sidewinder {}", if locked { "lock tone" } else { "growl" });
+    if let Some(handle) = bank.as_ref().and_then(|b| b.aim9[tone].clone()) {
+        debug!("sidewinder {}", AIM9_FILES[tone]);
         commands.spawn((
             AudioPlayer(handle),
             PlaybackSettings {
                 mode: PlaybackMode::Loop,
-                volume: Volume::Linear(volume),
-                speed,
+                volume: Volume::Linear(SEEKER_VOLUME),
                 ..default()
             },
-            SeekerTone(locked),
+            SeekerTone(tone),
         ));
     }
 }

@@ -532,8 +532,8 @@ from. The right mouse button orbits around the weapon and the mouse wheel zooms.
 Ground targets under cloud cannot be designated (*Target obscured*). IR and optical seekers
 (AIM-9, Maverick, laser-guided bombs) need a clear line of sight.
 
-With Sidewinders selected in the air-to-air HUD mode you hear the seeker: a quiet growl while it
-searches, a louder and higher growl once the locked target is in its view (the LOCK oval), and a
+With Sidewinders selected in the air-to-air HUD mode you hear the seeker: a low growl while it
+searches, a higher growl once the locked target is in its view (the LOCK oval), and a
 steady high tone when the target is in range: fire.
 
 **Player weapons** (lock range in km):

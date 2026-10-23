@@ -7,9 +7,13 @@
 //! - the horizon line;
 //! - the locked target: a box on a ground target, a diamond on an aircraft; off the visor, an
 //!   arrow from the reticle towards it;
-//! - the turret gun's pipper (where its rounds go, selected or not);
+//! - the turret gun's pipper (where its rounds go, selected or not) while it is slaved to the
+//!   helmet;
+//! - with Sidewinders selected, their seeker's circle round the reticle (the seeker follows the
+//!   helmet sight and locks the nearest hostile aircraft in it);
 //! - the targeting pod's line of sight (a small diamond) when it is not slaved;
-//! - the gun line (rounds and what it is slaved to) under the reticle.
+//! - the gun line (rounds and what it is slaved to) under the reticle, but not with Sidewinders
+//!   selected.
 //!
 //! The horizon, lock, pipper and pod sight are drawn where they are in the world.
 //!
@@ -163,6 +167,7 @@ fn draw(
     cues: Res<HudCues>,
     stores: Res<Stores>,
     mfd: Res<crate::mfd::MfdState>,
+    combat: Option<Res<crate::combat::Combat>>,
     time: Res<Time>,
 ) {
     let Ok((parent, mut tex, vis)) = visors.single_mut() else { return };
@@ -173,16 +178,23 @@ fn draw(
     let head = head.compute_transform().rotation;
     let tex = &mut *tex;
     tex.canvas.px.fill(0);
+    // Sidewinders selected: no gun line.
+    let aim9 =
+        !stores.gun_selected && stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
     let frame = Frame {
         to_head: head.inverse(),
         aircraft: a.orientation,
         sight: mfd.av.helmet,
         lock: cues.helmet_lock,
-        gun: cues.turret_gun.map(|g| g.dir),
+        gun: cues.turret_gun.filter(|_| stores.gun_slave == Some("HMS")).map(|g| g.dir),
+        seeker: combat.is_some_and(|c| c.sim.helmet_seeker()),
         pod: (mfd.av.tgp.mode != crate::avionics::TgpMode::Slaved)
             .then_some(mfd.av.tgp.los)
             .flatten(),
-        gun_line: stores.gun_slave.map(|s| format!("GUN {} {s}", stores.gun_rounds.unwrap_or(0))),
+        gun_line: stores
+            .gun_slave
+            .filter(|_| !aim9)
+            .map(|s| format!("GUN {} {s}", stores.gun_rounds.unwrap_or(0))),
         blink: crate::hud::blink(&time),
     };
     draw_visor(&mut tex.canvas, &frame);
@@ -199,8 +211,10 @@ struct Frame {
     sight: Option<Vec3>,
     /// The locked target (aircraft frame) and whether it is an aircraft.
     lock: Option<(Vec3, bool)>,
-    /// The turret gun's pipper (aircraft frame).
+    /// The turret gun's pipper (aircraft frame) while it is slaved to the helmet.
     gun: Option<Vec3>,
+    /// The Sidewinder seeker's circle round the reticle.
+    seeker: bool,
     /// The targeting pod's line of sight (world) when it is not slaved.
     pod: Option<Vec3>,
     gun_line: Option<String>,
@@ -217,6 +231,9 @@ fn draw_visor(c: &mut Canvas, f: &Frame) {
     // Line of sight reticle.
     for d in [Vec2::X, Vec2::Y, Vec2::NEG_X, Vec2::NEG_Y] {
         c.stroke(centre + d * 6.0, centre + d * 18.0, PEN, INK);
+    }
+    if f.seeker {
+        c.ring(centre, stealth_sim::HELMET_SEEKER.tan() as f32 * SCALE, THIN, INK);
     }
     horizon(c, f.to_head);
     if let Some(p) = f.pod.and_then(|d| project(f.to_head * d)).filter(|&p| on_visor(p)) {
@@ -311,6 +328,7 @@ mod tests {
             sight: None,
             lock: None,
             gun: None,
+            seeker: false,
             pod: None,
             gun_line: None,
             blink: true,

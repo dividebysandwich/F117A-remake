@@ -1804,3 +1804,48 @@ fn gunship_gun_slaved_to_helmet_then_pod() {
     p.helmet = None;
     assert!(fire(&mut sim, &p).vx < 0);
 }
+
+#[test]
+fn helmet_seeker_locks_in_its_circle() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 2);
+    let opts = SimOptions { helicopter: true, gunship: true, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    // Two An-72s: 3 km north, and 2 km away 30 degrees right of north.
+    for (k, (dx, dy)) in [(0, -192), (64, -111)].into_iter().enumerate() {
+        let u = &mut sim.flights_mut()[k + 1];
+        *u = FlightUnit {
+            x: mx + dx,
+            y: my + dy,
+            alt: 5000,
+            spec: 9,
+            flags: 0x43,
+            speed: 200,
+            timer: 30000,
+            wp: 3,
+            ..Default::default()
+        };
+        u.wx = u.x << 5;
+        u.wy = u.y << 5;
+    }
+    sim.set_bay(0, 0, 4);
+    sim.select_bay(0);
+    let mut p = player_at(mx, my, 5000, 0, 0);
+    p.hud_mode = HudMode::Air;
+    let mut look = |sim: &mut Sim, heading: u16| {
+        p.helmet = Some(PodAim { heading, pitch: 0, ground: None });
+        sim.step(&p, 15);
+        sim.targeting()
+    };
+    // Looking north: the one ahead, the nearer one outside the circle.
+    let t = look(&mut sim, 0);
+    assert!(sim.helmet_seeker());
+    assert_eq!(t.air, Some(1));
+    // Towards the other: the first leaves the circle, the seeker takes the second.
+    assert_eq!(look(&mut sim, 0x1555).air, Some(2));
+    // Nothing in the circle: no lock.
+    let t = look(&mut sim, 0x4000);
+    assert_eq!(t.air, None);
+    assert!(!t.lock_valid);
+}

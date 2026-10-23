@@ -2,6 +2,13 @@ use crate::math::{abs16, approx, bearing, cdiv, s16};
 use crate::types::*;
 use crate::{Sim, ballistics};
 
+/// The helmet-slaved Sidewinder seeker's circle: its radius round the helmet sight (rad).
+pub const HELMET_SEEKER: f64 = 6.0 * std::f64::consts::PI / 180.0;
+
+fn bam_rad(a: i32) -> f64 {
+    s16(a) as f64 * std::f64::consts::PI / 32768.0
+}
+
 impl Sim {
     fn cam_off(&self, b: i32) -> i32 {
         abs16(s16(self.pl.cam_dir - b + self.pl.p.heading))
@@ -56,6 +63,7 @@ impl Sim {
         self.nearest_target();
         self.designate();
         self.lock_oval(ps);
+        self.update_helmet_seeker(ps);
         self.bombsight(ps.ccrp);
         self.photo(ps);
         self.radio_beacon();
@@ -378,6 +386,79 @@ impl Sim {
         t.lock_valid = oval;
         t.in_range = red;
         self.pl.lights.lock = oval && (red || self.frame & 1 != 0);
+    }
+
+    /// A gunship's Sidewinder seeker slaved to the helmet sight: the lock is the nearest hostile
+    /// aircraft within `HELMET_SEEKER` of the sight and is broken when it leaves that circle.
+    fn update_helmet_seeker(&mut self, ps: &PlayerState) {
+        let spec = self.selected_spec();
+        let (_, count) = self.selected_weapon();
+        let sight = ps.helmet.filter(|_| {
+            self.pl.gunship
+                && spec > 0
+                && count > 0
+                && self.missile(spec).class == 7
+                && self.pl.hud_mode == HudMode::Air
+                && !self.pl.external_view
+        });
+        let Some(sight) = sight else {
+            self.pl.helmet_seeker = false;
+            return;
+        };
+        let (h, p) = (bam_rad(sight.heading as i32), bam_rad(sight.pitch as i32));
+        let los = [h.sin() * p.cos(), h.cos() * p.cos(), p.sin()];
+        let (mx, my, vz) = (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z);
+        // Off the sight (rad) and range (map units) of a point (map units, viewZ).
+        let off = |x: i32, y: i32, alt: i32| {
+            let d = [s16(x - mx) as f64, -(s16(y - my) as f64), ((alt - vz) >> 5) as f64];
+            let r = d.iter().map(|v| v * v).sum::<f64>().sqrt().max(1.0);
+            let cos = d.iter().zip(los).map(|(a, b)| a * b).sum::<f64>() / r;
+            (cos.clamp(-1.0, 1.0).acos(), r)
+        };
+        let seen = |x: i32, y: i32, alt: i32| {
+            let (a, r) = off(x, y, alt);
+            (a < HELMET_SEEKER && self.player_sees(x, y, alt)).then_some(r)
+        };
+        let unit = |u: &FlightUnit| {
+            (u.flags & fflags::AIRBORNE != 0 && u.flags & fflags::DESTROYED == 0 && u.speed != 0)
+                .then(|| seen(u.x, u.y, u.alt))
+                .flatten()
+        };
+        let air = usize::try_from(self.pl.air_lock).ok().and_then(|i| self.flights.get(i));
+        let air = air.map(unit);
+        let pilot = self.pl.pilot_lock.filter(|&k| self.pilot_airborne(k)).map(|k| {
+            let p = &self.pilot_ref(k as usize).p;
+            seen(p.mx, p.my, p.view_z)
+        });
+        let mut range = air.flatten().or(pilot.flatten());
+        // Nothing locked: the nearest hostile aircraft in the circle.
+        let best = range.is_none().then(|| {
+            self.flights
+                .iter()
+                .enumerate()
+                .filter(|&(j, u)| !self.friendly_unit(j, u.spec))
+                .filter_map(|(j, u)| unit(u).filter(|&r| r < 0x12C0 as f64).map(|r| (j, r)))
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+        });
+        // A lock that leaves the circle is broken.
+        if air == Some(None) {
+            self.pl.air_lock = -1;
+        }
+        if pilot == Some(None) {
+            self.pl.pilot_lock = None;
+        }
+        if let Some((j, r)) = best.flatten() {
+            self.pl.air_lock = j as i32;
+            self.pl.pilot_lock = None;
+            range = Some(r);
+        }
+        // The oval as on the HUD: the lock within twice the missile's lock range, red within it.
+        let lock = self.missile(spec).lock_range as f64 * 32.0;
+        self.pl.helmet_seeker = true;
+        let t = &mut self.pl.targeting;
+        t.lock_valid = range.is_some_and(|r| r < lock * 2.0);
+        t.in_range = range.is_some_and(|r| r < lock);
+        self.pl.lights.lock = t.lock_valid && (t.in_range || self.frame & 1 != 0);
     }
 
     /// The air lock in the HUD (map x, y and viewZ): the locked flight unit or other pilot.

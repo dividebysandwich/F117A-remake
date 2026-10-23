@@ -32,6 +32,7 @@ pub use data::{
 pub use pilot::{Pilot, PilotEvent};
 pub use radar::emv;
 pub use rng::Rng;
+pub use targeting::HELMET_SEEKER;
 pub use types::*;
 
 use math::{s16, view_z};
@@ -415,6 +416,7 @@ impl Sim {
                 launches: 0,
                 air_lock: -1,
                 pilot_lock: None,
+                helmet_seeker: false,
                 gnd_lock: -1,
                 targeting: TargetingState::default(),
                 gnd_cooldown: 0,
@@ -1122,6 +1124,12 @@ impl Sim {
 
     pub fn targeting(&self) -> TargetingState {
         self.pl.targeting
+    }
+
+    /// A gunship's Sidewinder seeker follows the helmet sight (`HELMET_SEEKER`): it locks the
+    /// nearest hostile aircraft in its circle and loses it when it leaves the circle.
+    pub fn helmet_seeker(&self) -> bool {
+        self.pl.helmet_seeker
     }
 
     /// The right MFD should show the Maverick seeker of this slot.

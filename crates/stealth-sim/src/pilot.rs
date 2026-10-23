@@ -127,6 +127,9 @@ pub struct Pilot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pilot_lock: Option<u8>,
     pub(crate) targeting: TargetingState,
+    /// The Sidewinder seeker follows the helmet sight (`Sim::helmet_seeker`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) helmet_seeker: bool,
     pub(crate) gnd_cooldown: i32,
     /// Frames left for a nearest-target request to wait for the HUD mode (`Commands::nearest_target`).
     pub(crate) nearest_req: u8,

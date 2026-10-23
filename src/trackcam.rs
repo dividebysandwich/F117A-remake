@@ -203,10 +203,10 @@ pub(crate) fn update_camera(
         *info = TrackCam {
             live: true,
             name: [
-                if matches!(mfd.av.tgp.mode, crate::avionics::TgpMode::Point(_)) {
-                    "POINT"
-                } else {
-                    "AREA"
+                match mfd.av.tgp.mode {
+                    crate::avionics::TgpMode::Point(_) => "POINT",
+                    crate::avionics::TgpMode::Snowplow => "SNOWPLOW",
+                    _ => "AREA",
                 }
                 .into(),
                 String::new(),
@@ -220,10 +220,7 @@ pub(crate) fn update_camera(
     }
     let sim = &combat.sim;
     let t = sim.targeting();
-    // After CZ the pod looks ahead until something new is locked.
-    let target = if mfd.modern && mfd.av.tgp.zeroed.is_some() {
-        None
-    } else if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
+    let target = if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
         let (e, n) = map_wu(o.x, o.y);
         look = Some(wu_to_bevy(e + 16.0, n - 16.0, 0.0));
         look

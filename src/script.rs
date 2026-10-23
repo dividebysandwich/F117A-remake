@@ -10,7 +10,9 @@
 //! `--screenshot` picture at that moment. `yaw=0.5` sets the rudder, `throttle=0.8` holds an
 //! absolute throttle (`collective=0.6`: a helicopter's collective), `trigger=1` / `trigger=0` holds / releases the fire button (`gun=1` / `gun=0` the gun trigger), `mark=1` / `mark=0` the lock cursor
 //! target button, `lockpilot=1` locks another player's aircraft (pilot id 1, as a display
-//! lock does) and `press=Gear` pushes the 3D-cockpit control bound to that action.
+//! lock does), `press=Gear` pushes the 3D-cockpit control bound to that action and `osb=r2`
+//! pushes an MFD bezel button (`l` / `r` / `t`: the left, right or third MFD; 0..4 along the
+//! top, 5..9 along the bottom).
 
 use bevy::prelude::*;
 
@@ -57,6 +59,8 @@ enum Step {
     Mark(bool),
     /// Locks another player's aircraft by pilot id (`lockpilot=1`).
     LockPilot(u8),
+    /// Pushes an MFD bezel button (`osb=r2`).
+    Osb(crate::mfd::MfdSide, u8),
 }
 
 #[derive(Clone, Copy)]
@@ -93,6 +97,7 @@ struct Axes {
     gun: bool,
     mark: bool,
     lock_pilot: Option<u8>,
+    osb: Option<(crate::mfd::MfdSide, u8)>,
 }
 
 fn parse_step(what: &str) -> Option<Step> {
@@ -116,6 +121,14 @@ fn parse_step(what: &str) -> Option<Step> {
         Step::Mark(x.parse::<u8>().ok()? != 0)
     } else if let Some(x) = what.strip_prefix("lockpilot=") {
         Step::LockPilot(x.parse().ok()?)
+    } else if let Some(x) = what.strip_prefix("osb=") {
+        let side = match x.get(..1)? {
+            "l" => crate::mfd::MfdSide::Left,
+            "r" => crate::mfd::MfdSide::Right,
+            "t" => crate::mfd::MfdSide::Third,
+            _ => return None,
+        };
+        Step::Osb(side, x[1..].parse().ok()?)
     } else if let Some(x) = what.strip_prefix("press=") {
         Step::Press(x.to_string())
     } else {
@@ -182,6 +195,7 @@ fn apply(
         Step::Gun(t) => axes.gun = *t,
         Step::Mark(t) => axes.mark = *t,
         Step::LockPilot(k) => axes.lock_pilot = Some(*k),
+        Step::Osb(side, slot) => axes.osb = Some((*side, *slot)),
         Step::Press(name) => {
             if let Some(act) = crate::input::action_by_name(name) {
                 presses.write(crate::cockpit3d::PressControl(act));
@@ -211,6 +225,8 @@ fn run_script(
     mut presses: MessageWriter<crate::cockpit3d::PressControl>,
     mut locks: MessageWriter<crate::avionics::LockRequest>,
     mut hud: ResMut<crate::hud::HudState>,
+    mfd: Res<crate::mfd::MfdState>,
+    mut mfd_cmds: MessageWriter<crate::mfd::MfdCommand>,
 ) {
     if script.steps.is_empty() && script.conditional.is_empty() {
         return;
@@ -260,6 +276,17 @@ fn run_script(
         hud.mode = crate::hud::HudMode::Air;
         locks.write(crate::avionics::LockRequest(crate::mfd::ContactRef::Pilot(k)));
     }
+    if let Some((side, slot)) = script.axes.osb.take() {
+        match crate::mfd::osb(side, slot, &mfd).map(|o| o.1) {
+            Some(crate::mfd::OsbFn::Cmd(c)) => {
+                mfd_cmds.write(crate::mfd::MfdCommand(c));
+            }
+            Some(crate::mfd::OsbFn::Action(a)) => {
+                actions.write(ActionEvent(a));
+            }
+            _ => warn!("script: no function on bezel button {side:?} {slot}"),
+        }
+    }
     controls.roll = script.axes.roll;
     controls.pitch = script.axes.pitch;
     controls.yaw = script.axes.yaw;
@@ -286,6 +313,7 @@ fn step_name(s: &Step) -> String {
         Step::Gun(t) => format!("gun={}", *t as u8),
         Step::Mark(t) => format!("mark={}", *t as u8),
         Step::LockPilot(k) => format!("lockpilot={k}"),
+        Step::Osb(side, slot) => format!("osb={side:?} {slot}"),
     }
 }
 

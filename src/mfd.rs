@@ -127,6 +127,8 @@ pub struct MfdState {
     pub av: crate::avionics::AvionicsState,
     /// Bombing mode CCRP (else CCIP), mirrored from the HUD for the weapons page's button.
     pub ccrp: bool,
+    /// The HUD is in A-A, mirrored from the HUD (the targeting pod's CZ is off).
+    pub air: bool,
 }
 
 impl Default for MfdState {
@@ -146,6 +148,7 @@ impl Default for MfdState {
             modern: false,
             av: default(),
             ccrp: false,
+            air: false,
         }
     }
 }
@@ -211,8 +214,10 @@ pub enum MfdCmd {
     /// Tracking camera zoom step in / out, the next step round (auto, 1X..6X).
     CamZoom(i8),
     CamZoomCycle,
-    /// Targeting pod back to slaved, zoom by range.
-    TgpCz,
+    /// Targeting pod snowplow (with the pod the SOI): locks dropped, fixed ahead.
+    TgpSp,
+    /// Targeting pod back to slaved (a target key).
+    TgpSlave,
 }
 
 /// Sent by the cockpit's bezel buttons.
@@ -356,7 +361,8 @@ pub fn cmd_action(cmd: MfdCmd) -> Action {
             }
         }
         MfdCmd::CamZoomCycle => Action::CameraZoomIn,
-        MfdCmd::TgpCz => Action::CamAhead,
+        MfdCmd::TgpSp => Action::ClearTarget,
+        MfdCmd::TgpSlave => Action::SelectTarget,
         MfdCmd::MapWay => Action::SelectWaypoint,
         MfdCmd::Sms(true) => Action::MissionOrders,
         MfdCmd::Sms(false) => Action::Ordnance,
@@ -556,6 +562,10 @@ fn mfd_keys(
     if state.ccrp != hud.ccrp {
         state.ccrp = hud.ccrp;
     }
+    let air = hud.mode == crate::hud::HudMode::Air;
+    if state.air != air {
+        state.air = air;
+    }
     if state.hires != settings.hires_displays() || state.modern == settings.classic_avionics {
         state.hires = settings.hires_displays();
         state.modern = !settings.classic_avionics;
@@ -602,6 +612,7 @@ fn mfd_keys(
             | Action::NextWaypoint => MfdCmd::RightPage(RightMfd::Way),
             Action::Flir => MfdCmd::Flir,
             Action::CamAhead | Action::NearestTarget => MfdCmd::Cam(CamDir::Ahead),
+            Action::SelectTarget if state.modern => MfdCmd::TgpSlave,
             Action::CamRear => MfdCmd::Cam(CamDir::Rear),
             Action::CamRight => MfdCmd::Cam(CamDir::Right),
             Action::CamLeft => MfdCmd::Cam(CamDir::Left),

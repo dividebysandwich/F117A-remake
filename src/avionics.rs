@@ -11,9 +11,11 @@
 //! - SOI: HSD, HARM and the targeting pod can be the sensor of interest: the "sensor/cursor
 //!   slew" controls move its cursor, "lock cursor target" locks what is under it (an aircraft or
 //!   a ground object on the HSD, a radar on the HARM display).
-//! - Targeting pod (TGP): slaved to the locked target. As the SOI, slewing turns the pod itself
-//!   (area track); once the slew stops it holds the ground point it looks at (point track), and
-//!   "lock cursor target" locks what is there. The HSD shows where the pod looks.
+//! - Targeting pod (TGP): slaved to the locked target; a target key, a display lock or CZ (the
+//!   next ground target) slaves it again. As the SOI, slewing turns the pod itself (area track);
+//!   once the slew stops it holds the ground point it looks at (point track), and "lock cursor
+//!   target" locks what is there. SP (snowplow) drops the locks and fixes it ahead of the nose.
+//!   The HSD shows where the pod looks.
 
 use bevy::math::{DVec2, DVec3};
 use bevy::prelude::*;
@@ -167,6 +169,8 @@ pub enum TgpMode {
     Area { az: f32, el: f32 },
     /// Holding a ground point (Bevy world position).
     Point(DVec3),
+    /// Snowplow: fixed ahead of the nose (`SP_EL` down), nothing locked, no ground track.
+    Snowplow,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -179,11 +183,8 @@ pub struct TgpState {
     /// The pod's line of sight (world direction), when it is up: the gunship's turret and
     /// Hellfires follow it.
     pub los: Option<Vec3>,
-    /// CZ pressed: the pod is to look ahead instead of at the current lock.
-    cz: bool,
-    /// After CZ: the (ground, air) lock the pod no longer looks at; a new lock ends it. The
-    /// slaved pod then looks ahead, so a slew starts from there.
-    pub zeroed: Option<(Option<usize>, Option<usize>)>,
+    /// SP pressed: the simulation is to drop its locks.
+    clear: bool,
 }
 
 impl TgpMode {
@@ -192,6 +193,7 @@ impl TgpMode {
             TgpMode::Slaved => "SLV",
             TgpMode::Area { .. } => "AREA",
             TgpMode::Point(_) => "PNT",
+            TgpMode::Snowplow => "SP",
         }
     }
 }
@@ -204,6 +206,8 @@ const POD_SETTLE: f32 = 0.15;
 const POD_RANGE: f64 = 40_000.0;
 const POD_AZ_LIMIT: f32 = 2.97;
 const POD_EL_LIMITS: (f32, f32) = (-1.75, 0.5);
+/// Snowplow elevation (rad): ahead and a little down, as the unlocked slaved pod.
+const SP_EL: f32 = -0.15;
 
 /// Direction from the nose (aircraft frame, -Z forward) by azimuth and elevation.
 pub fn pod_dir(az: f32, el: f32) -> Vec3 {
@@ -247,8 +251,9 @@ pub fn pod_step(
             TgpMode::Area { az, el } => (az, el),
             TgpMode::Point(p) => pod_angles(orientation.inverse() * (p - origin).as_vec3()),
             TgpMode::Slaved => {
-                looking.map_or((0.0, -0.15), |d| pod_angles(orientation.inverse() * d))
+                looking.map_or((0.0, SP_EL), |d| pod_angles(orientation.inverse() * d))
             }
+            TgpMode::Snowplow => (0.0, SP_EL),
         };
         let rate = POD_RATE / (1u32 << zoom.min(6)) as f32 * dt;
         tgp.mode = TgpMode::Area {
@@ -267,6 +272,7 @@ pub fn pod_step(
     match tgp.mode {
         TgpMode::Point(p) => Some(p),
         TgpMode::Area { az, el } => ground_hit(origin, to_world(az, el), ground_y),
+        TgpMode::Snowplow => ground_hit(origin, to_world(0.0, SP_EL), ground_y),
         TgpMode::Slaved => looking.and_then(|d| ground_hit(origin, d, ground_y)),
     }
 }
@@ -277,6 +283,7 @@ pub fn pod_direction(tgp: &TgpState, orientation: Quat, origin: DVec3) -> Option
     match tgp.mode {
         TgpMode::Slaved => None,
         TgpMode::Area { az, el } => Some(orientation * pod_dir(az, el)),
+        TgpMode::Snowplow => Some(orientation * pod_dir(0.0, SP_EL)),
         TgpMode::Point(p) => (p - origin).as_vec3().try_normalize(),
     }
 }
@@ -456,12 +463,15 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
             av.tgp.mode = TgpMode::Slaved;
             av.show(Format::Tgp);
         }
-        MfdCmd::TgpCz => {
-            av.tgp.mode = TgpMode::Slaved;
-            av.tgp.cz = true;
-            state.cam_zoom = None;
-            state.cam_dir = crate::mfd::CamDir::Ahead;
+        // Snowplow, with the pod the SOI.
+        MfdCmd::TgpSp => {
+            if av.soi_format() == Some(Format::Tgp) {
+                av.tgp.mode = TgpMode::Snowplow;
+                av.tgp.clear = true;
+            }
         }
+        // A target key or a display lock: the pod follows the lock again.
+        MfdCmd::TgpSlave => av.tgp.mode = TgpMode::Slaved,
         // Applied before (`mfd::cam_zoom`).
         MfdCmd::CamZoom(_) | MfdCmd::CamZoomCycle => {}
         MfdCmd::Ils => {
@@ -524,11 +534,12 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
         ),
         (Format::Hsd | Format::Harm | Format::Tgp, 4) => soi,
         (Format::Tgp, 0) => ("FLIR", Cmd(MfdCmd::Flir), s.flir),
-        (Format::Tgp, 1) => ("ZM-", Cmd(MfdCmd::CamZoom(-1)), false),
-        (Format::Tgp, 2) => ("ZM+", Cmd(MfdCmd::CamZoom(1)), false),
-        (Format::Tgp, 3) => {
-            ("CZ", Cmd(MfdCmd::TgpCz), av.tgp.mode != TgpMode::Slaved || s.cam_zoom.is_some())
+        (Format::Tgp, 1) => {
+            (crate::mfd::cam_zoom_label(s.cam_zoom), Cmd(MfdCmd::CamZoomCycle), s.cam_zoom.is_some())
         }
+        (Format::Tgp, 2) => ("SP", Cmd(MfdCmd::TgpSp), av.tgp.mode == TgpMode::Snowplow),
+        // CZ: the next ground target (as B), not in A-A.
+        (Format::Tgp, 3) if !s.air => ("CZ", Action(A::SelectTarget), false),
         (Format::Map, 0) if av.map_way => ("WP-", Action(A::LastWaypoint), false),
         (Format::Map, 1) if av.map_way => ("WP+", Action(A::NextWaypoint), false),
         (Format::Map, 2) if av.map_way => ("RST", Action(A::ResetWaypoint), false),
@@ -1148,7 +1159,7 @@ fn update_pod(
     eyes: Query<&GlobalTransform, (With<Camera3d>, Without<crate::camera::OffscreenCamera>)>,
     view: Res<crate::camera::ViewState>,
     settings: Res<crate::settings::Settings>,
-    combat: Option<Res<crate::combat::Combat>>,
+    mut combat: Option<ResMut<crate::combat::Combat>>,
     mut designate: MessageWriter<PodDesignate>,
 ) {
     let lock = actions.read().any(|a| a.0 == Action::LockCursor);
@@ -1157,14 +1168,11 @@ fn update_pod(
     if !state.modern && !turret {
         return;
     }
-    if let Some(combat) = &combat {
-        let t = combat.sim.targeting();
-        let tgp = &mut state.av.tgp;
-        if std::mem::take(&mut tgp.cz) {
-            tgp.zeroed = Some((t.ground, t.air));
-        } else if tgp.zeroed.is_some_and(|z| z != (t.ground, t.air)) {
-            tgp.zeroed = None;
-        }
+    // Snowplow: nothing stays locked (nor is acquired until the next target key).
+    if std::mem::take(&mut state.av.tgp.clear)
+        && let Some(combat) = &mut combat
+    {
+        combat.clear_target();
     }
     let Ok((a, pos)) = aircraft.single() else { return };
     let shown = state.camera_shown();
@@ -1172,7 +1180,7 @@ fn update_pod(
     // The gunship's slaved pod follows its sight whether its page is up or not (the page
     // shows what it looks at).
     let looking = if turret {
-        slaved_sight(&state, combat.as_deref(), pos.0, &eyes, view.view)
+        slaved_sight(combat.as_deref(), pos.0, &eyes, view.view)
             .or_else(|| Some(a.orientation * pod_dir(0.0, -0.05)))
     } else {
         camera.single().ok().filter(|_| shown && info.live).map(|t| t.forward().as_vec3())
@@ -1194,25 +1202,23 @@ fn update_pod(
                 ));
                 hud.mode = HudMode::Gnd;
                 tgp.mode = TgpMode::Slaved;
-                tgp.zeroed = None;
             }
             None => tgp.mode = TgpMode::Slaved,
         }
     }
 }
 
-/// Where the gunship's slaved pod looks: at the lock (unless CZ zeroed it), else where
+/// Where the gunship's slaved pod looks: at the lock, else where
 /// the pilot looks from the cockpit (the helmet sight: the eye camera, the headset in VR).
 /// None in the outside views.
 fn slaved_sight(
-    state: &MfdState,
     combat: Option<&crate::combat::Combat>,
     eye: DVec3,
     eyes: &Query<&GlobalTransform, (With<Camera3d>, Without<crate::camera::OffscreenCamera>)>,
     view: crate::camera::View,
 ) -> Option<Vec3> {
     // As the tracking camera: the ground lock, else the aircraft or pilot locked.
-    let lock = combat.filter(|_| state.av.tgp.zeroed.is_none()).and_then(|c| {
+    let lock = combat.and_then(|c| {
         let (sim, t) = (&c.sim, c.sim.targeting());
         let at = if let Some(o) = t.ground.and_then(|g| sim.objects().get(g)) {
             let (e, n) = crate::combat::map_wu(o.x, o.y);
@@ -1308,6 +1314,7 @@ fn slew_and_lock(
         }
     };
     if let Some(target) = picked {
+        av.tgp.mode = TgpMode::Slaved;
         hud.mode = match target {
             ContactRef::Unit(_) | ContactRef::Pilot(_) => HudMode::Air,
             ContactRef::Object(_) | ContactRef::Point(..) => HudMode::Gnd,
@@ -1535,11 +1542,40 @@ mod tests {
         assert_eq!(cam_zoom_label(s.cam_zoom), "1X");
         cam_zoom(&mut s, MfdCmd::CamZoom(-1), 4);
         assert_eq!(s.cam_zoom, Some(0));
-        // CZ: slaved, zoom by range.
-        s.modern = true;
-        s.av.tgp.mode = TgpMode::Area { az: 0.1, el: -0.2 };
-        apply(&mut s, &mut MapRaster::default(), MfdCmd::TgpCz);
-        assert_eq!((s.av.tgp.mode, s.cam_zoom, s.av.tgp.cz), (TgpMode::Slaved, None, true));
+    }
+
+    #[test]
+    fn pod_snowplow_and_slave() {
+        let mut s = MfdState { modern: true, ..default() };
+        let raster = &mut MapRaster::default();
+        s.av.tgp.mode = TgpMode::Point(DVec3::new(100.0, 0.0, -2000.0));
+        // SP only with the pod the SOI.
+        apply(&mut s, raster, MfdCmd::TgpSp);
+        assert!(matches!(s.av.tgp.mode, TgpMode::Point(_)) && !s.av.tgp.clear);
+        s.av.select(MfdSide::Right, Format::Tgp);
+        apply(&mut s, raster, MfdCmd::Soi(MfdSide::Right));
+        apply(&mut s, raster, MfdCmd::TgpSp);
+        assert_eq!((s.av.tgp.mode, s.av.tgp.clear), (TgpMode::Snowplow, true));
+        assert_eq!(osb(MfdSide::Right, 2, &s).map(|o| (o.0, o.2)), Some(("SP", true)));
+        // Fixed ahead of the nose, turning with the aircraft, without holding the ground.
+        let origin = DVec3::new(0.0, 1000.0, 0.0);
+        let turned = Quat::from_rotation_y(-0.5);
+        let p = pod_step(&mut s.av.tgp, Vec2::ZERO, 1.0, 0, turned, origin, None, 0.0);
+        assert_eq!(s.av.tgp.mode, TgpMode::Snowplow);
+        let d = pod_direction(&s.av.tgp, turned, origin).unwrap();
+        assert!((d - turned * pod_dir(0.0, SP_EL)).length() < 1e-5);
+        assert!(p.is_some_and(|p| p.x > 0.0));
+        // A slew starts from there.
+        pod_step(&mut s.av.tgp, Vec2::Y, 0.5, 0, turned, origin, None, 0.0);
+        let TgpMode::Area { az, el } = s.av.tgp.mode else { panic!("{:?}", s.av.tgp.mode) };
+        assert!(az.abs() < 1e-5 && (el - SP_EL - 0.25).abs() < 1e-4, "{az} {el}");
+        // A target key slaves it again; CZ is the next target, but not in A-A.
+        apply(&mut s, raster, MfdCmd::TgpSlave);
+        assert_eq!(s.av.tgp.mode, TgpMode::Slaved);
+        let cz = osb(MfdSide::Right, 3, &s).map(|o| (o.0, o.1));
+        assert_eq!(cz, Some(("CZ", OsbFn::Action(Action::SelectTarget))));
+        s.air = true;
+        assert_eq!(osb(MfdSide::Right, 3, &s), None);
     }
 
     #[test]

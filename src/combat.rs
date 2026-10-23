@@ -381,6 +381,13 @@ fn start_combat(
     });
 }
 
+impl Combat {
+    /// Drops the locks at the next simulation frame (the targeting pod's snowplow).
+    pub fn clear_target(&mut self) {
+        self.pending.clear_target = true;
+    }
+}
+
 /// Despawns the player aircraft (with everything parented to it) when leaving the flight.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FlightTeardown;
@@ -498,7 +505,8 @@ fn player_state(
         fuel: a.fuel.max(0.0) as i32,
         collided,
         hud_mode: sim_hud_mode(hud.mode),
-        camera_mfd: mfd.camera_shown(),
+        // The gunship's pod is always up, its page shown or not: the target keys pick with it.
+        camera_mfd: mfd.camera_shown() || mfd.av.tgp.los.is_some(),
         external_view: !is_cockpit_view(view.view),
         hud_visible: view.view == View::Cockpit,
         ccrp: hud.ccrp,

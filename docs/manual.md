@@ -442,7 +442,7 @@ and HARM; F5 / F10 bring up SMS, F6 and the camera keys the TGP, F7 the waypoint
 |---|---|---|
 | HSD | DEP / CEN, RNG-, range, RNG+, SOI | Horizontal situation display, heading up: range rings (the range in km is the outer ring), the route with the current steerpoint ringed, SAM sites with their missile's reach as red threat rings, hostile (red) and friendly (green) aircraft, ships (hull symbols, red or green; armed ones with their threat ring), missiles, the mission targets (cyan diamonds); the locked target is boxed. |
 | HARM | ALL / SAM / AIR, SOI | The radars painting the aircraft, like the RWR: at their bearing, the most dangerous nearest the centre (chapter 3.7). |
-| TGP | FLIR, ZM-, ZM+, CZ, SOI | The targeting pod (tracking camera), see below. The pod's mode (SLV / AREA / PNT) is shown bottom left, the zoom bottom right (AUTO: by range). |
+| TGP | FLIR, zoom, SP, CZ, SOI | The targeting pod (tracking camera), see below. The pod's mode (SLV / AREA / PNT / SP) is shown bottom left, the zoom bottom right (AUTO: by range). |
 | MAP | NUP / HUP, ZM-, ZM+, WAY | The moving map in muted colours; WAY switches to the waypoint table (WP-, WP+, RST). |
 | SMS | WPN, ORD, SEL, CCIP / CCRP | Stores (WPN) and mission orders (ORD); on WPN the bombsight mode. |
 | HSI | WP-, WP+ | Horizontal situation indicator (chapter 4.2). |
@@ -461,12 +461,16 @@ point as the aircraft flies, turns or the range changes, and the HARM cursor tur
 symbols, so a turn doesn't take the cursor off its target.
 
 **Targeting pod.** The TGP follows the locked target (SLV); without one it looks ahead and down,
-or where the camera keys turn it. Made the SOI, the slew controls turn the pod itself (AREA, slower
-when zoomed in); a moment after the slew stops it holds the ground point it looks at (PNT), wherever
-the aircraft flies. **Lock cursor target** then locks what is at that point (the ground itself if
-nothing is there) and the pod follows the lock again. CZ returns it to SLV looking ahead (until
-something new is locked, so the next slew starts from straight ahead) and the zoom to AUTO.
-ZM- / ZM+ (also `[` / `]`, and Z / X while the pod is the SOI) zoom it from 1X to 6X. The HSD shows where
+or where the camera keys turn it. Every target key (B, T, the camera keys), a lock on the HSD and
+CZ put it back to SLV on the new lock. Made the SOI, the slew controls turn the pod itself (AREA,
+slower when zoomed in); a moment after the slew stops it holds the ground point it looks at (PNT),
+wherever the aircraft flies. **Lock cursor target** then locks what is at that point (the ground
+itself if nothing is there) and the pod follows the lock again. **CZ** snaps the pod to the next
+ground target (as B; not in A-A, where the button is blank). **SP** (snowplow, with the pod the
+SOI) drops the locks and points the pod straight ahead of the nose and a little down, turning with
+the aircraft without holding the ground or locking anything, until you slew it (the slew starts
+from there) or press a target key. The zoom button steps AUTO, 1X .. 6X; `[` / `]` (and Z / X
+while the pod is the SOI) zoom it in and out. The HSD shows where
 the pod looks: a green diamond on its ground point with a dashed line from the aircraft.
 
 ### 4.2 The HSI page (F-117A third MFD)

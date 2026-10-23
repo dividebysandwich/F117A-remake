@@ -21,6 +21,10 @@
 //! - Out of the cockpit under the chute and on the ground, the pilot hears the aircraft around
 //!   (`jet.flac`, `helicopter.flac`, tools/gen_aircraft_sounds.py), placed by direction with
 //!   stereo panning that follows the head, fading with distance, with a Doppler shift.
+//! - With Sidewinders selected in the air-to-air HUD mode, the seeker growls (`aim9_growl.flac`,
+//!   tools/gen_sidewinder_tones.py): quietly with nothing in its view, louder and higher with the
+//!   locked target in the seeker (the LOCK oval), and the steady lock tone (`aim9_tone.flac`)
+//!   once the target is in range.
 
 use std::collections::HashMap;
 
@@ -47,7 +51,15 @@ impl Plugin for SoundPlugin {
             .add_systems(Startup, load_bank)
             .add_systems(
                 Update,
-                (flight_sounds, play_sounds, engine_drone, heli_sounds, beacon, fire_siren)
+                (
+                    flight_sounds,
+                    play_sounds,
+                    engine_drone,
+                    heli_sounds,
+                    beacon,
+                    fire_siren,
+                    sidewinder_tones,
+                )
                     .chain()
                     .run_if(in_state(AppState::Flight)),
             )
@@ -143,6 +155,8 @@ struct SoundBank {
     helicopter: Option<Handle<AudioSource>>,
     heli_rotor: Option<Handle<AudioSource>>,
     heli_turbine: Option<Handle<AudioSource>>,
+    aim9_growl: Option<Handle<AudioSource>>,
+    aim9_tone: Option<Handle<AudioSource>>,
 }
 
 /// A playing one-shot sound (one instance per id at a time, like the single-voice driver).
@@ -170,6 +184,21 @@ struct DistantAircraft {
 struct EngineDrone {
     sample_knots: f32,
 }
+
+/// The Sidewinder seeker's loops: growl (false) and lock tone (true).
+#[derive(Component)]
+struct SeekerTone(bool);
+
+/// Sidewinder seeker volumes and growl pitch: searching, the target in the seeker; the lock tone.
+const GROWL_SEARCH: (f32, f32) = (0.12, 1.0);
+const GROWL_SEEN: (f32, f32) = (0.3, 1.12);
+const LOCK_TONE_VOLUME: f32 = 0.25;
+/// How long (real seconds) the seeker has to see or lose the target before its sound changes,
+/// so the target at the edge of the seeker's view doesn't chop it.
+const SEEKER_HOLD: f32 = 0.15;
+
+/// Missile table index of the AIM-9 the player carries.
+const AIM9_SPEC: i16 = 23;
 
 /// The flown helicopter's loops: rotor (false) and turbines (true).
 #[derive(Component)]
@@ -226,6 +255,8 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     bank.helicopter = optional("helicopter.flac");
     bank.heli_rotor = optional("heli_rotor.flac");
     bank.heli_turbine = optional("heli_turbine.flac");
+    bank.aim9_growl = optional("aim9_growl.flac");
+    bank.aim9_tone = optional("aim9_tone.flac");
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));
     commands.insert_resource(bank);
 }
@@ -555,6 +586,96 @@ fn fire_siren(
                 FireSiren,
             ));
         }
+    }
+}
+
+/// The Sidewinder seeker's growl and lock tone, while Sidewinders are selected in the air-to-air
+/// HUD mode (held while the flight is paused).
+#[allow(clippy::too_many_arguments)]
+fn sidewinder_tones(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    combat: Option<Res<crate::combat::Combat>>,
+    hud: Res<crate::hud::HudState>,
+    player: Query<&Aircraft, With<Player>>,
+    real: Res<Time<Real>>,
+    virt: Res<Time<Virtual>>,
+    mut loops: Query<(Entity, &SeekerTone, Option<&mut AudioSink>)>,
+    mut held: Local<((bool, bool), f32)>,
+) {
+    // None: silent; Some(false): growl; Some(true): lock tone.
+    let state = combat.as_deref().and_then(|c| {
+        let sim = &c.sim;
+        let (groups, cur) = sim.weapon_groups();
+        let (w, rounds) = *groups.get(cur?)?;
+        let aim9 = sim.weapon_types().get(w.max(0) as usize).is_some_and(|t| t.spec == AIM9_SPEC);
+        let on = aim9
+            && rounds > 0
+            && !sim.gun_selected()
+            && hud.mode == crate::hud::HudMode::Air
+            && c.end.is_none()
+            && !sim.player_absent()
+            && !has_ejected(Some(c))
+            && player.single().is_ok_and(|a| a.ended.is_none())
+            && level.0 > 0;
+        let t = sim.targeting();
+        on.then_some((t.lock_valid, t.lock_valid && t.in_range))
+    });
+    let Some(now) = state else {
+        *held = default();
+        for (e, ..) in &loops {
+            commands.entity(e).despawn();
+        }
+        return;
+    };
+    // (seen, locked) as heard: follows the seeker once a change has lasted SEEKER_HOLD.
+    if now == held.0 {
+        held.1 = 0.0;
+    } else if !virt.is_paused() {
+        held.1 += real.delta_secs();
+        if held.1 >= SEEKER_HOLD {
+            *held = (now, 0.0);
+        }
+    }
+    let (seen, locked) = held.0;
+    let (growl_volume, growl_speed) = if seen { GROWL_SEEN } else { GROWL_SEARCH };
+    let mut have = [false; 2];
+    for (e, l, sink) in &mut loops {
+        if l.0 != locked {
+            commands.entity(e).despawn();
+            continue;
+        }
+        have[l.0 as usize] = true;
+        let Some(mut sink) = sink else { continue };
+        if !l.0 {
+            sink.set_speed(growl_speed);
+            sink.set_volume(Volume::Linear(growl_volume));
+        }
+        if virt.is_paused() != sink.is_paused() {
+            if virt.is_paused() { sink.pause() } else { sink.play() }
+        }
+    }
+    if have[locked as usize] {
+        return;
+    }
+    let (handle, volume, speed) = if locked {
+        (&bank.as_ref().and_then(|b| b.aim9_tone.clone()), LOCK_TONE_VOLUME, 1.0)
+    } else {
+        (&bank.as_ref().and_then(|b| b.aim9_growl.clone()), growl_volume, growl_speed)
+    };
+    if let Some(handle) = handle.clone() {
+        debug!("sidewinder {}", if locked { "lock tone" } else { "growl" });
+        commands.spawn((
+            AudioPlayer(handle),
+            PlaybackSettings {
+                mode: PlaybackMode::Loop,
+                volume: Volume::Linear(volume),
+                speed,
+                ..default()
+            },
+            SeekerTone(locked),
+        ));
     }
 }
 

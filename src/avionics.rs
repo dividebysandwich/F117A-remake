@@ -538,9 +538,11 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
         ),
         (Format::Hsd | Format::Harm | Format::Tgp, 4) => soi,
         (Format::Tgp, 0) => ("FLIR", Cmd(MfdCmd::Flir), s.flir),
-        (Format::Tgp, 1) => {
-            (crate::mfd::cam_zoom_label(s.cam_zoom), Cmd(MfdCmd::CamZoomCycle), s.cam_zoom.is_some())
-        }
+        (Format::Tgp, 1) => (
+            crate::mfd::cam_zoom_label(s.cam_zoom),
+            Cmd(MfdCmd::CamZoomCycle),
+            s.cam_zoom.is_some(),
+        ),
         (Format::Tgp, 2) => ("SP", Cmd(MfdCmd::TgpSp), av.tgp.mode == TgpMode::Snowplow),
         // CZ: the next ground target (as B), not in A-A.
         (Format::Tgp, 3) if !s.air => ("CZ", Action(A::SelectTarget), false),

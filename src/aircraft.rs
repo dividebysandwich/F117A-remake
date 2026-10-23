@@ -73,6 +73,8 @@ pub struct AircraftSpec {
     pub helicopter: bool,
     /// A turret cannon aimed with the targeting pod, and no troops (the AH-1Z).
     pub turret: bool,
+    /// A helmet-mounted display (`hmd.rs`).
+    pub hmd: bool,
     /// The cannon's muzzle (aircraft frame, m), where it is not at the nose.
     pub muzzle: Option<Vec3>,
     flight: fn() -> FlightConstants,
@@ -127,6 +129,7 @@ static F117: AircraftSpec = AircraftSpec {
     bomb_bay: true,
     helicopter: false,
     turret: false,
+    hmd: false,
     muzzle: None,
     flight: FlightConstants::default,
 };
@@ -154,6 +157,7 @@ static F16: AircraftSpec = AircraftSpec {
     bomb_bay: false,
     helicopter: false,
     turret: false,
+    hmd: false,
     muzzle: None,
     flight: FlightConstants::f16,
 };
@@ -191,6 +195,7 @@ static UH60: AircraftSpec = AircraftSpec {
     bomb_bay: false,
     helicopter: true,
     turret: false,
+    hmd: false,
     muzzle: None,
     flight: FlightConstants::uh60,
 };
@@ -226,6 +231,7 @@ static AH1Z: AircraftSpec = AircraftSpec {
     bomb_bay: false,
     helicopter: true,
     turret: true,
+    hmd: true,
     // The chin turret's barrels.
     muzzle: Some(ah1z_point(0.0, 5.30, 0.58)),
     flight: FlightConstants::ah1z,

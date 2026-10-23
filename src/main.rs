@@ -23,6 +23,7 @@ mod font;
 mod freecam;
 mod headtrack;
 mod help;
+mod hmd;
 mod hotas;
 mod hud;
 mod input;
@@ -190,7 +191,13 @@ fn main() {
             script::ScriptPlugin,
             sound::SoundPlugin,
         ))
-        .add_plugins((hud::HudPlugin, mfd::MfdPlugin, avionics::AvionicsPlugin, panel::PanelPlugin))
+        .add_plugins((
+            hud::HudPlugin,
+            hmd::HmdPlugin,
+            mfd::MfdPlugin,
+            avionics::AvionicsPlugin,
+            panel::PanelPlugin,
+        ))
         .add_plugins((
             combat::CombatPlugin,
             sim_render::SimRenderPlugin,

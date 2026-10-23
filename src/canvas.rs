@@ -19,7 +19,10 @@ impl Plugin for CanvasPlugin {
             .add_plugins(
                 bevy::render::extract_resource::ExtractResourcePlugin::<CanvasMips>::default(),
             )
-            .add_systems(PostUpdate, upload_canvases.run_if(resource_exists::<Palette>));
+            .add_systems(
+                PostUpdate,
+                upload_canvases.in_set(CanvasUpload).run_if(resource_exists::<Palette>),
+            );
         if let Some(render) = app.get_sub_app_mut(bevy::render::RenderApp) {
             render.add_systems(
                 bevy::render::Render,
@@ -571,6 +574,11 @@ fn build_mips(data: &mut [u8], w: usize, h: usize, levels: usize) {
         start += sw * sh * 4;
     }
 }
+
+/// Copies the drawn canvases into their textures (PostUpdate): canvases drawn in PostUpdate
+/// go before it.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CanvasUpload;
 
 fn upload_canvases(
     palette: Res<Palette>,

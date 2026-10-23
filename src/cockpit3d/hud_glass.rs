@@ -84,3 +84,57 @@ impl Material for HudGlassMaterial {
         Ok(())
     }
 }
+
+/// The helmet-mounted display's visor (`hmd.rs`): the HUD glass's collimated canvas on a quad
+/// carried by the head, drawn over everything (no depth test: the cockpit never hides it).
+#[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
+pub struct HmdMaterial {
+    #[uniform(0)]
+    pub tint: Vec4,
+    #[texture(1)]
+    #[sampler(2)]
+    pub image: Handle<Image>,
+    #[uniform(3)]
+    pub proj: Vec4,
+    #[uniform(4)]
+    pub style: Vec4,
+}
+
+impl Material for HmdMaterial {
+    fn vertex_shader() -> ShaderRef {
+        SHADER.into()
+    }
+
+    fn fragment_shader() -> ShaderRef {
+        SHADER.into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
+    }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        let vertex_layout =
+            layout.0.get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0)])?;
+        descriptor.vertex.buffers = vec![vertex_layout];
+        descriptor.primitive.cull_mode = None;
+        if let Some(depth) = descriptor.depth_stencil.as_mut() {
+            depth.depth_compare = Some(bevy::render::render_resource::CompareFunction::Always);
+            depth.depth_write_enabled = Some(false);
+        }
+        Ok(())
+    }
+}

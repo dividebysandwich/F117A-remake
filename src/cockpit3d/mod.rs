@@ -18,7 +18,7 @@
 
 mod controls;
 mod displays;
-mod hud_glass;
+pub(crate) mod hud_glass;
 pub mod layout;
 pub mod levers;
 mod model;
@@ -44,6 +44,7 @@ impl Plugin for Cockpit3dPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             MaterialPlugin::<hud_glass::HudGlassMaterial>::default(),
+            MaterialPlugin::<hud_glass::HmdMaterial>::default(),
             MaterialPlugin::<shading::CockpitMaterial>::default(),
         ))
         .init_resource::<Hands>()

@@ -1219,11 +1219,8 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         .collect();
     let gun = sim.has_gun().then(|| sim.gun_ammo().max(0) as u32);
     let gun_selected = sim.gun_selected();
-    let gun_slave = settings.aircraft.spec().turret.then_some(if sim.gun_on_pod() {
-        "TGP"
-    } else {
-        "HMS"
-    });
+    let gun_slave =
+        settings.aircraft.spec().turret.then_some(if sim.gun_on_pod() { "TGP" } else { "HMS" });
     if stores.selected != cur
         || stores.gun_selected != gun_selected
         || stores.gun_slave != gun_slave
@@ -1509,6 +1506,10 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         info.bearing = Some(((t.bearing as u16) as u32 * 360 / 65536) as i32);
         info.zoom = camera_zoom(t.range) + 1;
         let (east, north) = map_wu(ob.x, ob.y);
+        if is_cockpit_view(view.view) {
+            new_cues.helmet_lock =
+                direction_cockpit(&a, pos, eye, east, north, 0.0).map(|d| (d, false));
+        }
         if cockpit && hud.mode == HudMode::Gnd && t.box_size > 0 {
             new_cues.target_dir = direction_cockpit(&a, pos, eye, east, north, 0.0);
             new_cues.target_box =
@@ -1564,6 +1565,10 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         let brg = to_bam(((east - pe) as f32).atan2((north - pn) as f32)) as i32;
         info.bearing = Some(((brg as u16) as u32 * 360 / 65536) as i32);
         info.zoom = camera_zoom(range_mu) + 1;
+        if is_cockpit_view(view.view) {
+            new_cues.helmet_lock =
+                direction_cockpit(&a, pos, eye, east, north, alt).map(|d| (d, true));
+        }
         if cockpit && hud.mode == HudMode::Air {
             new_cues.target_dir = direction_cockpit(&a, pos, eye, east, north, alt);
             new_cues.target_box =
@@ -1621,35 +1626,45 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                 too_close: zone.is_some_and(|z| range_km < z.0),
             }
         });
-        if sim.gun_selected() {
-            // The locked aircraft (position and velocity over the last sim frame) or ground
-            // object, else a target 1000 m ahead flying along with the aircraft.
-            let pilot = t.pilot.and_then(|k| remote_motion(combat, k));
-            let air = t.air.is_some_and(|i| i < sim.flights().len()) || pilot.is_some();
-            let target = if let Some(((e, n, alt), v, _)) = pilot {
-                Some((wu_to_bevy(e, n, alt), v))
-            } else if let Some(i) = t.air.filter(|&i| i < sim.flights().len()) {
-                let u = sim.flights()[i];
-                let (e, n, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
-                let v = combat.prev_flights.get(i).map_or(DVec3::ZERO, |p| {
-                    let (e0, n0, alt0) = unit_position(None, p, 0.0);
-                    let (e1, n1, alt1) = unit_position(None, &u, 0.0);
-                    (wu_to_bevy(e1, n1, alt1) - wu_to_bevy(e0, n0, alt0)) * FS as f64
-                });
-                Some((wu_to_bevy(e, n, alt), v))
-            } else {
-                t.ground.and_then(|g| objects.get(g)).map(|ob| {
-                    let (e, n) = map_wu(ob.x, ob.y);
-                    (wu_to_bevy(e, n, 0.0), DVec3::ZERO)
-                })
-            };
-            let ground_y = wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
-            // The turret along the sight the gun is slaved to (as `Sim::turret_aim`).
-            let sight =
-                if sim.gun_on_pod() { mfd.av.tgp.los } else { mfd.av.helmet.or(mfd.av.tgp.los) };
-            let barrel = sight.filter(|_| settings.aircraft.spec().turret);
-            let barrel = barrel.map(|d| a.orientation * turret_dir(a.orientation.inverse() * d));
-            new_cues.gun = Some(gun_cue(&a, pos, eye, target, air, ground_y, barrel));
+    }
+    // The gun pipper: on the HUD with the gun selected; a turret gun's also on the helmet
+    // display, in every cockpit view.
+    let turret = settings.aircraft.spec().turret;
+    let hud_gun = cockpit && sim.gun_selected();
+    if hud_gun || (turret && is_cockpit_view(view.view)) {
+        // The locked aircraft (position and velocity over the last sim frame) or ground
+        // object, else a target 1000 m ahead flying along with the aircraft.
+        let pilot = t.pilot.and_then(|k| remote_motion(combat, k));
+        let air = t.air.is_some_and(|i| i < sim.flights().len()) || pilot.is_some();
+        let target = if let Some(((e, n, alt), v, _)) = pilot {
+            Some((wu_to_bevy(e, n, alt), v))
+        } else if let Some(i) = t.air.filter(|&i| i < sim.flights().len()) {
+            let u = sim.flights()[i];
+            let (e, n, alt) = unit_position(combat.prev_flights.get(i), &u, combat.alpha);
+            let v = combat.prev_flights.get(i).map_or(DVec3::ZERO, |p| {
+                let (e0, n0, alt0) = unit_position(None, p, 0.0);
+                let (e1, n1, alt1) = unit_position(None, &u, 0.0);
+                (wu_to_bevy(e1, n1, alt1) - wu_to_bevy(e0, n0, alt0)) * FS as f64
+            });
+            Some((wu_to_bevy(e, n, alt), v))
+        } else {
+            t.ground.and_then(|g| objects.get(g)).map(|ob| {
+                let (e, n) = map_wu(ob.x, ob.y);
+                (wu_to_bevy(e, n, 0.0), DVec3::ZERO)
+            })
+        };
+        let ground_y = wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
+        // The turret along the sight the gun is slaved to (as `Sim::turret_aim`).
+        let sight =
+            if sim.gun_on_pod() { mfd.av.tgp.los } else { mfd.av.helmet.or(mfd.av.tgp.los) };
+        let barrel = sight.filter(|_| settings.aircraft.spec().turret);
+        let barrel = barrel.map(|d| a.orientation * turret_dir(a.orientation.inverse() * d));
+        let cue = gun_cue(&a, pos, eye, target, air, ground_y, barrel);
+        if hud_gun {
+            new_cues.gun = Some(cue);
+        }
+        if turret {
+            new_cues.turret_gun = Some(cue);
         }
     }
     *cam = info;

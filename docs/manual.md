@@ -570,7 +570,14 @@ the weapon cycle (Space): first slaved to the helmet sight (**GUN HMS**: the tur
 wherever you look), then to the targeting pod (**GUN TGP**: the turret follows the pod); the next
 press goes on to the missiles. The HUD's gun line shows which (`GUN 650 HMS` / `GUN 650 TGP`).
 The turret turns 110 degrees either side, 50 degrees down and 20 up, and the gun pipper shows
-where its rounds land. A **Hellfire** rides the pod's laser spot for its whole flight: it flies
+where its rounds land.
+
+The AH-1Z's **helmet-mounted display** shows on the visor wherever you look in the cockpit (it
+moves with the mouse head look or the headset): a cross at its centre (the line of sight a
+helmet-slaved gun follows), the horizon line, the locked target (a box on a ground target, a
+diamond on an aircraft; when it is off the visor, an arrow from the cross points towards it), the
+gun pipper where the turret's rounds go (whichever weapon is selected), a small diamond where the
+targeting pod looks when it is slewed or in snowplow, and the gun line (`GUN 650 HMS`). A **Hellfire** rides the pod's laser spot for its whole flight: it flies
 to the object at the spot, or the plain ground there, and turns to wherever the pod looks
 next, so keep the pod on the target until it hits. It needs a line of sight from you to the
 spot; without one it flies on to where the spot last was.

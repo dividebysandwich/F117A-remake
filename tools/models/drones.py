@@ -1,4 +1,5 @@
-"""Builds the remake's own aircraft models (Geran-2 / Geran-3 attack drones) in Blender:
+"""Builds the remake's own aircraft models (Geran-2 / Geran-3 attack drones, the Mi-24 Hind
+from mi24.py) in Blender:
 
     blender -b --factory-startup --python-exit-code 1 --python tools/models/drones.py -- assets/models/drones.glb
 
@@ -17,12 +18,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
 
+import mi24  # noqa: E402
 import mklib  # noqa: E402
 from mklib import Geo, Ramp, frustum, loft  # noqa: E402
 
 # Model numbers (kept clear of STFLT's 0..34).
 GERAN2 = 100
 GERAN3 = 101
+# The Mi-24 Hind (tools/models/mi24.py).
+HIND = 102
 
 # Dark grey/black paint of the recent Gerans, a lighter grey belly.
 BODY = Ramp(0xE9, 0xEF)
@@ -134,6 +138,7 @@ def main():
     model(GERAN2, *geran2())
     g3, _, _ = geran3()
     model(GERAN3, g3)
+    mi24.build("drones_%03d" % HIND)
     bpy.ops.export_scene.gltf(
         filepath=out, export_format="GLB", export_extras=True, export_yup=True, export_texcoords=False,
         export_normals=False, export_materials="EXPORT", use_visible=False, export_animations=False,

@@ -99,11 +99,13 @@ const SIGNAL_FLARE_LIFE: f32 = 25.0;
 /// STFLT model of the falling wreck.
 const WRECK_MODEL: i32 = 11;
 /// The Mi-24's aircraft type points at STFLT 15, a missile shape with a motor flame (the
-/// data has no Hind model); drawn as the only helicopter model, the UH-60 (25).
+/// data has no Hind model); drawn as the remake's own Hind (`drones_102`, tools/models/mi24.py).
 const HIND_DATA_MODEL: i32 = 15;
+const HIND_MODEL: i32 = 102;
+/// The UH-60.
 const HELICOPTER_MODEL: i32 = 25;
 
-/// The remake's own aircraft models (the Geran drones) are numbered from here, in
+/// The remake's own aircraft models (the Geran drones, the Hind) are numbered from here, in
 /// `models/drones.glb` (tools/models/drones.py).
 const REMAKE_MODELS: i32 = 100;
 /// The low-level air defences' models (ZSU-23-4, S-60, MANPADS team) are numbered from here,
@@ -119,7 +121,7 @@ const AAA_LOD_RANGE: f32 = 4.0;
 
 /// STFLT model drawn for an aircraft type's model number.
 fn aircraft_model(model: i32) -> i32 {
-    if model == HIND_DATA_MODEL { HELICOPTER_MODEL } else { model }
+    if model == HIND_DATA_MODEL { HIND_MODEL } else { model }
 }
 
 /// Model file (stem) holding a model number.
@@ -831,7 +833,7 @@ fn sync_objects(
             if friendly {
                 commands.entity(e).insert(crate::models::LodRange(FRIENDLY_LOD_RANGE));
             }
-            let metres = if model == HELICOPTER_MODEL {
+            let metres = if model == HELICOPTER_MODEL || model == HIND_MODEL {
                 SPOT_HELICOPTER_METRES
             } else if model >= REMAKE_MODELS {
                 SPOT_DRONE_METRES

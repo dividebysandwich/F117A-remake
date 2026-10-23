@@ -167,9 +167,10 @@ static UH60: AircraftSpec = AircraftSpec {
         two_sided: true,
         rotors: true,
     }),
-    cockpits: &[(PanelStyle::Modern, "cockpit_uh60")],
+    cockpits: &[(PanelStyle::Uh60, "cockpit_uh60")],
     shadow: Shadow::Flattened,
-    vr_scale: 0.85 * 0.7,
+    // Life size, as the F-16's.
+    vr_scale: 1.25 * 0.7,
     vr_eye_height: None,
     hud_scale: crate::hud::modern::SCALE,
     vr_hud_scale: 2.0 * crate::hud::modern::SCALE,

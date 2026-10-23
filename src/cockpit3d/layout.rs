@@ -7,9 +7,11 @@
 //!
 //! The F-117A's modern panel (`modern`) and the F-16's (`f16`) are not on that plane: their
 //! rectangles are millimetres on their own panels (x right, y down from the panel's centre).
-//! Their models are generated from these layouts (`tools/models/build_cockpit_f117.py` and
-//! `build_cockpit_f16.py` read `assets-src/blend/cockpit_modern_layout.json` and
-//! `cockpit_f16_layout.json`, which a test keeps in step with the layouts).
+//! Nor is the UH-60A's (`uh60`, the modern faces rearranged). Their models are generated from
+//! these layouts (`tools/models/build_cockpit_f117.py`, `build_cockpit_f16.py` and
+//! `build_cockpit_uh60.py` read `assets-src/blend/cockpit_modern_layout.json`,
+//! `cockpit_f16_layout.json` and `cockpit_uh60_layout.json`, which a test keeps in step with the
+//! layouts).
 
 use crate::input::Action;
 use crate::mfd::{LeftMfd, MfdSide, OSB_COUNT};
@@ -20,6 +22,8 @@ pub enum PanelStyle {
     Classic,
     Modern,
     F16,
+    /// The UH-60A's: the modern faces after the UH-60M's panel, two MFDs.
+    Uh60,
 }
 
 /// A rectangle in panel pixels.
@@ -144,6 +148,7 @@ impl PanelLayout {
             PanelStyle::Classic => Self::classic(),
             PanelStyle::Modern => Self::modern(),
             PanelStyle::F16 => Self::f16(),
+            PanelStyle::Uh60 => Self::uh60(),
         }
     }
 
@@ -499,6 +504,74 @@ impl PanelLayout {
         }
     }
 
+    /// The UH-60A's panel: the F-117A's faces rearranged after the UH-60M's (millimetres, x
+    /// right and y down, life size; `tools/models/build_cockpit_uh60.py`):
+    /// - The main panel, its origin in front of the pilot (in the right seat): two large MFDs
+    ///   side by side (no third), the warning lights over them; under the left one the gear
+    ///   lights with FLAPS, BRAKE and AUTO and the BAY cap, under the right one fuel quantity,
+    ///   the engine readouts and the EMV gauge. Between the seats (x about -520, the cabin's
+    ///   centre line) the standby attitude indicator over the airspeed indicator and the
+    ///   altimeter, the clock and the AOA and vertical velocity tapes; the engine gauges between
+    ///   them and the left MFD.
+    /// - The centre console between the seats (x >= 1500, centred on x 2000, y growing aft down
+    ///   the console): the up-front display with its two rows of caps as the CDU, the caution
+    ///   lights and the countermeasures behind it.
+    pub fn uh60() -> Self {
+        let m = Self::modern();
+        // A face's new place: alone, or moved with its group of the F-117A's panel.
+        let place = |p: &Placed| {
+            let r = p.rect;
+            let at = |x: f32, y: f32| rect(x, y, r.w, r.h);
+            let by = |dx: f32, dy: f32| rect(r.x + dx, r.y + dy, r.w, r.h);
+            let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+            match p.elem {
+                Elem::Dial(Dial::Airspeed) => at(-567.0, -45.0),
+                Elem::Dial(Dial::Altimeter) => at(-515.0, -45.0),
+                Elem::Dial(Dial::Clock) => at(-567.0, 5.0),
+                Elem::Dial(Dial::Aoa) => at(-515.0, 0.0),
+                Elem::Dial(Dial::Vvi) => at(-493.0, 0.0),
+                Elem::Dial(Dial::Rpm) => at(-415.0, -45.0),
+                Elem::Dial(Dial::Ftit) => at(-365.0, -45.0),
+                Elem::Dial(Dial::Oil) => at(-415.0, 5.0),
+                Elem::Dial(Dial::Nozzle) => at(-365.0, 5.0),
+                Elem::Lamp(LampId::Bay, _) => at(-180.0, 110.0),
+                // The caution lights and countermeasures to the console, behind the CDU.
+                _ if cx >= 1100.0 => by(818.0, 150.0),
+                // The gear lights, FLAPS, BRAKE and AUTO under the left MFD.
+                _ if cx <= -600.0 => by(492.0, 210.0),
+                // The up-front display's caps to the console.
+                _ if cx.abs() < 80.0 && cy < -50.0 => by(2000.0, 0.0),
+                // The warning lights over the MFDs.
+                _ if cy < -60.0 => by(10f32.copysign(cx), -29.0),
+                // Fuel, the engine readouts and the EMV gauge under the right MFD.
+                _ => by(-40.0, 20.0),
+            }
+        };
+        let items = m.items.iter().map(|p| Placed { rect: place(p), ..*p }).collect();
+        let hires = crate::mfd::HIRES.1 as f32 / crate::mfd::HIRES.0 as f32;
+        let ded = m.ded.map(|r| rect(r.x + 2000.0, r.y, r.w, r.h));
+        Self {
+            style: PanelStyle::Uh60,
+            items,
+            adi: rect(-554.0, -125.0, 68.0, 68.0),
+            mfds: vec![
+                MfdUnit {
+                    side: MfdSide::Left,
+                    screen: rect(-240.0, -70.0, 190.0, 190.0 * hires),
+                    osbs: true,
+                },
+                MfdUnit {
+                    side: MfdSide::Right,
+                    screen: rect(50.0, -70.0, 190.0, 190.0 * hires),
+                    osbs: true,
+                },
+            ],
+            rwr: None,
+            hsi: None,
+            ded,
+        }
+    }
+
     /// The F-16C's panel (millimetres, x right and y down, unfolded), after the Block 50's:
     /// - The centre column (|x| <= 85): the up-front controls on a pedestal under the HUD
     ///   (y < -46): the round override buttons on top (COM1 = volume, LIST = menu, A-A, A-G),
@@ -745,8 +818,8 @@ mod tests {
     use super::*;
     use crate::mfd::{MfdState, RightMfd, osb};
 
-    fn all() -> [PanelLayout; 3] {
-        [PanelLayout::classic(), PanelLayout::modern(), PanelLayout::f16()]
+    fn all() -> [PanelLayout; 4] {
+        [PanelLayout::classic(), PanelLayout::modern(), PanelLayout::f16(), PanelLayout::uh60()]
     }
 
     /// Faces and caps do not overlap each other or the screens.
@@ -795,7 +868,7 @@ mod tests {
     /// Every bezel function of every page has a button.
     #[test]
     fn bezel_buttons() {
-        for l in [PanelLayout::modern(), PanelLayout::f16()] {
+        for l in [PanelLayout::modern(), PanelLayout::f16(), PanelLayout::uh60()] {
             bezel_buttons_of(&l);
         }
     }

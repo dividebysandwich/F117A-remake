@@ -7,6 +7,7 @@
 # Lights sit on the skin: a ray down or up the centreline at a station (`top`, `bottom`), the
 # front of a fin tip (`fin`), or just aft of the wingtip navigation lights (`wingtips`).
 # Model units, Blender axes: +x right, +y forward, +z up.
+# The UH-60 (25) gets its beacons on every detail level from tools/models/uh60.py.
 # Also removes the stock models' steady white tail lights (colour 149 on the navigation-light
 # slot 12), leaving the red/green wingtip lights and the flashing anti-collision lights.
 import bmesh
@@ -41,7 +42,6 @@ LIGHTS = {
     22: TWIN_RED,  # Su-27
     23: [(SINGLE, "fin")],  # F-16
     24: [(BEACON, "top", 0), (BEACON, "bottom", 16)],  # F-117A
-    25: [(BEACON, "top", -104), (BEACON, "bottom", 0)],  # UH-60
     26: [(SINGLE, "fin")],  # F/A-18
     27: [(BEACON, "top", -32), (BEACON, "bottom", 0)],  # A-6
     28: FIGHTER_RED,  # MiG-21

@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 use crate::types::*;
 use crate::{ENEMY_SLOTS, N_PROJ, PILOT_SLOTS, PlayerView, Sim, tiles};
 
+fn none_unloading(v: &[i32; 2]) -> bool {
+    *v == [0, 0]
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Pilot {
     /// Player id (index into the pilots).
@@ -21,6 +25,9 @@ pub struct Pilot {
     /// The aircraft is a helicopter (`SimOptions::helicopter` for pilot 0).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) helicopter: bool,
+    /// Frames landed near each insertion target (mission type 9).
+    #[serde(default, skip_serializing_if = "none_unloading")]
+    pub(crate) unload: [i32; 2],
     /// World object 0 while this pilot is parked: the tile object his tile lock points at.
     #[serde(default)]
     pub(crate) scratch0: GroundObject,
@@ -320,6 +327,18 @@ impl Sim {
     pub fn pilot_view(&self, id: u8) -> Option<PlayerView> {
         let p = self.pilot_ref(id as usize);
         (p.id == id && !p.absent).then_some(p.p)
+    }
+
+    /// Pilot `id` flies a helicopter, stopped on the ground (landed anywhere).
+    pub fn pilot_landed(&self, id: u8) -> bool {
+        let p = self.pilot_ref(id as usize);
+        p.id == id && !p.absent && p.helicopter && p.on_ground && p.p.knots <= 2
+    }
+
+    /// Pilot `id` flies a helicopter.
+    pub fn pilot_helicopter(&self, id: u8) -> bool {
+        let p = self.pilot_ref(id as usize);
+        p.id == id && p.helicopter
     }
 
     /// Pilot `id`'s last report from his flight model.

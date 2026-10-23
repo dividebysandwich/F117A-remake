@@ -1,5 +1,6 @@
 pub mod drones;
 mod generator;
+pub mod insertion;
 pub mod rng;
 pub mod tables;
 mod text;
@@ -228,7 +229,8 @@ pub struct WorldPoint {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Target {
     /// 1 photo recon, 2 destroy, 3 airdrop at beacon, 4 land at secret airstrip,
-    /// 5 An-72 known route, 6 An-72 leaving, 7 Tu-95 heading home, 8 aircraft / fighter patrol.
+    /// 5 An-72 known route, 6 An-72 leaving, 7 Tu-95 heading home, 8 aircraft / fighter patrol,
+    /// 9 helicopter insertion ([`insertion`]).
     pub mission_type: i16,
     pub type_name: String,
     /// Mission table row.

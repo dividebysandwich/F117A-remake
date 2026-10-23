@@ -1187,7 +1187,7 @@ fn menu_ui(
             }
         } else {
             state.career = None;
-            let mut settings = crate::mission::settings(
+            let mut mission_settings = crate::mission::settings(
                 state.theater,
                 state.roe,
                 state.kind,
@@ -1196,10 +1196,17 @@ fn menu_ui(
                 state.weather,
                 state.cloud_cover,
             );
-            settings.start_hour = state.start_hour;
-            settings.moon = state.moon;
+            mission_settings.start_hour = state.start_hour;
+            mission_settings.moon = state.moon;
+            let helicopter = settings.aircraft.spec().helicopter;
             state.mission = Some(
-                crate::mission::generate(&data, &settings, state.seed)
+                crate::mission::generate(&data, &mission_settings, state.seed)
+                    .map(|mut m| {
+                        if helicopter {
+                            stealth_mission::insertion::for_helicopter(&mut m);
+                        }
+                        m
+                    })
                     .map_err(|e| format!("{e:#}")),
             );
         }
@@ -1279,7 +1286,12 @@ fn menu_ui(
                         ui.set_width(190.0);
                         situation_options(ui, &mut state.roe);
                         mission_options(ui, &mut state);
+                        let was = settings.aircraft;
                         aircraft_options(ui, &mut settings, Some(&mut state.lockheed));
+                        // A helicopter flies the same seed's targets as insertions.
+                        if settings.aircraft.spec().helicopter != was.spec().helicopter {
+                            state.regenerate();
+                        }
                         realism_options(ui, &mut settings);
                     });
                     ui.vertical(|ui| {

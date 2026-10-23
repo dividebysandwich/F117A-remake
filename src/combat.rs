@@ -51,7 +51,9 @@ impl Plugin for CombatPlugin {
             .add_systems(
                 OnEnter(AppState::Flight),
                 (
-                    crate::mission::ensure_mission.in_set(SetupSet::Mission),
+                    (crate::mission::ensure_mission, crate::mission::helicopter_mission)
+                        .chain()
+                        .in_set(SetupSet::Mission),
                     start_combat.in_set(SetupSet::World),
                 ),
             )
@@ -901,7 +903,9 @@ pub fn remote_motion(combat: &Combat, id: u8) -> Option<((f64, f64, f64), DVec3,
     let r = std::f64::consts::TAU / 65536.0;
     let (h, pitch) = ((v.heading as u16) as f64 * r, (v.pitch as i16) as f64 * r);
     let dir = DVec3::new(h.sin() * pitch.cos(), pitch.sin(), -h.cos() * pitch.cos());
-    let name = if p.external_stores {
+    let name = if p.helicopter {
+        "UH-60A"
+    } else if p.external_stores {
         "F-16"
     } else if p.lockheed {
         "F-117A"
@@ -1411,7 +1415,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         .collect();
     let done = [o.primary_done, o.secondary_done];
     for (k, t) in sim.target_slots().iter().enumerate() {
-        if done[k] || !(1..=3).contains(&t.mission_type) {
+        if done[k] || !matches!(t.mission_type, 1..=3 | 9) {
             continue;
         }
         if let Some((i, ob)) =

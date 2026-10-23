@@ -1633,3 +1633,45 @@ fn launch_zone_holds_steady_on_a_turning_target() {
         }
     }
 }
+
+/// A helicopter lands anywhere flat: stopped near an insertion target (mission type 9) the
+/// troops get out after `INSERT_SECONDS`; far from it nothing happens, and the flight goes on.
+#[test]
+fn helicopter_inserts_troops_off_base() {
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let mut sim =
+        Sim::with_options(&d.sim, &m, SimOptions { helicopter: true, ..Default::default() });
+    let (x, y) = sandbox(&mut sim, &m);
+    sim.set_training(true);
+    sim.objects_mut()[5].x = x;
+    sim.objects_mut()[5].y = y;
+    sim.target_slots_mut()[0] = TargetSlot { mission_type: 9, object: 5, base: 0, code: 0 };
+    let landed = |mx: i32, my: i32| PlayerState {
+        on_ground: true,
+        gear_up: false,
+        velocity: 0,
+        ..player_at(mx, my, 0, 0, 0)
+    };
+    // Fly in, then land 1.5 km away: nothing.
+    for _ in 0..15 * 2 {
+        sim.step(&player_at(x + 0x60, y, 300, 0, 60), 15);
+    }
+    for _ in 0..15 * 15 {
+        sim.step(&landed(x + 0x60, y), 15);
+    }
+    assert!(sim.mission_end().is_none(), "{:?}", sim.mission_end());
+    assert!(!sim.objectives().primary_done);
+    // 300 m from the target: the troops are out after 10 s, not before.
+    let mut inserted = None;
+    for f in 0..15 * 15 {
+        for e in sim.step(&landed(x + 0x14, y), 15) {
+            if e == SimEvent::Message("Troops inserted".into()) {
+                inserted = Some(f);
+            }
+        }
+    }
+    let f = inserted.expect("troops inserted");
+    assert!((15 * 9..15 * 12).contains(&f), "after {f} frames");
+    assert!(sim.objectives().primary_done && sim.mission_end().is_none());
+}

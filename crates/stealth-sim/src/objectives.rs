@@ -2,6 +2,14 @@ use crate::Sim;
 use crate::math::{abs16, cdiv, clamp_q, s16};
 use crate::types::*;
 
+/// A helicopter's base landing area: the whole airfield beside the runway (half width, map
+/// units << 5; the flight model's `landing_corridor`, keep in step).
+const HELI_BASE_HALF_WIDTH: i32 = 0x200;
+/// Insertion (mission type 9): landed within this many map units of the target, stopped for
+/// this many seconds while the troops get out.
+pub const INSERT_RADIUS: i32 = 0x20;
+pub const INSERT_SECONDS: i32 = 10;
+
 impl Sim {
     /// Mark objective `k` (0 primary, 1 secondary) as done; false if it already was.
     pub(crate) fn mark_target_reached(&mut self, k: usize) -> bool {
@@ -28,6 +36,28 @@ impl Sim {
         }
         self.emit(SimEvent::ObjectiveDone { primary: k == 0 });
         true
+    }
+
+    /// Insertions (mission type 9): the helicopter stopped on the ground near a target for
+    /// `INSERT_SECONDS` lets the troops out there.
+    fn insertions(&mut self) {
+        let landed = self.pl.helicopter && self.pl.on_ground && self.pl.p.knots <= 1;
+        for k in 0..2 {
+            let t = self.pl.targets[k];
+            let near = landed && t.mission_type == 9 && t.object >= 0 && {
+                let o = self.obj(t.object);
+                let (dx, dy) = (s16(self.pl.p.mx - o.x), s16(self.pl.p.my - o.y));
+                dx * dx + dy * dy <= INSERT_RADIUS * INSERT_RADIUS
+            };
+            if !near {
+                self.pl.unload[k] = 0;
+                continue;
+            }
+            self.pl.unload[k] += 1;
+            if self.pl.unload[k] == INSERT_SECONDS * self.fs && self.mark_target_reached(k) {
+                self.msg("Troops inserted");
+            }
+        }
     }
 
     /// End the mission with `outcome` (ignored once ended, or after ejection unless 0 or 8,
@@ -177,7 +207,8 @@ impl Sim {
             let (mut hw, mut hl) = if carrier {
                 (0x100, 0x3C0)
             } else {
-                (0xA0, if b.flags & oflags::DISABLED != 0 { 0x400 } else { 0x800 })
+                let hw = if self.pl.helicopter { HELI_BASE_HALF_WIDTH } else { 0xA0 };
+                (hw, if b.flags & oflags::DISABLED != 0 { 0x400 } else { 0x800 })
             };
             if carrier {
                 ground_alt = 0x80;
@@ -195,7 +226,8 @@ impl Sim {
             self.pl.corridor = false;
         }
         let touchdown = self.pl.on_ground && !self.pl.prev_on_ground;
-        if touchdown && self.pl.corridor {
+        // A helicopter's flight model judges its touchdowns (anywhere).
+        if touchdown && self.pl.corridor && !self.pl.helicopter {
             let lim = if b.flags & oflags::CARRIER != 0 { 0x100 } else { 0x80 };
             let sink = (-(lm * ps.climb_rate)) & 0xFFFF;
             let bad =
@@ -207,6 +239,7 @@ impl Sim {
             }
         }
         let _ = ground_alt;
+        self.insertions();
         if self.pl.corridor {
             if self.pl.p.knots <= 1 && self.pl.on_ground && self.frame & 15 == 0 {
                 for k in 0..2 {

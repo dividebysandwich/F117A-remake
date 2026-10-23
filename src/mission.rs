@@ -183,6 +183,13 @@ pub fn from_args(app: &mut App) {
     // `--moon <0-7>`: the moon's phase in eighths (0 new, 4 full).
     settings.moon = get("--moon").and_then(|s| s.parse::<u8>().ok()).map(|m| m % 8);
     let mut m = generate(&data, &settings, seed).expect("mission");
+    if f16
+        && get("--aircraft")
+            .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
+            .is_some_and(|k| k.spec().helicopter)
+    {
+        stealth_mission::insertion::for_helicopter(&mut m);
+    }
     // `--start-base <name>`: take off from another airfield (also an enemy one; for tests).
     if let Some(name) = get("--start-base") {
         let w = &m.world;
@@ -246,6 +253,21 @@ pub fn from_args(app: &mut App) {
         .insert_resource(ActiveMission(m))
         .insert_resource(data)
         .insert_state(crate::settings::AppState::Flight);
+}
+
+/// OnEnter(Flight), after `ensure_mission`: a helicopter flies the mission's targets as
+/// insertions (a campaign's sorties are set up by the campaign).
+pub fn helicopter_mission(
+    settings: Res<crate::settings::Settings>,
+    campaign: Option<Res<crate::campaign::ActiveCampaign>>,
+    mission: Option<ResMut<ActiveMission>>,
+) {
+    if let Some(mut m) = mission
+        && campaign.is_none()
+        && settings.aircraft.spec().helicopter
+    {
+        stealth_mission::insertion::for_helicopter(&mut m.0);
+    }
 }
 
 /// Theater index of a theater code ("ce" -> 3).

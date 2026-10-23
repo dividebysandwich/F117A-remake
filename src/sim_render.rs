@@ -1448,7 +1448,9 @@ fn sync_remote_pilots(
         if p.chute.is_some() {
             continue;
         }
-        let kind = if p.external_stores {
+        let kind = if p.helicopter {
+            crate::aircraft::AircraftKind::UH60
+        } else if p.external_stores {
             crate::aircraft::AircraftKind::F16
         } else {
             crate::aircraft::AircraftKind::F117

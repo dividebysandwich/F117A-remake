@@ -382,6 +382,7 @@ impl Sim {
         self.pl.lockheed = lockheed;
         self.pl.external_stores = external_stores;
         self.pl.helicopter = helicopter;
+        self.pl.unload = [0; 2];
         self.pl.damage = 0;
         self.pl.hits = 2;
         self.pl.control_fault = ControlFault::default();

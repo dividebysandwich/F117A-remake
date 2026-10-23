@@ -353,6 +353,7 @@ impl Sim {
                 absent: false,
                 external_stores,
                 helicopter,
+                unload: [0; 2],
                 scratch0: GroundObject::default(),
                 rounds: Vec::new(),
                 missiles: Default::default(),

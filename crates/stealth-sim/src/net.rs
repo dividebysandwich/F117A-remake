@@ -40,6 +40,8 @@ pub struct RemotePilot {
     /// The aircraft type: the real F-117A (no cannon), and weapons outside (F-16).
     pub lockheed: bool,
     pub external_stores: bool,
+    /// A helicopter (UH-60A).
+    pub helicopter: bool,
     pub gun_firing: bool,
     pub burning: bool,
     /// Damage smoke: 0 none, 1 light, 2 heavy (badly hit), 3 on fire.
@@ -54,13 +56,14 @@ pub struct RemotePilot {
 
 /// [`RemotePilot`] as a sequence without field names: id, view (wx, wy, mx, my, alt, view_z,
 /// heading, pitch, roll, velocity, knots, climb), flags (gear up, on the ground, F-117A as it
-/// was, external stores, gun firing, burning, damage smoke in two bits), bay doors, parachute,
+/// was, external stores, gun firing, burning, damage smoke in two bits, helicopter), bay doors,
+/// parachute,
 /// missiles by slot, the live countermeasures by slot.
 #[derive(Serialize, Deserialize)]
 struct RemoteWire(
     u8,
     [i32; 12],
-    u8,
+    u16,
     i32,
     Option<(i32, i32, i32)>,
     Vec<(u8, Projectile)>,
@@ -74,8 +77,9 @@ impl From<RemotePilot> for RemoteWire {
             [p.gear_up, p.on_ground, p.lockheed, p.external_stores, p.gun_firing, p.burning]
                 .iter()
                 .enumerate()
-                .fold(0u8, |f, (k, &b)| f | (b as u8) << k)
-                | p.smoke.min(3) << 6;
+                .fold(0u16, |f, (k, &b)| f | (b as u16) << k)
+                | (p.smoke.min(3) as u16) << 6
+                | (p.helicopter as u16) << 8;
         RemoteWire(
             p.id,
             [
@@ -128,7 +132,8 @@ impl From<RemoteWire> for RemotePilot {
             external_stores: bit(3),
             gun_firing: bit(4),
             burning: bit(5),
-            smoke: flags >> 6,
+            smoke: (flags >> 6) as u8 & 3,
+            helicopter: bit(8),
             chute,
             missiles,
             cms,
@@ -276,6 +281,7 @@ impl Sim {
                     door_anim: p.door_anim,
                     lockheed: p.lockheed,
                     external_stores: p.external_stores,
+                    helicopter: p.helicopter,
                     gun_firing: p.gun_firing,
                     burning: p.fire_frames > 0 || p.breakup_frames > 0,
                     smoke: if p.damage & dmg::FIRE != 0 {

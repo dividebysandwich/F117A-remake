@@ -54,8 +54,8 @@ pub fn spot_size(metres: f32) -> u32 {
 pub struct PaletteParams {
     pub word: u32,
     pub flags: u32,
-    /// The lighting options are on: the shader variant with sun shadows and local lights
-    /// (kept in sync by `sync_lighting`).
+    /// The lighting options that are on (`LIGHT_SHADOWS` | `LIGHT_LOCAL`): the shader variant
+    /// with sun shadows and/or local lights (kept in sync by `sync_lighting`).
     pub lit: u32,
     pub _pad1: u32,
 }
@@ -75,7 +75,7 @@ pub struct PaletteMaterial {
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PaletteKey {
     kind: u8,
-    lit: bool,
+    lit: u8,
 }
 
 const KIND_OBJECT: u8 = 0;
@@ -92,7 +92,7 @@ impl From<&PaletteMaterial> for PaletteKey {
         } else {
             KIND_OBJECT
         };
-        Self { kind, lit: m.params.lit != 0 }
+        Self { kind, lit: m.params.lit as u8 }
     }
 }
 
@@ -145,8 +145,17 @@ impl Material for PaletteMaterial {
                 KIND_CLOUD => fragment.shader_defs.push("PALETTE_CLOUD".into()),
                 _ => {}
             }
-            if key.bind_group_data.lit {
+            // Each option compiled in only when it is on (the local light loop's registers slow
+            // down every pixel on the Steam Frame).
+            let lit = key.bind_group_data.lit as u32;
+            if lit != 0 {
                 fragment.shader_defs.push("PALETTE_LIT".into());
+            }
+            if lit & LIGHT_SHADOWS != 0 {
+                fragment.shader_defs.push("PALETTE_SHADOWS".into());
+            }
+            if lit & LIGHT_LOCAL != 0 {
+                fragment.shader_defs.push("PALETTE_LOCAL".into());
             }
         }
         // Only positions are used (models have no normals or UVs). Batched dot lights (scenery
@@ -215,11 +224,20 @@ pub struct Globals {
     pub sky_night: Vec4,
     /// The recon cameras' palette (linear RGB): the day's, as in the near infrared.
     pub recon_palette: [Vec4; 256],
+    /// Direction to the moon (xyz) and its light's strength (w), for modern shading.
+    pub moon: Vec4,
+    /// The key light's shadow maps: its index among Bevy's directional lights (x) and number
+    /// of cascades (y, 0 without shadows).
+    pub shadow: Vec4,
+    /// The cascades' far bounds (metres from the eye; unused ones huge).
+    pub shadow_bounds: Vec4,
 }
 
 /// Lighting flags in `Globals.ambient.w`.
 pub const LIGHT_SHADOWS: u32 = 1;
 pub const LIGHT_LOCAL: u32 = 2;
+/// The shadow maps are the moon's (it is brighter than the sun).
+pub const LIGHT_MOON_KEY: u32 = 4;
 /// Local lights handed to the world shader (must match palette.wgsl).
 pub const MAX_LOCAL_LIGHTS: usize = 32;
 
@@ -245,6 +263,9 @@ impl Default for Globals {
             sky_moon: Vec4::ZERO,
             sky_night: Vec4::ZERO,
             recon_palette: [Vec4::ONE; 256],
+            moon: Vec4::ZERO,
+            shadow: Vec4::ZERO,
+            shadow_bounds: Vec4::ZERO,
         }
     }
 }
@@ -291,7 +312,8 @@ pub fn sync_lighting(
     settings: Res<crate::settings::Settings>,
     mut materials: ResMut<Assets<PaletteMaterial>>,
 ) {
-    let lit = (settings.shadows || settings.local_lights) as u32;
+    let lit =
+        (settings.shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);
     let stale: Vec<_> =
         materials.iter().filter(|(_, m)| m.params.lit != lit).map(|(id, _)| id).collect();
     for id in stale {

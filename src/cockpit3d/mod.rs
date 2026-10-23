@@ -296,7 +296,10 @@ fn sync_shading(
     lighting: Res<crate::lighting::LightingState>,
     mut materials: ResMut<Assets<CockpitMaterial>>,
 ) {
-    let full = lighting_on(&settings);
+    // Bevy's full lighting (the clustered point light loop) only for local lights: on the
+    // Steam Frame it costs about 10 ms of GPU time.
+    let full = settings.local_lights;
+    let shadows = settings.shadows;
     // Night vision goggles: the cockpit in green too, and as well seen on a moonless night.
     let nvg = hud.is_some_and(|h| h.nvg);
     // In 1/64 steps: a change re-uploads every cockpit material.
@@ -304,13 +307,19 @@ fn sync_shading(
     let dark = if sky.on && !nvg { q(sky.dark) } else { 0.0 };
     let daylight = if nvg { q(lighting.daylight.clamp(0.0, 1.0)) } else { 0.0 };
     let night = |m: &CockpitMaterial| {
-        Vec4::new(if m.extension.bright { 0.0 } else { dark }, nvg as u32 as f32, daylight, 0.0)
+        Vec4::new(
+            if m.extension.bright { 0.0 } else { dark },
+            nvg as u32 as f32,
+            daylight,
+            !settings.modern_shading as u32 as f32,
+        )
     };
     let stale: Vec<_> = materials
         .iter()
         .filter(|(_, m)| {
             m.extension.unlit != m.base.unlit
                 || m.extension.full != full
+                || m.extension.shadows != shadows
                 || m.extension.night != night(m)
         })
         .map(|(id, _)| id)
@@ -319,6 +328,7 @@ fn sync_shading(
         if let Some(mut m) = materials.get_mut(id) {
             m.extension.unlit = m.base.unlit;
             m.extension.full = full;
+            m.extension.shadows = shadows;
             m.extension.night = night(&m);
         }
     }

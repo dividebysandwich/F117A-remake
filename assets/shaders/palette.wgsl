@@ -4,14 +4,15 @@
 
 #import bevy_pbr::{
     mesh_functions,
-    mesh_view_bindings::{view, lights},
+    mesh_view_bindings::{view, lights, directional_shadow_textures, directional_shadow_textures_comparison_sampler},
     view_transformations::position_world_to_clip,
-    shadows::fetch_directional_shadow,
+    mesh_view_types::DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT,
 }
 
 const MAX_LOCAL_LIGHTS: u32 = 32u;
 const LIGHT_SHADOWS: u32 = 1u;
 const LIGHT_LOCAL: u32 = 2u;
+const LIGHT_MOON_KEY: u32 = 4u;
 const FLAG_CLOUD: u32 = 8u;
 // Smoke plume volume (fires.rs), optionally lit by a fire at its base.
 const TAG_SMOKE: u32 = 8192u;
@@ -73,6 +74,12 @@ struct Globals {
     sky_night: vec4<f32>,
     // The recon cameras' palette (linear RGB): the day's, as in the near infrared.
     recon_palette: array<vec4<f32>, 256>,
+    // Direction to the moon (xyz) and its light's strength (w), for modern shading.
+    moon: vec4<f32>,
+    // The key light's shadow maps: its index among Bevy's directional lights (x), number of
+    // cascades (y, 0 without shadows); the cascades' far bounds.
+    shadow: vec4<f32>,
+    shadow_bounds: vec4<f32>,
 };
 
 struct PaletteMaterial {
@@ -337,40 +344,116 @@ fn haze_smooth(idx: u32, fog: f32) -> vec3<f32> {
     return mix(pal(lo), pal(hi), fract(fog));
 }
 
-// Modern mode: subtle flat shading from the sim data's (unused) light vector (-36, 36, 36).
-// `face`: the face normal from the position's derivatives (`Deriv`).
-fn shade(face: vec3<f32>, dir: vec3<f32>) -> f32 {
+// Moonlight's colour: a cool blue white.
+const MOON_TINT: vec3<f32> = vec3<f32>(0.75, 0.85, 1.0);
+
+fn sun_moon(n: vec3<f32>) -> vec3<f32> {
+    return globals.ambient.rgb
+        + vec3<f32>(globals.sun.w * max(dot(n, globals.sun.xyz), 0.0))
+        + MOON_TINT * globals.moon.w * max(dot(n, globals.moon.xyz), 0.0);
+}
+
+// Modern mode: flat lighting by the sun and the moon (no shadows) on a face with normal n,
+// relative to flat ground (the palette's brightness): faces turned to the light brighter,
+// turned away darker. A low sun lights walls facing it far more than the ground: capped.
+const SKY_LIGHT_MAX: f32 = 2.0;
+
+fn sky_light(n: vec3<f32>) -> vec3<f32> {
+    return min(sun_moon(n) / sun_moon(vec3<f32>(0.0, 1.0, 0.0)), vec3<f32>(SKY_LIGHT_MAX));
+}
+
+// Modern mode: flat lighting of a face. `face`: the face normal from the position's
+// derivatives (`Deriv`).
+fn shade(face: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
     var n = normalize(face);
     if (dot(n, dir) > 0.0) { n = -n; }
-    let l = normalize(vec3<f32>(-36.0, 36.0, 36.0));
-    return 0.86 + 0.14 * dot(n, l);
+    return sky_light(n);
 }
+
+// Specular highlights from the local lights: strength (x) and Blinn-Phong exponent (y).
+const GLOSS_AIRCRAFT: vec2<f32> = vec2<f32>(0.6, 48.0);
+const GLOSS_OBJECT: vec2<f32> = vec2<f32>(0.2, 16.0);
+const GLOSS_GROUND: vec2<f32> = vec2<f32>(0.15, 24.0);
 
 // Lighting options: the palette colour lit by the sun (with shadow maps) and local lights,
 // using the flat face normal. Unlit parts keep roughly the classic brightness.
-// `dark`: the night's darkness on everything but the local lights.
-fn lit(rgb: vec3<f32>, world: vec3<f32>, face: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32, dark: f32) -> vec3<f32> {
+// `dark`: the night's darkness on everything but the local lights; `gloss`: their specular
+// highlights (`GLOSS_*`).
+fn lit(rgb: vec3<f32>, world: vec3<f32>, face: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32, dark: f32, gloss: vec2<f32>) -> vec3<f32> {
     var n = normalize(face);
     if (dot(n, dir) > 0.0) { n = -n; }
-    return lit_surface(rgb, world, n, clip, flags, dark);
+    return lit_surface(rgb, world, n, dir, clip, flags, dark, gloss);
 }
 
-fn lit_surface(rgb: vec3<f32>, world: vec3<f32>, n: vec3<f32>, clip: vec4<f32>, flags: u32, dark: f32) -> vec3<f32> {
+// The key light's shadow at `world` (1 lit, 0 shadowed): Bevy's cascade lookup cut down to
+// one cascade and one sample (its own, with cascade blending and the filter and PCSS paths,
+// costs the Steam Frame about 8 ms). Classic shaders: hard edged (the nearest texel); modern:
+// the hardware's 2x2 comparison filter.
+fn sun_shadow(world: vec3<f32>, n: vec3<f32>, view_z: f32, hard: bool) -> f32 {
+    // The index and the cascade bounds come from the CPU (lighting.rs): indexing Bevy's light
+    // array in a loop costs the Steam Frame most of the time the lookup takes.
+    let z = vec4<f32>(-view_z);
+    let ci = u32(dot(select(vec4<f32>(0.0), vec4<f32>(1.0), z >= globals.shadow_bounds), vec4<f32>(1.0)));
+    if (ci >= u32(globals.shadow.y)) {
+        return 1.0;
+    }
+    let light = &lights.directional_lights[u32(globals.shadow.x)];
+    let cascade = &(*light).cascades[ci];
+    let p = world + (*light).shadow_normal_bias * (*cascade).texel_size * n
+        + (*light).shadow_depth_bias * (*light).direction_to_light;
+    let c = (*cascade).clip_from_world * vec4<f32>(p, 1.0);
+    let ndc = c.xyz / c.w;
+    if (any(abs(ndc.xy) > vec2<f32>(1.0)) || ndc.z < 0.0 || ndc.z > 1.0) {
+        return 1.0;
+    }
+    let uv = ndc.xy * vec2<f32>(0.5, -0.5) + 0.5;
+    let layer = i32((*light).depth_texture_base_index + ci);
+#ifdef NO_ARRAY_TEXTURES_SUPPORT
+    if (hard) {
+        let size = vec2<f32>(textureDimensions(directional_shadow_textures));
+        let d = textureLoad(directional_shadow_textures, vec2<i32>(uv * size), 0);
+        return select(0.0, 1.0, ndc.z >= d);
+    }
+    return textureSampleCompareLevel(directional_shadow_textures, directional_shadow_textures_comparison_sampler, uv, ndc.z);
+#else
+    if (hard) {
+        let size = vec2<f32>(textureDimensions(directional_shadow_textures));
+        let d = textureLoad(directional_shadow_textures, vec2<i32>(uv * size), layer, 0);
+        return select(0.0, 1.0, ndc.z >= d);
+    }
+    return textureSampleCompareLevel(directional_shadow_textures, directional_shadow_textures_comparison_sampler, uv, layer, ndc.z);
+#endif
+}
+
+fn lit_surface(rgb: vec3<f32>, world: vec3<f32>, n: vec3<f32>, dir: vec3<f32>, clip: vec4<f32>, flags: u32, dark: f32, gloss: vec2<f32>) -> vec3<f32> {
     var light = globals.ambient.rgb;
+    var spec = vec3<f32>(0.0);
     if ((flags & LIGHT_SHADOWS) != 0u) {
-        let ndl = max(dot(n, globals.sun.xyz), 0.0);
+        // The shadow maps are the key light's: the sun, or the moon when it is the brighter.
+        let moon_key = (flags & LIGHT_MOON_KEY) != 0u;
+        let sun_l = vec3<f32>(globals.sun.w * max(dot(n, globals.sun.xyz), 0.0));
+        let moon_l = MOON_TINT * globals.moon.w * max(dot(n, globals.moon.xyz), 0.0);
         var shadow = 1.0;
-        if (lights.n_directional_lights > 0u && ndl > 0.0) {
+#ifdef PALETTE_SHADOWS
+        if (globals.shadow.y > 0.0 && !offscreen_view() && dot(select(sun_l, moon_l, moon_key), vec3<f32>(1.0)) > 0.0) {
             let view_z = (view.view_from_world * vec4<f32>(world, 1.0)).z;
-            shadow = fetch_directional_shadow(0u, vec4<f32>(world, 1.0), n, view_z, clip.xy);
+            shadow = sun_shadow(world, n, view_z, globals.params.w == 0.0);
         }
-        light += vec3<f32>(globals.sun.w * ndl * shadow);
+#endif
+        light += select(sun_l * shadow, sun_l, moon_key) + select(moon_l, moon_l * shadow, moon_key);
+        // Sunlit flat ground keeps the palette's brightness, shadows go darker (lighting.rs
+        // sets the ambient light for that).
+        light = min(light / sun_moon(vec3<f32>(0.0, 1.0, 0.0)), vec3<f32>(SKY_LIGHT_MAX));
+    } else if (globals.params.w != 0.0) {
+        light = sky_light(n);
     } else {
         light = vec3<f32>(1.0);
     }
     light *= 1.0 - dark;
+#ifdef PALETTE_LOCAL
     if ((flags & LIGHT_LOCAL) != 0u) {
         let count = min(u32(globals.light_info.x), MAX_LOCAL_LIGHTS);
+        let to_eye = -normalize(dir);
         for (var i = 0u; i < count; i++) {
             let p = globals.local_lights[2u * i];
             let c = globals.local_lights[2u * i + 1u];
@@ -378,12 +461,19 @@ fn lit_surface(rgb: vec3<f32>, world: vec3<f32>, n: vec3<f32>, clip: vec4<f32>, 
             let d = length(to_light);
             if (d < p.w) {
                 let att = (1.0 - d / p.w) * (1.0 - d / p.w);
-                let ndl = max(dot(n, to_light / max(d, 1e-3)), 0.0) * 0.7 + 0.3;
-                light += c.rgb * att * ndl;
+                let l = to_light / max(d, 1e-3);
+                let facing = dot(n, l);
+                light += c.rgb * att * (max(facing, 0.0) * 0.7 + 0.3);
+                // Blinn-Phong highlight in the light's own colour.
+                if (facing > 0.0) {
+                    let h = normalize(l + to_eye);
+                    spec += c.rgb * att * gloss.x * pow(max(dot(n, h), 0.0), gloss.y);
+                }
             }
         }
     }
-    return rgb * light;
+#endif
+    return rgb * light + spec;
 }
 
 // Cloud texture: Perlin noise in world space. The lattice wraps every NOISE_PERIOD metres
@@ -847,6 +937,12 @@ fn nvg(rgb: vec3<f32>, clip: vec4<f32>) -> vec3<f32> {
 // FLIR (tracking camera only, picked by its picture size): a black and white thermal picture
 // with warm objects (mesh tag `TAG_WARM`, dot lights) bright and the scenery dark; haze
 // fades warm objects into the background.
+// The targeting pod's or a recon camera's picture: no shadow maps there (lighting.rs
+// `no_offscreen_shadows`).
+fn offscreen_view() -> bool {
+    return recon_view() || all(abs(view.viewport.zw - globals.dots.zw) < vec2<f32>(0.5));
+}
+
 fn flir_view() -> bool {
     return globals.params.z != 0.0 && all(abs(view.viewport.zw - globals.dots.zw) < vec2<f32>(0.5));
 }
@@ -948,7 +1044,7 @@ fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
         let flags = u32(globals.ambient.w);
         if (flags != 0u && dir.y < 0.0 && eye.y > 0.0) {
             let ground = eye + dir * (-eye.y / dir.y);
-            bg = lit_surface(bg, ground, vec3<f32>(0.0, 1.0, 0.0), in.clip_position, flags, night_dark());
+            bg = lit_surface(bg, ground, vec3<f32>(0.0, 1.0, 0.0), dir, in.clip_position, flags, night_dark(), GLOSS_GROUND);
             ground_lit = true;
         }
 #endif
@@ -1043,7 +1139,8 @@ fn shade_fragment(in: VertexOutput, deriv: Deriv) -> vec4<f32> {
 #ifdef PALETTE_LIT
     let flags = u32(globals.ambient.w);
     if (!is_line && flags != 0u) {
-        rgb = lit(rgb, in.world_position, deriv.face, dir, in.clip_position, flags, dark);
+        let gloss = select(GLOSS_OBJECT, GLOSS_AIRCRAFT, (in.warm & 2u) != 0u);
+        rgb = lit(rgb, in.world_position, deriv.face, dir, in.clip_position, flags, dark, gloss);
     } else
 #endif
     {

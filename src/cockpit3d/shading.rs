@@ -1,8 +1,8 @@
 //! Cockpit materials: `StandardMaterial` with our fragment shader (assets/shaders/cockpit.wgsl)
 //! in three variants: unlit materials (the panel picture, screens and labels without the
-//! lighting options) without the PBR lighting, lit ones without the lighting options with only
-//! the sun and the ambient light, and Bevy's full lighting with the options (point lights,
-//! shadows). Bevy's own shader compiles every lighting path in (`unlit` is only a flag): on the
+//! lighting options) without the PBR lighting, lit ones without local lights with only the sun,
+//! the moon (shadowed with the shadows option) and the ambient light, and Bevy's full lighting
+//! with local lights (point lights, shadows). Bevy's own shader compiles every lighting path in (`unlit` is only a flag): on the
 //! Steam Frame's GPU it is about 2700 instructions and needs so many registers that half as many
 //! fragments run at once.
 
@@ -40,12 +40,14 @@ pub fn cockpit_material_bright(base: StandardMaterial) -> CockpitMaterial {
 pub struct CockpitShading {
     /// `base.unlit`: no PBR lighting compiled in.
     pub unlit: bool,
-    /// The lighting options are on: Bevy's full lighting (point lights, shadows); otherwise
-    /// only the sun and the ambient light.
+    /// Local lights are on: Bevy's full lighting (point lights, shadows); otherwise only the
+    /// sun, the moon and the ambient light.
     pub full: bool,
+    /// Shadows are on (without local lights: the directional lights' shadow maps only).
+    pub shadows: bool,
     /// x: darkness of a night without moonlight 0..1 (`crate::sky::Sky::dark`): everything
     /// but the emissive parts and the cockpit lamps' light goes dark; y: night vision goggles,
-    /// z: daylight 0..1 (their gain).
+    /// z: daylight 0..1 (their gain), w: classic shaders (hard edged shadows).
     #[uniform(100)]
     pub night: Vec4,
     /// Never darkened.
@@ -57,11 +59,12 @@ pub struct CockpitShading {
 pub struct CockpitShadingKey {
     unlit: bool,
     full: bool,
+    shadows: bool,
 }
 
 impl From<&CockpitShading> for CockpitShadingKey {
     fn from(s: &CockpitShading) -> Self {
-        Self { unlit: s.unlit, full: s.full }
+        Self { unlit: s.unlit, full: s.full, shadows: s.shadows }
     }
 }
 
@@ -84,6 +87,9 @@ impl MaterialExtension for CockpitShading {
                 fragment.shader_defs.push("COCKPIT_FULL".into());
             } else {
                 fragment.shader_defs.push("COCKPIT_SIMPLE_LIT".into());
+                if k.shadows {
+                    fragment.shader_defs.push("COCKPIT_SHADOWS".into());
+                }
             }
         }
         Ok(())

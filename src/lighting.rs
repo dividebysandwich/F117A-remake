@@ -1,9 +1,14 @@
 //! Optional lighting (menu "Shadows" / "Local lighting", `--shadows` / `--local-lights`).
 //!
-//! - Sun: one `DirectionalLight` from the modern-mode light vector, strength from the live sky
+//! - Sun: from the modern-mode light vector (or the moving sun), strength from the live sky
 //!   colour (off at night). It lights the 3D cockpit (StandardMaterial) and, through the shadow
 //!   maps, the palette-material world (palette.wgsl `lit`), including the background's ground
 //!   gradient (shadows taken on the ground plane).
+//! - Moon (continuous time of day, modern shading or shadows): its light by the moon's phase
+//!   and height.
+//! - Two `DirectionalLight`s carry them: the key light (the brighter of the two, with the
+//!   shadow maps) and the fill light (the other one, no shadows), so the moon casts the
+//!   shadows at night.
 //! - Local lights: `LightEmitter` entities (missile motors, flares, impact flashes, cockpit
 //!   lamps) plus nearby runway/city dot lights. The nearest ones go to the world shader
 //!   (`Globals.lights`) and a few become Bevy `PointLight`s so they also light the cockpit.
@@ -13,13 +18,18 @@ use bevy::prelude::*;
 
 use crate::dots::DotLight;
 use crate::palette::Palette;
-use crate::palette_material::{LIGHT_LOCAL, LIGHT_SHADOWS, MAX_LOCAL_LIGHTS, PaletteMaterial};
+use crate::palette_material::{
+    LIGHT_LOCAL, LIGHT_MOON_KEY, LIGHT_SHADOWS, MAX_LOCAL_LIGHTS, PaletteMaterial,
+};
 use crate::settings::{AppState, Settings};
 
 pub struct LightingPlugin;
 
 impl Plugin for LightingPlugin {
     fn build(&self, app: &mut App) {
+        if let Some((.., size)) = shadow_tuning() {
+            app.insert_resource(bevy::light::DirectionalLightShadowMap { size });
+        }
         app.init_resource::<LightingState>()
             .add_systems(OnEnter(AppState::Flight), spawn_sun)
             .add_systems(OnExit(AppState::Flight), despawn_lights)
@@ -27,6 +37,13 @@ impl Plugin for LightingPlugin {
             .add_systems(
                 Update,
                 (update_sun, sync_mirror_lights).run_if(in_state(AppState::Flight)),
+            )
+            // Before the light frusta and shadow visibility are worked out from the cascades.
+            .add_systems(
+                PostUpdate,
+                no_offscreen_shadows
+                    .after(bevy::light::SimulationLightSystems::UpdateDirectionalLightCascades)
+                    .before(bevy::light::SimulationLightSystems::UpdateLightFrusta),
             )
             .add_systems(
                 PostUpdate,
@@ -55,6 +72,12 @@ pub struct LightEmitter {
 #[derive(Resource, Default)]
 pub struct LightingState {
     pub sun: Vec4,
+    /// Direction to the moon (xyz) and its strength (w); zero but in modern shading or with
+    /// shadows.
+    pub moon: Vec4,
+    /// `Globals::shadow` and `Globals::shadow_bounds`.
+    pub shadow: Vec4,
+    pub shadow_bounds: Vec4,
     pub ambient: Vec4,
     /// (position, range), (colour, 0) pairs.
     pub lights: Vec<(Vec4, Vec4)>,
@@ -62,8 +85,50 @@ pub struct LightingState {
     pub daylight: f32,
 }
 
+/// The directional light with the shadow maps: the sun, or the moon when it is the brighter.
 #[derive(Component)]
-struct Sun;
+struct KeyLight;
+
+/// The other one of the sun and the moon (no shadows).
+#[derive(Component)]
+struct FillLight;
+
+/// The light balance of modern shading and of the shadows option: the world shader's sun
+/// strength (classic shaders without shadows: 0.45) and the
+/// moon's in a full moon high up; shadowed flat ground as a share of the sunlit (the ambient
+/// light follows the direct light on the ground, so shadows keep their depth with the sun
+/// low); the cockpit's ambient light (night, day) and sun illuminance (lux).
+#[derive(Clone, Copy)]
+struct Balance {
+    sun: f32,
+    moon: f32,
+    shadow: f32,
+    cockpit_ambient: (f32, f32),
+    cockpit_sun: f32,
+}
+
+const MODERN: Balance = Balance {
+    sun: 1.1,
+    moon: 0.7,
+    shadow: 0.4,
+    cockpit_ambient: (300.0, 550.0),
+    cockpit_sun: 5000.0,
+};
+
+/// `SM89_LIGHT=sun,moon,shadow,ambient_night,ambient_day,cockpit_sun` overrides [`MODERN`]
+/// (tuning).
+fn modern_balance() -> Balance {
+    let v: Vec<f32> = std::env::var("SM89_LIGHT")
+        .ok()
+        .map(|v| v.split(',').filter_map(|x| x.parse().ok()).collect())
+        .unwrap_or_default();
+    match v[..] {
+        [sun, moon, shadow, an, ad, cs] => {
+            Balance { sun, moon, shadow, cockpit_ambient: (an, ad), cockpit_sun: cs }
+        }
+        _ => MODERN,
+    }
+}
 
 /// A `PointLight` mirroring one of the nearest emitters (for StandardMaterial surfaces).
 #[derive(Component)]
@@ -77,9 +142,35 @@ pub fn sun_direction() -> Vec3 {
     Vec3::new(-36.0, 36.0, 36.0).normalize()
 }
 
+/// `SM89_SHADOW=cascades,max_m,first_m,map_size` (tuning).
+fn shadow_tuning() -> Option<(usize, f32, f32, usize)> {
+    let v: Vec<f32> =
+        std::env::var("SM89_SHADOW").ok()?.split(',').filter_map(|x| x.parse().ok()).collect();
+    match v[..] {
+        [c, m, f, s] => Some((c as usize, m, f, s as usize)),
+        _ => None,
+    }
+}
+
+/// The sun's shadow cascades: the first one for the cockpit. VR: only one more, to 800 m
+/// (each cascade is rendered once per eye; on the Steam Frame four cost about 3 ms more).
+fn shadow_cascades(vr: bool) -> bevy::light::CascadeShadowConfig {
+    let default = if vr { (2, 800.0, 6.0, 2048) } else { (4, 3000.0, 6.0, 2048) };
+    let (num_cascades, maximum_distance, first_cascade_far_bound, _) =
+        shadow_tuning().unwrap_or(default);
+    CascadeShadowConfigBuilder {
+        num_cascades,
+        minimum_distance: 0.1,
+        first_cascade_far_bound,
+        maximum_distance,
+        overlap_proportion: 0.2,
+    }
+    .build()
+}
+
 fn spawn_sun(mut commands: Commands, settings: Res<Settings>) {
     commands.spawn((
-        Sun,
+        KeyLight,
         DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, ..default() },
         Transform::IDENTITY.looking_to(-sun_direction(), Vec3::Y),
         // Detail levels picked by only one view are moved off layer 0 (models::LodShown); they
@@ -89,14 +180,12 @@ fn spawn_sun(mut commands: Commands, settings: Res<Settings>) {
             crate::camera::MAIN_LOD_LAYER,
             crate::camera::TRACKCAM_LOD_LAYER,
         ]),
-        CascadeShadowConfigBuilder {
-            num_cascades: 4,
-            minimum_distance: 0.1,
-            first_cascade_far_bound: 6.0,
-            maximum_distance: 3000.0,
-            overlap_proportion: 0.2,
-        }
-        .build(),
+        shadow_cascades(settings.vr),
+    ));
+    commands.spawn((
+        FillLight,
+        DirectionalLight { illuminance: 0.0, shadow_maps_enabled: false, ..default() },
+        Transform::default(),
     ));
     // Only with the local lighting option: point lights put the PBR shader's clustered light
     // loop to work in every lit pixel, and on the Steam Frame (Turnip, Adreno 750) that loop
@@ -135,21 +224,45 @@ fn sync_mirror_lights(
 }
 
 #[allow(clippy::type_complexity)]
-fn despawn_lights(mut commands: Commands, q: Query<Entity, Or<(With<Sun>, With<MirrorLight>)>>) {
+fn despawn_lights(
+    mut commands: Commands,
+    q: Query<Entity, Or<(With<KeyLight>, With<FillLight>, With<MirrorLight>)>>,
+) {
     for e in &q {
         commands.entity(e).try_despawn();
+    }
+}
+
+/// The offscreen cameras (targeting pod, recon photos) get no shadow cascades: Bevy would
+/// render the shadow maps once more for each of them (palette.wgsl `offscreen_view` skips the
+/// lookup there).
+fn no_offscreen_shadows(
+    mut lights: Query<&mut bevy::light::Cascades, With<KeyLight>>,
+    cams: Query<Entity, With<crate::camera::OffscreenCamera>>,
+) {
+    for mut cascades in &mut lights {
+        for cam in &cams {
+            if let Some(c) = cascades.cascades.get_mut(&cam) {
+                c.clear();
+            }
+        }
     }
 }
 
 /// Bevy light units for a lit-surface brightness of 1.0 at the default camera exposure.
 pub const LUX_PER_UNIT: f32 = 2600.0;
 
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn update_sun(
     settings: Res<Settings>,
     palette: Option<Res<Palette>>,
     celestial: Res<crate::sky::Sky>,
     mut state: ResMut<LightingState>,
-    mut sun: Query<(&mut DirectionalLight, &mut Transform), With<Sun>>,
+    mut key: Query<
+        (&mut DirectionalLight, &mut Transform, &bevy::light::CascadeShadowConfig),
+        (With<KeyLight>, Without<FillLight>),
+    >,
+    mut fill: Query<(&mut DirectionalLight, &mut Transform), With<FillLight>>,
     mut ambient: ResMut<GlobalAmbientLight>,
     weather: Res<crate::weather::WeatherState>,
 ) {
@@ -162,7 +275,23 @@ fn update_sun(
     // World shader: ambient + sun keeps sunlit faces near the classic brightness and
     // darkens shadowed ones. Under an overcast the sun is hidden.
     let shade = weather.shade.max(weather.whiteout);
-    let strength = 0.45 * daylight * (1.0 - 0.85 * shade);
+    // The balance balance, also for classic shaders with shadows (the classic one leaves
+    // shadows faint, the more so with the sun low).
+    let balance = (settings.modern_shading || settings.shadows).then(modern_balance);
+    // How far the sun is up: 0 below the horizon .. 1 a few degrees above it (without the
+    // moving sun, from the sky colour).
+    let sun_up = if celestial.on {
+        let t = ((celestial.sun.y + 0.03) / 0.09).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    } else {
+        (daylight * 4.0).min(1.0)
+    };
+    // The sun's strength follows its height, not the sky's brightness (the palette has
+    // that), so a low sun still casts deep shadows.
+    let strength = match balance {
+        Some(b) => b.sun * sun_up,
+        None => 0.45 * daylight,
+    } * (1.0 - 0.85 * shade);
     // Continuous time of day: the moving sun, kept a little above the horizon for the shading.
     let dir = if celestial.on {
         let s = celestial.sun;
@@ -171,22 +300,91 @@ fn update_sun(
         sun_direction()
     };
     state.sun = dir.extend(strength);
-    let flags =
-        (settings.shadows as u32 * LIGHT_SHADOWS) | (settings.local_lights as u32 * LIGHT_LOCAL);
-    state.ambient =
-        Vec4::new(1.0 - strength * 0.6, 1.0 - strength * 0.6, 1.0 - strength * 0.55, flags as f32);
-    if let Ok((mut light, mut tf)) = sun.single_mut() {
-        if celestial.on {
-            *tf = Transform::IDENTITY.looking_to(-dir, Vec3::Y);
+    // Modern shading or shadows: the moon lights the night (`Sky::moonlight` fades it out as
+    // it sets).
+    let moon_strength = match balance.filter(|_| celestial.on) {
+        Some(b) => b.moon * celestial.moonlight * (1.0 - daylight) * (1.0 - 0.85 * shade),
+        None => 0.0,
+    };
+    let m = celestial.moon.normalize_or(Vec3::Y);
+    let moon_dir = Vec3::new(m.x, m.y.max(0.08), m.z).normalize();
+    state.moon = moon_dir.extend(moon_strength);
+    // The moon casts the shadows when it is the brighter one.
+    let moon_key = moon_strength > strength;
+    let flags = (settings.shadows as u32 * LIGHT_SHADOWS)
+        | (settings.local_lights as u32 * LIGHT_LOCAL)
+        | (moon_key as u32 * LIGHT_MOON_KEY);
+    state.ambient = match balance {
+        // The ambient light as a share of the direct light on flat ground: shadowed ground at
+        // `Balance::shadow` of the sunlit, more under an overcast; little direct light (dusk)
+        // leaves little to shadow.
+        Some(b) => {
+            let r = b.shadow + (0.9 - b.shadow) * shade;
+            let on_ground = strength * dir.y.max(0.15) + moon_strength * moon_dir.y.max(0.15);
+            let a = r / (1.0 - r) * on_ground + 0.02;
+            Vec4::new(a, a, a * 1.05, flags as f32)
         }
-        light.illuminance = LUX_PER_UNIT * (0.15 + 0.85 * daylight) * daylight.max(0.05);
-        light.shadow_maps_enabled = settings.shadows && shade < 0.5;
-        light.color = Color::linear_rgb(1.0, 0.97, 0.9);
+        None => {
+            let l = strength + moon_strength;
+            Vec4::new(1.0 - l * 0.6, 1.0 - l * 0.6, 1.0 - l * 0.55, flags as f32)
+        }
+    };
+    // Cockpit: (direction, illuminance, colour) of the sun and the moon, the moon in the same
+    // proportion to the sun as in the world shader.
+    let sun_light = (
+        dir,
+        match balance {
+            Some(b) => b.cockpit_sun * daylight * (1.0 - 0.85 * shade),
+            // A little light at night.
+            None => LUX_PER_UNIT * (0.15 + 0.85 * daylight) * daylight.max(0.05),
+        },
+        Color::linear_rgb(1.0, 0.97, 0.9),
+    );
+    let moon_light = (
+        moon_dir,
+        balance.map_or(0.0, |b| b.cockpit_sun * moon_strength / b.sun),
+        Color::linear_rgb(0.75, 0.85, 1.0),
+    );
+    let (k, f) = if moon_key { (moon_light, sun_light) } else { (sun_light, moon_light) };
+    let shadows = settings.shadows && shade < 0.5;
+    let set = |light: &mut DirectionalLight,
+               tf: &mut Transform,
+               (dir, lux, colour): (Vec3, f32, Color)| {
+        *tf = Transform::IDENTITY.looking_to(-dir, Vec3::Y);
+        light.illuminance = lux;
+        light.color = colour;
+    };
+    if let Ok((mut light, mut tf)) = fill.single_mut() {
+        set(&mut light, &mut tf, f);
+        light.shadow_maps_enabled = false;
+    }
+    state.shadow = Vec4::ZERO;
+    if let Ok((mut light, mut tf, config)) = key.single_mut() {
+        set(&mut light, &mut tf, k);
+        light.shadow_maps_enabled = shadows;
+        // Bevy sorts the directional lights without shadow maps (the fill light) first.
+        if shadows {
+            let n = config.bounds.len().min(4);
+            state.shadow = Vec4::new(fill.iter().len() as f32, n as f32, 0.0, 0.0);
+            let mut b = [f32::MAX; 4];
+            b[..n].copy_from_slice(&config.bounds[..n]);
+            state.shadow_bounds = Vec4::from_array(b);
+        }
     }
     // Cockpit ambient: palette-independent, dim at night (the instrument lights take over).
     ambient.color = Color::linear_rgb(0.8, 0.85, 1.0);
     // Lightning lights the cockpit too.
-    ambient.brightness = 600.0 + 800.0 * daylight + 6000.0 * weather.flash;
+    let flash = 6000.0 * weather.flash;
+    ambient.brightness = match balance {
+        // The night's light fades out as the sun comes up (it would soften the shadows of a
+        // low sun); an overcast turns the hidden sun's light into ambient light.
+        Some(b) => {
+            let (night, day) = b.cockpit_ambient;
+            let day = day + b.cockpit_sun / std::f32::consts::PI * 0.85 * shade * 0.7;
+            night * (1.0 - sun_up) + day * daylight + flash
+        }
+        None => 600.0 + 800.0 * daylight + flash,
+    };
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]

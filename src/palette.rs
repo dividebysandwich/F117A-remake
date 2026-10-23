@@ -369,6 +369,8 @@ fn update_globals(
         settings.modern_shading as u32 as f32,
     );
     g.sun = lighting.sun;
+    g.moon = lighting.moon;
+    (g.shadow, g.shadow_bounds) = (lighting.shadow, lighting.shadow_bounds);
     g.ambient = lighting.ambient;
     g.light_info.x = lighting.lights.len() as f32;
     g.light_info.y = lighting.daylight;

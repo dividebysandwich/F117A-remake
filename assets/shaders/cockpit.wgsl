@@ -1,8 +1,8 @@
 // Cockpit materials (cockpit3d/shading.rs): Bevy's forward StandardMaterial fragment shader in
 // three variants. COCKPIT_UNLIT leaves out the PBR lighting; COCKPIT_SIMPLE_LIT (lit materials
-// without the lighting options) does only what is active then: the directional lights without
-// shadows, the ambient light and emissive, with Bevy's own BRDF; COCKPIT_FULL is Bevy's full
-// lighting (point lights, shadows).
+// without local lights) does only what is active then: the directional lights (with their
+// shadow maps with COCKPIT_SHADOWS), the ambient light and emissive, with Bevy's own BRDF;
+// COCKPIT_FULL is Bevy's full lighting (point lights, shadows).
 
 #import bevy_pbr::{
     mesh_view_bindings::globals,
@@ -23,6 +23,11 @@
     mesh_view_bindings as view_bindings,
 }
 #endif
+#ifdef COCKPIT_SHADOWS
+#import bevy_pbr::shadows
+#import bevy_pbr::mesh_view_types::DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT
+#import bevy_pbr::mesh_types::MESH_FLAGS_SHADOW_RECEIVER_BIT
+#endif
 #ifdef COCKPIT_FULL
 #import bevy_pbr::{
     pbr_functions::apply_pbr_lighting,
@@ -30,9 +35,35 @@
 }
 #endif
 
-// x: darkness of a night without moonlight 0..1, y: night vision goggles, z: daylight 0..1
-// (shading.rs `CockpitShading::night`).
+// x: darkness of a night without moonlight 0..1, y: night vision goggles, z: daylight 0..1,
+// w: classic shaders (shading.rs `CockpitShading::night`).
 @group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> night: vec4<f32>;
+
+#ifdef COCKPIT_SHADOWS
+// Classic shaders: a hard edged shadow (the nearest shadow map texel), like the world's
+// (palette.wgsl `sun_shadow`).
+fn hard_shadow(i: u32, world: vec4<f32>, n: vec3<f32>, view_z: f32) -> f32 {
+    let light = &view_bindings::lights.directional_lights[i];
+    let ci = shadows::get_cascade_index(i, view_z);
+    if (ci >= (*light).num_cascades) {
+        return 1.0;
+    }
+    let cascade = &(*light).cascades[ci];
+    let p = world.xyz + (*light).shadow_normal_bias * (*cascade).texel_size * n
+        + (*light).shadow_depth_bias * (*light).direction_to_light;
+    let l = shadows::world_to_directional_light_local(i, ci, vec4<f32>(p, 1.0));
+    if (l.w == 0.0) {
+        return 1.0;
+    }
+    let size = vec2<f32>(textureDimensions(view_bindings::directional_shadow_textures));
+#ifdef NO_ARRAY_TEXTURES_SUPPORT
+    let d = textureLoad(view_bindings::directional_shadow_textures, vec2<i32>(l.xy * size), 0);
+#else
+    let d = textureLoad(view_bindings::directional_shadow_textures, vec2<i32>(l.xy * size), i32((*light).depth_texture_base_index + ci), 0);
+#endif
+    return select(0.0, 1.0, l.z >= d);
+}
+#endif
 
 #ifdef COCKPIT_SIMPLE_LIT
 // apply_pbr_lighting (bevy_pbr/src/render/pbr_functions.wgsl) for directional lights without
@@ -61,7 +92,20 @@ fn simple_lighting(in: PbrInput) -> vec4<f32> {
 
     var direct = vec3<f32>(0.0);
     for (var i = 0u; i < view_bindings::lights.n_directional_lights; i++) {
-        direct += lighting::directional_light(i, &input, true);
+        var shadow = 1.0;
+#ifdef COCKPIT_SHADOWS
+        if ((in.flags & MESH_FLAGS_SHADOW_RECEIVER_BIT) != 0u
+                && (view_bindings::lights.directional_lights[i].flags & DIRECTIONAL_LIGHT_FLAGS_SHADOWS_ENABLED_BIT) != 0u
+                && dot(in.N, view_bindings::lights.directional_lights[i].direction_to_light) > 0.0) {
+            let view_z = (view_bindings::view.view_from_world * in.world_position).z;
+            if (night.w != 0.0) {
+                shadow = hard_shadow(i, in.world_position, in.world_normal, view_z);
+            } else {
+                shadow = shadows::fetch_directional_shadow(i, in.world_position, in.world_normal, view_z, in.frag_coord.xy);
+            }
+        }
+#endif
+        direct += lighting::directional_light(i, &input, true) * shadow;
     }
     let indirect = ambient::ambient_light(in.world_position, in.N, in.V, NdotV, diffuse_color, F0, perceptual_roughness, in.diffuse_occlusion);
     let emissive = in.material.emissive;

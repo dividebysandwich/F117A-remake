@@ -15,7 +15,7 @@ A Rust/Bevy 0.19 remake of DOS-era 3D flight simulations with VR support
 </p>
 
 ## Features
-* **Play in the browser** right on [stealth-mission.com](https://stealth-mission.com), no install needed
+* **Play in the browser** right on [stealth-mission.com](https://stealth-mission.com) or **locally** [on your PC](https://github.com/dividebysandwich/stealth-mission-89/releases)
 * **Dynamic realtime campaign:** a living war with materiel and dynamic missions, strikes, CSAR, CAP, escort, etc.
 * **Career mode:** pilot records, tours of duty, ranks and medals
 * **Multiplayer:** coop campaigns for up to 64 players, hosted in-game or on a **dedicated server**

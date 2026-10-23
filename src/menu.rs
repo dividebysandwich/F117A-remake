@@ -262,6 +262,7 @@ fn settings_args(cmd: &mut std::process::Command, settings: &crate::settings::Se
         (settings.shadows, "--shadows"),
         (settings.local_lights, "--local-lights"),
         (settings.continuous_time, "--continuous-time"),
+        (settings.sun_moon, "--sun-moon"),
         (settings.classic_cockpit, "--classic-cockpit"),
         (settings.classic_hud, "--classic-hud"),
         (settings.classic_avionics, "--classic-avionics"),
@@ -864,6 +865,7 @@ pub(crate) fn classic_modern_options(
     let mut hud = !s.classic_hud;
     let mut avionics = !s.classic_avionics;
     let mut flight = !s.classic_flight;
+    let sun_moon = &mut s.sun_moon;
     for (modern, name, f) in [
         (
             &mut s.modern_shading,
@@ -932,6 +934,19 @@ pub(crate) fn classic_modern_options(
         ),
     ] {
         toggled |= facts(slide_switch(ui, name, modern), f).changed();
+        // The classic time of day can still show the sun and the moon.
+        if name == "Time of day" && !*modern {
+            ui.indent("sun_moon", |ui| {
+                toggled |= facts(
+                    ui.checkbox(sun_moon, "Sun and moon"),
+                    &[
+                        "The sun in the sky by day, the moon and the stars by night",
+                        "The moon shows the mission's phase",
+                    ],
+                )
+                .changed();
+            });
+        }
     }
     s.classic_cockpit = !cockpit;
     s.classic_hud = !hud;

@@ -392,7 +392,7 @@ fn update_globals(
     }
     (g.clouds, g.weather, g.noise, g.stratus) = weather.globals(origin.origin);
     (g.bolt_a, g.bolt_b) = weather.bolt_light(origin.origin);
-    if sky.on {
+    if sky.on || sky.classic_bodies {
         g.sky_sun = sky.sun.extend(1.0);
         g.sky_moon = sky.moon.extend(sky.stars);
         // Night vision goggles see as well on a moonless night.

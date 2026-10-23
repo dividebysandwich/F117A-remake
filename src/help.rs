@@ -49,6 +49,7 @@ Aircraft and rules
   --realistic-damage           realistic weapon damage
   --no-crashes                 crash protection: collisions and ground contact are not fatal
   --continuous-time            moving sun and moon; moonlight sets the enemy's visual range
+  --sun-moon                   without --continuous-time: sun by day, moon and stars by night
   --air-defence                low-level air defences
   --weather <sky>              random, clear, scattered, broken, overcast, storm
                                (default: rolled from the seed)

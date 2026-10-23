@@ -55,6 +55,8 @@ pub struct Prefs {
     pub shadows: bool,
     pub local_lights: bool,
     pub continuous_time: bool,
+    #[serde(default)]
+    pub sun_moon: bool,
     pub classic_cockpit: bool,
     pub classic_hud: bool,
     pub classic_avionics: bool,
@@ -104,6 +106,7 @@ impl Default for Prefs {
             shadows: false,
             local_lights: false,
             continuous_time: true,
+            sun_moon: true,
             classic_cockpit: false,
             classic_hud: false,
             classic_avionics: false,
@@ -161,6 +164,7 @@ impl Prefs {
             shadows: s.shadows,
             local_lights: s.local_lights,
             continuous_time: s.continuous_time,
+            sun_moon: s.sun_moon,
             classic_cockpit: s.classic_cockpit,
             classic_hud: s.classic_hud,
             classic_avionics: s.classic_avionics,
@@ -210,6 +214,7 @@ impl Prefs {
         s.shadows |= self.shadows;
         s.local_lights |= self.local_lights;
         s.continuous_time |= self.continuous_time;
+        s.sun_moon |= self.sun_moon;
         s.classic_cockpit |= self.classic_cockpit;
         s.classic_hud |= self.classic_hud;
         s.classic_avionics |= self.classic_avionics;
@@ -232,6 +237,7 @@ impl Prefs {
         p.shadows = s.shadows;
         p.local_lights = s.local_lights;
         p.continuous_time = s.continuous_time;
+        p.sun_moon = s.sun_moon;
         p.classic_cockpit = s.classic_cockpit;
         p.classic_hud = s.classic_hud;
         p.classic_avionics = s.classic_avionics;

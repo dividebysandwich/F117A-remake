@@ -47,6 +47,9 @@ pub struct Settings {
     /// `--continuous-time`: the sun and moon move with the mission clock, the palette follows
     /// the sun, moonlight sets the enemy's night sight (sky.rs); off, the classic drift.
     pub continuous_time: bool,
+    /// `--sun-moon`: without continuous time of day, the sky still shows the sun by day and the
+    /// moon and stars by night (sky.rs).
+    pub sun_moon: bool,
     /// `--classic-cockpit`: the classic instrument panel layout and 77x60 displays instead
     /// of the modern panel with high-resolution displays and bezel buttons.
     pub classic_cockpit: bool,
@@ -196,6 +199,7 @@ impl Settings {
             shadows: has("--shadows"),
             local_lights: has("--local-lights"),
             continuous_time: has("--continuous-time"),
+            sun_moon: has("--sun-moon"),
             classic_cockpit: has("--classic-cockpit"),
             classic_hud: has("--classic-hud"),
             classic_avionics: has("--classic-avionics"),

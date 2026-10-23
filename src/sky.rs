@@ -60,6 +60,9 @@ pub struct Sky {
     chosen: Option<f64>,
     /// A campaign's sky (its moon moves on faster).
     campaign: bool,
+    /// Without continuous time of day: the sun or the moon and the stars are drawn anyway
+    /// (`Settings::sun_moon`), over the classic palette.
+    pub classic_bodies: bool,
     /// The golden hour palette in use and its look.
     golden: Option<(Look, VgaPalette)>,
 }
@@ -80,6 +83,7 @@ impl Default for Sky {
             summer: 1.0,
             chosen: None,
             campaign: false,
+            classic_bodies: false,
             golden: None,
         }
     }
@@ -348,6 +352,24 @@ fn reset_sky(
     *sky = Sky { lat, days, summer, chosen, ..default() };
 }
 
+/// The sun and the moon in the classic time of day: by day the sun at the classic light
+/// direction; by night the moon of the mission's phase where it stands at 23:00, and the stars.
+fn classic_bodies(sky: &mut Sky, on: bool, night: bool) {
+    sky.classic_bodies = on;
+    // The classic palette is the sky: no darkness or glow over it.
+    (sky.dark, sky.glow) = (0.0, 0.0);
+    if !night {
+        (sky.sun, sky.moon, sky.stars) = (crate::lighting::sun_direction(), Vec3::NEG_Y, 0.0);
+        return;
+    }
+    let hours = test_hours().unwrap_or(23.0);
+    let phase = test_phase().unwrap_or_else(|| sky.phase_at(hours));
+    sky.sun = sun_dir(hours, sky.lat);
+    sky.moon = moon_dir(hours, sky.lat, phase);
+    let moonlight = illumination(phase) * smoothstep(0.0, 0.25, sky.moon.y as f64);
+    sky.stars = (1.0 - 0.6 * moonlight) as f32;
+}
+
 fn update_sky(
     settings: Res<Settings>,
     clock: Res<crate::mfd::MissionClock>,
@@ -368,8 +390,10 @@ fn update_sky(
         if let Some(mut c) = combat.filter(|c| c.sim.campaign().is_none()) {
             c.sim.set_visual_light(None);
         }
+        classic_bodies(&mut sky, settings.sun_moon, tod.night_mission);
         return;
     }
+    sky.classic_bodies = false;
     let seconds = clock.start_seconds as f64 + clock.elapsed.unwrap_or(0.0) as f64;
     // Test aids: `--sky-hours <h>` sets the local time, `--sky-phase <0..1>` the moon's phase.
     let hours = test_hours().unwrap_or(seconds / 3600.0);

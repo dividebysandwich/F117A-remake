@@ -128,7 +128,7 @@ work like a HOTAS:
 | A / X | Gun (held) | Flare |
 | B / Y | Select weapon | Chaff |
 | Thumbstick | Targeting: up nearest target ahead, down clear target, right next target, left designate | Slews the displays' cursor |
-| Stick click | Lock cursor target | Bay doors |
+| Stick click | Bay doors | Lock cursor target |
 
 The left trigger's brakes are on while it is pulled, also with the hand off the throttle unless its
 fingertip is on a control (any VR button set to *Brakes* works this way). The decoy is on the

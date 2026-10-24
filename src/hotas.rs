@@ -198,12 +198,37 @@ mod key_name {
 
 /// Default VR controller buttons, as a HOTAS: the right hand flies and fights (trigger fires,
 /// A the gun, B the next weapon), its thumbstick only targets (up: nearest target ahead, down:
-/// drop the locks, right: next target, left: designate, click: lock what is under the cursor);
-/// the left hand runs the aircraft (trigger brakes, X flare, Y chaff, stick click bay doors)
-/// and its thumbstick slews the cursor. The decoy is on the cockpit's DECOY button. The
-/// triggers only count while the hand holds the stick or throttle (otherwise they press the
-/// cockpit control under the fingertip). Wheel brakes on a VR button are on while it is held.
+/// drop the locks, right: next target, left: designate, click: bay doors); the left hand runs
+/// the aircraft (trigger brakes, X flare, Y chaff) and its thumbstick slews the cursor, its click
+/// locking what is under it. The decoy is on the cockpit's DECOY button. The triggers only count
+/// while the hand holds the stick or throttle (otherwise they press the cockpit control under the
+/// fingertip). Wheel brakes on a VR button are on while it is held.
 pub fn default_vr_buttons() -> Vec<VrButtonMapping> {
+    use Action as A;
+    use VrHand::*;
+    use VrInput::*;
+    [
+        (Right, Trigger, ButtonTarget::Action(A::FireWeapon)),
+        (Right, Primary, ButtonTarget::Gun),
+        (Right, Secondary, ButtonTarget::Action(A::SelectWeapon)),
+        (Right, ThumbUp, ButtonTarget::Action(A::NearestTarget)),
+        (Right, ThumbDown, ButtonTarget::Action(A::ClearTarget)),
+        (Right, ThumbRight, ButtonTarget::Action(A::SelectTarget)),
+        (Right, ThumbLeft, ButtonTarget::Action(A::DesignateTarget)),
+        (Right, ThumbClick, ButtonTarget::Action(A::BayDoors)),
+        (Left, Trigger, ButtonTarget::Action(A::Brakes)),
+        (Left, Primary, ButtonTarget::Action(A::Flare)),
+        (Left, Secondary, ButtonTarget::Action(A::Chaff)),
+        (Left, ThumbClick, ButtonTarget::Action(A::LockCursor)),
+    ]
+    .into_iter()
+    .map(|(hand, input, target)| VrButtonMapping { hand, input, target })
+    .collect()
+}
+
+/// The default VR buttons from mapping version 5 to 8 (`migrate` replaces them, unchanged, by
+/// the current ones).
+fn vr_buttons_v8() -> Vec<VrButtonMapping> {
     use Action as A;
     use VrHand::*;
     use VrInput::*;
@@ -274,8 +299,8 @@ pub struct InputConfig {
 /// the bombsight mode key. 4: the stick keys (the arrows) became bindable. 5: the rudder keys
 /// (Q / E); the VR thumbsticks as a HOTAS (the right one targets only). 6: the trim keys
 /// (Alt + arrows, Alt + Home). 7: the master caution key (Alt + C). 8: the free view key
-/// (Shift + F7).
-const VERSION: u32 = 8;
+/// (Shift + F7). 9: the VR stick clicks swap (left locks, right bay doors).
+const VERSION: u32 = 9;
 
 impl Default for InputConfig {
     fn default() -> Self {
@@ -355,6 +380,13 @@ impl InputConfig {
         // The old default VR buttons, unchanged, become the new ones (a customised set stays).
         if self.version < 5 {
             let old = vr_buttons_v4();
+            if self.vr_buttons.len() == old.len() && old.iter().all(|m| self.vr_buttons.contains(m))
+            {
+                self.vr_buttons = default_vr_buttons();
+            }
+        }
+        if self.version < 9 {
+            let old = vr_buttons_v8();
             if self.vr_buttons.len() == old.len() && old.iter().all(|m| self.vr_buttons.contains(m))
             {
                 self.vr_buttons = default_vr_buttons();
@@ -844,6 +876,10 @@ mod tests {
         let mut c = InputConfig { version: 4, vr_buttons: custom.clone(), ..default() };
         assert!(c.migrate());
         assert_eq!(c.vr_buttons, custom);
+
+        let mut c = InputConfig { version: 8, vr_buttons: vr_buttons_v8(), ..default() };
+        assert!(c.migrate());
+        assert_eq!(c.vr_buttons, default_vr_buttons());
     }
 
     /// A mapping saved while the stick keys were fixed gets the arrows back as bindings, and

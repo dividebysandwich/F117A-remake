@@ -11,8 +11,8 @@
 //! - SOI: HSD, HARM and the targeting pod can be the sensor of interest: the "sensor/cursor
 //!   slew" controls move its cursor, "lock cursor target" locks what is under it (an aircraft or
 //!   a ground object on the HSD, a radar on the HARM display).
-//! - Targeting pod (TGP): slaved to the locked target; a target key, a display lock or CZ (the
-//!   next ground target) slaves it again. As the SOI, slewing turns the pod itself (area track);
+//! - Targeting pod (TGP): slaved to the locked target; a target key or a display lock slaves it
+//!   again, CZ (cursor zero) turns it to the current steerpoint (point track). As the SOI, slewing turns the pod itself (area track);
 //!   once the slew stops it holds the ground point it looks at (point track), and "lock cursor
 //!   target" locks what is there. SP (snowplow) drops the locks and fixes it ahead of the nose.
 //!   The HSD shows where the pod looks.
@@ -191,6 +191,8 @@ pub struct TgpState {
     pub los: Option<Vec3>,
     /// SP pressed: the simulation is to drop its locks.
     clear: bool,
+    /// CZ pressed: the pod is to hold the current steerpoint (`update_pod`, which has the route).
+    cz: bool,
 }
 
 impl TgpMode {
@@ -480,6 +482,7 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
         }
         // A target key or a display lock: the pod follows the lock again.
         MfdCmd::TgpSlave => av.tgp.mode = TgpMode::Slaved,
+        MfdCmd::TgpCz => av.tgp.cz = true,
         // Applied before (`mfd::cam_zoom`).
         MfdCmd::CamZoom(_) | MfdCmd::CamZoomCycle => {}
         MfdCmd::Ils => {
@@ -548,8 +551,8 @@ pub fn osb(side: MfdSide, slot: u8, s: &MfdState) -> Option<(&'static str, OsbFn
             s.cam_zoom.is_some(),
         ),
         (Format::Tgp, 2) => ("SP", Cmd(MfdCmd::TgpSp), av.tgp.mode == TgpMode::Snowplow),
-        // CZ: the next ground target (as B), not in A-A.
-        (Format::Tgp, 3) if !s.air => ("CZ", Action(A::SelectTarget), false),
+        // CZ: the pod to the current steerpoint, not in A-A.
+        (Format::Tgp, 3) if !s.air => ("CZ", Cmd(MfdCmd::TgpCz), false),
         (Format::Map, 0) if av.map_way => ("WP-", Action(A::LastWaypoint), false),
         (Format::Map, 1) if av.map_way => ("WP+", Action(A::NextWaypoint), false),
         (Format::Map, 2) if av.map_way => ("RST", Action(A::ResetWaypoint), false),
@@ -1171,6 +1174,7 @@ fn update_pod(
     settings: Res<crate::settings::Settings>,
     mut combat: Option<ResMut<crate::combat::Combat>>,
     mut designate: MessageWriter<PodDesignate>,
+    waypoints: Res<crate::hud::Waypoints>,
 ) {
     let lock = actions.read().any(|a| a.0 == Action::LockCursor);
     // The gunship's pod is always up (its turret and Hellfires follow it).
@@ -1186,7 +1190,6 @@ fn update_pod(
     }
     let Ok((a, pos)) = aircraft.single() else { return };
     let shown = state.camera_shown();
-    let soi = state.av.soi_format() == Some(Format::Tgp);
     // The gunship's slaved pod follows its sight whether its page is up or not (the page
     // shows what it looks at).
     let sight = helmet_sight(&eyes, view.view).filter(|_| turret);
@@ -1204,6 +1207,18 @@ fn update_pod(
         camera.single().ok().filter(|_| shown && info.live).map(|t| t.forward().as_vec3())
     };
     let ground_y = crate::world::wu_to_bevy(0.0, 0.0, a.ground_altitude as f64).y;
+    // CZ: point track on the current steerpoint, the pod the SOI to slew on from there.
+    if std::mem::take(&mut state.av.tgp.cz)
+        && let Some(wp) = waypoints.target()
+    {
+        let p = crate::world::wu_to_bevy(wp.east, wp.north, a.ground_altitude as f64);
+        state.av.tgp.mode = TgpMode::Point(p);
+        state.av.tgp.idle = 0.0;
+        if shown {
+            state.av.soi = Some(Format::Tgp);
+        }
+    }
+    let soi = state.av.soi_format() == Some(Format::Tgp);
     let zoom = state.cam_zoom.unwrap_or(info.zoom.saturating_sub(1));
     let slew = if soi && shown { controls.slew } else { Vec2::ZERO };
     let tgp = &mut state.av.tgp;
@@ -1599,11 +1614,13 @@ mod tests {
         pod_step(&mut s.av.tgp, Vec2::Y, 0.5, 0, turned, origin, None, 0.0);
         let TgpMode::Area { az, el } = s.av.tgp.mode else { panic!("{:?}", s.av.tgp.mode) };
         assert!(az.abs() < 1e-5 && (el - SP_EL - 0.25).abs() < 1e-4, "{az} {el}");
-        // A target key slaves it again; CZ is the next target, but not in A-A.
+        // A target key slaves it again; CZ (to the steerpoint), but not in A-A.
         apply(&mut s, raster, MfdCmd::TgpSlave);
         assert_eq!(s.av.tgp.mode, TgpMode::Slaved);
         let cz = osb(MfdSide::Right, 3, &s).map(|o| (o.0, o.1));
-        assert_eq!(cz, Some(("CZ", OsbFn::Action(Action::SelectTarget))));
+        assert_eq!(cz, Some(("CZ", OsbFn::Cmd(MfdCmd::TgpCz))));
+        apply(&mut s, raster, MfdCmd::TgpCz);
+        assert!(s.av.tgp.cz);
         s.air = true;
         assert_eq!(osb(MfdSide::Right, 3, &s), None);
     }

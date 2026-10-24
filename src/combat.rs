@@ -325,7 +325,7 @@ fn start_combat(
         heading: bam(st.heading as f32),
         carrier: m.takeoff.carrier,
     });
-    orders.lines = m.orders.lines.iter().map(|l| (l.color, clean_text(&l.text))).collect();
+    orders.set(m.orders.lines.iter().map(|l| (l.color, clean_text(&l.text))).collect());
     // 1 clock tick = 2 s after 06:00 / 18:00.
     *clock = MissionClock {
         start_seconds: m.time.base_hour as f32 * 3600.0 + m.time.tod_ticks as f32 * 2.0,
@@ -906,6 +906,7 @@ struct Outputs<'w, 's> {
     tiles: Res<'w, TileOverrides>,
     time: Res<'w, Time>,
     mfd: Res<'w, MfdState>,
+    orders: ResMut<'w, MissionOrders>,
 }
 
 /// Map units -> world units (east, north).
@@ -1171,7 +1172,14 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         tiles,
         time: _,
         mfd,
+        mut orders,
     } = out;
+    // Achieved stays achieved (a campaign sortie's objective is ticked by the campaign).
+    for (k, done) in [o.primary_done, o.secondary_done].into_iter().enumerate() {
+        if done && !orders.done[k] {
+            orders.done[k] = true;
+        }
+    }
     let eye = settings.cockpit_eye();
     let sim = &combat.sim;
     let data = &combat.data;

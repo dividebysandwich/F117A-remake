@@ -180,6 +180,7 @@ fn cmd_text(c: MfdCmd) -> String {
         MfdCmd::CamZoomCycle => "Camera zoom: auto, 1X to 6X".into(),
         MfdCmd::TgpSp => "Targeting pod snowplow: locks dropped, fixed ahead".into(),
         MfdCmd::TgpSlave => "Targeting pod back to slaved".into(),
+        MfdCmd::TgpCz => "Cursor zero: targeting pod to the current steerpoint".into(),
     }
 }
 

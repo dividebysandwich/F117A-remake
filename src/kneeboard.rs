@@ -8,6 +8,8 @@
 //! The KEYS page is the key guide (`key_guide.rs`), scrolled with the mouse wheel over the board
 //! or, in VR, the thumbstick of the hand carrying it or with a fingertip over it.
 
+use std::sync::Arc;
+
 use bevy::input::mouse::AccumulatedMouseScroll;
 use bevy::light::NotShadowCaster;
 use bevy::math::DVec2;
@@ -17,7 +19,7 @@ use bevy::ui::RelativeCursorPosition;
 use stealth_sim::oflags;
 
 use crate::camera::EyeCamera;
-use crate::canvas::{Canvas, CanvasTexture};
+use crate::canvas::{Canvas, CanvasTexture, Picture};
 use crate::cockpit3d::{CockpitRoot, Hands};
 use crate::flight::Player;
 use crate::font::{Align, stroke_text_at, stroke_width};
@@ -550,6 +552,45 @@ impl Writer<'_> {
             self.y += 26.0;
         }
     }
+
+    /// An objective's paragraph, ticked in the margin once achieved.
+    fn objective(&mut self, s: &str, col: u8, done: bool) {
+        if done && self.y <= H as f32 - 24.0 {
+            let y = self.y;
+            self.c.polyline(
+                &[Vec2::new(8.0, y), Vec2::new(14.0, y + 6.0), Vec2::new(24.0, y - 8.0)],
+                3.0,
+                GREEN,
+            );
+        }
+        self.para(s, col);
+    }
+}
+
+/// A large tick over a photo-sized area at `at`: a black outline under the colour.
+fn tick(c: &mut Canvas, at: Vec2, w: f32, h: f32, col: u8) {
+    let pts = [(0.3, 0.55), (0.45, 0.75), (0.72, 0.28)].map(|(x, y)| at + Vec2::new(x * w, y * h));
+    let pen = h * 0.07;
+    c.polyline(&pts, pen + 4.0, BG);
+    c.polyline(&pts, pen, col);
+}
+
+/// A ticked photo (`tick_photo`) by the photo it was made from.
+type TickedPhoto = (usize, Arc<Picture>);
+
+/// A copy of a recon photo with the tick of an achieved objective over it.
+fn tick_photo(photo: &Picture) -> Picture {
+    let mut mask = Canvas::new(photo.w, photo.h);
+    tick(&mut mask, Vec2::ZERO, photo.w as f32, photo.h as f32, 1);
+    let mut out = Picture { w: photo.w, h: photo.h, rgba: photo.rgba.clone() };
+    for (o, &m) in out.rgba.as_chunks_mut::<4>().0.iter_mut().zip(&mask.px) {
+        match m {
+            1 => *o = [0x55, 0xFF, 0x55, 0xFF],
+            BG => *o = [0, 0, 0, 0xFF],
+            _ => {}
+        }
+    }
+    out
 }
 
 fn clock(seconds: f64) -> String {
@@ -572,9 +613,11 @@ fn draw(
     sky: Res<crate::sky::Sky>,
     config: Res<InputConfig>,
     settings: Res<Settings>,
+    orders: Res<crate::mfd::MissionOrders>,
+    mut ticked: Local<[Option<TickedPhoto>; 2]>,
 ) {
     kb.timer += time.delta_secs();
-    if recon.is_changed() {
+    if recon.is_changed() || orders.is_changed() {
         kb.dirty = true;
     }
     let visible = !kb.hidden || kb.overlay;
@@ -621,8 +664,8 @@ fn draw(
             w.para(&b.title, WHITE);
             w.para(&b.base_date_line, GREY);
             w.heading("OBJECTIVES");
-            w.para(&format!("PRIMARY: {}", b.primary_objective), GREEN);
-            w.para(&format!("SECONDARY: {}", b.secondary_objective), WHITE);
+            w.objective(&format!("PRIMARY: {}", b.primary_objective), GREEN, orders.done[0]);
+            w.objective(&format!("SECONDARY: {}", b.secondary_objective), WHITE, orders.done[1]);
             w.heading("TIMES");
             w.para(&b.depart_line, WHITE);
             w.para(&b.land_line, WHITE);
@@ -770,9 +813,9 @@ fn draw(
             let t = &m.primary;
             let mut w = Writer { c, y: TABS + 34.0 };
             w.para(&format!("{} - {}", t.type_name, t.place_name), GREEN);
-            w.para(&format!("PRIMARY: {}", b.primary_objective), WHITE);
+            w.objective(&format!("PRIMARY: {}", b.primary_objective), WHITE, orders.done[0]);
             if !b.secondary_objective.is_empty() {
-                w.para(&format!("SECONDARY: {}", b.secondary_objective), CYAN);
+                w.objective(&format!("SECONDARY: {}", b.secondary_objective), CYAN, orders.done[1]);
             }
             // Recon photos of the primary and the secondary target, side by side.
             let top = w.y as i32 - 6;
@@ -785,7 +828,17 @@ fn draw(
                 }
                 let x = 16 + k as i32 * (MAP_W as i32 - pw);
                 let mid = Vec2::new((x + pw / 2) as f32, (top + ph / 2) as f32);
+                let done = orders.done[k];
                 match &recon.photos[k] {
+                    // An achieved objective's photo carries a tick (made once per photo).
+                    Some(photo) if done => {
+                        let id = Arc::as_ptr(photo) as usize;
+                        if ticked[k].as_ref().is_none_or(|t| t.0 != id) {
+                            ticked[k] = Some((id, Arc::new(tick_photo(photo))));
+                        }
+                        let pic = ticked[k].as_ref().map(|t| t.1.clone()).unwrap();
+                        tex.pictures.push((UVec2::new(x as u32, top as u32), pic))
+                    }
                     Some(photo) => {
                         tex.pictures.push((UVec2::new(x as u32, top as u32), photo.clone()))
                     }
@@ -799,6 +852,9 @@ fn draw(
                             "NO PHOTO"
                         };
                         stroke_text_at(c, mid.x, mid.y, note, 18.0, 2.4, GREY, Align::Centre);
+                        if done {
+                            tick(c, Vec2::new(x as f32, top as f32), pw as f32, ph as f32, GREEN);
+                        }
                     }
                 }
                 let (a, z) = (

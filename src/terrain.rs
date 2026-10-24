@@ -7,7 +7,8 @@
 //!   edge on such a line gets the same points, so the stacked overlays stay seamless; edges on
 //!   a model's outline (tile seams) and the original vertices stay where they were.
 //! - Mountains: the large raised terrain models are subdivided two or three times with their
-//!   edge midpoints pushed along the surface normal (the ground outline stays), and the new
+//!   edge midpoints pushed along the surface normal (the ground outline and the open edges
+//!   where a range continues in the next model stay straight, so the pieces meet), and the new
 //!   faces step a little along their colour ramp by their slope to the sun, like the theater
 //!   models' per-face shading. The refined surface replaces their plane hull for collisions.
 
@@ -860,11 +861,14 @@ fn mountain(geo: &mut Geometry, levels: u32, available: &dyn Fn(u8) -> bool) -> 
         .collect();
     let mut mids: Vec<HashMap<EdgeKey, Vec3>> = Vec::new();
     for amplitude in MOUNTAIN_AMPLITUDE.iter().take(levels as usize) {
-        let mut adjacent: HashMap<EdgeKey, Vec3> = HashMap::new();
+        // Summed face normals and face count by edge.
+        let mut adjacent: HashMap<EdgeKey, (Vec3, u32)> = HashMap::new();
         for s in &subs {
             let n = normal(&s.t);
             for e in 0..3 {
-                *adjacent.entry(edge_key(s.t[e], s.t[(e + 1) % 3])).or_default() += n;
+                let a = adjacent.entry(edge_key(s.t[e], s.t[(e + 1) % 3])).or_default();
+                a.0 += n;
+                a.1 += 1;
             }
         }
         let mut level_mids: HashMap<EdgeKey, Vec3> = HashMap::new();
@@ -875,7 +879,10 @@ fn mountain(geo: &mut Geometry, levels: u32, available: &dyn Fn(u8) -> bool) -> 
                 if a.y < 1.0 && b.y < 1.0 {
                     return m; // the ground outline stays
                 }
-                let n = adjacent.get(&key).copied().unwrap_or(Vec3::Y).normalize_or_zero();
+                // An open edge (one face): the range goes on in the neighbouring model, which
+                // cannot know this one's offsets, so it stays straight for both to meet.
+                let Some(&(n, 2..)) = adjacent.get(&key) else { return m };
+                let n = n.normalize_or_zero();
                 let h = (mix(key.iter().fold(0x5EED_u64, |h, &k| mix(h ^ k as u64))) >> 11) as f32
                     / (1u64 << 53) as f32;
                 let off = (h * 1.35 - 0.35) * amplitude * a.distance(b);

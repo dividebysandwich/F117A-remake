@@ -197,10 +197,6 @@ pub fn all_actions() -> Vec<Action> {
     for &(_, _, a) in BINDINGS {
         if !out.contains(&a) {
             out.push(a);
-            // The actions without a default key follow the one they belong with.
-            if a == UNBOUND_BY_DEFAULT.0 {
-                out.extend(UNBOUND_BY_DEFAULT.1);
-            }
         }
     }
     out
@@ -255,11 +251,6 @@ pub enum Mods {
     Alt,
 }
 
-/// Actions without a default key, still listed in the input mapping right after the given one
-/// (the rudder keys after the roll keys).
-const UNBOUND_BY_DEFAULT: (Action, [Action; 2]) =
-    (Action::RollRight, [Action::YawLeft, Action::YawRight]);
-
 /// Default bindings, from the manual's key summary (IBM version); the input mapping can change
 /// them.
 const BINDINGS: &[(Mods, KeyCode, Action)] = {
@@ -271,6 +262,9 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::ArrowDown, PitchUp),
         (None, K::ArrowLeft, RollLeft),
         (None, K::ArrowRight, RollRight),
+        // Remake: the rudder (the helicopters' pedals), left hand.
+        (None, K::KeyQ, YawLeft),
+        (None, K::KeyE, YawRight),
         (None, K::Equal, ThrottleUp),
         (None, K::NumpadAdd, ThrottleUp),
         (None, K::Minus, ThrottleDown),

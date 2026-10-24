@@ -479,9 +479,12 @@ pub struct HudFrame {
     /// Height above the ground, feet.
     pub radar_alt: f32,
     /// Current waypoint: (number, km, seconds to go at the current speed) and its direction
-    /// from the aircraft (Bevy frame, not normalised).
+    /// from the cockpit eye (Bevy frame, not normalised).
     pub steerpoint: Option<(usize, f32, f32)>,
     pub steerpoint_dir: Option<Vec3>,
+    /// Where the targeting pod looks on the ground, from the cockpit eye (Bevy frame, not
+    /// normalised), while it is up.
+    pub tgp_dir: Option<Vec3>,
     /// Lock range of the selected weapon (km), range to the locked target (km).
     pub weapon_range_km: Option<f32>,
     pub target_range_km: Option<f32>,
@@ -546,10 +549,9 @@ impl HudParams<'_, '_> {
         let (_, sound) = speed_of_sound(a.altitude);
         let path = a.path_dir();
         let body = a.orientation.inverse() * path;
+        let eye = pos.0 + (a.orientation * self.settings.cockpit_eye()).as_dvec3();
         let steer = self.waypoints.target().filter(|_| !a.damage.autopilot_failed).map(|wp| {
-            let (e, n, _) = bevy_to_wu(pos.0);
-            let d = crate::world::wu_to_bevy(wp.east, wp.north, a.ground_altitude as f64)
-                - crate::world::wu_to_bevy(e, n, a.altitude as f64);
+            let d = crate::world::wu_to_bevy(wp.east, wp.north, a.ground_altitude as f64) - eye;
             let km = (d.x.hypot(d.z) / 1000.0) as f32;
             let ms = knots * 0.5144;
             (
@@ -605,6 +607,11 @@ impl HudParams<'_, '_> {
             radar_alt: (a.altitude - a.ground_altitude).max(0.0),
             steerpoint: steer.map(|s| s.0),
             steerpoint_dir: steer.map(|s| s.1),
+            tgp_dir: self
+                .mfd
+                .as_ref()
+                .and_then(|m| m.av.tgp.los_ground)
+                .map(|p| (p - eye).as_vec3()),
             weapon_range_km: bay.filter(|b| b.range_km > 0.0).map(|b| b.range_km),
             target_range_km: self.cam.as_ref().and_then(|c| c.range_km),
             heli: self.settings.aircraft.spec().helicopter.then(|| {

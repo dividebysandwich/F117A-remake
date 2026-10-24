@@ -60,6 +60,7 @@ impl Plugin for SoundPlugin {
                     beacon,
                     fire_siren,
                     sidewinder_tones,
+                    objective_sound,
                 )
                     .chain()
                     .run_if(in_state(AppState::Flight)),
@@ -213,6 +214,8 @@ const TURBINE_VOLUME: f32 = 0.35;
 
 /// Sound id of an anti-aircraft shell burst nearby (not an AdLib sound).
 pub const AIRBURST: u8 = 110;
+/// Sound id of an objective achieved (`sounds/objective_complete.flac`, optional).
+pub const OBJECTIVE: u8 = 111;
 
 fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     let mut bank = SoundBank::default();
@@ -250,6 +253,9 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     };
     if let Some(h) = optional("airburst.flac") {
         bank.sfx.entry(AIRBURST).or_default().push(h);
+    }
+    if let Some(h) = optional("objective_complete.flac") {
+        bank.sfx.entry(OBJECTIVE).or_default().push(h);
     }
     bank.beacon = optional("beacon.flac");
     bank.siren = optional("fire_siren.flac");
@@ -313,6 +319,18 @@ fn play_sounds(
         debug!("sound {} (priority {})", r.id, r.priority);
         commands.spawn((AudioPlayer(handle), PlaybackSettings::DESPAWN, OneShot(r.id)));
     }
+}
+
+/// An objective just achieved (ticked in the mission orders): its sound, if there is one.
+fn objective_sound(
+    orders: Res<crate::mfd::MissionOrders>,
+    mut was: Local<[bool; 2]>,
+    mut sounds: MessageWriter<PlaySound>,
+) {
+    if (0..2).any(|k| orders.done[k] && !was[k]) {
+        sounds.write(PlaySound { id: OBJECTIVE, priority: 3 });
+    }
+    *was = orders.done;
 }
 
 /// Sounds triggered from the flight step and frame update.

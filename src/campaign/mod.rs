@@ -855,6 +855,7 @@ fn handle(c: &mut ActiveCampaign, s: &mut Session, events: Vec<HostEvent>) {
                 if player == me =>
             {
                 s.msgs.show("Objective achieved");
+                s.orders.done[0] = true;
             }
             // A client's copy has the plans at once (the host's state has them already).
             HostEvent::Campaign(CampaignEvent::PlansChanged(plans)) => {
@@ -900,8 +901,9 @@ fn begin_sortie(c: &mut ActiveCampaign, s: &mut Session, sortie: &Sortie, start:
         mission_current: 0,
         anchors: route.anchors(),
     };
-    s.orders.lines =
-        m.orders.lines.iter().map(|l| (l.color, crate::mission::clean_text(&l.text))).collect();
+    s.orders.set(
+        m.orders.lines.iter().map(|l| (l.color, crate::mission::clean_text(&l.text))).collect(),
+    );
     s.commands.insert_resource(route);
     s.commands.insert_resource(loadout);
     s.commands.insert_resource(ActiveMission(m));

@@ -105,11 +105,21 @@ to all later flights.
 
 **VR controllers**: the last section assigns an action to each VR controller input (trigger, A/X,
 B/Y, stick click, stick directions) per hand. **DEFAULTS** restores the default assignment. A
-trigger only counts while that hand holds the throttle (left) or the stick (right). By default
-the right trigger fires, the left trigger holds the wheel brakes (on while pulled, also with the
-hand off the throttle unless its fingertip is on a control; any VR button set to *Brakes* works
-this way) and the right thumbstick pushed left opens and closes the bay
-doors; the left thumbstick slews the displays' cursor.
+trigger only counts while that hand holds the throttle (left) or the stick (right). The defaults
+work like a HOTAS:
+
+| | Right controller (stick) | Left controller (throttle) |
+|---|---|---|
+| Trigger | Fire weapon | Wheel brakes (held) |
+| A / X | Gun (held) | Flare |
+| B / Y | Select weapon | Chaff |
+| Thumbstick | Targeting: up nearest target ahead, down clear target, right next target, left designate | Slews the displays' cursor |
+| Stick click | Lock cursor target | Bay doors |
+
+The left trigger's brakes are on while it is pulled, also with the hand off the throttle unless its
+fingertip is on a control (any VR button set to *Brakes* works this way). The decoy is on the
+cockpit's DECOY button. A mapping still on the old defaults is switched to these once; a
+customised one is kept.
 
 ## 3. The cockpit
 
@@ -155,7 +165,11 @@ drawn at half the size, about the F-16C's, so it stays in the middle of the larg
 
 The modes add their own symbols:
 
-* **NAV:** a diamond on the steerpoint on the ground.
+* **NAV:** a diamond on the steerpoint on the ground; when the steerpoint is outside the HUD it
+  waits at the HUD's edge in its direction, crossed out.
+
+In every mode a small circle with a dot marks where the targeting pod looks while the TGP page is
+up on an MFD (the classic HUD shows it and the steerpoint diamond too).
 * **AA:** the target designator box with the missile diamond once locked, the range below it;
   with an air-to-air missile selected the steering circle and dot, *SHOOT* in range, and the
   launch zone scale (maximum and minimum range, target range caret).
@@ -290,7 +304,7 @@ Under the right MFD, right of the fuel quantity: **FUEL** (fuel in lbs divided b
 
 The F-16C has its own cockpit, laid out like the real Block 50's. Under the HUD the **up-front
 controls** stand out of the panel: the round override buttons along the top (**COM1** is the
-sound volume, **LIST** the settings menu, **A-A** and **A-G** the master modes; pressing A-A again
+sound volume, **MENU** the settings menu, **A-A** and **A-G** the master modes; pressing A-A again
 returns to NAV, pressing A-G again switches the bombsight between CCIP and CCRP) and the keypad with the real page labels, of which **1 T-ILS** (ILS),
 **4 STPT** (the WAY page), **6 TIME** (time acceleration) and **7 MARK** (designate) work, with
 **DCLT** (HUD declutter) and **NVG** right of them. The **DED** (data entry display) right of the
@@ -333,7 +347,7 @@ the air.
 ### 3.8 In-flight settings menu
 
 **Esc** (also Pause, Alt P, the gamepad's Start button, the **MENU** cap of the F-117A's up-front
-display or the F-16C's **LIST** key) opens the settings menu and pauses the flight: in VR a screen in front of the pilot, on
+display or the F-16C's **MENU** key) opens the settings menu and pauses the flight: in VR a screen in front of the pilot, on
 the desktop over the middle of the window. In VR, touch an
 entry with a fingertip and pull the trigger, or use a thumbstick and A / X. On the desktop, click
 an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
@@ -362,8 +376,10 @@ current waypoint highlighted), **MAP** (the route on the theater map with the ra
 ranges and your position) and **TARGET** (a close-up of the primary target's surroundings with a
 2 km scale and its grid reference, and the intelligence summary). In VR touch a tab with a
 fingertip; on the desktop click one. **K** shows the kneeboard large over the view on the desktop
-and turns its pages, the last one hides it again; in VR the *Kneeboard* action (bind it to a
-controller button in the input mapping) hides or shows the board. In VR you can also squeeze the
+and turns its pages, the last one hides it again; in VR **K** or the *Kneeboard* action (bind it
+to a controller button in the input mapping) hides or shows the board. An achieved objective is
+ticked on the BRIEF and TARGET pages and on the ORD page, and plays
+`assets/sounds/objective_complete.flac` if that file exists. In VR you can also squeeze the
 grip with a hand on the board to pick it up and put it anywhere in the cockpit: it stays floating
 where you let go (until the next flight).
 
@@ -464,11 +480,12 @@ symbols, so a turn doesn't take the cursor off its target.
 
 **Targeting pod.** The TGP follows the locked target (SLV); without one it looks ahead and down,
 or where the camera keys turn it. Every target key (B, T, the camera keys), a lock on the HSD and
-CZ put it back to SLV on the new lock. Made the SOI, the slew controls turn the pod itself (AREA,
+a display lock put it back to SLV on the new lock. Made the SOI, the slew controls turn the pod itself (AREA,
 slower when zoomed in); a moment after the slew stops it holds the ground point it looks at (PNT),
 wherever the aircraft flies. **Lock cursor target** then locks what is at that point (the ground
-itself if nothing is there) and the pod follows the lock again. **CZ** snaps the pod to the next
-ground target (as B; not in A-A, where the button is blank). **SP** (snowplow, with the pod the
+itself if nothing is there) and the pod follows the lock again. **CZ** (cursor zero) turns the pod to
+the current steerpoint and holds it there (PNT) as the SOI, to slew on from there or lock with
+**Lock cursor target** (not in A-A, where the button is blank). **SP** (snowplow, with the pod the
 SOI) drops the locks and points the pod straight ahead of the nose and a little down, turning with
 the aircraft without holding the ground or locking anything, until you slew it (the slew starts
 from there) or press a target key. The zoom button steps AUTO, 1X .. 6X; `[` / `]` (and Z / X
@@ -704,7 +721,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | Group | Action | Key |
 |---|---|---|
 | **Flight** | Stick (pitch / roll) | Arrow keys (rebindable); double-tap for full deflection |
-| | Rudder (yaw) left / right | Unbound by default; bind keys in the input mapping |
+| | Rudder (yaw) left / right | Q / E |
 | | Stick sensitivity | Ins |
 | | Throttle up / down | `=` / `-` |
 | | Full / idle throttle | Shift `=` / Shift `-` |

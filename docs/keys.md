@@ -14,7 +14,7 @@ grouped by topic, with the mouse (desktop) or the VR controllers.
 |---|---|---|
 | Stick | pitch down / up | Up / Down arrow |
 | | roll left / right | Left / Right arrow |
-| | yaw (rudder) left / right (remake) | unbound (bind them in the CONTROLS dialog) |
+| | yaw (rudder) left / right (remake) | Q / E |
 | | stick sensitivity (tiny/small/medium) | Ins |
 | | max stick movement | fast double-press of a direction |
 | Throttle | max power / no power | Shift + `=` (`+`) / Shift + `-` |

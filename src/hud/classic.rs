@@ -6,6 +6,8 @@ use crate::canvas::Canvas;
 use crate::cockpit::CockpitArt;
 use crate::font::{Fonts, upper};
 
+use bevy::math::Vec3;
+
 use super::{CX, CY, HUD_COLOURS, HudFrame, HudMode};
 
 /// HUD lines drawn over the 3D view: colour 0 would be see-through there, so black is
@@ -150,6 +152,17 @@ fn overlay(c: &mut Canvas, atlas: &Canvas, fonts: &Fonts, f: &HudFrame, col: u8,
             c.line(x - 2, 11, x + 2, 11, 11);
         }
     }
+    // Steerpoint diamond (NAV) and the targeting pod's line of sight, where they are seen.
+    let inv = f.orientation.inverse();
+    if st.mode == HudMode::Nav
+        && let Some((x, y)) = f.steerpoint_dir.and_then(|d| project(f, inv * d))
+    {
+        diamond(c, x, y, 11);
+    }
+    if let Some((x, y)) = f.tgp_dir.and_then(|d| project(f, inv * d)) {
+        ellipse(c, x, y, 3, 3, col);
+        c.set(x, y, col);
+    }
     weapon_cues(c, f, col);
     if let Some((loc, gs)) = f.ils {
         ils_cross(c, f, loc, gs, col);
@@ -223,6 +236,19 @@ fn target_box(c: &mut Canvas, x: i32, y: i32, size: i32, oval: bool, red: bool, 
         let grow = if red { 3 } else { 7 };
         ellipse(c, x, y, hw + grow, hh + grow - 1, col);
     }
+}
+
+/// Screen point of a direction in the aircraft frame, as `combat::project_cockpit` and moved
+/// out as the glass shrinks the HUD (as the weapon cues); None behind or off the HUD.
+fn project(f: &HudFrame, d: Vec3) -> Option<(i32, i32)> {
+    let z = -d.z;
+    if z < 1e-3 {
+        return None;
+    }
+    let k = super::classic_zoom(f.scale) * crate::cockpit::FOCAL / z;
+    let (x, y) =
+        (CX + (k * d.x).round() as i32, CY - (k * crate::cockpit::VSCALE * d.y).round() as i32);
+    ((4..316).contains(&x) && (4..87).contains(&y)).then_some((x, y))
 }
 
 /// 4-pixel diamond.

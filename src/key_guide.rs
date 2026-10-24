@@ -446,7 +446,15 @@ mod tests {
             }
         }
         assert!(lines.iter().any(|l| matches!(l, Line::Row(k, _, true) if k == "UP / DOWN")));
-        assert!(lines.iter().any(|l| matches!(l, Line::Row(k, _, false) if k == "UNBOUND")));
+        let rudder = |l: &Line| matches!(l, Line::Row(_, w, true) if w == "Rudder left / right");
+        assert!(lines.iter().any(rudder));
+        let mut config = InputConfig::default();
+        config.keys.retain(|k| {
+            !matches!(k.target, ButtonTarget::Action(Action::YawLeft | Action::YawRight))
+        });
+        let unbound = super::lines(&config, false);
+        assert!(unbound.iter().any(|l| matches!(l, Line::Row(k, _, false) if k == "UNBOUND")));
+        assert!(!unbound.iter().any(rudder));
     }
 
     #[test]

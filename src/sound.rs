@@ -206,6 +206,10 @@ const ENGINE_SFX: [u8; 2] = [11, 12];
 /// The sounds still heard after ejecting: impact, explosion, the ejection, signal flare.
 const EJECTED_SOUNDS: [u8; 4] = [4, 5, 0x14, 0x1C];
 
+/// The sounds that play again over themselves: a missile launch and a bomb release, one for
+/// each store however fast they go.
+const OVERLAPPING: [u8; 2] = [0x0D, 0x10];
+
 /// Fire warning siren volume.
 const SIREN_VOLUME: f32 = 0.35;
 
@@ -284,7 +288,8 @@ struct SoundBank {
     aim9: [Option<Handle<AudioSource>>; 3],
 }
 
-/// A playing one-shot sound (one instance per id at a time, like the single-voice driver).
+/// A playing one-shot sound (one instance per id at a time, like the single-voice driver, but
+/// for `OVERLAPPING`).
 #[derive(Component)]
 struct OneShot(u8);
 
@@ -480,8 +485,9 @@ fn play_sounds(
         }
         let allowed =
             r.priority == DIRECT || (level.0 > 0 && r.priority as i32 >= 3 - level.0 as i32);
-        if !allowed || !survives(r.id) || playing.iter().any(|(_, p)| p.0 == r.id && survives(p.0))
-        {
+        let busy = !OVERLAPPING.contains(&r.id)
+            && playing.iter().any(|(_, p)| p.0 == r.id && survives(p.0));
+        if !allowed || !survives(r.id) || busy {
             continue;
         }
         // The jet's engine loop spools up and down itself.

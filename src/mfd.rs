@@ -534,6 +534,8 @@ pub struct Threat {
     pub label: [u8; 3],
     /// Doppler radar (dotted ring; pulse radars solid).
     pub doppler: bool,
+    /// The ring is drawn (a campaign's enemy site: once friendly aircraft have detected it).
+    pub ring: bool,
 }
 
 /// A lockable simulation object.

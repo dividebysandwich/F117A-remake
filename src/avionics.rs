@@ -982,8 +982,10 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
             ContactKind::GroundRadar => {
                 let colour = if k.friendly { GREEN } else { RED };
                 if let Some(t) = k.threat {
-                    let ring = if k.friendly { GREEN } else { YELLOW };
-                    threat_ring(c, q, t.km * px_per_km, t.doppler, ring);
+                    if t.ring {
+                        let ring = if k.friendly { GREEN } else { YELLOW };
+                        threat_ring(c, q, t.km * px_per_km, t.doppler, ring);
+                    }
                     let text = String::from_utf8_lossy(&t.label).trim_end_matches('\0').to_string();
                     stroke_text_at(c, q.x, q.y, &text, 9.0, 1.3, colour, Align::Centre);
                 } else {

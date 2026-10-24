@@ -907,6 +907,7 @@ struct Outputs<'w, 's> {
     time: Res<'w, Time>,
     mfd: Res<'w, MfdState>,
     orders: ResMut<'w, MissionOrders>,
+    campaign: Option<Res<'w, crate::campaign::ActiveCampaign>>,
 }
 
 /// Map units -> world units (east, north).
@@ -1171,6 +1172,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         time: _,
         mfd,
         mut orders,
+        campaign,
     } = out;
     // Achieved stays achieved (a campaign sortie's objective is ticked by the campaign).
     for (k, done) in [o.primary_done, o.secondary_done].into_iter().enumerate() {
@@ -1365,6 +1367,11 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         });
     }
     let objects = sim.objects();
+    // A campaign shows the rings of the enemy sites friendly aircraft have detected (or recon
+    // has mapped) only.
+    let spotted = |i: usize| {
+        campaign.as_ref().is_none_or(|c| c.state().site(i as u16).is_some_and(|s| s.spotted))
+    };
     for (i, ob) in objects.iter().enumerate().take(sim.ground_unit_count()).skip(3) {
         if ob.unit_type > 0
             && ob.flags & (oflags::DESTROYED | oflags::NEUTRAL) == 0
@@ -1382,6 +1389,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                 km: crate::rwr::km(sim.site_lock_range(ob.unit_type)),
                 label: sym,
                 doppler: sim.radar_doppler(ob.unit_type),
+                ring: friendly || spotted(i),
             });
             contacts.list.push(Contact {
                 kind: ContactKind::GroundRadar,
@@ -1409,6 +1417,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
             km: crate::rwr::km(sim.site_lock_range(ob.unit_type)),
             label: [0; 3],
             doppler: sim.radar_doppler(ob.unit_type),
+            ring: true,
         });
         let target = Some(ContactRef::Object(i));
         contacts.list.push(Contact {

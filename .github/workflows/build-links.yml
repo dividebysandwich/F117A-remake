@@ -1,0 +1,149 @@
+name: Build links
+
+# "/build" in a pull request's comment answers with the download links of the packages the Build
+# workflow made of the pull request's latest commit, for testers who have neither git nor Rust.
+# The Build workflow builds every pull request in the pull request's own context; this one runs in
+# the repository's (issue_comment, with a token that can write comments) and so never checks out
+# nor runs the pull request's code: it waits for that build, then writes the links at the end of
+# the comment that asked for them.
+# The pull request's author and the repository's collaborators can ask.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  links:
+    name: Build links
+    if: >
+      github.event.issue.pull_request && startsWith(github.event.comment.body, '/build') &&
+      (github.event.comment.user.login == github.event.issue.user.login ||
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.issue.number }}
+      COMMENT_ID: ${{ github.event.comment.id }}
+      THIS_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      # api PATH ARGS...: gh api on this repository.
+      # say SUMMARY TEXT: writes the status at the end of the comment that asked for it, in a
+      # folded section below a marker, in place of the previous status. The comment's own text is
+      # read again each time, to keep what its author edited meanwhile.
+      - name: Helpers
+        run: |
+          cat > "$RUNNER_TEMP/helpers.sh" <<'EOF'
+          api() { local path=$1; shift; gh api "repos/$GITHUB_REPOSITORY/$path" "$@"; }
+          say() {
+            local marker="<!-- build-links -->" body
+            body=$(api "issues/comments/$COMMENT_ID" --jq .body)
+            body=${body%%"$marker"*}
+            body=${body%"${body##*[![:space:]]}"}
+            api "issues/comments/$COMMENT_ID" -X PATCH -f body="$body
+
+          $marker
+          <details>
+          <summary>$1</summary>
+
+          $2
+
+          </details>" > /dev/null
+          }
+          EOF
+
+      - name: Answer
+        timeout-minutes: 120
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          # "/build" alone or followed by more text, not "/builds...".
+          [[ $BODY =~ ^/build([[:space:]]|$) ]] || exit 0
+          source "$RUNNER_TEMP/helpers.sh"
+
+          api "issues/comments/$COMMENT_ID/reactions" -f content=rocket > /dev/null
+          read -r sha base < <(api "pulls/$PR" --jq '"\(.head.sha) \(.base.ref)"')
+          commit="commit \`${sha:0:7}\`"
+          status_summary="Click to see the build status"
+          say "$status_summary" "Looking for the build of $commit..."
+
+          # The Build run of the commit, which starts a few seconds after the push.
+          waiting=""
+          while :; do
+            read -r run status conclusion < <(api "actions/workflows/build.yml/runs?event=pull_request&head_sha=$sha&per_page=1" \
+              --jq '.workflow_runs[0] // {} | "\(.id) \(.status) \(.conclusion)"')
+            run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+            if [[ $run == null ]]; then
+              if (( SECONDS > 600 )); then
+                say "$status_summary" "No build of $commit was found: GitHub does not build a pull request that has merge conflicts with \`$base\` ([details]($THIS_RUN))."
+                exit 0
+              fi
+            elif [[ $status == action_required || $conclusion == action_required ]]; then
+              say "$status_summary" "[The build]($run_url) of $commit waits for a maintainer's approval. Type \`/build\` again once it is approved."
+              exit 0
+            elif [[ $status == completed ]]; then
+              break
+            elif [[ ! $waiting ]]; then
+              say "$status_summary" "Waiting for [the build]($run_url) of $commit (about 10 minutes): the download links will be written here."
+              waiting=1
+            fi
+            sleep 30
+          done
+
+          jobs=$(api "actions/runs/$run/jobs?per_page=100" --jq .jobs)
+          artifacts=$(api "actions/runs/$run/artifacts?per_page=100" --jq .artifacts)
+          if jq -e 'length > 0 and all(.expired)' <<< "$artifacts" > /dev/null; then
+            say "$status_summary" "The packages of [the build]($run_url) of $commit have expired. Push a new commit to build it again."
+            exit 0
+          fi
+          artifacts=$(jq 'map(select(.expired | not))' <<< "$artifacts")
+
+          # A row per package: the Build job, the end of its artifact's name, what it holds.
+          table="| Platform | Build | Download |"$'\n'"|---|---|---|"
+          links=""
+          while IFS='|' read -r job suffix label; do
+            result=$(jq -r --arg job "$job" 'first(.[] | select(.name == $job) | .conclusion) // ""' <<< "$jobs")
+            case $result in
+              success) result=Passed ;;
+              failure | timed_out | startup_failure) result=Failed ;;
+              cancelled) result=Cancelled ;;
+              *) result="Not run" ;;
+            esac
+            download=$(jq -r --arg suffix "-$suffix" --arg url "$run_url/artifacts" \
+              'first(.[] | select(.name | endswith($suffix))) | "[Download](\($url)/\(.id)) (\(.size_in_bytes / 1048576 | floor) MB)"' <<< "$artifacts")
+            [[ $download ]] && links=1
+            table+=$'\n'"| $label | $result | ${download:--} |"
+          done <<'EOF'
+          x86_64-pc-windows-msvc|x86_64-pc-windows-msvc|Windows x64 (.zip, .msi installer)
+          aarch64-pc-windows-msvc|aarch64-pc-windows-msvc|Windows ARM64 (.zip, .msi installer)
+          aarch64-apple-darwin|aarch64-apple-darwin|macOS Apple Silicon (.tar.gz)
+          x86_64-apple-darwin|x86_64-apple-darwin|macOS Intel (.tar.gz)
+          x86_64-unknown-linux-gnu|x86_64-unknown-linux-gnu|Linux x64, Steam Deck (.AppImage, .tar.gz)
+          aarch64-unknown-linux-gnu|aarch64-unknown-linux-gnu|Linux ARM64, Steam Frame (.AppImage, .tar.gz)
+          wasm32 (browser)|web|Browser (.zip, see docs/web.md)
+          EOF
+
+          if [[ $conclusion == success ]]; then
+            headline="**The build of $commit is ready**"
+          else
+            headline="**The build of $commit finished with errors**"
+          fi
+          text="$headline (merged into \`$base\`, [workflow run]($run_url))"$'\n\n'"$table"
+          if [[ $links ]]; then
+            expires=$(jq -r 'first(.[].expires_at[:10])' <<< "$artifacts")
+            say "Click to see the download links" "$text
+
+          Downloading needs a GitHub account (signed in). The packages are available until $expires."
+          else
+            say "$status_summary" "$text"
+          fi
+
+      - name: Report the failure
+        if: failure()
+        run: |
+          source "$RUNNER_TEMP/helpers.sh"
+          say "Click to see the build status" "The build links could not be written ([details]($THIS_RUN))."

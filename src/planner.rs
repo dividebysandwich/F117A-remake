@@ -248,6 +248,8 @@ struct Ring {
     launch: f32,
     name: String,
     active: bool,
+    /// Doppler radar (dotted detection circle; pulse radars solid).
+    doppler: bool,
 }
 
 /// The game's radar detection ([`stealth_sim::radar`]): a site detects the player when its
@@ -295,6 +297,7 @@ fn threat_rings(
                 launch: missile.lock_range as f32 * PER_KM as f32,
                 name: t.name.clone(),
                 active: o.flags & (F::OFF_THE_AIR | F::UNDER_REPAIR) == 0,
+                doppler: t.flags & 1 != 0,
             })
         })
         .collect()
@@ -443,7 +446,8 @@ pub fn route_panel(
             ui.label(egui::RichText::new(format!("{detect:.0} km of the route detected")).color(if detect > 0.0 { AMBER } else { GREEN }));
             ui.label(egui::RichText::new("Radar coverage assumes 480kt level flight, bay doors closed.").small().color(DIM));
             section(ui, "Map");
-            legend(ui, Legend::Detection, "Radar detection range");
+            legend(ui, Legend::Pulse, "Pulse radar detection range");
+            legend(ui, Legend::Doppler, "Doppler radar detection range");
             legend(ui, Legend::Missile, "Missile range");
             if m.drones.is_some() {
                 legend(ui, Legend::Drone, "Enemy UAV");
@@ -494,19 +498,14 @@ fn map_view(
     let painter = painter.with_clip_rect(rect);
 
     map_draw::picture(&painter, &view, planner.texture.as_ref().map(|(_, t, _)| t));
-    // Threat coverage: filled radar detection circles, dotted missile range circles; dim when
-    // off the air.
+    // Threat coverage: filled radar detection circles (solid pulse, dotted Doppler), dashed
+    // missile range circles; dim when off the air.
     for ring in rings {
         let c = to_screen(ring.x, ring.y);
         let alpha = if ring.active { 1.0 } else { 0.35 };
         painter.extend(missile_circle(c, ring.launch / scale, alpha));
         if ring.detect > 0.0 {
-            painter.circle(
-                c,
-                ring.detect / scale,
-                AMBER.gamma_multiply(alpha * 0.18),
-                egui::Stroke::new(1.5, AMBER.gamma_multiply(alpha)),
-            );
+            painter.extend(detection_circle(c, ring.detect / scale, ring.doppler, alpha));
         }
         map_draw::site(&painter, &view, c, &ring.name, alpha);
     }
@@ -620,9 +619,30 @@ fn map_view(
     }
 }
 
+/// A radar's detection circle: filled, its edge solid for a pulse radar, dotted for a Doppler
+/// one.
+fn detection_circle(c: egui::Pos2, r: f32, doppler: bool, alpha: f32) -> Vec<egui::Shape> {
+    let stroke = egui::Stroke::new(1.5, AMBER.gamma_multiply(alpha));
+    let fill = AMBER.gamma_multiply(alpha * 0.18);
+    if !doppler {
+        return vec![
+            egui::Shape::circle_filled(c, r, fill),
+            egui::Shape::circle_stroke(c, r, stroke),
+        ];
+    }
+    let n = ((r * std::f32::consts::TAU / 2.0) as usize).clamp(24, 720);
+    let pts: Vec<egui::Pos2> = (0..=n)
+        .map(|k| c + egui::Vec2::angled(k as f32 / n as f32 * std::f32::consts::TAU) * r)
+        .collect();
+    let mut shapes = vec![egui::Shape::circle_filled(c, r, fill)];
+    shapes.extend(egui::Shape::dotted_line(&pts, stroke.color, 4.0, 0.9));
+    shapes
+}
+
 #[derive(Clone, Copy)]
 enum Legend {
-    Detection,
+    Pulse,
+    Doppler,
     Missile,
     Drone,
 }
@@ -630,9 +650,8 @@ enum Legend {
 /// A map legend line: the symbol as drawn on the map, then its meaning.
 fn legend(ui: &mut egui::Ui, symbol: Legend, text: &str) {
     map_draw::legend(ui, text, |painter, c| match symbol {
-        Legend::Detection => {
-            painter.circle(c, 6.0, AMBER.gamma_multiply(0.18), egui::Stroke::new(1.5, AMBER));
-        }
+        Legend::Pulse => painter.extend(detection_circle(c, 6.0, false, 1.0)),
+        Legend::Doppler => painter.extend(detection_circle(c, 6.0, true, 1.0)),
         Legend::Missile => painter.extend(missile_circle(c, 6.0, 1.0)),
         Legend::Drone => drone_cross(painter, c),
     });

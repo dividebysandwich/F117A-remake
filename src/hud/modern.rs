@@ -769,7 +769,8 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2, down: Vec2) {
     }
     if let Some(z) = &cues.launch_zone {
         dynamic_launch_zone(c, z);
-        let cue = if z.shoot { f.blink.then_some("SHOOT") } else { z.too_close.then_some("TOO CLOSE") };
+        let cue =
+            if z.shoot { f.blink.then_some("SHOOT") } else { z.too_close.then_some("TOO CLOSE") };
         if let Some(s) = cue.filter(|_| !z.at_lock || cues.target_dir.is_none()) {
             small(c, 820.0, CY + 124.0, s, Align::Centre);
         }

@@ -349,8 +349,8 @@ mod tests {
         s.engine_volume = 0.4;
         s.engine_low_pass = false;
         s.classic_hud = true;
-        let p: Prefs = serde_json::from_str(&serde_json::to_string(&Prefs::options(&s)).unwrap())
-            .unwrap();
+        let p: Prefs =
+            serde_json::from_str(&serde_json::to_string(&Prefs::options(&s)).unwrap()).unwrap();
         let mut back = Settings::from_args();
         p.apply(&mut MenuState::default(), &mut back);
         assert_eq!(Prefs::options(&back), Prefs::options(&s));

@@ -1833,7 +1833,8 @@ fn launch_zone_follows_the_slewed_pod() {
     let (mut sim, mx, my, mut p) = helicopter(true, true);
     p.altitude = 500;
     p.hud_mode = HudMode::Gnd;
-    let pod = |x: i32, y: i32| Some(PodAim { heading: 0x2000, pitch: -0x100, ground: Some((x, y)) });
+    let pod =
+        |x: i32, y: i32| Some(PodAim { heading: 0x2000, pitch: -0x100, ground: Some((x, y)) });
     p.pod = pod(mx + 150, my - 150);
     p.cmd.designate_at = Some((mx + 150, my - 150));
     sim.step(&p, 15);

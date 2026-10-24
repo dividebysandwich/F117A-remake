@@ -343,7 +343,8 @@ fn reset_sky(
     mission: Option<Res<crate::mission::ActiveMission>>,
 ) {
     let (_, lat0) = crate::world::geo_origin(&setup.theater);
-    let date = mission.as_ref().and_then(|m| crate::tacview::parse_briefing_date(&m.0.briefing.date));
+    let date =
+        mission.as_ref().and_then(|m| crate::tacview::parse_briefing_date(&m.0.briefing.date));
     let days = date.map_or(0.0, |(y, mo, d)| crate::tacview::days_from_civil(y, mo, d) as f64);
     let chosen = mission.and_then(|m| m.0.settings.moon).map(|e| (e % 8) as f64 / 8.0);
     // The middle of the theater, 256 km north of its corner.

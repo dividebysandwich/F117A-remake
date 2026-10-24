@@ -174,7 +174,13 @@ impl Sim {
         let d = dx.hypot(dy) / 32.0;
         let range = d.round() as i32;
         if d < 1.0 || lock_max < 1 {
-            return Some(LaunchZone { range, lock_max, zone: None, no_escape: None, at_lock: true });
+            return Some(LaunchZone {
+                range,
+                lock_max,
+                zone: None,
+                no_escape: None,
+                at_lock: true,
+            });
         }
         let (ux, uy) = (dx / 32.0 / d, dy / 32.0 / d);
         let hits = |r: i32, v: [f64; 3]| {

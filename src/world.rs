@@ -330,7 +330,10 @@ impl Theater {
 
     /// A ship's model (the world's object category 12 or 13, as the simulation's ship test).
     pub fn is_ship_shape(&self, shape: u8) -> bool {
-        self.world.shape_class.get((shape & 0x7F) as usize).is_some_and(|&b| matches!(b & 0xF, 12 | 13))
+        self.world
+            .shape_class
+            .get((shape & 0x7F) as usize)
+            .is_some_and(|&b| matches!(b & 0xF, 12 | 13))
     }
 
     /// Number of theater models (shapes beyond this index are appended specials).

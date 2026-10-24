@@ -236,7 +236,10 @@ fn graphics_options(ui: &mut egui::Ui, settings: &mut SettingsMut) {
     }
     toggled |= facts(
         ui.checkbox(&mut s.msaa, "Anti-aliasing (MSAA)"),
-        &["Smooth edges: 4x MSAA, 2x in VR (costs GPU time)", "Off: the original's hard pixel edges"],
+        &[
+            "Smooth edges: 4x MSAA, 2x in VR (costs GPU time)",
+            "Off: the original's hard pixel edges",
+        ],
     )
     .changed();
     // The classic time of day can still show the sun and the moon.

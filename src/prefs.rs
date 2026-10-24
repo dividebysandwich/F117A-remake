@@ -77,6 +77,11 @@ pub struct Prefs {
     /// None: on (the default before it could be chosen).
     pub list_public: Option<bool>,
     pub tooltips: bool,
+    pub master_volume: f32,
+    pub engine_volume: f32,
+    pub effects_volume: f32,
+    pub warning_volume: f32,
+    pub engine_low_pass: bool,
 }
 
 const VR_SCALE_VERSION: u32 = 2;
@@ -124,6 +129,11 @@ impl Default for Prefs {
             max_players: menu.max_players,
             list_public: Some(menu.list_public),
             tooltips: true,
+            master_volume: 1.0,
+            engine_volume: 1.0,
+            effects_volume: 1.0,
+            warning_volume: 1.0,
+            engine_low_pass: true,
         }
     }
 }
@@ -184,6 +194,11 @@ impl Prefs {
             max_players: menu.max_players,
             list_public: Some(menu.list_public),
             tooltips: s.tooltips,
+            master_volume: s.master_volume,
+            engine_volume: s.engine_volume,
+            effects_volume: s.effects_volume,
+            warning_volume: s.warning_volume,
+            engine_low_pass: s.engine_low_pass,
         }
     }
 
@@ -228,6 +243,12 @@ impl Prefs {
         s.classic_avionics |= self.classic_avionics;
         s.classic_flight |= self.classic_flight;
         s.tooltips = self.tooltips;
+        let volume = |v: f32| v.clamp(0.0, 1.0);
+        s.master_volume = volume(self.master_volume);
+        s.engine_volume = volume(self.engine_volume);
+        s.effects_volume = volume(self.effects_volume);
+        s.warning_volume = volume(self.warning_volume);
+        s.engine_low_pass = self.engine_low_pass;
         if !std::env::args().any(|a| a == "--aircraft") {
             s.aircraft = self.aircraft;
         }
@@ -238,21 +259,42 @@ impl Prefs {
         }
     }
 
-    /// Saves the graphics, cockpit and HUD switches, the VR cockpit size and the tooltips switch
-    /// (in-flight menu),
-    /// keeping the rest of the file.
-    pub fn save_switches(s: &Settings) {
+    /// Takes the OPTIONS menus' settings (the per-user ones: game, graphics, sound and head
+    /// tracking) from `s`.
+    fn copy_options(&mut self, s: &Settings) {
+        self.modern_shading = s.modern_shading;
+        self.shadows = s.shadows;
+        self.local_lights = s.local_lights;
+        self.continuous_time = s.continuous_time;
+        self.sun_moon = s.sun_moon;
+        self.classic_cockpit = s.classic_cockpit;
+        self.classic_hud = s.classic_hud;
+        self.classic_avionics = s.classic_avionics;
+        self.classic_flight = s.classic_flight;
+        self.auto_trim = s.auto_trim;
+        self.tooltips = s.tooltips;
+        self.vr_cockpit_scale = s.vr_cockpit_scale;
+        self.tacview = s.tacview;
+        self.tacview_real_time = s.tacview_real_time;
+        self.head_tracking = s.head_tracking;
+        self.master_volume = s.master_volume;
+        self.engine_volume = s.engine_volume;
+        self.effects_volume = s.effects_volume;
+        self.warning_volume = s.warning_volume;
+        self.engine_low_pass = s.engine_low_pass;
+    }
+
+    /// The OPTIONS menus' settings of `s`, to compare.
+    pub fn options(s: &Settings) -> Self {
+        let mut p = Self::default();
+        p.copy_options(s);
+        p
+    }
+
+    /// Saves the OPTIONS menus' settings (in-flight menu), keeping the rest of the file.
+    pub fn save_options(s: &Settings) {
         let mut p = Self::load();
-        p.modern_shading = s.modern_shading;
-        p.shadows = s.shadows;
-        p.local_lights = s.local_lights;
-        p.continuous_time = s.continuous_time;
-        p.sun_moon = s.sun_moon;
-        p.classic_cockpit = s.classic_cockpit;
-        p.classic_hud = s.classic_hud;
-        p.classic_avionics = s.classic_avionics;
-        p.vr_cockpit_scale = s.vr_cockpit_scale;
-        p.tooltips = s.tooltips;
+        p.copy_options(s);
         if let Err(e) = save_json(FILE, &p) {
             warn!("saving the preferences: {e}");
         }
@@ -292,6 +334,23 @@ mod tests {
         q.migrate();
         assert!((q.vr_cockpit_scale - 0.9).abs() < 1e-6, "kept through a save");
         assert_eq!(Prefs::default().vr_scale_version, VR_SCALE_VERSION);
+    }
+
+    /// The OPTIONS settings go through the preferences; an old file gets full volumes and the
+    /// engine low-pass.
+    #[test]
+    fn options_round_trip() {
+        let mut s = Settings::from_args();
+        s.engine_volume = 0.4;
+        s.engine_low_pass = false;
+        s.classic_hud = true;
+        let p: Prefs = serde_json::from_str(&serde_json::to_string(&Prefs::options(&s)).unwrap())
+            .unwrap();
+        let mut back = Settings::from_args();
+        p.apply(&mut MenuState::default(), &mut back);
+        assert_eq!(Prefs::options(&back), Prefs::options(&s));
+        let old: Prefs = serde_json::from_str("{}").unwrap();
+        assert_eq!((old.master_volume, old.engine_low_pass), (1.0, true));
     }
 
     #[test]

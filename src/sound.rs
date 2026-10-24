@@ -20,6 +20,9 @@
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
 //!   ejection, explosions and flares, and on the ground the emergency beacon (`beacon.flac`, two
 //!   chirps every 3 s at half volume) until the rescue ends.
+//! - Volumes (the OPTIONS menus): a master volume times the channel's, engine (the flown
+//!   aircraft's and the others'), warnings (alarms, the fire siren, the Sidewinder tones) or
+//!   effects (everything else) (`Channel`).
 //! - Inside the aircraft (the cockpit views) the engine sounds (the drone, the spool up and
 //!   down, the helicopter's rotor and turbines) play through a low-pass filter (`muffle`).
 //! - A helicopter has no engine drone: its rotor (`heli_rotor.flac`) plays at the rotor speed,
@@ -78,6 +81,7 @@ impl Plugin for SoundPlugin {
                     fire_siren,
                     sidewinder_tones,
                     objective_sound,
+                    remix,
                 )
                     .chain()
                     .run_if(in_state(AppState::Flight)),
@@ -135,6 +139,60 @@ impl Default for SoundLevel {
 
 /// Engine drone volume at full level.
 const ENGINE_VOLUME: f32 = 0.8;
+
+/// What a sound is, for its volume (`Settings::*_volume`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Channel {
+    Engine,
+    Effects,
+    Warnings,
+}
+
+impl Channel {
+    /// The channel of an effect by id.
+    fn of(id: u8) -> Self {
+        if ENGINE_SFX.contains(&id) {
+            Channel::Engine
+        } else if ALARM_TONES.contains(&id) {
+            Channel::Warnings
+        } else {
+            Channel::Effects
+        }
+    }
+
+    /// The channel's volume: the master volume times its own.
+    pub fn gain(self, s: &crate::settings::Settings) -> f32 {
+        s.master_volume
+            * match self {
+                Channel::Engine => s.engine_volume,
+                Channel::Effects => s.effects_volume,
+                Channel::Warnings => s.warning_volume,
+            }
+    }
+}
+
+/// A sound played at a fixed volume (before its channel's gain), set again when the volumes
+/// change.
+#[derive(Component)]
+struct Mixed(Channel, f32);
+
+impl Mixed {
+    /// The playback settings with the volume mixed in.
+    fn settings(&self, s: &crate::settings::Settings, p: PlaybackSettings) -> PlaybackSettings {
+        p.with_volume(Volume::Linear(self.1 * self.0.gain(s)))
+    }
+}
+
+/// The volumes changed: the sounds playing at a fixed volume follow (the others set theirs every
+/// frame).
+fn remix(settings: Res<crate::settings::Settings>, mut q: Query<(&Mixed, &mut AudioSink)>) {
+    if !settings.is_changed() {
+        return;
+    }
+    for (m, mut sink) in &mut q {
+        sink.set_volume(Volume::Linear(m.1 * m.0.gain(&settings)));
+    }
+}
 
 /// The engine's spool up and down (filtered with the engine inside the aircraft).
 const ENGINE_SFX: [u8; 2] = [11, 12];
@@ -351,6 +409,7 @@ fn play_sounds(
     mut alarms: ResMut<Alarms>,
     real: Res<Time<Real>>,
     mut muffler: Muffler,
+    settings: Res<crate::settings::Settings>,
 ) {
     let now = real.elapsed_secs_f64();
     for ActionEvent(a) in actions.read() {
@@ -403,14 +462,12 @@ fn play_sounds(
         let Some(variants) = bank.sfx.get(&r.id) else { continue };
         let handle = &variants[rand::random_range(0..variants.len())];
         debug!("sound {} (priority {})", r.id, r.priority);
+        let mix = Mixed(Channel::of(r.id), 1.0);
+        let playback = mix.settings(&settings, PlaybackSettings::DESPAWN);
         let muffled = ENGINE_SFX.contains(&r.id).then(|| muffler.get(handle, false)).flatten();
         match muffled {
-            Some(h) => commands.spawn((AudioPlayer(h), PlaybackSettings::DESPAWN, OneShot(r.id))),
-            None => commands.spawn((
-                AudioPlayer(handle.clone()),
-                PlaybackSettings::DESPAWN,
-                OneShot(r.id),
-            )),
+            Some(h) => commands.spawn((AudioPlayer(h), playback, mix, OneShot(r.id))),
+            None => commands.spawn((AudioPlayer(handle.clone()), playback, mix, OneShot(r.id))),
         };
     }
 }
@@ -424,7 +481,9 @@ fn cannon(
     combat: Option<Res<crate::combat::Combat>>,
     virt: Res<Time<Virtual>>,
     playing: Query<(Entity, Option<&AudioSink>), With<CannonLoop>>,
+    settings: Res<crate::settings::Settings>,
 ) {
+    let mix = || Mixed(Channel::Effects, 1.0);
     let Some((looped, tail)) = bank.as_ref().and_then(|b| b.cannon.clone()) else { return };
     let ejected = has_ejected(combat.as_deref());
     let firing = combat
@@ -434,7 +493,8 @@ fn cannon(
         && level.0 > 0;
     if !firing {
         if !playing.is_empty() && !ejected && level.0 > 0 {
-            commands.spawn((AudioPlayer(tail), PlaybackSettings::DESPAWN, OneShot(CANNON)));
+            let playback = mix().settings(&settings, PlaybackSettings::DESPAWN);
+            commands.spawn((AudioPlayer(tail), playback, mix(), OneShot(CANNON)));
         }
         for (e, _) in &playing {
             commands.entity(e).despawn();
@@ -449,7 +509,8 @@ fn cannon(
         }
         Ok(_) => {}
         Err(_) => {
-            commands.spawn((AudioPlayer(looped), PlaybackSettings::LOOP, CannonLoop));
+            let playback = mix().settings(&settings, PlaybackSettings::LOOP);
+            commands.spawn((AudioPlayer(looped), playback, mix(), CannonLoop));
         }
     }
 }
@@ -571,7 +632,8 @@ fn engine_drone(
     let Some(handle) = muffler.get(handle, true) else { return };
     let freq = |k: f32| 0x83 as f32 + ((k as u32) & !1) as f32;
     let speed = freq(knots) / freq(sample_knots);
-    let volume = if level.1 { ENGINE_VOLUME * 0.5 } else { ENGINE_VOLUME };
+    let volume =
+        if level.1 { ENGINE_VOLUME * 0.5 } else { ENGINE_VOLUME } * Channel::Engine.gain(&settings);
     match drone.single_mut() {
         Ok((e, d, sink)) if d.sample_knots != sample_knots => {
             let _ = sink;
@@ -634,7 +696,7 @@ fn heli_sounds(
         }
         return;
     }
-    let half = if level.1 { 0.5 } else { 1.0 };
+    let half = if level.1 { 0.5 } else { 1.0 } * Channel::Engine.gain(&settings);
     let torque = a.torque().clamp(0.0, 1.2);
     let rotor = (
         nr.max(0.3),
@@ -672,6 +734,7 @@ fn heli_sounds(
 
 /// The emergency beacon of the pilot on the ground waiting for the rescue: the first chirps on
 /// landing, then every `BEACON_INTERVAL` (real time, held while the flight is paused).
+#[allow(clippy::too_many_arguments)]
 fn beacon(
     mut commands: Commands,
     bank: Option<Res<SoundBank>>,
@@ -680,6 +743,7 @@ fn beacon(
     real: Res<Time<Real>>,
     virt: Res<Time<Virtual>>,
     mut wait: Local<f32>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let Some(handle) = bank.as_ref().and_then(|b| b.beacon.clone()) else { return };
     let waiting = combat.is_some_and(|c| c.sim.csar().is_some() && c.end.is_none());
@@ -694,11 +758,9 @@ fn beacon(
     if *wait <= 0.0 {
         *wait = BEACON_INTERVAL;
         if level.0 > 0 {
-            commands.spawn((
-                AudioPlayer(handle),
-                PlaybackSettings::DESPAWN.with_volume(Volume::Linear(BEACON_VOLUME)),
-                Beacon,
-            ));
+            let mix = Mixed(Channel::Effects, BEACON_VOLUME);
+            let playback = mix.settings(&settings, PlaybackSettings::DESPAWN);
+            commands.spawn((AudioPlayer(handle), playback, mix, Beacon));
         }
     }
 }
@@ -715,6 +777,7 @@ fn fire_siren(
     virt: Res<Time<Virtual>>,
     siren: Query<(Entity, Option<&AudioSink>), With<FireSiren>>,
     mut alarms: ResMut<Alarms>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let on_fire = combat
         .as_deref()
@@ -745,15 +808,9 @@ fn fire_siren(
         }
         Ok(_) => {}
         Err(_) => {
-            commands.spawn((
-                AudioPlayer(handle),
-                PlaybackSettings {
-                    mode: PlaybackMode::Loop,
-                    volume: Volume::Linear(SIREN_VOLUME),
-                    ..default()
-                },
-                FireSiren,
-            ));
+            let mix = Mixed(Channel::Warnings, SIREN_VOLUME);
+            let playback = mix.settings(&settings, PlaybackSettings::LOOP);
+            commands.spawn((AudioPlayer(handle), playback, mix, FireSiren));
         }
     }
 }
@@ -772,6 +829,7 @@ fn sidewinder_tones(
     virt: Res<Time<Virtual>>,
     mut loops: Query<(Entity, &SeekerTone, Option<&mut AudioSink>)>,
     mut held: Local<((bool, bool), f32)>,
+    settings: Res<crate::settings::Settings>,
 ) {
     // None: silent; Some(false): growl; Some(true): lock tone.
     let state = combat.as_deref().and_then(|c| {
@@ -827,15 +885,9 @@ fn sidewinder_tones(
     }
     if let Some(handle) = bank.as_ref().and_then(|b| b.aim9[tone].clone()) {
         debug!("sidewinder {}", AIM9_FILES[tone]);
-        commands.spawn((
-            AudioPlayer(handle),
-            PlaybackSettings {
-                mode: PlaybackMode::Loop,
-                volume: Volume::Linear(SEEKER_VOLUME),
-                ..default()
-            },
-            SeekerTone(tone),
-        ));
+        let mix = Mixed(Channel::Warnings, SEEKER_VOLUME);
+        let playback = mix.settings(&settings, PlaybackSettings::LOOP);
+        commands.spawn((AudioPlayer(handle), playback, mix, SeekerTone(tone)));
     }
 }
 
@@ -857,7 +909,9 @@ fn distant_aircraft(
         &mut WorldPos,
         Option<&mut SpatialAudioSink>,
     )>,
+    settings: Res<crate::settings::Settings>,
 ) {
+    let gain = Channel::Engine.gain(&settings);
     let heard = level.0 == 3
         && has_ejected(combat.as_deref())
         && combat.as_ref().is_some_and(|c| c.end.is_none());
@@ -928,7 +982,7 @@ fn distant_aircraft(
             continue;
         }
         sink.play();
-        sink.set_volume(Volume::Linear(distant_volume(helicopter, dist)));
+        sink.set_volume(Volume::Linear(distant_volume(helicopter, dist) * gain));
         sink.set_speed(unit_pitch(d.unit) * d.doppler);
     }
     for &(unit, helicopter, p, dist) in heard.iter().filter(|h| !have.contains(&h.0)) {
@@ -939,7 +993,7 @@ fn distant_aircraft(
             AudioPlayer(handle),
             PlaybackSettings {
                 mode: PlaybackMode::Loop,
-                volume: Volume::Linear(distant_volume(helicopter, dist)),
+                volume: Volume::Linear(distant_volume(helicopter, dist) * gain),
                 speed: unit_pitch(unit),
                 spatial: true,
                 // Positions shrunk to within rodio's unit distance: it only pans, the volume

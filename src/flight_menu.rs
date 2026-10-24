@@ -2,8 +2,12 @@
 //! a screen in front of the pilot, in the cockpit, so it works on the desktop and in VR. The
 //! simulation pauses while it is open.
 //!
-//! Graphics switches (shaders, shadows, lighting), cockpit and HUD style, the VR cockpit size and
-//! the cockpit tooltips apply at once and are saved to the preferences when the menu closes. Choose an entry with the
+//! The main page: RESUME, OPTIONS, KEY GUIDE, END MISSION. OPTIONS has the pages of the main
+//! menu's OPTIONS window (`options.rs`) that make sense in flight: GAME (cockpit, HUD and
+//! avionics style, auto trim, tooltips, the VR cockpit size), GRAPHICS (shaders, shadows, point
+//! lights, time of day), SOUND (volumes, the engine low-pass) and CONTROLS (head tracking, the
+//! key guide). They apply at once and are saved to the preferences when the menu closes. Esc,
+//! BACK or the gamepad's B go back a page. Choose an entry with the
 //! mouse, a VR fingertip and the trigger, the arrow keys / gamepad d-pad / VR thumbstick and
 //! Enter / A / X. In VR a fingertip on the screen highlights an entry and the trigger presses it
 //! (a trigger pulled away from the screen and the cockpit controls presses the highlighted entry).
@@ -55,7 +59,8 @@ impl Plugin for FlightMenuPlugin {
 #[derive(Resource, Default)]
 pub struct FlightMenu {
     pub open: bool,
-    /// Highlighted entry.
+    /// The page shown and its highlighted entry.
+    page: Page,
     cursor: usize,
     /// Settings when the menu opened (saved to the preferences on close if changed).
     opened_with: Option<Settings>,
@@ -71,52 +76,143 @@ pub struct FlightMenu {
     guide_scroll: f32,
 }
 
+/// The menu's pages: the main one, OPTIONS and its pages (as the main menu's OPTIONS window).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+enum Page {
+    #[default]
+    Main,
+    Options,
+    Game,
+    Graphics,
+    Sound,
+    Controls,
+}
+
+impl Page {
+    fn items(self) -> &'static [Item] {
+        use Item::*;
+        match self {
+            Page::Main => &[Resume, Open(Page::Options), KeyGuide, EndMission],
+            Page::Options => &[
+                Open(Page::Game),
+                Open(Page::Graphics),
+                Open(Page::Sound),
+                Open(Page::Controls),
+                Back,
+            ],
+            Page::Game => &[Cockpit, Hud, Avionics, AutoTrim, Tooltips, CockpitSize, Back],
+            Page::Graphics => &[Shaders, Shadows, Lighting, TimeOfDay, SunMoon, Back],
+            Page::Sound => &[
+                Volume(Vol::Master),
+                Volume(Vol::Engine),
+                Volume(Vol::Effects),
+                Volume(Vol::Warnings),
+                LowPass,
+                Back,
+            ],
+            Page::Controls => &[HeadTracking, KeyGuide, Back],
+        }
+    }
+
+    /// The page BACK and Esc go to.
+    fn parent(self) -> Option<Page> {
+        match self {
+            Page::Main => None,
+            Page::Options => Some(Page::Main),
+            _ => Some(Page::Options),
+        }
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            Page::Main => "MENU",
+            Page::Options => "OPTIONS",
+            Page::Game => "GAME",
+            Page::Graphics => "GRAPHICS",
+            Page::Sound => "SOUND",
+            Page::Controls => "CONTROLS",
+        }
+    }
+}
+
+/// The volumes of the SOUND page.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Vol {
+    Master,
+    Engine,
+    Effects,
+    Warnings,
+}
+
+impl Vol {
+    fn read(self, s: &Settings) -> f32 {
+        match self {
+            Vol::Master => s.master_volume,
+            Vol::Engine => s.engine_volume,
+            Vol::Effects => s.effects_volume,
+            Vol::Warnings => s.warning_volume,
+        }
+    }
+
+    fn get(self, s: &mut Settings) -> &mut f32 {
+        match self {
+            Vol::Master => &mut s.master_volume,
+            Vol::Engine => &mut s.engine_volume,
+            Vol::Effects => &mut s.effects_volume,
+            Vol::Warnings => &mut s.warning_volume,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Item {
+    Resume,
+    /// Opens a page.
+    Open(Page),
+    KeyGuide,
+    EndMission,
+    Back,
     Shaders,
     Shadows,
     Lighting,
     TimeOfDay,
+    SunMoon,
     Cockpit,
     Hud,
     Avionics,
-    CockpitSize,
+    AutoTrim,
     Tooltips,
-    KeyGuide,
-    Resume,
-    EndMission,
+    CockpitSize,
+    Volume(Vol),
+    LowPass,
+    HeadTracking,
 }
-
-const ITEMS: [Item; 12] = [
-    Item::Shaders,
-    Item::Shadows,
-    Item::Lighting,
-    Item::TimeOfDay,
-    Item::Cockpit,
-    Item::Hud,
-    Item::Avionics,
-    Item::CockpitSize,
-    Item::Tooltips,
-    Item::KeyGuide,
-    Item::Resume,
-    Item::EndMission,
-];
 
 impl Item {
     fn label(self) -> &'static str {
         match self {
+            Item::Resume => "RESUME",
+            Item::Open(p) => p.title(),
+            Item::KeyGuide => "KEY GUIDE",
+            Item::EndMission => "END MISSION",
+            Item::Back => "BACK",
             Item::Shaders => "SHADERS",
             Item::Shadows => "SHADOWS",
             Item::Lighting => "POINT LIGHTS",
             Item::TimeOfDay => "TIME OF DAY",
+            Item::SunMoon => "SUN AND MOON",
             Item::Cockpit => "COCKPIT",
             Item::Hud => "HUD",
             Item::Avionics => "AVIONICS",
-            Item::CockpitSize => "COCKPIT SIZE",
+            Item::AutoTrim => "AUTO TRIM",
             Item::Tooltips => "TOOLTIPS",
-            Item::KeyGuide => "KEY GUIDE",
-            Item::Resume => "RESUME",
-            Item::EndMission => "END MISSION",
+            Item::CockpitSize => "COCKPIT SIZE",
+            Item::Volume(Vol::Master) => "MASTER VOLUME",
+            Item::Volume(Vol::Engine) => "ENGINE",
+            Item::Volume(Vol::Effects) => "EFFECTS",
+            Item::Volume(Vol::Warnings) => "WARNINGS",
+            Item::LowPass => "ENGINE LOW-PASS",
+            Item::HeadTracking => "HEAD TRACKING",
         }
     }
 
@@ -128,24 +224,40 @@ impl Item {
             Item::Shadows => on(s.shadows),
             Item::Lighting => on(s.local_lights),
             Item::TimeOfDay => style(!s.continuous_time),
+            Item::SunMoon => on(s.sun_moon),
             Item::Cockpit => style(s.classic_cockpit),
             Item::Hud => style(s.classic_hud),
             Item::Avionics => style(s.classic_avionics),
-            Item::CockpitSize => format!("< {:.0}% >", s.vr_cockpit_scale * 100.0),
+            Item::AutoTrim => on(s.auto_trim),
             Item::Tooltips => on(s.tooltips),
-            Item::KeyGuide => ">".to_string(),
-            Item::Resume | Item::EndMission => String::new(),
+            Item::CockpitSize => format!("< {:.0}% >", s.vr_cockpit_scale * 100.0),
+            Item::Volume(v) => format!("< {:.0}% >", v.read(s) * 100.0),
+            Item::LowPass => on(s.engine_low_pass),
+            Item::HeadTracking => on(s.head_tracking),
+            Item::Open(_) | Item::KeyGuide => ">".to_string(),
+            Item::Resume | Item::EndMission | Item::Back => String::new(),
         }
     }
 
     /// The cockpit size only matters in the headset, the cockpit style only for aircraft with
-    /// two cockpits.
+    /// two cockpits, the sun and moon switch only with the classic time of day, head tracking
+    /// only on the desktop.
     fn enabled(self, s: &Settings) -> bool {
         match self {
             Item::CockpitSize => s.vr,
             Item::Cockpit => s.aircraft.spec().cockpits.len() > 1,
+            Item::SunMoon => !s.continuous_time,
+            Item::HeadTracking => !s.vr && !cfg!(target_arch = "wasm32"),
             _ => true,
         }
+    }
+
+    /// Left / right change it (the others only take a press).
+    fn adjustable(self) -> bool {
+        !matches!(
+            self,
+            Item::Resume | Item::Open(_) | Item::KeyGuide | Item::EndMission | Item::Back
+        )
     }
 }
 
@@ -208,9 +320,15 @@ fn toggle(
     // Not behind the boss screen (closing the menu would resume the flight it paused).
     let pressed =
         actions.read().filter(|a| a.0 == Action::Menu).count() % 2 == 1 && !boss.showing();
-    // Esc in the key guide goes back to the entries.
+    // Esc in the key guide goes back to the entries, on a page to the page before.
     if pressed && menu.open && menu.guide {
         menu.guide = false;
+    } else if pressed
+        && menu.open
+        && !menu.exiting
+        && let Some(parent) = menu.page.parent()
+    {
+        go_to(&mut menu, parent);
     } else if pressed && !menu.exiting {
         let open = !menu.open;
         let pause = campaign.is_none();
@@ -237,6 +355,8 @@ fn set_open(
     menu.guide = false;
     block.0 = open;
     if open {
+        menu.page = Page::Main;
+        menu.cursor = 0;
         menu.mouse_armed = false;
         menu.opened_with = Some(settings.clone());
         if pause {
@@ -252,24 +372,23 @@ fn set_open(
                 s.play();
             }
         }
-        if menu.opened_with.take().is_some_and(|before| switches(&before) != switches(settings)) {
-            crate::prefs::Prefs::save_switches(settings);
-        }
+        save_options(menu, settings);
     }
 }
 
-fn switches(s: &Settings) -> (bool, bool, bool, bool, bool, bool, bool, u32, bool) {
-    (
-        s.modern_shading,
-        s.shadows,
-        s.local_lights,
-        s.continuous_time,
-        s.classic_cockpit,
-        s.classic_hud,
-        s.classic_avionics,
-        (s.vr_cockpit_scale * 100.0).round() as u32,
-        s.tooltips,
-    )
+/// The options changed since the menu opened: saved to the preferences.
+fn save_options(menu: &mut FlightMenu, s: &Settings) {
+    use crate::prefs::Prefs;
+    if menu.opened_with.take().is_some_and(|before| Prefs::options(&before) != Prefs::options(s)) {
+        Prefs::save_options(s);
+    }
+}
+
+/// Shows a page, the first entry highlighted (on the way back the entry that opened the page).
+fn go_to(menu: &mut FlightMenu, page: Page) {
+    let from = menu.page;
+    menu.cursor = page.items().iter().position(|&i| i == Item::Open(from)).unwrap_or(0);
+    menu.page = page;
 }
 
 /// The menu screen: in VR in front of the pilot in the cockpit (spawned again when the cockpit
@@ -351,10 +470,11 @@ fn to_canvas(local: Vec3) -> Option<Vec2> {
         .then(|| Vec2::new(u * W as f32, v * H as f32))
 }
 
-/// Entry under a canvas pixel, and whether the pixel is on the right half (size: larger).
-fn item_at(p: Vec2) -> Option<(usize, bool)> {
+/// Entry of `n` under a canvas pixel, and whether the pixel is on the right half (values:
+/// larger).
+fn item_at(p: Vec2, n: usize) -> Option<(usize, bool)> {
     let i = ((p.y - TOP) / ROW).floor();
-    (p.y >= TOP && (i as usize) < ITEMS.len()).then(|| (i as usize, p.x > W as f32 / 2.0))
+    (p.y >= TOP && (i as usize) < n).then(|| (i as usize, p.x > W as f32 / 2.0))
 }
 
 /// The key guide scrolls: arrow keys (held), PgUp / PgDn, the mouse wheel, the gamepad d-pad,
@@ -419,7 +539,8 @@ fn navigate(
         menu.mouse_armed = true;
     }
     let click = menu.mouse_armed && mouse.just_pressed(MouseButton::Left);
-    let n = ITEMS.len();
+    let items = menu.page.items();
+    let n = items.len();
     let mut step = 0i32;
     let mut adjust = 0i32;
     let mut select = false;
@@ -441,7 +562,7 @@ fn navigate(
     {
         select = true;
     }
-    let mut close = pad(GamepadButton::East);
+    let back = pad(GamepadButton::East);
     for hand in hands.hands.iter().filter(|h| h.active) {
         if hand.just_pressed(BUTTON_STICK_UP) {
             step -= 1;
@@ -462,7 +583,7 @@ fn navigate(
     // The key guide: anything that presses an entry goes back to the entries.
     if menu.guide {
         let trigger = hands.hands.iter().any(|h| h.active && h.trigger_pulled());
-        if select || close || click || trigger {
+        if select || back || click || trigger {
             menu.guide = false;
         }
         return;
@@ -477,7 +598,8 @@ fn navigate(
     if let Ok(rel) = overlay.single()
         && rel.cursor_over()
         && let Some(n) = rel.normalized
-        && let Some(hit) = item_at(Vec2::new((n.x + 0.5) * W as f32, (n.y + 0.5) * H as f32))
+        && let Some(hit) =
+            item_at(Vec2::new((n.x + 0.5) * W as f32, (n.y + 0.5) * H as f32), items.len())
     {
         menu.cursor = hit.0;
         if click {
@@ -496,7 +618,7 @@ fn navigate(
             if d.z.abs() > 1e-6 {
                 let t = -o.z / d.z;
                 if let Some(hit) =
-                    (t > 0.0).then(|| to_canvas(o + d * t)).flatten().and_then(item_at)
+                    (t > 0.0).then(|| to_canvas(o + d * t)).flatten().and_then(|p| item_at(p, n))
                 {
                     menu.cursor = hit.0;
                     if click {
@@ -512,7 +634,7 @@ fn navigate(
             let hit = (l.z < TOUCH_FRONT && l.z > -TOUCH_BEHIND)
                 .then(|| to_canvas(l))
                 .flatten()
-                .and_then(item_at);
+                .and_then(|p| item_at(p, n));
             if let Some(hit) = hit {
                 if menu.cursor != hit.0 {
                     hand.haptic = hand.haptic.max(0.1);
@@ -535,41 +657,57 @@ fn navigate(
         Some(hit) => (hit.0, Some(hit.1)),
         None => (menu.cursor, None),
     };
-    let item = ITEMS[index];
+    let item = items[index.min(n - 1)];
     if !item.enabled(&settings) || !(select || clicked.is_some() || adjust != 0) {
-        if close {
-            set_open(&mut menu, false, pause, &settings, &mut time, &mut block, &sinks);
+        // B / the gamepad's East button: back a page, or close the menu.
+        if back {
+            match menu.page.parent() {
+                Some(parent) => go_to(&mut menu, parent),
+                None => set_open(&mut menu, false, pause, &settings, &mut time, &mut block, &sinks),
+            }
         }
         return;
     }
-    // Left / right only change values; they don't press Resume, the key guide or End mission.
-    if adjust != 0
-        && clicked.is_none()
-        && !select
-        && matches!(item, Item::Resume | Item::KeyGuide | Item::EndMission)
-    {
+    // Left / right only change values; they don't press the other entries.
+    if adjust != 0 && clicked.is_none() && !select && !item.adjustable() {
         return;
     }
+    // Values step left or right: the arrows, the half of the row clicked, else up.
+    let dir = if adjust != 0 {
+        adjust.signum()
+    } else if right == Some(false) {
+        -1
+    } else {
+        1
+    } as f32;
+    let mut close = false;
     let s = &mut *settings;
     match item {
         Item::Shaders => s.modern_shading = !s.modern_shading,
         Item::Shadows => s.shadows = !s.shadows,
         Item::Lighting => s.local_lights = !s.local_lights,
         Item::TimeOfDay => s.continuous_time = !s.continuous_time,
+        Item::SunMoon => s.sun_moon = !s.sun_moon,
         Item::Cockpit => s.classic_cockpit = !s.classic_cockpit,
         Item::Hud => s.classic_hud = !s.classic_hud,
         Item::Avionics => s.classic_avionics = !s.classic_avionics,
+        Item::AutoTrim => s.auto_trim = !s.auto_trim,
         Item::Tooltips => s.tooltips = !s.tooltips,
+        Item::LowPass => s.engine_low_pass = !s.engine_low_pass,
+        Item::HeadTracking => s.head_tracking = !s.head_tracking,
         Item::CockpitSize => {
-            let dir = if adjust != 0 {
-                adjust.signum()
-            } else if right == Some(false) {
-                -1
-            } else {
-                1
-            };
-            s.vr_cockpit_scale = (s.vr_cockpit_scale + 0.05 * dir as f32)
+            s.vr_cockpit_scale = (s.vr_cockpit_scale + 0.05 * dir)
                 .clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
+        }
+        Item::Volume(v) => {
+            let v = v.get(s);
+            *v = ((*v * 10.0).round() + dir).clamp(0.0, 10.0) / 10.0;
+        }
+        Item::Open(page) => go_to(&mut menu, page),
+        Item::Back => {
+            if let Some(parent) = menu.page.parent() {
+                go_to(&mut menu, parent);
+            }
         }
         Item::KeyGuide => {
             menu.guide = true;
@@ -584,9 +722,7 @@ fn navigate(
         Item::EndMission => {
             // Stays open (paused and silent) showing EXITING... until the flight ends.
             menu.exiting = true;
-            if menu.opened_with.take().is_some_and(|before| switches(&before) != switches(s)) {
-                crate::prefs::Prefs::save_switches(s);
-            }
+            save_options(&mut menu, s);
             actions.write(ActionEvent(Action::Quit));
         }
     }
@@ -647,17 +783,21 @@ fn draw(
         tex.dirty = true;
         return;
     }
-    stroke_text_at(
-        c,
-        W as f32 / 2.0,
-        52.0,
-        if campaign.is_some() { "SETTINGS  -  CAMPAIGN RUNS ON" } else { "SETTINGS  -  PAUSED" },
-        26.0,
-        3.2,
-        BRIGHT,
-        Align::Centre,
-    );
-    for (i, item) in ITEMS.iter().enumerate() {
+    let title = match menu.page {
+        Page::Main if campaign.is_some() => "MENU  -  CAMPAIGN RUNS ON".to_string(),
+        Page::Main => "MENU  -  PAUSED".to_string(),
+        Page::Options => "OPTIONS".to_string(),
+        page => format!("OPTIONS  -  {}", page.title()),
+    };
+    stroke_text_at(c, W as f32 / 2.0, 52.0, &title, 26.0, 3.2, BRIGHT, Align::Centre);
+    // What only the main menu's OPTIONS change (not in the middle of a flight).
+    let note = match menu.page {
+        Page::Game => "FLIGHT MODEL, TACVIEW: MAIN MENU OPTIONS",
+        Page::Controls => "KEY AND JOYSTICK BINDINGS: MAIN MENU OPTIONS",
+        _ => "",
+    };
+    stroke_text_at(c, W as f32 / 2.0, H as f32 - 22.0, note, 12.0, 1.8, DIM, Align::Centre);
+    for (i, item) in menu.page.items().iter().enumerate() {
         let y = TOP + ROW * i as f32;
         let mid = y + ROW / 2.0;
         let enabled = item.enabled(&settings);

@@ -6,8 +6,8 @@ To be cross-checked against VGAME's keyboard dispatch table (M2).
 Keys are bound by position on the keyboard, so a binding works on any layout. The tables name the
 keys as on a US keyboard; the CONTROLS dialog shows them as your layout prints them (the key at
 the position of QWERTY's W reads Z on AZERTY).
-These are the defaults: the menu's CONTROLS dialog rebinds every key, the stick keys included.
-In flight the kneeboard's KEYS page and the settings menu's KEY GUIDE list the keys as currently bound,
+These are the defaults: the CONTROLS dialog (main menu OPTIONS > CONTROLS) rebinds every key, the stick keys included.
+In flight the kneeboard's KEYS page and the in-flight menu's KEY GUIDE list the keys as currently bound,
 grouped by topic, with the mouse (desktop) or the VR controllers.
 
 | Group | Action | Key |

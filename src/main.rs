@@ -43,6 +43,7 @@ mod mfd;
 mod mission;
 mod models;
 mod multiplayer_menu;
+mod options;
 mod net;
 mod net_interp;
 mod palette;

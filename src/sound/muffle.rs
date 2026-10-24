@@ -1,5 +1,6 @@
 //! Engine sounds heard from inside the aircraft: a low-pass filter (the canopy and the helmet
-//! take the highs off), its cutoff gliding when the view moves in or out of the cockpit.
+//! take the highs off), its cutoff gliding when the view moves in or out of the cockpit (or the
+//! SOUND options turn it off).
 //!
 //! The filter runs on the audio thread over the decoded samples, so it loops the sound itself:
 //! Bevy's looping would replay the first pass as it was filtered then.
@@ -13,6 +14,7 @@ use bevy::audio::{AudioSource, ChannelCount, Decodable, SampleRate, Source};
 use bevy::prelude::*;
 
 use crate::camera::{View, ViewState};
+use crate::settings::Settings;
 
 /// Cutoff (Hz) inside the aircraft, and outside where the filter is all but open.
 const INSIDE_HZ: f32 = 1000.0;
@@ -92,26 +94,33 @@ impl Muffler<'_> {
     }
 }
 
-/// Inside the aircraft: the cockpit views.
-fn inside(view: Option<&ViewState>) -> bool {
-    view.is_some_and(|v| {
+/// The cutoff for the view: muffled inside the aircraft (the cockpit views), unless the
+/// low-pass is turned off.
+fn cutoff(view: Option<&ViewState>, settings: &Settings) -> f32 {
+    let inside = view.is_some_and(|v| {
         matches!(v.view, View::Cockpit | View::LookLeft | View::LookRight | View::LookRear)
-    })
+    });
+    if inside && settings.engine_low_pass { INSIDE_HZ } else { OUTSIDE_HZ }
 }
 
 /// The flight starts with the cutoff where the view is.
-pub(super) fn reset(view: Option<Res<ViewState>>, sounds: Res<MuffledSounds>) {
-    let hz = if inside(view.as_deref()) { INSIDE_HZ } else { OUTSIDE_HZ };
+pub(super) fn reset(
+    view: Option<Res<ViewState>>,
+    settings: Res<Settings>,
+    sounds: Res<MuffledSounds>,
+) {
+    let hz = cutoff(view.as_deref(), &settings);
     sounds.cutoff.store(hz.to_bits(), Ordering::Relaxed);
 }
 
 /// Glides the cutoff to the view's (in the frequency's log).
 pub(super) fn follow_view(
     view: Option<Res<ViewState>>,
+    settings: Res<Settings>,
     real: Res<Time<Real>>,
     sounds: Res<MuffledSounds>,
 ) {
-    let target = if inside(view.as_deref()) { INSIDE_HZ } else { OUTSIDE_HZ };
+    let target = cutoff(view.as_deref(), &settings);
     let hz = f32::from_bits(sounds.cutoff.load(Ordering::Relaxed));
     let k = 1.0 - (-real.delta_secs() / GLIDE).exp();
     let next = (hz.ln() + (target.ln() - hz.ln()) * k).exp();
@@ -250,11 +259,8 @@ mod tests {
         let bytes = include_bytes!("../../assets/sounds/engine_300.flac");
         let source = AudioSource { bytes: Arc::from(&bytes[..]) };
         let once = source.decoder().count();
-        let sound = Muffled {
-            source,
-            looped: true,
-            cutoff: Arc::new(AtomicU32::new(INSIDE_HZ.to_bits())),
-        };
+        let sound =
+            Muffled { source, looped: true, cutoff: Arc::new(AtomicU32::new(INSIDE_HZ.to_bits())) };
         let mut f = sound.decoder();
         assert_eq!(f.total_duration(), None);
         let played: Vec<f32> = f.by_ref().take(once * 2 + 1000).collect();

@@ -305,7 +305,6 @@ pub fn career_ui(
     w: &mut CareerWindow,
     state: &mut MenuState,
     settings: &mut ResMut<Settings>,
-    head: Option<crate::headtrack::Source>,
 ) {
     if !w.open {
         return;
@@ -353,7 +352,7 @@ pub fn career_ui(
             });
             ui.vertical(|ui| {
                 ui.set_width(220.0);
-                crate::menu::simulation_options(ui, settings, head, None);
+                crate::menu::simulation_options(ui, settings, None);
             });
             ui.vertical(|ui| {
                 ui.set_width(260.0);

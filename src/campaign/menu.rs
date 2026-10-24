@@ -76,7 +76,6 @@ pub fn campaign_window(
     mut next: ResMut<NextState<AppState>>,
     mut settings: ResMut<crate::settings::Settings>,
     vr: Res<crate::menu::VrAvailable>,
-    head: Res<crate::headtrack::HeadTrack>,
     mut exit: MessageWriter<AppExit>,
 ) -> Result {
     if !w.open {
@@ -146,7 +145,6 @@ pub fn campaign_window(
                 crate::menu::simulation_options(
                     ui,
                     &mut settings,
-                    head.source,
                     Some("A saved campaign keeps the rules it was started with"),
                 );
             });

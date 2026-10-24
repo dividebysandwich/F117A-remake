@@ -100,6 +100,14 @@ pub struct Settings {
     pub aircraft: crate::aircraft::AircraftKind,
     /// Tooltips over the cockpit's parts (in-flight menu; on by default).
     pub tooltips: bool,
+    /// Sound volumes (0..1): everything, then the engine, the other effects and the warnings
+    /// (`sound::Mix`).
+    pub master_volume: f32,
+    pub engine_volume: f32,
+    pub effects_volume: f32,
+    pub warning_volume: f32,
+    /// The engine sounds muffled inside the aircraft (`sound::muffle`).
+    pub engine_low_pass: bool,
 }
 
 /// Default VR cockpit size.
@@ -239,6 +247,11 @@ impl Settings {
                 .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
                 .unwrap_or_default(),
             tooltips: true,
+            master_volume: 1.0,
+            engine_volume: 1.0,
+            effects_volume: 1.0,
+            warning_volume: 1.0,
+            engine_low_pass: true,
         }
     }
 }

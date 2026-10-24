@@ -21,6 +21,7 @@ impl Plugin for MenuPlugin {
             .insert_resource(EguiGlobalSettings { auto_create_primary_context: false, ..default() })
             .init_resource::<MenuState>()
             .init_resource::<crate::input_dialog::InputDialog>()
+            .insert_resource(crate::options::OptionsWindow::from_args())
             // `--open-loadout`: start in the loadout editor (screenshots).
             .insert_resource(crate::loadout::LoadoutWindow::opened(
                 std::env::args().any(|a| a == "--open-loadout"),
@@ -603,7 +604,7 @@ pub(crate) fn dropdown<T: PartialEq + Copy>(
 }
 
 /// A labelled CLASSIC / MODERN slide switch; `modern` is the right position.
-fn slide_switch(ui: &mut egui::Ui, label: &str, modern: &mut bool) -> egui::Response {
+pub(crate) fn slide_switch(ui: &mut egui::Ui, label: &str, modern: &mut bool) -> egui::Response {
     two_way_switch(ui, label, modern, ("CLASSIC", "MODERN"))
 }
 
@@ -780,23 +781,19 @@ pub(crate) fn vehicle_options(
     }
 }
 
-/// The realism switches with crash protection, the classic / modern switches, head tracking and
-/// Tacview: the simulation settings of the single player dialogs.
+/// The realism switches with crash protection: the settings each game is set up with (the
+/// player's own settings are in OPTIONS, `options.rs`).
 pub(crate) fn simulation_options(
     ui: &mut egui::Ui,
     settings: &mut SettingsMut,
-    head: Option<crate::headtrack::Source>,
     note: Option<&str>,
 ) {
     group(ui, "Simulation", |ui| {
         realism_options(ui, settings);
         crash_option(ui, settings);
-        auto_trim_option(ui, settings);
         if let Some(note) = note {
             ui.label(egui::RichText::new(note).small().color(DIM));
         }
-        classic_modern_options(ui, settings, head);
-        tacview_options(ui, settings);
     });
 }
 
@@ -816,23 +813,7 @@ fn crash_option(ui: &mut egui::Ui, settings: &mut SettingsMut) {
     }
 }
 
-fn auto_trim_option(ui: &mut egui::Ui, settings: &mut SettingsMut) {
-    let s = settings.bypass_change_detection();
-    if facts(
-        ui.checkbox(&mut s.auto_trim, "Auto trim"),
-        &[
-            "With the stick released, the trim holds the attitude where you left it",
-            "Helicopters: no more nose rising with speed; jets: trims out damaged control surfaces",
-            "Manual trim: Alt + arrow keys, Alt + Home centres it",
-        ],
-    )
-    .changed()
-    {
-        settings.set_changed();
-    }
-}
-
-fn tacview_options(ui: &mut egui::Ui, settings: &mut SettingsMut) {
+pub(crate) fn tacview_options(ui: &mut egui::Ui, settings: &mut SettingsMut) {
     // The browser build writes no files and cannot listen for Tacview.
     if cfg!(target_arch = "wasm32") {
         return;
@@ -938,136 +919,6 @@ pub(crate) fn weather_options(
     }
 }
 
-/// The classic / modern switches and head tracking (`head`: the input
-/// heard).
-pub(crate) fn classic_modern_options(
-    ui: &mut egui::Ui,
-    settings: &mut SettingsMut,
-    head: Option<crate::headtrack::Source>,
-) {
-    section(ui, "Classic / Modern");
-    // Only mark the settings changed when a switch is flipped.
-    let mut toggled = false;
-    let s = settings.bypass_change_detection();
-    let mut cockpit = !s.classic_cockpit;
-    let mut hud = !s.classic_hud;
-    let mut avionics = !s.classic_avionics;
-    let mut flight = !s.classic_flight;
-    let sun_moon = &mut s.sun_moon;
-    for (modern, name, f) in [
-        (
-            &mut s.modern_shading,
-            "Shaders",
-            &[
-                "Modern: MSAA anti-aliasing, subtle directional shading, smooth distance haze",
-                "Classic: the original's flat shading",
-            ][..],
-        ),
-        (
-            &mut s.shadows,
-            "Shadows",
-            &[
-                "Modern: sun shadows in the cockpit and the world (costs GPU time)",
-                "Classic: no shadows",
-            ][..],
-        ),
-        (
-            &mut s.local_lights,
-            "Lighting",
-            &[
-                "Modern: cockpit flood and display lights; explosions, plumes and runway lights light the scene",
-                "Classic: sun and sky light only",
-            ][..],
-        ),
-        (
-            &mut s.continuous_time,
-            "Time of day",
-            &[
-                "Modern: the sun and the moon move with the mission clock, the sky darkens and brightens with the sun; stars and the moon's phase at night",
-                "Modern: moonlight sets how far enemy pilots see you at night (2 km on a moonless night, 4 km under a full moon)",
-                "Classic: the original's slow change of colours and a fixed sun",
-            ][..],
-        ),
-        (
-            &mut cockpit,
-            "Cockpit",
-            &[
-                "Modern: high-resolution displays with bezel buttons",
-                "Classic: the original instrument panel layout and 77x60 displays",
-            ][..],
-        ),
-        (
-            &mut hud,
-            "HUD",
-            &[
-                "Modern: high-resolution F-16 style HUD in green with NAV, AA and AG modes",
-                "Classic: the original HUD",
-            ][..],
-        ),
-        (
-            &mut avionics,
-            "Avionics",
-            &[
-                "Modern: F-16 style MFD formats on either MFD (situation display, HARM, targeting pod, map, stores) with a slewable cursor",
-                "Classic: the original's map and TAC left, camera, WAY, WPN and ORD right",
-            ][..],
-        ),
-        (
-            &mut flight,
-            "Flight model",
-            &[
-                "Modern: aerodynamic flight model with fly-by-wire: the stick commands pitch and roll rate; released, the nose stays put and the flight path is held",
-                "Classic: the original game's flight model",
-            ][..],
-        ),
-    ] {
-        toggled |= facts(slide_switch(ui, name, modern), f).changed();
-        // The classic time of day can still show the sun and the moon.
-        if name == "Time of day" && !*modern {
-            ui.indent("sun_moon", |ui| {
-                toggled |= facts(
-                    ui.checkbox(sun_moon, "Sun and moon"),
-                    &[
-                        "The sun in the sky by day, the moon and the stars by night",
-                        "The moon shows the mission's phase",
-                    ],
-                )
-                .changed();
-            });
-        }
-    }
-    s.classic_cockpit = !cockpit;
-    s.classic_hud = !hud;
-    s.classic_avionics = !avionics;
-    s.classic_flight = !flight;
-    // The browser build hears no tracking program.
-    if cfg!(target_arch = "wasm32") {
-        if toggled {
-            settings.set_changed();
-        }
-        return;
-    }
-    section(ui, "Head/eye tracking");
-    // Read every frame by `headtrack`: no change detection needed.
-    facts(
-        ui.add_enabled(!s.vr, egui::Checkbox::new(&mut s.head_tracking, "Head/Eye Tracking")),
-        &[
-            "Your head turns and moves the view in the cockpit (desktop; in VR the headset does)",
-            "Tracking program (OpenTrack...): FreeTrack output, or UDP to 127.0.0.1 port 4242",
-            "Home: the current head position becomes the centre",
-        ],
-    );
-    if s.head_tracking && !s.vr {
-        match head {
-            Some(src) => ui.colored_label(GREEN, format!("Tracking ({})", src.name())),
-            None => ui.colored_label(AMBER, "No tracker heard: start the tracking program"),
-        };
-    }
-    if toggled {
-        settings.set_changed();
-    }
-}
-
 /// The download page beside the game's page, as an absolute address (egui opens no relative one).
 #[cfg(target_arch = "wasm32")]
 fn download_url() -> String {
@@ -1102,7 +953,7 @@ pub(crate) fn wide_width(ctx: &egui::Context) -> f32 {
 fn main_screen(
     ctx: &egui::Context,
     state: &mut MenuState,
-    dialog: &mut crate::input_dialog::InputDialog,
+    options: &mut crate::options::OptionsWindow,
     career: &mut crate::career::CareerWindow,
     campaign: &mut crate::campaign::CampaignWindow,
     multiplayer: &mut crate::multiplayer_menu::MultiplayerWindow,
@@ -1163,12 +1014,16 @@ fn main_screen(
                 multiplayer.show();
             }
             if facts(
-                ui.add(wide("CONTROLS")),
-                &["Map keys, joystick and HOTAS axes and buttons", "Saved for the next flights"],
+                ui.add(wide("OPTIONS")),
+                &[
+                    "Game: cockpit, HUD and avionics style, auto trim",
+                    "Graphics, sound volumes, key and joystick bindings",
+                    "Saved for the next flights",
+                ],
             )
             .clicked()
             {
-                dialog.open = true;
+                options.open = true;
             }
             // The browser build: the desktop game is a download (web/download.html).
             #[cfg(target_arch = "wasm32")]
@@ -1233,9 +1088,11 @@ fn menu_ui(
         ResMut<crate::loadout::LoadoutWindow>,
         ResMut<crate::campaign::CampaignWindow>,
         ResMut<crate::multiplayer_menu::MultiplayerWindow>,
+        ResMut<crate::options::OptionsWindow>,
     ),
 ) -> Result {
-    let (mut planner, mut career, mut loadout, mut campaign, mut multiplayer) = windows;
+    let (mut planner, mut career, mut loadout, mut campaign, mut multiplayer, mut options) =
+        windows;
     // Generator data is loaded on first use.
     let Some(data) = data else {
         match MissionData::load() {
@@ -1314,12 +1171,12 @@ fn menu_ui(
     );
     let realistic_before = state.realistic(settings.aircraft);
     // One window at a time: the open dialog replaces the screen it was opened from.
-    let dialogs = dialog.open || career.open || campaign.open || multiplayer.open;
+    let dialogs = dialog.open || options.open || career.open || campaign.open || multiplayer.open;
     if !state.mission_screen && !dialogs {
         main_screen(
             ctx,
             &mut state,
-            &mut dialog,
+            &mut options,
             &mut career,
             &mut campaign,
             &mut multiplayer,
@@ -1375,7 +1232,7 @@ fn menu_ui(
                     });
                     ui.vertical(|ui| {
                         ui.set_width(220.0);
-                        simulation_options(ui, &mut settings, head.source, None);
+                        simulation_options(ui, &mut settings, None);
                     });
                 }
                 // Mission summary in big type, the full briefing below in small type.
@@ -1492,7 +1349,8 @@ fn menu_ui(
         // Another aircraft: the same mission with or without the F-117A's limits.
         state.dirty = true;
     }
-    crate::career::career_ui(ctx, &mut career, &mut state, &mut settings, head.source);
+    crate::career::career_ui(ctx, &mut career, &mut state, &mut settings);
+    crate::options::options_ui(ctx, &mut options, &mut settings, head.source, &mut dialog);
     crate::prefs::Prefs::save_if_changed(&state, &settings, &mut saved);
     Ok(())
 }

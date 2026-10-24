@@ -750,7 +750,7 @@ mod tests {
             let k = qwerty_key_label(m.mods, m.key);
             assert!(drawable(&k), "{k}");
         }
-        for c in "ÉÈÇÀÙ²µ§£¤¨°ÖÜÄßÅÆØÑ´`^~".chars() {
+        for c in crate::keyboard_layout::EUROPEAN_KEYCAPS.chars() {
             assert!(drawable(&c.to_string()), "{c}");
         }
         assert!(!drawable("你"));

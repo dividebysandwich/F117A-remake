@@ -44,7 +44,8 @@ fn learn_labels(mut events: MessageReader<KeyboardInput>, keys: Res<ButtonInput<
 /// characters in capitals too, except on the layouts that print their accented letters in lower
 /// case (`lower_accents`: AZERTY's "é", "è", "ç", "à", "ù"). The API and the key events give
 /// capitals or small letters whatever the keycap says. A character whose capital is not a single
-/// character ("ß" -> "SS") is kept as it is.
+/// character ("ß" -> "SS") or does not turn back into it (the micro sign "µ" -> Greek "Μ") is
+/// kept as it is.
 fn printable(text: &str, lower_accents: bool) -> Option<String> {
     let mut chars = text.chars();
     let c = chars.next().filter(|c| !c.is_control() && !c.is_whitespace())?;
@@ -56,7 +57,7 @@ fn printable(text: &str, lower_accents: bool) -> Option<String> {
     }
     let mut upper = c.to_uppercase();
     Some(match (upper.next(), upper.next()) {
-        (Some(u), None) => u.to_string(),
+        (Some(u), None) if u.to_lowercase().eq([c]) || u == c => u.to_string(),
         _ => c.to_string(),
     })
 }
@@ -177,6 +178,16 @@ fn scancode(key: KeyCode) -> Option<u32> {
     })
 }
 
+/// The characters on the keycaps of the European layouts (AZERTY, QWERTZ, Nordic, Spanish,
+/// Portuguese, Italian, Hungarian, Czech, Slovak): the accented letters in lower case and in
+/// capitals (see `printable`), and the symbols. Every text showing key labels draws them.
+#[cfg(test)]
+pub const EUROPEAN_KEYCAPS: &str = concat!(
+    "éèçàùìòöüóőúűáíěščřžýůľťäňô",
+    "ÉÈÇÀÙÌÒÖÜÓŐÚŰÁÍĚŠČŘŽÝŮĽŤÄŇÔÅÆØÑß",
+    "²&\"'(-_)=^$*<,;:!§µ\\«»º¡´`~+#½¨°£¤|",
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +209,9 @@ mod tests {
         assert_eq!(printable("ü", false).as_deref(), Some("Ü"));
         assert_eq!(printable("ф", false).as_deref(), Some("Ф"));
         assert_eq!(printable("ß", false).as_deref(), Some("ß"));
+        assert_eq!(printable("µ", false).as_deref(), Some("µ"));
+        assert_eq!(printable("ö", false).as_deref(), Some("Ö"));
+        assert_eq!(printable("Ö", false).as_deref(), Some("Ö"));
         assert_eq!(printable("ab", false), None);
         assert_eq!(printable(" ", false), None);
     }

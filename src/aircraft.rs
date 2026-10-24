@@ -64,13 +64,23 @@ pub struct AircraftSpec {
     /// A turret cannon aimed with the targeting pod, and no troops (the AH-1Z).
     pub turret: bool,
     /// A helmet-mounted display (`hmd.rs`).
-    pub hmd: bool,
+    pub hmd: Hmd,
     /// The cannon's muzzle (aircraft frame, m), where it is not at the nose.
     pub muzzle: Option<Vec3>,
     /// Where the damage smoke and fire come out, the contrails either side of it (aircraft
     /// frame, m).
     pub exhaust: Vec3,
     flight: fn() -> FlightConstants,
+}
+
+/// A helmet-mounted display's symbology (`hmd.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hmd {
+    None,
+    /// The AH-1Z's: the sight reticle, the turret gun and the targeting pod as well.
+    Full,
+    /// The F-16's HMCS: only the horizon, the route, the lock and the Sidewinder seeker.
+    Hmcs,
 }
 
 impl AircraftSpec {
@@ -124,7 +134,7 @@ static F117: AircraftSpec = AircraftSpec {
     bomb_bay: true,
     helicopter: false,
     turret: false,
-    hmd: false,
+    hmd: Hmd::None,
     muzzle: None,
     exhaust: EXHAUST,
     flight: FlightConstants::default,
@@ -152,7 +162,7 @@ static F16: AircraftSpec = AircraftSpec {
     bomb_bay: false,
     helicopter: false,
     turret: false,
-    hmd: false,
+    hmd: Hmd::Hmcs,
     muzzle: None,
     // The nozzle: 0.3 m above the model origin.
     exhaust: Vec3::new(0.0, F16_LIFT + 0.3, 8.0),
@@ -191,7 +201,7 @@ static UH60: AircraftSpec = AircraftSpec {
     bomb_bay: false,
     helicopter: true,
     turret: false,
-    hmd: false,
+    hmd: Hmd::None,
     muzzle: None,
     exhaust: EXHAUST,
     flight: FlightConstants::uh60,
@@ -227,7 +237,7 @@ static AH1Z: AircraftSpec = AircraftSpec {
     bomb_bay: false,
     helicopter: true,
     turret: true,
-    hmd: true,
+    hmd: Hmd::Full,
     // The chin turret's barrels.
     muzzle: Some(ah1z_point(0.0, 5.30, 0.58)),
     exhaust: EXHAUST,

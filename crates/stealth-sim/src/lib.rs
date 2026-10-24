@@ -1129,7 +1129,7 @@ impl Sim {
         self.pl.targeting
     }
 
-    /// Where a gunship's Sidewinder seeker looks (unit vector east, north, up), None unless it
+    /// Where the helmet-slaved Sidewinder seeker looks (unit vector east, north, up), None unless it
     /// follows the helmet sight: as far as its gimbals turn (`SEEKER_GIMBAL`), locking the
     /// aircraft nearest the middle of its circle (`HELMET_SEEKER`) and losing it when it
     /// leaves.

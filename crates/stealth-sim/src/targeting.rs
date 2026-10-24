@@ -412,7 +412,7 @@ impl Sim {
         self.pl.lights.lock = oval && (red || self.frame & 1 != 0);
     }
 
-    /// A gunship's Sidewinder seeker slaved to the helmet sight (as far as its gimbals turn,
+    /// The Sidewinder seeker slaved to the helmet sight (as far as its gimbals turn,
     /// `SEEKER_GIMBAL`): the lock is the aircraft nearest the middle of its circle
     /// (`HELMET_SEEKER` round where it looks) and is broken when it leaves the circle.
     fn update_helmet_seeker(&mut self, ps: &PlayerState) {
@@ -491,14 +491,13 @@ impl Sim {
         self.pl.lights.lock = t.lock_valid && (t.in_range || self.frame & 1 != 0);
     }
 
-    /// The helmet sight a gunship's selected Sidewinders' seeker follows (in the air-to-air mode,
-    /// from the cockpit).
+    /// The helmet sight the selected Sidewinders' seeker follows (in the air-to-air mode, from
+    /// the cockpit of an aircraft with a helmet-mounted display: only those send a sight).
     fn seeker_sight(&self, ps: &PlayerState) -> Option<PodAim> {
         let spec = self.selected_spec();
         let (_, count) = self.selected_weapon();
         ps.helmet.filter(|_| {
-            self.pl.gunship
-                && spec > 0
+            spec > 0
                 && count > 0
                 && self.missile(spec).class == 7
                 && self.pl.hud_mode == HudMode::Air

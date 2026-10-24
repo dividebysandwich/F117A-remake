@@ -1926,11 +1926,17 @@ fn gunship_gun_slaved_to_helmet_then_pod() {
     assert!(fire(&mut sim, &p).vx < 0);
 }
 
+/// The gunship's, and a fixed-wing aircraft's with the HMCS (the F-16's).
 #[test]
 fn helmet_seeker_locks_in_its_circle() {
+    let gunship = SimOptions { helicopter: true, gunship: true, ..Default::default() };
+    helmet_seeker_circle(gunship);
+    helmet_seeker_circle(SimOptions::default());
+}
+
+fn helmet_seeker_circle(opts: SimOptions) {
     let d = data();
     let m = mission(d, 3, 0x1234, 2);
-    let opts = SimOptions { helicopter: true, gunship: true, ..Default::default() };
     let mut sim = Sim::with_options(&d.sim, &m, opts);
     let (mx, my) = sandbox(&mut sim, &m);
     // Two An-72s: 3 km north, and 2 km away 30 degrees right of north.

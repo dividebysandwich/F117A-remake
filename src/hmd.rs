@@ -1,6 +1,7 @@
-//! Helmet-mounted display (the AH-1Z's): symbology on the pilot's visor, collimated to infinity
-//! like the HUD (assets/shaders/hud_glass.wgsl) and carried by the head (the eye camera with the
-//! mouse head look, a headset camera in VR), shown in the cockpit views:
+//! Helmet-mounted displays (the AH-1Z's, and the F-16's HMCS): symbology on the pilot's visor,
+//! collimated to infinity like the HUD (assets/shaders/hud_glass.wgsl) and carried by the head
+//! (the eye camera with the mouse head look, a headset camera in VR), shown in the cockpit
+//! views. The AH-1Z's shows:
 //!
 //! - the line of sight reticle (where a helmet-slaved gun points): the smoothed helmet sight,
 //!   so head tremor does not shake it, else the centre;
@@ -15,7 +16,10 @@
 //! - the gun line (rounds and what it is slaved to) under the reticle while the gun is
 //!   selected.
 //!
-//! The horizon, lock, pipper and pod sight are drawn where they are in the world.
+//! The HMCS shows only the horizon, the route's waypoints (the current steerpoint larger, with
+//! its number), the lock and the Sidewinder seeker's circle.
+//!
+//! The horizon, waypoints, lock, pipper and pod sight are drawn where they are in the world.
 //!
 //! Canvas pixels are angular as on the modern HUD (`hud::modern`): (x, y) is the direction
 //! (x - CX, CY - y) / SCALE in the tangent plane one unit in front of the head.
@@ -24,13 +28,15 @@ use bevy::camera::visibility::{NoFrustumCulling, RenderLayers};
 use bevy::light::NotShadowCaster;
 use bevy::prelude::*;
 
+use crate::aircraft::Hmd;
 use crate::camera::{EyeCamera, View, ViewState};
 use crate::canvas::{Canvas, CanvasTexture, CanvasUpload};
 use crate::cockpit3d::hud_glass::HmdMaterial;
 use crate::flight::{Aircraft, Player};
 use crate::font::{Align, stroke_text_at};
-use crate::hud::{HudCues, Stores};
+use crate::hud::{HudCues, Stores, Waypoints};
 use crate::settings::{AppState, Settings};
+use crate::world::WorldPos;
 
 pub struct HmdPlugin;
 
@@ -95,7 +101,7 @@ fn attach(
     mut materials: ResMut<Assets<HmdMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let head = head_camera(&eyes, &cameras).filter(|_| settings.aircraft.spec().hmd);
+    let head = head_camera(&eyes, &cameras).filter(|_| settings.aircraft.spec().hmd != Hmd::None);
     let Some(head) = head else {
         for (e, ..) in &visors {
             commands.entity(e).try_despawn();
@@ -163,37 +169,57 @@ fn on_visor(p: Vec2) -> bool {
 fn draw(
     mut visors: Query<(&ChildOf, &mut CanvasTexture, &Visibility), With<Visor>>,
     heads: Query<&GlobalTransform>,
-    aircraft: Query<&Aircraft, With<Player>>,
+    aircraft: Query<(&Aircraft, &WorldPos), With<Player>>,
     cues: Res<HudCues>,
     stores: Res<Stores>,
     mfd: Res<crate::mfd::MfdState>,
     combat: Option<Res<crate::combat::Combat>>,
+    waypoints: Res<Waypoints>,
+    settings: Res<Settings>,
     time: Res<Time>,
 ) {
     let Ok((parent, mut tex, vis)) = visors.single_mut() else { return };
     if *vis == Visibility::Hidden {
         return;
     }
-    let (Ok(head), Ok(a)) = (heads.get(parent.parent()), aircraft.single()) else { return };
+    let (Ok(head), Ok((a, pos))) = (heads.get(parent.parent()), aircraft.single()) else {
+        return;
+    };
     let head = head.compute_transform().rotation;
     let tex = &mut *tex;
     tex.canvas.px.fill(0);
+    let full = settings.aircraft.spec().hmd == Hmd::Full;
+    let waypoints = if full {
+        Vec::new()
+    } else {
+        waypoints
+            .points
+            .iter()
+            .enumerate()
+            .filter_map(|(i, w)| {
+                let p = crate::world::wu_to_bevy(w.east, w.north, a.ground_altitude as f64);
+                Some(((p - pos.0).as_vec3().try_normalize()?, i, i == waypoints.current))
+            })
+            .collect()
+    };
     let frame = Frame {
         to_head: head.inverse(),
         aircraft: a.orientation,
+        reticle: full,
         sight: mfd.av.helmet,
         lock: cues.helmet_lock,
-        gun: cues.turret_gun.filter(|_| stores.gun_slave == Some("HMS")).map(|g| g.dir),
+        gun: cues.turret_gun.filter(|_| full && stores.gun_slave == Some("HMS")).map(|g| g.dir),
         // East, north, up to the world frame (x east, y up, -z north).
         seeker: combat
             .and_then(|c| c.sim.helmet_seeker())
             .map(|[e, n, u]| Vec3::new(e as f32, u as f32, -n as f32)),
-        pod: (mfd.av.tgp.mode != crate::avionics::TgpMode::Slaved)
+        pod: (full && mfd.av.tgp.mode != crate::avionics::TgpMode::Slaved)
             .then_some(mfd.av.tgp.los)
             .flatten(),
+        waypoints,
         gun_line: stores
             .gun_slave
-            .filter(|_| stores.gun_selected)
+            .filter(|_| full && stores.gun_selected)
             .map(|s| format!("GUN {} {s}", stores.gun_rounds.unwrap_or(0))),
         blink: crate::hud::blink(&time),
     };
@@ -207,6 +233,8 @@ struct Frame {
     to_head: Quat,
     /// The aircraft's attitude (the cues are in its frame).
     aircraft: Quat,
+    /// The line of sight reticle (not on the HMCS).
+    reticle: bool,
     /// The smoothed helmet sight (world).
     sight: Option<Vec3>,
     /// The locked target (aircraft frame) and whether it is an aircraft.
@@ -217,6 +245,8 @@ struct Frame {
     seeker: Option<Vec3>,
     /// The targeting pod's line of sight (world) when it is not slaved.
     pod: Option<Vec3>,
+    /// The route's waypoints (world direction, index, the current steerpoint).
+    waypoints: Vec<(Vec3, usize, bool)>,
     gun_line: Option<String>,
     blink: bool,
 }
@@ -229,13 +259,25 @@ fn draw_visor(c: &mut Canvas, f: &Frame) {
     let centre =
         f.sight.and_then(|d| project(f.to_head * d)).map_or(Vec2::new(CX, CY), |p| p.clamp(lo, hi));
     // Line of sight reticle.
-    for d in [Vec2::X, Vec2::Y, Vec2::NEG_X, Vec2::NEG_Y] {
-        c.stroke(centre + d * 6.0, centre + d * 18.0, PEN, INK);
+    if f.reticle {
+        for d in [Vec2::X, Vec2::Y, Vec2::NEG_X, Vec2::NEG_Y] {
+            c.stroke(centre + d * 6.0, centre + d * 18.0, PEN, INK);
+        }
     }
     if let Some(p) = f.seeker.and_then(|d| project(f.to_head * d)) {
         c.ring(p, stealth_sim::HELMET_SEEKER.tan() as f32 * SCALE, THIN, INK);
     }
     horizon(c, f.to_head);
+    for &(d, i, current) in &f.waypoints {
+        let Some(p) = project(f.to_head * d).filter(|&p| on_visor(p)) else { continue };
+        if current {
+            c.ring(p, 9.0, PEN, INK);
+            let n = (i + 1).to_string();
+            stroke_text_at(c, p.x, p.y + 28.0, &n, TEXT, PEN * 0.85, INK, Align::Centre);
+        } else {
+            c.ring(p, 5.0, THIN, INK);
+        }
+    }
     if let Some(p) = f.pod.and_then(|d| project(f.to_head * d)).filter(|&p| on_visor(p)) {
         diamond(c, p, 7.0, THIN);
     }
@@ -325,11 +367,13 @@ mod tests {
         Frame {
             to_head: head.inverse(),
             aircraft: Quat::IDENTITY,
+            reticle: true,
             sight: None,
             lock: None,
             gun: None,
             seeker: None,
             pod: None,
+            waypoints: Vec::new(),
             gun_line: None,
             blink: true,
         }
@@ -389,5 +433,26 @@ mod tests {
         let (x, cy) = ((CX + SCALE * 0.05) as usize, CY as usize);
         assert!(ink(&c, x + 6, x + 18, cy - 2, cy + 2) > 0);
         assert_eq!(ink(&c, CX as usize - 4, CX as usize + 4, cy - 30, cy - 6), 0);
+    }
+
+    /// The HMCS: no reticle; the waypoints where they are, the steerpoint larger.
+    #[test]
+    fn hmcs_waypoints_no_reticle() {
+        let mut f = frame(Quat::IDENTITY);
+        f.reticle = false;
+        let (a, b) = (Vec3::new(0.1, -0.05, -1.0), Vec3::new(-0.1, -0.05, -1.0));
+        f.waypoints = vec![(a.normalize(), 0, true), (b.normalize(), 1, false)];
+        let mut c = Canvas::new(WIDTH, HEIGHT);
+        draw_visor(&mut c, &f);
+        let (cx, cy) = (CX as usize, CY as usize);
+        assert_eq!(ink(&c, cx - 4, cx + 4, cy - 20, cy - 5), 0, "no reticle");
+        let p = project(a).unwrap();
+        let (x, y) = (p.x as usize, p.y as usize);
+        assert!(ink(&c, x + 7, x + 11, y - 2, y + 2) > 0, "steerpoint ring");
+        assert!(ink(&c, x - 8, x + 8, y + 18, y + 38) > 0, "its number");
+        let q = project(b).unwrap();
+        let (x, y) = (q.x as usize, q.y as usize);
+        assert!(ink(&c, x + 3, x + 7, y - 2, y + 2) > 0, "waypoint ring");
+        assert_eq!(ink(&c, x + 8, x + 11, y - 2, y + 2), 0, "smaller");
     }
 }

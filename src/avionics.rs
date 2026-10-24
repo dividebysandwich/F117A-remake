@@ -157,8 +157,8 @@ pub struct AvionicsState {
     /// Right format before ILS was switched on.
     pub before_ils: Option<Format>,
     pub tgp: TgpState,
-    /// The gunship's helmet sight: where the pilot looks from the cockpit (world direction;
-    /// None in the outside views).
+    /// The helmet sight (with a helmet-mounted display): where the pilot looks from the
+    /// cockpit (world direction; None in the outside views).
     pub helmet: Option<Vec3>,
     /// The smoothed helmet sight in the aircraft's frame (head tremor and tracking jitter
     /// filtered out; the airframe's own motion is not delayed).
@@ -1278,6 +1278,18 @@ fn update_pod(
     waypoints: Res<crate::hud::Waypoints>,
 ) {
     let lock = actions.read().any(|a| a.0 == Action::LockCursor);
+    let Ok((a, pos)) = aircraft.single() else { return };
+    // The helmet sight, with a helmet-mounted display: the gunship's slaved pod follows it
+    // whether its page is up or not (the page shows what it looks at), the Sidewinder seeker
+    // too.
+    let helmet = settings.aircraft.spec().hmd != crate::aircraft::Hmd::None;
+    let sight = helmet_sight(&eyes, view.view).filter(|_| helmet);
+    let body = sight.map(|d| {
+        let d = a.orientation.inverse() * d;
+        state.av.helmet_body.map_or(d, |s| smooth_sight(s, d, time.delta_secs()))
+    });
+    state.av.helmet_body = body;
+    state.av.helmet = body.map(|d| a.orientation * d);
     // The gunship's pod is always up (its turret and Hellfires follow it).
     let turret = settings.aircraft.spec().turret;
     if !state.modern && !turret {
@@ -1289,17 +1301,7 @@ fn update_pod(
     {
         combat.clear_target();
     }
-    let Ok((a, pos)) = aircraft.single() else { return };
     let shown = state.camera_shown();
-    // The gunship's slaved pod follows its sight whether its page is up or not (the page
-    // shows what it looks at).
-    let sight = helmet_sight(&eyes, view.view).filter(|_| turret);
-    let body = sight.map(|d| {
-        let d = a.orientation.inverse() * d;
-        state.av.helmet_body.map_or(d, |s| smooth_sight(s, d, time.delta_secs()))
-    });
-    state.av.helmet_body = body;
-    state.av.helmet = body.map(|d| a.orientation * d);
     let looking = if turret {
         slaved_sight(combat.as_deref(), pos.0)
             .or(state.av.helmet)

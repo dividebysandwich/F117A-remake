@@ -424,10 +424,14 @@ impl InputConfig {
 #[derive(Debug, Default, Clone)]
 pub struct Device {
     pub name: String,
-    /// What mappings name the device by: the name, the USB vendor and product ids, and "#2",
-    /// "#3" for further devices of the same model (Windows calls every stick, throttle and
-    /// pedal set "HID-compliant game controller").
+    /// The USB product name, where the platform's name is a generic one (Windows calls every
+    /// stick, throttle and pedal set "HID-compliant game controller" or "USB HID device").
+    product: Option<String>,
+    /// What mappings name the device by: the product name (else the name), the USB vendor and
+    /// product ids, and "#2", "#3" for further devices of the same model.
     pub key: String,
+    /// The key by the platform's name, as older mappings named a device with a product name.
+    alias: String,
     usb_id: Option<(u16, u16)>,
     pub axes: BTreeMap<u32, f32>,
     pub buttons: BTreeSet<u32>,
@@ -438,7 +442,11 @@ pub struct Device {
 impl Device {
     fn new(pad: gilrs::Gamepad) -> Self {
         let usb_id = pad.vendor_id().zip(pad.product_id());
-        Self { name: pad.name().to_string(), usb_id, ..default() }
+        #[cfg(windows)]
+        let product = usb_id.and_then(|(v, p)| windows_hid::product(v, p));
+        #[cfg(not(windows))]
+        let product = None;
+        Self { name: pad.name().to_string(), product, usb_id, ..default() }
     }
 
     fn active(&self, source: Source, prev: bool) -> bool {
@@ -457,15 +465,124 @@ fn assign_keys(devices: &mut HashMap<gilrs::GamepadId, Device>) {
     let mut ids: Vec<_> = devices.keys().copied().collect();
     ids.sort_by_key(|id| usize::from(*id));
     let mut seen: HashMap<String, usize> = HashMap::new();
-    for id in ids {
-        let d = devices.get_mut(&id).unwrap();
-        let base = match d.usb_id {
-            Some((v, p)) => format!("{} [{v:04x}:{p:04x}]", d.name),
-            None => d.name.clone(),
+    let mut key = |name: &str, usb_id: Option<(u16, u16)>| {
+        let base = match usb_id {
+            Some((v, p)) => format!("{name} [{v:04x}:{p:04x}]"),
+            None => name.to_string(),
         };
         let n = seen.entry(base.clone()).or_default();
         *n += 1;
-        d.key = if *n == 1 { base } else { format!("{base} #{n}") };
+        if *n == 1 { base } else { format!("{base} #{n}") }
+    };
+    for id in ids {
+        let d = devices.get_mut(&id).unwrap();
+        d.key = key(d.product.as_deref().unwrap_or(&d.name), d.usb_id);
+        d.alias = if d.product.is_some() { key(&d.name, d.usb_id) } else { d.key.clone() };
+    }
+}
+
+/// The USB product name of a HID device, from its descriptor.
+#[cfg(windows)]
+mod windows_hid {
+    use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
+        DIGCF_DEVICEINTERFACE, DIGCF_PRESENT, SP_DEVICE_INTERFACE_DATA,
+        SP_DEVICE_INTERFACE_DETAIL_DATA_W, SetupDiDestroyDeviceInfoList,
+        SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW, SetupDiGetDeviceInterfaceDetailW,
+    };
+    use windows_sys::Win32::Devices::HumanInterfaceDevice::{
+        HIDD_ATTRIBUTES, HidD_GetAttributes, HidD_GetHidGuid, HidD_GetProductString,
+    };
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+
+    /// The product string of the first present HID interface with these vendor and product ids.
+    pub fn product(vendor: u16, product: u16) -> Option<String> {
+        // SAFETY: plain SetupAPI / HID calls on structures sized and initialised as the API
+        // asks; the device info list and each opened handle are released before returning.
+        unsafe {
+            let mut guid = std::mem::zeroed();
+            HidD_GetHidGuid(&mut guid);
+            let set = SetupDiGetClassDevsW(
+                &guid,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                DIGCF_PRESENT | DIGCF_DEVICEINTERFACE,
+            );
+            if set == -1 {
+                return None;
+            }
+            let mut found = None;
+            let mut i = 0;
+            while found.is_none() {
+                let mut iface: SP_DEVICE_INTERFACE_DATA = std::mem::zeroed();
+                iface.cbSize = size_of::<SP_DEVICE_INTERFACE_DATA>() as u32;
+                if SetupDiEnumDeviceInterfaces(set, std::ptr::null(), &guid, i, &mut iface) == 0 {
+                    break;
+                }
+                i += 1;
+                let mut size = 0;
+                SetupDiGetDeviceInterfaceDetailW(
+                    set,
+                    &iface,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut size,
+                    std::ptr::null_mut(),
+                );
+                // u32s: aligned for the detail struct.
+                let mut buf = vec![0u32; (size as usize).div_ceil(4).max(2)];
+                let detail = buf.as_mut_ptr() as *mut SP_DEVICE_INTERFACE_DETAIL_DATA_W;
+                (*detail).cbSize = size_of::<SP_DEVICE_INTERFACE_DETAIL_DATA_W>() as u32;
+                if SetupDiGetDeviceInterfaceDetailW(
+                    set,
+                    &iface,
+                    detail,
+                    size,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                ) == 0
+                {
+                    continue;
+                }
+                // No access rights: enough to query the attributes and strings.
+                let path = std::ptr::addr_of!((*detail).DevicePath) as *const u16;
+                let handle = CreateFileW(
+                    path,
+                    0,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    std::ptr::null(),
+                    OPEN_EXISTING,
+                    0,
+                    std::ptr::null_mut(),
+                );
+                if handle == INVALID_HANDLE_VALUE {
+                    continue;
+                }
+                let mut attrs: HIDD_ATTRIBUTES = std::mem::zeroed();
+                attrs.Size = size_of::<HIDD_ATTRIBUTES>() as u32;
+                if HidD_GetAttributes(handle, &mut attrs)
+                    && attrs.VendorID == vendor
+                    && attrs.ProductID == product
+                {
+                    // The USB limit: 126 UTF-16 units and the NUL.
+                    let mut name = [0u16; 127];
+                    if HidD_GetProductString(
+                        handle,
+                        name.as_mut_ptr().cast(),
+                        size_of_val(&name) as u32,
+                    ) {
+                        let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+                        let text = String::from_utf16_lossy(&name[..len]).trim().to_string();
+                        found = Some(text).filter(|t| !t.is_empty());
+                    }
+                }
+                CloseHandle(handle);
+            }
+            SetupDiDestroyDeviceInfoList(set);
+            found
+        }
     }
 }
 
@@ -526,9 +643,10 @@ impl Hotas {
         v
     }
 
-    /// The device a mapping names, by key or (older mappings) by a name no other device has.
+    /// The device a mapping names, by key (or alias) or (older mappings) by a name no other
+    /// device has.
     fn mapped<'a>(&'a self, device: &'a str) -> impl Iterator<Item = &'a Device> {
-        let by_key = self.devices.values().find(|d| d.key == device);
+        let by_key = self.devices.values().find(|d| d.key == device || d.alias == device);
         let by_name = || {
             let mut named = self.devices.values().filter(|d| d.name == device);
             named.next().filter(|_| named.next().is_none())

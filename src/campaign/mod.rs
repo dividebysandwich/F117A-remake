@@ -28,6 +28,7 @@ mod picture;
 pub mod unit_view;
 
 pub use menu::CampaignWindow;
+pub(crate) use menu::{SAVES_HEIGHT, delete_popup};
 pub use unit_view::{UnitCamera, UnitView};
 
 use bevy::ecs::system::SystemParam;

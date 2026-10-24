@@ -10,6 +10,8 @@
 //! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.flac) register under id NN, and a
 //!   requested id with no sample stays silent, so speech can be added later by dropping files in.
 //! - Radar warning tones come from `sounds/rwr/` instead of sounds 8 and 9.
+//! - The cannon (sound 6) holds a loop of its burst while it fires and plays the burst's decay
+//!   when it stops (`cannon_loop.flac`, `cannon_tail.flac`, tools/cut_cannon.py).
 //! - A fire on board sounds the fire warning siren (`fire_siren.flac`, tools/gen_fire_siren.py)
 //!   without a break until the fire is out (or the pilot has ejected).
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
@@ -55,6 +57,7 @@ impl Plugin for SoundPlugin {
                 (
                     flight_sounds,
                     play_sounds,
+                    cannon,
                     engine_drone,
                     heli_sounds,
                     beacon,
@@ -153,6 +156,8 @@ struct SoundBank {
     engine: Vec<(f32, Handle<AudioSource>)>,
     beacon: Option<Handle<AudioSource>>,
     siren: Option<Handle<AudioSource>>,
+    /// The cannon's loop and tail.
+    cannon: Option<(Handle<AudioSource>, Handle<AudioSource>)>,
     jet: Option<Handle<AudioSource>>,
     helicopter: Option<Handle<AudioSource>>,
     heli_rotor: Option<Handle<AudioSource>>,
@@ -167,6 +172,13 @@ struct OneShot(u8);
 
 #[derive(Component)]
 struct Beacon;
+
+/// The cannon's loop, while it fires.
+#[derive(Component)]
+struct CannonLoop;
+
+/// Sound id of the cannon.
+const CANNON: u8 = 6;
 
 /// The fire warning siren's loop.
 #[derive(Component)]
@@ -259,6 +271,7 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     }
     bank.beacon = optional("beacon.flac");
     bank.siren = optional("fire_siren.flac");
+    bank.cannon = optional("cannon_loop.flac").zip(optional("cannon_tail.flac"));
     bank.jet = optional("jet.flac");
     bank.helicopter = optional("helicopter.flac");
     bank.heli_rotor = optional("heli_rotor.flac");
@@ -314,10 +327,53 @@ fn play_sounds(
         {
             continue;
         }
+        // The cannon's loop and tail take its place.
+        if r.id == CANNON && bank.cannon.is_some() {
+            continue;
+        }
         let Some(variants) = bank.sfx.get(&r.id) else { continue };
         let handle = variants[rand::random_range(0..variants.len())].clone();
         debug!("sound {} (priority {})", r.id, r.priority);
         commands.spawn((AudioPlayer(handle), PlaybackSettings::DESPAWN, OneShot(r.id)));
+    }
+}
+
+/// The cannon: its loop while it fires (held while the flight is paused), then the tail. Ejecting
+/// cuts it off.
+fn cannon(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    combat: Option<Res<crate::combat::Combat>>,
+    virt: Res<Time<Virtual>>,
+    playing: Query<(Entity, Option<&AudioSink>), With<CannonLoop>>,
+) {
+    let Some((looped, tail)) = bank.as_ref().and_then(|b| b.cannon.clone()) else { return };
+    let ejected = has_ejected(combat.as_deref());
+    let firing = combat
+        .as_deref()
+        .is_some_and(|c| c.sim.gun_firing() && c.end.is_none() && !c.sim.player_absent())
+        && !ejected
+        && level.0 > 0;
+    if !firing {
+        if !playing.is_empty() && !ejected && level.0 > 0 {
+            commands.spawn((AudioPlayer(tail), PlaybackSettings::DESPAWN, OneShot(CANNON)));
+        }
+        for (e, _) in &playing {
+            commands.entity(e).despawn();
+        }
+        return;
+    }
+    match playing.single() {
+        Ok((_, Some(sink))) => {
+            if virt.is_paused() != sink.is_paused() {
+                if virt.is_paused() { sink.pause() } else { sink.play() }
+            }
+        }
+        Ok(_) => {}
+        Err(_) => {
+            commands.spawn((AudioPlayer(looped), PlaybackSettings::LOOP, CannonLoop));
+        }
     }
 }
 
@@ -826,6 +882,7 @@ type FlightSound = Or<(
     With<HeliLoop>,
     With<Beacon>,
     With<FireSiren>,
+    With<CannonLoop>,
     With<DistantAircraft>,
 )>;
 

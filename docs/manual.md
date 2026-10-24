@@ -379,7 +379,7 @@ back a page; on the first page they close the menu.
 | Game | *Cockpit* (modern or classic panel, F-117A only), *HUD*, *Avionics*, *Auto trim*, *Tooltips*, *Cockpit size*: VR only, the size of the cockpit in the headset (70–150 %; at the default 100 % the F-117A's cockpit looks 60 % and the F-16C's 87 % of life size, which felt right); left / right or the < > halves. The world looks smaller by as much, so in the F-117A the cockpit is raised in VR until the runway looks as far below as from the real one (2.7 m). The flight model and Tacview are chosen in the main menu. |
 | Graphics | *Shaders*, *Shadows*, *Point lights*, *Time of day*, *Sun and moon* (with the classic time of day). |
 | Sound | The *Master*, *Engine*, *Effects* and *Warnings* volumes in steps of 10 % (left / right or the < > halves), *Engine low-pass*. |
-| Controls | *Head tracking* (desktop) and the key guide; the bindings are changed in the main menu. |
+| Controls | *Head tracking* (desktop), *Keys and joystick*: the input mapping (chapter 2) over the view, in VR on a panel in front of you (point a controller, the trigger clicks); DONE returns to the menu. The key guide. |
 
 Changes apply at once and are saved as the defaults for the next flight.
 

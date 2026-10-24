@@ -6,7 +6,9 @@
 //! menu's OPTIONS window (`options.rs`) that make sense in flight: GAME (cockpit, HUD and
 //! avionics style, auto trim, tooltips, the VR cockpit size), GRAPHICS (shaders, shadows, point
 //! lights, time of day), SOUND (volumes, the engine low-pass) and CONTROLS (head tracking, the
-//! key guide). They apply at once and are saved to the preferences when the menu closes. Esc,
+//! key and joystick bindings, the key guide). The bindings are the main menu's dialog
+//! (`input_dialog.rs`) over the view (in VR on the menu panel in front of the head), the menu's
+//! screen hidden until its DONE; it takes every key, Esc included. They apply at once and are saved to the preferences when the menu closes. Esc,
 //! BACK or the gamepad's B go back a page. Choose an entry with the
 //! mouse, a VR fingertip and the trigger, the arrow keys / gamepad d-pad / VR thumbstick and
 //! Enter / A / X. In VR a fingertip on the screen highlights an entry and the trigger presses it
@@ -48,9 +50,21 @@ impl Plugin for FlightMenuPlugin {
             .add_systems(OnExit(AppState::Flight), close_on_exit)
             .add_systems(
                 Update,
-                (toggle, spawn_screen, scroll_guide, navigate, draw, vr_end_screen)
+                (
+                    toggle,
+                    spawn_screen,
+                    scroll_guide,
+                    navigate,
+                    bindings_overlay,
+                    draw,
+                    vr_end_screen,
+                )
                     .chain()
                     .run_if(in_state(AppState::Flight)),
+            )
+            .add_systems(
+                bevy_egui::EguiPrimaryContextPass,
+                bindings_ui.run_if(in_state(AppState::Flight)),
             );
     }
 }
@@ -74,6 +88,8 @@ pub struct FlightMenu {
     /// The key guide is shown instead of the entries, scrolled down this far (canvas pixels).
     guide: bool,
     guide_scroll: f32,
+    /// The bindings dialog is up instead of the menu's screen (until its DONE).
+    bindings: bool,
 }
 
 /// The menu's pages: the main one, OPTIONS and its pages (as the main menu's OPTIONS window).
@@ -110,7 +126,7 @@ impl Page {
                 LowPass,
                 Back,
             ],
-            Page::Controls => &[HeadTracking, KeyGuide, Back],
+            Page::Controls => &[HeadTracking, Bindings, KeyGuide, Back],
         }
     }
 
@@ -186,6 +202,8 @@ enum Item {
     Volume(Vol),
     LowPass,
     HeadTracking,
+    /// The key and joystick bindings dialog (`input_dialog.rs`).
+    Bindings,
 }
 
 impl Item {
@@ -213,6 +231,7 @@ impl Item {
             Item::Volume(Vol::Warnings) => "WARNINGS",
             Item::LowPass => "ENGINE LOW-PASS",
             Item::HeadTracking => "HEAD TRACKING",
+            Item::Bindings => "KEYS AND JOYSTICK",
         }
     }
 
@@ -234,16 +253,18 @@ impl Item {
             Item::Volume(v) => format!("< {:.0}% >", v.read(s) * 100.0),
             Item::LowPass => on(s.engine_low_pass),
             Item::HeadTracking => on(s.head_tracking),
-            Item::Open(_) | Item::KeyGuide => ">".to_string(),
+            Item::Open(_) | Item::KeyGuide | Item::Bindings => ">".to_string(),
             Item::Resume | Item::EndMission | Item::Back => String::new(),
         }
     }
 
     /// The cockpit size only matters in the headset, the cockpit style only for aircraft with
     /// two cockpits, the sun and moon switch only with the classic time of day, head tracking
-    /// only on the desktop.
-    fn enabled(self, s: &Settings) -> bool {
+    /// only on the desktop; the bindings not over the campaign's Ops screen (its egui context
+    /// is the one up then).
+    fn enabled(self, s: &Settings, ops: bool) -> bool {
         match self {
+            Item::Bindings => !ops,
             Item::CockpitSize => s.vr,
             Item::Cockpit => s.aircraft.spec().cockpits.len() > 1,
             Item::SunMoon => !s.continuous_time,
@@ -256,7 +277,12 @@ impl Item {
     fn adjustable(self) -> bool {
         !matches!(
             self,
-            Item::Resume | Item::Open(_) | Item::KeyGuide | Item::EndMission | Item::Back
+            Item::Resume
+                | Item::Open(_)
+                | Item::KeyGuide
+                | Item::Bindings
+                | Item::EndMission
+                | Item::Back
         )
     }
 }
@@ -296,7 +322,12 @@ fn close_on_exit(
     mut menu: ResMut<FlightMenu>,
     mut time: ResMut<Time<Virtual>>,
     mut block: ResMut<InputBlock>,
+    mut dialog: ResMut<crate::input_dialog::InputDialog>,
 ) {
+    if menu.bindings {
+        dialog.open = false;
+    }
+    menu.bindings = false;
     menu.open = false;
     menu.opened_with = None;
     menu.exiting = false;
@@ -320,6 +351,11 @@ fn toggle(
     // Not behind the boss screen (closing the menu would resume the flight it paused).
     let pressed =
         actions.read().filter(|a| a.0 == Action::Menu).count() % 2 == 1 && !boss.showing();
+    // The bindings dialog takes Esc (it cancels a capture) and every other key: only its DONE
+    // closes it.
+    if menu.bindings {
+        return;
+    }
     // Esc in the key guide goes back to the entries, on a page to the page before.
     if pressed && menu.open && menu.guide {
         menu.guide = false;
@@ -530,10 +566,12 @@ fn navigate(
     mut actions: MessageWriter<ActionEvent>,
     sinks: Query<&AudioSink>,
     campaign: Option<Res<crate::campaign::ActiveCampaign>>,
+    mut dialog: ResMut<crate::input_dialog::InputDialog>,
 ) {
-    if !menu.open || menu.exiting {
+    if !menu.open || menu.exiting || menu.bindings {
         return;
     }
+    let ops = campaign.as_deref().is_some_and(|c| c.screen_open());
     let pause = campaign.is_none();
     if !mouse.pressed(MouseButton::Left) {
         menu.mouse_armed = true;
@@ -658,7 +696,7 @@ fn navigate(
         None => (menu.cursor, None),
     };
     let item = items[index.min(n - 1)];
-    if !item.enabled(&settings) || !(select || clicked.is_some() || adjust != 0) {
+    if !item.enabled(&settings, ops) || !(select || clicked.is_some() || adjust != 0) {
         // B / the gamepad's East button: back a page, or close the menu.
         if back {
             match menu.page.parent() {
@@ -695,6 +733,10 @@ fn navigate(
         Item::Tooltips => s.tooltips = !s.tooltips,
         Item::LowPass => s.engine_low_pass = !s.engine_low_pass,
         Item::HeadTracking => s.head_tracking = !s.head_tracking,
+        Item::Bindings => {
+            menu.bindings = true;
+            dialog.open = true;
+        }
         Item::CockpitSize => {
             s.vr_cockpit_scale = (s.vr_cockpit_scale + 0.05 * dir)
                 .clamp(*VR_COCKPIT_SCALE_RANGE.start(), *VR_COCKPIT_SCALE_RANGE.end());
@@ -731,6 +773,95 @@ fn navigate(
     }
 }
 
+/// The camera (desktop) or the VR panel carrying the bindings dialog's egui context.
+#[derive(Component, Clone)]
+struct BindingsOverlay;
+
+/// Puts up the bindings dialog's egui context while it is open (as the campaign's Ops screen
+/// does, `campaign::ops::overlay`); its DONE goes back to the menu.
+#[allow(clippy::too_many_arguments)]
+fn bindings_overlay(
+    mut commands: Commands,
+    mut menu: ResMut<FlightMenu>,
+    dialog: Res<crate::input_dialog::InputDialog>,
+    tagged: Query<Entity, With<BindingsOverlay>>,
+    mut cams: Query<&mut Msaa, With<BindingsOverlay>>,
+    eye: Query<&Msaa, (With<EyeCamera>, Without<BindingsOverlay>)>,
+    settings: Res<Settings>,
+    root: Option<Res<crate::camera::XrRoot>>,
+    mut images: ResMut<Assets<Image>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    if menu.bindings && !dialog.open {
+        menu.bindings = false;
+    }
+    let want = menu.open && menu.bindings;
+    // The overlay draws into the 3D view's picture only with the same anti-aliasing.
+    let msaa = eye.iter().next().copied().unwrap_or(Msaa::Off);
+    for mut m in &mut cams {
+        if *m != msaa {
+            *m = msaa;
+        }
+    }
+    if want == !tagged.is_empty() {
+        return;
+    }
+    if !want {
+        for e in &tagged {
+            commands.entity(e).try_despawn();
+        }
+        #[cfg(feature = "xr")]
+        commands.remove_resource::<crate::vr_menu::WorldPanel>();
+        return;
+    }
+    #[cfg(feature = "xr")]
+    if settings.vr {
+        let root = root.and_then(|r| r.0);
+        crate::vr_menu::spawn(
+            &mut commands,
+            &mut images,
+            &mut meshes,
+            &mut materials,
+            root,
+            BindingsOverlay,
+            false,
+        );
+        commands.insert_resource(crate::vr_menu::WorldPanel);
+        return;
+    }
+    let _ = (&settings, &root, &mut images, &mut meshes, &mut materials);
+    commands.spawn((
+        Camera2d,
+        Camera { order: 50, clear_color: ClearColorConfig::None, ..default() },
+        msaa,
+        BindingsOverlay,
+        bevy_egui::PrimaryEguiContext,
+    ));
+}
+
+/// The bindings dialog in flight.
+fn bindings_ui(
+    mut contexts: bevy_egui::EguiContexts,
+    menu: Res<FlightMenu>,
+    mut dialog: ResMut<crate::input_dialog::InputDialog>,
+    mut config: ResMut<crate::hotas::InputConfig>,
+    hotas: Res<crate::hotas::Hotas>,
+    keys: Res<ButtonInput<KeyCode>>,
+) -> Result {
+    if !menu.bindings {
+        return Ok(());
+    }
+    // The overlay's context comes up a frame after the dialog opens.
+    let Ok(ctx) = contexts.ctx_mut() else { return Ok(()) };
+    crate::menu::apply_ui_zoom(ctx);
+    if ctx.global_style().visuals.window_fill != crate::menu::BG {
+        ctx.all_styles_mut(crate::menu::apply_terminal_style);
+    }
+    crate::input_dialog::show(ctx, &mut dialog, config.bypass_change_detection(), &hotas, &keys);
+    Ok(())
+}
+
 fn draw(
     mut menu: ResMut<FlightMenu>,
     settings: Res<Settings>,
@@ -739,10 +870,12 @@ fn draw(
     config: Res<crate::hotas::InputConfig>,
 ) {
     let Ok((mut tex, mut vis)) = q.single_mut() else { return };
-    vis.set_if_neq(if menu.open { Visibility::Inherited } else { Visibility::Hidden });
-    if !menu.open {
+    let shown = menu.open && !menu.bindings;
+    vis.set_if_neq(if shown { Visibility::Inherited } else { Visibility::Hidden });
+    if !shown {
         return;
     }
+    let ops = campaign.as_deref().is_some_and(|c| c.screen_open());
     let c = &mut tex.canvas;
     c.clear(BG);
     c.frame(Vec2::new(6.0, 6.0), Vec2::new(W as f32 - 7.0, H as f32 - 7.0), 3.0, DIM);
@@ -793,14 +926,13 @@ fn draw(
     // What only the main menu's OPTIONS change (not in the middle of a flight).
     let note = match menu.page {
         Page::Game => "FLIGHT MODEL, TACVIEW: MAIN MENU OPTIONS",
-        Page::Controls => "KEY AND JOYSTICK BINDINGS: MAIN MENU OPTIONS",
         _ => "",
     };
     stroke_text_at(c, W as f32 / 2.0, H as f32 - 22.0, note, 12.0, 1.8, DIM, Align::Centre);
     for (i, item) in menu.page.items().iter().enumerate() {
         let y = TOP + ROW * i as f32;
         let mid = y + ROW / 2.0;
-        let enabled = item.enabled(&settings);
+        let enabled = item.enabled(&settings, ops);
         let col = if enabled { BRIGHT } else { DIM };
         if i == menu.cursor {
             c.fill_rect(24, y as i32 + 3, W as i32 - 48, ROW as i32 - 6, ROW_BG);

@@ -11,7 +11,7 @@
 //!
 //! The realism switches and crash protection belong to each game: they stay in the single
 //! mission, career and campaign setups. The in-flight menu has the same pages, but for the
-//! settings that only take effect at the next flight (`flight_menu.rs`).
+//! flight model and Tacview, which take effect at the next flight (`flight_menu.rs`).
 
 use bevy::prelude::*;
 use bevy_egui::egui;

@@ -20,6 +20,8 @@
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
 //!   ejection, explosions and flares, and on the ground the emergency beacon (`beacon.flac`, two
 //!   chirps every 3 s at half volume) until the rescue ends.
+//! - Inside the aircraft (the cockpit views) the engine sounds (the drone, the spool up and
+//!   down, the helicopter's rotor and turbines) play through a low-pass filter (`muffle`).
 //! - A helicopter has no engine drone: its rotor (`heli_rotor.flac`) plays at the rotor speed,
 //!   louder with the torque and in translational lift (the blade slap), over the turbines
 //!   (`heli_turbine.flac`) pitched up with the torque.
@@ -35,8 +37,8 @@
 use std::collections::HashMap;
 
 use bevy::audio::{
-    AudioSink, PlaybackMode, PlaybackSettings, SpatialAudioSink, SpatialListener, SpatialScale,
-    Volume,
+    AddAudioSource, AudioSink, PlaybackMode, PlaybackSettings, SpatialAudioSink, SpatialListener,
+    SpatialScale, Volume,
 };
 use bevy::prelude::*;
 use stealth_sim::{AircraftKind, fflags};
@@ -48,6 +50,10 @@ use crate::input::{Action, ActionEvent};
 use crate::settings::AppState;
 use crate::world::{FloatingOrigin, WorldPos, wu_to_bevy};
 
+mod muffle;
+
+use muffle::Muffler;
+
 pub struct SoundPlugin;
 
 impl Plugin for SoundPlugin {
@@ -55,10 +61,14 @@ impl Plugin for SoundPlugin {
         app.add_message::<PlaySound>()
             .init_resource::<SoundLevel>()
             .init_resource::<Alarms>()
+            .init_resource::<muffle::MuffledSounds>()
+            .add_audio_source::<muffle::Muffled>()
             .add_systems(Startup, load_bank)
+            .add_systems(OnEnter(AppState::Flight), muffle::reset)
             .add_systems(
                 Update,
                 (
+                    muffle::follow_view,
                     flight_sounds,
                     play_sounds,
                     cannon,
@@ -125,6 +135,9 @@ impl Default for SoundLevel {
 
 /// Engine drone volume at full level.
 const ENGINE_VOLUME: f32 = 0.8;
+
+/// The engine's spool up and down (filtered with the engine inside the aircraft).
+const ENGINE_SFX: [u8; 2] = [11, 12];
 
 /// The sounds still heard after ejecting: impact, explosion, the ejection, signal flare.
 const EJECTED_SOUNDS: [u8; 4] = [4, 5, 0x14, 0x1C];
@@ -337,6 +350,7 @@ fn play_sounds(
     mut silenced: Local<bool>,
     mut alarms: ResMut<Alarms>,
     real: Res<Time<Real>>,
+    mut muffler: Muffler,
 ) {
     let now = real.elapsed_secs_f64();
     for ActionEvent(a) in actions.read() {
@@ -387,9 +401,17 @@ fn play_sounds(
             continue;
         }
         let Some(variants) = bank.sfx.get(&r.id) else { continue };
-        let handle = variants[rand::random_range(0..variants.len())].clone();
+        let handle = &variants[rand::random_range(0..variants.len())];
         debug!("sound {} (priority {})", r.id, r.priority);
-        commands.spawn((AudioPlayer(handle), PlaybackSettings::DESPAWN, OneShot(r.id)));
+        let muffled = ENGINE_SFX.contains(&r.id).then(|| muffler.get(handle, false)).flatten();
+        match muffled {
+            Some(h) => commands.spawn((AudioPlayer(h), PlaybackSettings::DESPAWN, OneShot(r.id))),
+            None => commands.spawn((
+                AudioPlayer(handle.clone()),
+                PlaybackSettings::DESPAWN,
+                OneShot(r.id),
+            )),
+        };
     }
 }
 
@@ -516,6 +538,7 @@ fn flight_sounds(
     *prev = Some((a.on_ground, a.thrust));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn engine_drone(
     mut commands: Commands,
     bank: Option<Res<SoundBank>>,
@@ -524,6 +547,7 @@ fn engine_drone(
     combat: Option<Res<crate::combat::Combat>>,
     settings: Res<crate::settings::Settings>,
     mut drone: Query<(Entity, &EngineDrone, Option<&mut AudioSink>)>,
+    mut muffler: Muffler,
 ) {
     let Some(bank) = bank else { return };
     let Ok(a) = player.single() else { return };
@@ -542,7 +566,9 @@ fn engine_drone(
     }
     // Nearest recording at or below the airspeed, pitched to the exact frequency.
     let (sample_knots, handle) =
-        bank.engine.iter().rev().find(|(k, _)| *k <= knots).unwrap_or(&bank.engine[0]).clone();
+        bank.engine.iter().rev().find(|(k, _)| *k <= knots).unwrap_or(&bank.engine[0]);
+    let sample_knots = *sample_knots;
+    let Some(handle) = muffler.get(handle, true) else { return };
     let freq = |k: f32| 0x83 as f32 + ((k as u32) & !1) as f32;
     let speed = freq(knots) / freq(sample_knots);
     let volume = if level.1 { ENGINE_VOLUME * 0.5 } else { ENGINE_VOLUME };
@@ -563,7 +589,7 @@ fn engine_drone(
 
 fn spawn_drone(
     commands: &mut Commands,
-    handle: Handle<AudioSource>,
+    handle: Handle<muffle::Muffled>,
     sample_knots: f32,
     speed: f32,
     volume: f32,
@@ -571,7 +597,8 @@ fn spawn_drone(
     commands.spawn((
         AudioPlayer(handle),
         PlaybackSettings {
-            mode: PlaybackMode::Loop,
+            // The filtered sound loops itself.
+            mode: PlaybackMode::Once,
             volume: Volume::Linear(volume),
             speed,
             ..default()
@@ -582,6 +609,7 @@ fn spawn_drone(
 
 /// The flown helicopter's rotor and turbines (instead of the engine drone), while the rotor
 /// turns.
+#[allow(clippy::too_many_arguments)]
 fn heli_sounds(
     mut commands: Commands,
     bank: Option<Res<SoundBank>>,
@@ -590,6 +618,7 @@ fn heli_sounds(
     combat: Option<Res<crate::combat::Combat>>,
     settings: Res<crate::settings::Settings>,
     mut loops: Query<(Entity, &HeliLoop, Option<&mut AudioSink>)>,
+    mut muffler: Muffler,
 ) {
     let Some(bank) = bank else { return };
     let Ok(a) = player.single() else { return };
@@ -624,12 +653,14 @@ fn heli_sounds(
         }
     }
     for (turbines, handle) in [(false, &bank.heli_rotor), (true, &bank.heli_turbine)] {
-        let Some(handle) = handle.clone().filter(|_| !have[turbines as usize]) else { continue };
+        let Some(handle) = handle.as_ref().filter(|_| !have[turbines as usize]) else { continue };
+        let Some(handle) = muffler.get(handle, true) else { continue };
         let (speed, volume) = if turbines { turbine } else { rotor };
         commands.spawn((
             AudioPlayer(handle),
             PlaybackSettings {
-                mode: PlaybackMode::Loop,
+                // The filtered sound loops itself.
+                mode: PlaybackMode::Once,
                 volume: Volume::Linear(volume),
                 speed,
                 ..default()

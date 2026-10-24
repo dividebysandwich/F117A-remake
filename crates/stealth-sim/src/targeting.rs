@@ -492,16 +492,13 @@ impl Sim {
     }
 
     /// The helmet sight the selected Sidewinders' seeker follows (in the air-to-air mode, from
-    /// the cockpit of an aircraft with a helmet-mounted display: only those send a sight).
+    /// the cockpit of an aircraft with a helmet-mounted display: only those send a sight). Only
+    /// the AIM-9's (missile 23): the AIM-120 and the rest lock as on the HUD.
     fn seeker_sight(&self, ps: &PlayerState) -> Option<PodAim> {
         let spec = self.selected_spec();
         let (_, count) = self.selected_weapon();
         ps.helmet.filter(|_| {
-            spec > 0
-                && count > 0
-                && self.missile(spec).class == 7
-                && self.pl.hud_mode == HudMode::Air
-                && !self.pl.external_view
+            spec == 23 && count > 0 && self.pl.hud_mode == HudMode::Air && !self.pl.external_view
         })
     }
 

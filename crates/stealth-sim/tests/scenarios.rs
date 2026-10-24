@@ -1975,6 +1975,10 @@ fn helmet_seeker_circle(opts: SimOptions) {
     let t = look(&mut sim, 0x4000);
     assert_eq!(t.air, None);
     assert!(!t.lock_valid);
+    // AIM-120s selected: no helmet seeker.
+    sim.set_bay(0, 1, 4);
+    look(&mut sim, 0);
+    assert!(sim.helmet_seeker().is_none());
 }
 
 #[test]

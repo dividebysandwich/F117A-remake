@@ -184,6 +184,8 @@ pub struct TgpState {
     pub mode: TgpMode,
     /// Seconds since the last slew in area track.
     idle: f32,
+    /// Seconds the current slew has been held.
+    held: f32,
     /// The ground point on the pod's line of sight (Bevy world position), when it is up.
     pub los_ground: Option<DVec3>,
     /// The pod's line of sight (world direction), when it is up: the gunship's turret and
@@ -216,6 +218,15 @@ const POD_AZ_LIMIT: f32 = 2.97;
 const POD_EL_LIMITS: (f32, f32) = (-1.75, 0.5);
 /// Snowplow elevation (rad): ahead and a little down, as the unlocked slaved pod.
 const SP_EL: f32 = -0.15;
+/// Slew response by the range to the ground point the pod looks at: linear up to `SLEW_NEAR`
+/// (m); by `SLEW_FAR` each axis follows `SLEW_EXPO_FAR` (fine near the centre) and a held slew
+/// starts at `SLEW_START_FAR` of its rate, building to the full rate over `SLEW_RAMP` seconds
+/// (fine taps of the keys). Full deflection held still turns the pod at the full rate.
+const SLEW_NEAR: f32 = 3_000.0;
+const SLEW_FAR: f32 = 20_000.0;
+const SLEW_EXPO_FAR: f32 = 3.0;
+const SLEW_START_FAR: f32 = 0.15;
+const SLEW_RAMP: f32 = 0.8;
 
 /// Direction from the nose (aircraft frame, -Z forward) by azimuth and elevation.
 pub fn pod_dir(az: f32, el: f32) -> Vec3 {
@@ -231,12 +242,31 @@ pub fn pod_angles(d: Vec3) -> (f32, f32) {
 /// Where a line of sight meets the ground (the plane at height `ground_y`), within the pod's
 /// range.
 pub fn ground_hit(origin: DVec3, dir: Vec3, ground_y: f64) -> Option<DVec3> {
+    let t = ground_distance(origin, dir, ground_y)?;
+    (t <= POD_RANGE).then(|| origin + dir.as_dvec3().normalize_or_zero() * t)
+}
+
+/// Distance along a line of sight to the ground (the plane at height `ground_y`), at any
+/// range; None when it does not meet it.
+fn ground_distance(origin: DVec3, dir: Vec3, ground_y: f64) -> Option<f64> {
     let d = dir.as_dvec3().normalize_or_zero();
     if d.y > -1e-4 {
         return None;
     }
     let t = (ground_y - origin.y) / d.y;
-    (t > 0.0 && t <= POD_RANGE).then(|| origin + d * t)
+    (t > 0.0).then_some(t)
+}
+
+/// The slew's share of the full pod rate per axis, with the ground point `range` (m) away
+/// (None: the pod looks above the horizon, slewing coarsely) and the slew held `held` seconds.
+fn slew_gain(slew: Vec2, range: Option<f64>, held: f32) -> Vec2 {
+    let far =
+        range.map_or(0.0, |r| ((r as f32 - SLEW_NEAR) / (SLEW_FAR - SLEW_NEAR)).clamp(0.0, 1.0));
+    let expo = 1.0 + (SLEW_EXPO_FAR - 1.0) * far;
+    let start = 1.0 + (SLEW_START_FAR - 1.0) * far;
+    let ramp = start + (1.0 - start) * (held / SLEW_RAMP).min(1.0);
+    let curve = |v: f32| v.signum() * v.abs().min(1.0).powf(expo);
+    Vec2::new(curve(slew.x), curve(slew.y)) * ramp
 }
 
 /// One step of the pod: slewing (`slew`, with the pod the SOI) turns it from where it looks
@@ -263,18 +293,24 @@ pub fn pod_step(
             }
             TgpMode::Snowplow => (0.0, SP_EL),
         };
+        let range = ground_distance(origin, to_world(az, el), ground_y);
+        let slew = slew_gain(slew, range, tgp.held);
+        tgp.held += dt;
         let rate = POD_RATE / (1u32 << zoom.min(6)) as f32 * dt;
         tgp.mode = TgpMode::Area {
             az: (az + slew.x * rate).clamp(-POD_AZ_LIMIT, POD_AZ_LIMIT),
             el: (el + slew.y * rate).clamp(POD_EL_LIMITS.0, POD_EL_LIMITS.1),
         };
         tgp.idle = 0.0;
-    } else if let TgpMode::Area { az, el } = tgp.mode {
-        tgp.idle += dt;
-        if tgp.idle >= POD_SETTLE
-            && let Some(p) = ground_hit(origin, to_world(az, el), ground_y)
-        {
-            tgp.mode = TgpMode::Point(p);
+    } else {
+        tgp.held = 0.0;
+        if let TgpMode::Area { az, el } = tgp.mode {
+            tgp.idle += dt;
+            if tgp.idle >= POD_SETTLE
+                && let Some(p) = ground_hit(origin, to_world(az, el), ground_y)
+            {
+                tgp.mode = TgpMode::Point(p);
+            }
         }
     }
     match tgp.mode {
@@ -1571,6 +1607,43 @@ mod tests {
     }
 
     #[test]
+    fn pod_slew_finer_far_out() {
+        // Up close: linear, at once.
+        assert_eq!(slew_gain(Vec2::new(0.5, -1.0), Some(1000.0), 0.0), Vec2::new(0.5, -1.0));
+        assert_eq!(slew_gain(Vec2::X, None, 0.0), Vec2::X);
+        // Far out: a half deflection much finer, a held slew building up to the full rate.
+        let far = Some(30_000.0);
+        let half = slew_gain(Vec2::new(0.5, 0.0), far, SLEW_RAMP).x;
+        assert!((half - 0.125).abs() < 1e-5, "{half}");
+        let tap = slew_gain(Vec2::NEG_Y, far, 0.0).y;
+        assert!((tap + SLEW_START_FAR).abs() < 1e-5, "{tap}");
+        assert_eq!(slew_gain(Vec2::NEG_Y, far, SLEW_RAMP), Vec2::NEG_Y);
+        // In between, in between.
+        let mid = slew_gain(Vec2::new(0.5, 0.0), Some(11_500.0), SLEW_RAMP).x;
+        assert!(mid < 0.5 && mid > 0.125, "{mid}");
+        // A slew held far out ramps up; letting go starts over.
+        let origin = DVec3::new(0.0, 1000.0, 0.0);
+        let mut tgp = TgpState { mode: TgpMode::Area { az: 0.0, el: -0.04 }, ..default() };
+        let step = |tgp: &mut TgpState, s: Vec2| {
+            let before = match tgp.mode {
+                TgpMode::Area { az, .. } => az,
+                _ => panic!(),
+            };
+            pod_step(tgp, s, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
+            match tgp.mode {
+                TgpMode::Area { az, .. } => az - before,
+                _ => panic!(),
+            }
+        };
+        let first = step(&mut tgp, Vec2::X);
+        let later = (0..10).map(|_| step(&mut tgp, Vec2::X)).last().unwrap();
+        assert!(later > 4.0 * first, "{first} {later}");
+        assert!((later - POD_RATE * 0.1).abs() < 1e-4, "{later}");
+        step(&mut tgp, Vec2::ZERO);
+        assert!((step(&mut tgp, Vec2::X) - first).abs() < 1e-4);
+    }
+
+    #[test]
     fn camera_zoom_steps() {
         use crate::mfd::{CAM_ZOOM_MAX, cam_zoom, cam_zoom_label};
         let mut s = MfdState::default();
@@ -1613,7 +1686,8 @@ mod tests {
         // A slew starts from there.
         pod_step(&mut s.av.tgp, Vec2::Y, 0.5, 0, turned, origin, None, 0.0);
         let TgpMode::Area { az, el } = s.av.tgp.mode else { panic!("{:?}", s.av.tgp.mode) };
-        assert!(az.abs() < 1e-5 && (el - SP_EL - 0.25).abs() < 1e-4, "{az} {el}");
+        // (6.7 km out: a little finer than the full 0.25 rad.)
+        assert!(az.abs() < 1e-5 && el > SP_EL + 0.1 && el < SP_EL + 0.25, "{az} {el}");
         // A target key slaves it again; CZ (to the steerpoint), but not in A-A.
         apply(&mut s, raster, MfdCmd::TgpSlave);
         assert_eq!(s.av.tgp.mode, TgpMode::Slaved);

@@ -422,8 +422,16 @@ impl Sim {
             return;
         };
         let nose = bam_dir(self.pl.p.heading, self.pl.p.pitch);
-        let los = gimbal(bam_dir(sight.heading as i32, sight.pitch as i32), nose, SEEKER_GIMBAL);
         let (mx, my, vz) = (self.pl.p.mx, self.pl.p.my, self.pl.p.view_z);
+        // A lock made on purpose (the HSD cursor, the nearest target): the seeker looks at it
+        // instead of the helmet sight and never breaks it.
+        let held = self.air_lock_point().filter(|_| self.pl.target_hold).map(|(x, y, alt)| {
+            let d = [s16(x - mx) as f64, -(s16(y - my) as f64), ((alt - vz) >> 5) as f64];
+            let r = d.iter().map(|v| v * v).sum::<f64>().sqrt().max(1.0);
+            d.map(|v| v / r)
+        });
+        let sight = held.unwrap_or_else(|| bam_dir(sight.heading as i32, sight.pitch as i32));
+        let los = gimbal(sight, nose, SEEKER_GIMBAL);
         // Off the sight (rad) and range (map units) of a point (map units, viewZ).
         let off = |x: i32, y: i32, alt: i32| {
             let d = [s16(x - mx) as f64, -(s16(y - my) as f64), ((alt - vz) >> 5) as f64];
@@ -450,7 +458,7 @@ impl Sim {
         let mut range = air.flatten().or(pilot.flatten()).map(|(_, r)| r);
         // Nothing locked: the aircraft (or other pilot) nearest the middle of the circle; the
         // seeker tells no friend from foe.
-        let best = range.is_none().then(|| {
+        let best = (range.is_none() && held.is_none()).then(|| {
             let units =
                 self.flights.iter().enumerate().filter_map(|(j, u)| Some((Ok(j), unit(u)?)));
             let pilots = self
@@ -462,14 +470,15 @@ impl Sim {
                 .filter(|&(_, (_, r))| r < 0x12C0 as f64)
                 .min_by(|a, b| a.1.0.total_cmp(&b.1.0))
         });
-        // A lock that leaves the circle is broken.
-        if air == Some(None) {
+        // A lock of its own that leaves the circle is broken.
+        if held.is_none() && air == Some(None) {
             self.pl.air_lock = -1;
         }
-        if pilot == Some(None) {
+        if held.is_none() && pilot == Some(None) {
             self.pl.pilot_lock = None;
         }
         if let Some((who, (_, r))) = best.flatten() {
+            self.pl.target_hold = false;
             match who {
                 Ok(j) => {
                     self.pl.air_lock = j as i32;

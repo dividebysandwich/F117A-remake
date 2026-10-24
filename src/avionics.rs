@@ -1089,9 +1089,9 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
     c.stroke(o + Vec2::new(-3.0, 5.0), o + Vec2::new(3.0, 5.0), 1.6, CYAN);
 }
 
-/// A threat ring: solid around a pulse radar, dotted around a Doppler one.
+/// A threat ring: solid around a Doppler radar, dotted around a pulse one.
 fn threat_ring(c: &mut Canvas, centre: Vec2, r: f32, doppler: bool, colour: u8) {
-    if !doppler {
+    if doppler {
         c.ring(centre, r, 1.0, colour);
         return;
     }

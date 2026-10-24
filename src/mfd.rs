@@ -532,7 +532,7 @@ pub struct Threat {
     pub km: f32,
     /// RWR symbol (NUL padded; none for ships).
     pub label: [u8; 3],
-    /// Doppler radar (dotted ring; pulse radars solid).
+    /// Doppler radar (solid ring; pulse radars dotted).
     pub doppler: bool,
     /// The ring is drawn (a campaign's enemy site: once friendly aircraft have detected it).
     pub ring: bool,

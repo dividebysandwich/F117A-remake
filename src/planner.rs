@@ -248,7 +248,7 @@ struct Ring {
     launch: f32,
     name: String,
     active: bool,
-    /// Doppler radar (dotted detection circle; pulse radars solid).
+    /// Doppler radar (solid detection circle; pulse radars dotted).
     doppler: bool,
 }
 
@@ -498,7 +498,7 @@ fn map_view(
     let painter = painter.with_clip_rect(rect);
 
     map_draw::picture(&painter, &view, planner.texture.as_ref().map(|(_, t, _)| t));
-    // Threat coverage: filled radar detection circles (solid pulse, dotted Doppler), dashed
+    // Threat coverage: filled radar detection circles (solid Doppler, dotted pulse), dashed
     // missile range circles; dim when off the air.
     for ring in rings {
         let c = to_screen(ring.x, ring.y);
@@ -619,12 +619,12 @@ fn map_view(
     }
 }
 
-/// A radar's detection circle: filled, its edge solid for a pulse radar, dotted for a Doppler
+/// A radar's detection circle: filled, its edge solid for a Doppler radar, dotted for a pulse
 /// one.
 fn detection_circle(c: egui::Pos2, r: f32, doppler: bool, alpha: f32) -> Vec<egui::Shape> {
     let stroke = egui::Stroke::new(1.5, AMBER.gamma_multiply(alpha));
     let fill = AMBER.gamma_multiply(alpha * 0.18);
-    if !doppler {
+    if doppler {
         return vec![
             egui::Shape::circle_filled(c, r, fill),
             egui::Shape::circle_stroke(c, r, stroke),

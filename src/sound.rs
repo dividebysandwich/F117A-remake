@@ -25,6 +25,11 @@
 //!   effects (everything else) (`Channel`).
 //! - Inside the aircraft (the cockpit views) the engine sounds (the drone, the spool up and
 //!   down, the helicopter's rotor and turbines) play through a low-pass filter (`muffle`).
+//! - A jet with `jet_engine.flac` and `jet_wind.flac` (tools/gen_aircraft_sounds.py) plays
+//!   them instead of the drone and the spool up and down: the engine pitched with
+//!   its rpm (winding up quickly from 0 when the throttle opens, idling in the air with it
+//!   closed, running down when it closes on the ground or the fuel runs out), the wind louder
+//!   with airspeed.
 //! - A helicopter has no engine drone: its rotor (`heli_rotor.flac`) plays at the rotor speed,
 //!   louder with the torque and in translational lift (the blade slap), over the turbines
 //!   (`heli_turbine.flac`) pitched up with the torque.
@@ -55,7 +60,7 @@ use crate::world::{FloatingOrigin, WorldPos, wu_to_bevy};
 
 mod muffle;
 
-use muffle::Muffler;
+use muffle::{Muffler, Pitch};
 
 pub struct SoundPlugin;
 
@@ -77,6 +82,7 @@ impl Plugin for SoundPlugin {
                     cannon,
                     engine_drone,
                     heli_sounds,
+                    jet_sounds,
                     beacon,
                     fire_siren,
                     sidewinder_tones,
@@ -272,6 +278,8 @@ struct SoundBank {
     helicopter: Option<Handle<AudioSource>>,
     heli_rotor: Option<Handle<AudioSource>>,
     heli_turbine: Option<Handle<AudioSource>>,
+    /// The flown jet's engine and wind loops.
+    jet_loops: Option<(Handle<AudioSource>, Handle<AudioSource>)>,
     /// The Sidewinder seeker's loops, by `SeekerTone`.
     aim9: [Option<Handle<AudioSource>>; 3],
 }
@@ -334,6 +342,26 @@ struct HeliLoop(bool);
 const ROTOR_VOLUME: (f32, f32, f32) = (0.45, 0.35, 0.2);
 const TURBINE_VOLUME: f32 = 0.35;
 
+/// The flown jet's loops: engine (false) and wind (true).
+#[derive(Component)]
+struct JetLoop(bool);
+
+/// Jet engine rpm (share of full): at idle thrust, its rise per second while starting, and
+/// the time constants (s) following the thrust and running down without it.
+const JET_IDLE: f32 = 0.6;
+const JET_START_RATE: f32 = 0.45;
+const JET_SPOOL_TAU: f32 = 0.6;
+const JET_RUNDOWN_TAU: f32 = 1.8;
+/// Jet loop volumes at full level: the engine at full rpm, the wind at `JET_WIND_KNOTS` and
+/// above.
+const JET_ENGINE_VOLUME: f32 = 0.55;
+/// The rpm by which the engine's loop has faded in on start.
+const JET_FADE_IN: f32 = 0.2;
+const JET_WIND_VOLUME: f32 = 0.45;
+const JET_WIND_KNOTS: f32 = 600.0;
+/// The engine loop's playback speed at idle rpm (1 at full): an octave between them.
+const JET_IDLE_PITCH: f32 = 0.5;
+
 /// Sound id of an anti-aircraft shell burst nearby (not an AdLib sound).
 pub const AIRBURST: u8 = 110;
 /// Sound id of an objective achieved (`sounds/objective_complete.flac`, optional).
@@ -386,6 +414,7 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     bank.helicopter = optional("helicopter.flac");
     bank.heli_rotor = optional("heli_rotor.flac");
     bank.heli_turbine = optional("heli_turbine.flac");
+    bank.jet_loops = optional("jet_engine.flac").zip(optional("jet_wind.flac"));
     bank.aim9 = AIM9_FILES.map(optional);
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));
     commands.insert_resource(bank);
@@ -455,6 +484,10 @@ fn play_sounds(
         {
             continue;
         }
+        // The jet's engine loop spools up and down itself.
+        if ENGINE_SFX.contains(&r.id) && bank.jet_loops.is_some() {
+            continue;
+        }
         // The cannon's loop and tail take its place.
         if r.id == CANNON && bank.cannon.is_some() {
             continue;
@@ -464,7 +497,7 @@ fn play_sounds(
         debug!("sound {} (priority {})", r.id, r.priority);
         let mix = Mixed(Channel::of(r.id), 1.0);
         let playback = mix.settings(&settings, PlaybackSettings::DESPAWN);
-        let muffled = ENGINE_SFX.contains(&r.id).then(|| muffler.get(handle, false)).flatten();
+        let muffled = ENGINE_SFX.contains(&r.id).then(|| muffler.get(handle)).flatten();
         match muffled {
             Some(h) => commands.spawn((AudioPlayer(h), playback, mix, OneShot(r.id))),
             None => commands.spawn((AudioPlayer(handle.clone()), playback, mix, OneShot(r.id))),
@@ -607,7 +640,7 @@ fn engine_drone(
     player: Query<&Aircraft, With<Player>>,
     combat: Option<Res<crate::combat::Combat>>,
     settings: Res<crate::settings::Settings>,
-    mut drone: Query<(Entity, &EngineDrone, Option<&mut AudioSink>)>,
+    mut drone: Query<(Entity, &EngineDrone, &Pitch, Option<&mut AudioSink>)>,
     mut muffler: Muffler,
 ) {
     let Some(bank) = bank else { return };
@@ -619,8 +652,8 @@ fn engine_drone(
         && knots >= 2.0
         && a.ended.is_none()
         && !has_ejected(combat.as_deref());
-    if !on || bank.engine.is_empty() {
-        for (e, _, _) in &drone {
+    if !on || bank.engine.is_empty() || bank.jet_loops.is_some() {
+        for (e, ..) in &drone {
             commands.entity(e).despawn();
         }
         return;
@@ -629,43 +662,45 @@ fn engine_drone(
     let (sample_knots, handle) =
         bank.engine.iter().rev().find(|(k, _)| *k <= knots).unwrap_or(&bank.engine[0]);
     let sample_knots = *sample_knots;
-    let Some(handle) = muffler.get(handle, true) else { return };
     let freq = |k: f32| 0x83 as f32 + ((k as u32) & !1) as f32;
     let speed = freq(knots) / freq(sample_knots);
     let volume =
         if level.1 { ENGINE_VOLUME * 0.5 } else { ENGINE_VOLUME } * Channel::Engine.gain(&settings);
+    let marker = EngineDrone { sample_knots };
     match drone.single_mut() {
-        Ok((e, d, sink)) if d.sample_knots != sample_knots => {
-            let _ = sink;
+        Ok((e, d, ..)) if d.sample_knots != sample_knots => {
             commands.entity(e).despawn();
-            spawn_drone(&mut commands, handle, sample_knots, speed, volume);
+            spawn_loop(&mut commands, &mut muffler, handle, speed, volume, marker);
         }
-        Ok((_, _, Some(mut sink))) => {
-            sink.set_speed(speed);
+        Ok((_, _, pitch, Some(mut sink))) => {
+            pitch.set(speed);
             sink.set_volume(Volume::Linear(volume));
         }
         Ok(_) => {}
-        Err(_) => spawn_drone(&mut commands, handle, sample_knots, speed, volume),
+        Err(_) => spawn_loop(&mut commands, &mut muffler, handle, speed, volume, marker),
     }
 }
 
-fn spawn_drone(
+/// An engine loop through the filter, its speed set with its `Pitch`.
+fn spawn_loop(
     commands: &mut Commands,
-    handle: Handle<muffle::Muffled>,
-    sample_knots: f32,
+    muffler: &mut Muffler,
+    handle: &Handle<AudioSource>,
     speed: f32,
     volume: f32,
+    marker: impl Bundle,
 ) {
+    let Some((handle, pitch)) = muffler.looped(handle, speed) else { return };
     commands.spawn((
         AudioPlayer(handle),
         PlaybackSettings {
             // The filtered sound loops itself.
             mode: PlaybackMode::Once,
             volume: Volume::Linear(volume),
-            speed,
             ..default()
         },
-        EngineDrone { sample_knots },
+        pitch,
+        marker,
     ));
 }
 
@@ -679,7 +714,7 @@ fn heli_sounds(
     player: Query<&Aircraft, With<Player>>,
     combat: Option<Res<crate::combat::Combat>>,
     settings: Res<crate::settings::Settings>,
-    mut loops: Query<(Entity, &HeliLoop, Option<&mut AudioSink>)>,
+    mut loops: Query<(Entity, &HeliLoop, &Pitch, Option<&mut AudioSink>)>,
     mut muffler: Muffler,
 ) {
     let Some(bank) = bank else { return };
@@ -706,29 +741,99 @@ fn heli_sounds(
     // The turbines run down with the fuel.
     let turbine = (0.85 + 0.2 * torque, if a.fuel > 0.0 { half * TURBINE_VOLUME } else { 0.0 });
     let mut have = [false; 2];
-    for (_, l, sink) in &mut loops {
+    for (_, l, pitch, sink) in &mut loops {
         have[l.0 as usize] = true;
         let (speed, volume) = if l.0 { turbine } else { rotor };
+        pitch.set(speed);
         if let Some(mut sink) = sink {
-            sink.set_speed(speed);
             sink.set_volume(Volume::Linear(volume));
         }
     }
     for (turbines, handle) in [(false, &bank.heli_rotor), (true, &bank.heli_turbine)] {
         let Some(handle) = handle.as_ref().filter(|_| !have[turbines as usize]) else { continue };
-        let Some(handle) = muffler.get(handle, true) else { continue };
         let (speed, volume) = if turbines { turbine } else { rotor };
-        commands.spawn((
-            AudioPlayer(handle),
-            PlaybackSettings {
-                // The filtered sound loops itself.
-                mode: PlaybackMode::Once,
-                volume: Volume::Linear(volume),
-                speed,
-                ..default()
-            },
-            HeliLoop(turbines),
-        ));
+        spawn_loop(&mut commands, &mut muffler, handle, speed, volume, HeliLoop(turbines));
+    }
+}
+
+/// The flown jet's engine (pitched with its rpm) and wind (louder with airspeed), instead of
+/// the engine drone.
+#[allow(clippy::too_many_arguments)]
+fn jet_sounds(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    player: Query<&Aircraft, With<Player>>,
+    combat: Option<Res<crate::combat::Combat>>,
+    settings: Res<crate::settings::Settings>,
+    time: Res<Time>,
+    mut rpm: Local<f32>,
+    mut loops: Query<(Entity, &JetLoop, &Pitch, Option<&mut AudioSink>)>,
+    mut muffler: Muffler,
+) {
+    let Some((engine, wind)) = bank.as_ref().and_then(|b| b.jet_loops.clone()) else { return };
+    let Ok(a) = player.single() else { return };
+    let on = level.0 == 3
+        && !settings.aircraft.spec().helicopter
+        && a.ended.is_none()
+        && !has_ejected(combat.as_deref());
+    if !on {
+        *rpm = 0.0;
+        for (e, ..) in &loops {
+            commands.entity(e).despawn();
+        }
+        return;
+    }
+    // The engine runs with fuel left and the throttle open (in the air also closed, at idle);
+    // it winds up to idle at a steady rate, then follows the thrust.
+    let dt = time.delta_secs();
+    let running = (a.set_thrust > 0.0 || !a.on_ground) && a.fuel > 0.0;
+    let target = JET_IDLE + (1.0 - JET_IDLE) * (a.thrust / 100.0).clamp(0.0, 1.0);
+    // A flight starting in the air starts with the engine running.
+    *rpm = if a.time < 0.2 {
+        if running { target } else { 0.0 }
+    } else if !running {
+        *rpm * (-dt / JET_RUNDOWN_TAU).exp()
+    } else if *rpm < JET_IDLE {
+        (*rpm + JET_START_RATE * dt).min(JET_IDLE)
+    } else {
+        target + (*rpm - target) * (-dt / JET_SPOOL_TAU).exp()
+    };
+    let half = if level.1 { 0.5 } else { 1.0 } * Channel::Engine.gain(&settings);
+    let n = *rpm;
+    // Mostly the pitch follows the rpm: the volume only fades in over the first part of the
+    // start and swells a little towards full rpm.
+    let pitch = if n < JET_IDLE {
+        JET_IDLE_PITCH * n / JET_IDLE
+    } else {
+        JET_IDLE_PITCH + (1.0 - JET_IDLE_PITCH) * (n - JET_IDLE) / (1.0 - JET_IDLE)
+    };
+    let engine_mix = (
+        pitch.max(0.05),
+        half * JET_ENGINE_VOLUME * (n / JET_FADE_IN).min(1.0) * (0.85 + 0.15 * n),
+    );
+    let airspeed = (a.knots() / JET_WIND_KNOTS).min(1.0);
+    let wind_mix = (0.9 + 0.15 * airspeed, half * JET_WIND_VOLUME * airspeed.powf(1.5));
+    let mut have = [false; 2];
+    for (e, l, pitch, sink) in &mut loops {
+        let (speed, volume) = if l.0 { wind_mix } else { engine_mix };
+        // The engine's loop goes once it has run down.
+        if !l.0 && n < 0.01 {
+            commands.entity(e).despawn();
+            continue;
+        }
+        have[l.0 as usize] = true;
+        pitch.set(speed);
+        if let Some(mut sink) = sink {
+            sink.set_volume(Volume::Linear(volume));
+        }
+    }
+    for (is_wind, handle) in [(false, &engine), (true, &wind)] {
+        if have[is_wind as usize] || (!is_wind && n < 0.01) {
+            continue;
+        }
+        let (speed, volume) = if is_wind { wind_mix } else { engine_mix };
+        spawn_loop(&mut commands, &mut muffler, handle, speed, volume, JetLoop(is_wind));
     }
 }
 
@@ -1028,6 +1133,7 @@ type FlightSound = Or<(
     With<OneShot>,
     With<EngineDrone>,
     With<HeliLoop>,
+    With<JetLoop>,
     With<Beacon>,
     With<FireSiren>,
     With<CannonLoop>,

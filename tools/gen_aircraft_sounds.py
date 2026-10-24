@@ -11,8 +11,13 @@ flown (assets/sounds/*.flac).
   the tail rotor and the main gearbox whine.
 - heli_turbine.flac: its two turbines: whine, a compressor tone and broadband hiss (pitched with
   torque in the game).
+- jet_engine.flac: the flown jet's engine at full rpm: the compressor's and the turbine's
+  whine over the airflow's roar and hiss (the game plays it slower with the rpm, so it
+  winds up from 0 on start).
+- jet_wind.flac: the airflow over the canopy (louder with airspeed in the game): a broadband
+  rush with a faint whistle and slow buffeting.
 
-Both loop seamlessly: the noise is synthesized in the frequency domain (periodic in the loop
+They loop seamlessly: the noise is synthesized in the frequency domain (periodic in the loop
 length) and every tone and pulse train repeats a whole number of times per loop.
 Mono, 44.1 kHz, 16 bit, like the other game sounds.
 
@@ -150,8 +155,38 @@ def heli_turbine():
     return 0.25 * whine * swell(t, 1.0, 0.1) + 0.12 * compressor + 0.5 * hiss + 0.6 * roar
 
 
+def jet_engine():
+    t = 4.0
+    # Tones carry the pitch (the game plays the loop slower with the rpm, an octave down at
+    # idle): the compressor's blade passing with a few harmonics and the turbine's whine above,
+    # each wavering a little.
+    compressor = sum(tone(t, 1100 * h, h) * swell(t, 3.0, 0.3) / h ** 1.5 for h in range(1, 4))
+    whine = (tone(t, 2650) + 0.5 * tone(t, 3900, 1.0)) * swell(t, 1.5, 0.25)
+    # The airflow through the engine: a roar peaking at a few hundred Hz, the intake hiss.
+    roar = periodic_noise(t, lambda f: band(f, 70, 900, 1.2) + 0.3 * band(f, 900, 3000, 1.5)) * swell(t, 2.5, 0.12)
+    hiss = periodic_noise(t, lambda f: band(f, 2000, 9000, 1.5))
+    norm = lambda x: x / np.max(np.abs(x))
+    return 0.35 * norm(compressor) + 0.25 * whine + 0.8 * norm(roar) + 0.12 * norm(hiss)
+
+
+def jet_wind():
+    t = 6.0
+    # Air rushing past the canopy: broadband, falling off gently above a few hundred Hz,
+    # gusting and buffeting.
+    rush = periodic_noise(t, lambda f: band(f, 90, 400, 1.0) * (1.0 + 0.6 * band(f, 400, 5000, 0.8)))
+    rush *= swell(t, 0.8, 0.25) * swell(t, 7.0, 0.08)
+    # A faint whistle where the air passes the canopy frame, coming and going.
+    whistle = periodic_noise(t, lambda f: np.exp(-((f - 1150) / 50) ** 2))
+    whistle *= np.clip(swell(t, 0.5, 0.9) - 0.4, 0.0, None)
+    rumble = periodic_noise(t, lambda f: band(f, 20, 120, 2.0)) * swell(t, 2.0, 0.4)
+    norm = lambda x: x / np.max(np.abs(x))
+    return 1.0 * norm(rush) + 0.04 * norm(whistle) + 0.3 * norm(rumble)
+
+
 if __name__ == "__main__":
     write("jet.flac", jet())
     write("helicopter.flac", helicopter())
     write("heli_rotor.flac", heli_rotor())
     write("heli_turbine.flac", heli_turbine())
+    write("jet_engine.flac", jet_engine())
+    write("jet_wind.flac", jet_wind())

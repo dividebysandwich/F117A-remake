@@ -1,8 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-pub const NAMES_BYTES: usize = 750;
-/// Size of the shape-indexed tables (buf7, buf8, objectTypeTable) and of the name table.
+/// Size of the shape-indexed tables (shape classes, object types) and of the name table.
 pub const TABLE: usize = 128;
 
 /// World object flags.
@@ -69,23 +68,22 @@ pub struct FlightUnit {
 /// The theater world that is handed to the flight, after the generator's edits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MissionWorld {
-    /// lo = land rubble shape, hi = water rubble shape.
-    pub header: u16,
+    /// Shape left by a destroyed object on land.
+    pub land_rubble: u8,
+    /// Shape left by a destroyed object at sea.
+    pub water_rubble: u8,
     pub ground_unit_count: u16,
     /// `worldObjectCount`: objects `[woc, n)` are bases/landmarks.
     pub world_object_count: u16,
     pub objects: Vec<WorldObject>,
     pub flights: Vec<FlightUnit>,
-    /// Per shape; low nibble = weapon suitability class.
-    pub buf7: Vec<u8>,
-    pub buf8: Vec<u8>,
-    /// objectTypeTable: target category per shape (0 = not a target). Not part of the hand-off block.
+    /// Per shape; low nibble = weapon suitability class, 0 = not a tile target.
+    pub shape_class: Vec<u8>,
+    /// Target category per shape (0 = not a target). Not part of the hand-off block.
     pub object_types: Vec<i8>,
     /// 16x16 territory grid, `grid[row*16+col]`; `&3 == 0` enemy, 0x10 hostile concentration.
     pub grid: Vec<u8>,
-    /// Name bytes as read from the file (at most 750; the hand-off pads with zeros).
-    pub names_raw: Vec<u8>,
-    /// Name table index: entry i is the string after the i-th NUL.
+    /// Place and type names, by name index.
     pub names: Vec<String>,
 }
 
@@ -99,7 +97,7 @@ impl MissionWorld {
         }
     }
 
-    /// Category of a shape (objectTypeTable), 0 if out of range.
+    /// Target category of a shape, 0 if out of range.
     pub fn ott(&self, shape: usize) -> i32 {
         self.object_types.get(shape).map_or(0, |&v| v as i32)
     }

@@ -62,7 +62,7 @@ impl ModelGlobals {
     }
 }
 
-/// Model attributes (.3DX attr byte: low 3 bits = size class, 0x10 = target).
+/// Model attributes (`attr` byte: low 3 bits = size class, 0x10 = target).
 #[derive(Component, Clone, Copy)]
 #[allow(dead_code)] // for tools and future size-class haze
 pub struct ModelInfo {
@@ -681,7 +681,7 @@ impl ModelAssets<'_> {
         }
     }
 
-    /// Whether all of a mesh's vertices lie in the model's ground plane (.3DX coordinates
+    /// Whether all of a mesh's vertices lie in the model's ground plane (model coordinates
     /// are integers; the converter lifts coplanar polygons by fractions of a unit).
     /// (flat ground overlay, warm in the FLIR picture) for a mesh of a model at a haze level:
     /// aircraft, vehicles and missiles are warm; of the tile objects the raised ones of

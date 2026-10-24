@@ -8,7 +8,7 @@
 //! Bevy: metres, X = east, Y = up, Z = -north. Positions are kept in f64 (`WorldPos`) and
 //! rendered relative to a floating origin near the camera to avoid f32 jitter.
 //!
-//! The ground is made of theater models placed per tile (.3DG grid + .3DT lists). Each detail
+//! The ground is made of theater models placed per tile (tile grid + per-tile object lists). Each detail
 //! level (LOD 1..4) shows the cells around the camera; finer levels draw over coarser ones.
 
 use std::collections::HashMap;
@@ -51,7 +51,7 @@ pub(crate) fn insert_theater(
 }
 
 /// Model file and index for each tile shape (the shape handle table): theater models, then the
-/// mission's special target models from PHOTO.3DX appended after them, plus Desert Storm's two
+/// mission's special target models (photo.glb) appended after them, plus Desert Storm's two
 /// fixed PHOTO substitutions.
 #[derive(Resource, Clone, Default)]
 pub struct ShapeHandles {
@@ -224,7 +224,7 @@ pub fn bevy_to_wu(p: DVec3) -> (f64, f64, f64) {
     (p.x / WU, -p.z / WU, p.y / WU)
 }
 
-/// Map units (from .WLD) -> world units (east, north).
+/// Map units (theater data) -> world units (east, north).
 pub fn map_to_wu(x: u16, y: u16) -> (f64, f64) {
     ((x as f64) * 32.0, (0x8000 as f64 - y as f64) * 32.0)
 }
@@ -252,7 +252,7 @@ pub struct Theater {
     pub tiles: TileSets,
     pub world: World,
     pub model_count: usize,
-    /// Model attribute bytes (.3DX attr) by shape, for the simulation's wreck test. Only the
+    /// Model attribute bytes (`attr`) by shape, for the simulation's wreck test. Only the
     /// remake's theaters carry them (the others' are in the exported sim data).
     #[serde(default)]
     pub model_attr: Vec<u8>,
@@ -330,7 +330,7 @@ impl Theater {
 
     /// A ship's model (the world's object category 12 or 13, as the simulation's ship test).
     pub fn is_ship_shape(&self, shape: u8) -> bool {
-        self.world.table7.get((shape & 0x7F) as usize).is_some_and(|&b| matches!(b & 0xF, 12 | 13))
+        self.world.shape_class.get((shape & 0x7F) as usize).is_some_and(|&b| matches!(b & 0xF, 12 | 13))
     }
 
     /// Number of theater models (shapes beyond this index are appended specials).

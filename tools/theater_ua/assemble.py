@@ -5,10 +5,10 @@
 Writes:
 - assets/models/ua.glb: Central Europe's models (as ua_000..ua_093, the theater shares their
   meaning: airbases, SAM sites, depots, ...) followed by the new ones.
-- assets/theaters/ua.ron: tile grid and tile objects, the world (WLD) and the extras the remake
+- assets/theaters/ua.ron: tile grid and tile objects, the world (objects, names) and the extras the remake
   reads (front line, towns, model attributes).
 - assets/mission/theaters/ua.json: the same for the mission generator, which runs Central
-  Europe's START rules (mission table rows, grid references) on it.
+  Europe's mission rules (mission table rows, grid references) on it.
 - assets/palettes/tod_ua.ron: Central Europe's palettes with steppe ground and dark soil.
 """
 
@@ -17,7 +17,6 @@ import math
 import os
 import random
 import re
-import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -437,7 +436,7 @@ def ce_data():
 
 def build_world(lay, ce):
     w = ce["world"]
-    fixed = {i: n for i, n in enumerate(w["names"]) if w["object_types"][i] or w["buf7"][i] or i in (92, 93)}
+    fixed = {i: n for i, n in enumerate(w["names"]) if w["object_types"][i] or w["shape_class"][i] or i in (92, 93)}
     names = [""] * 128
     for i, n in fixed.items():
         names[i] = n
@@ -492,22 +491,14 @@ def build_world(lay, ce):
     for name, t in lay.blue_bases:
         objects.append(obj(name, t, 0, 0x401, BASE))
     assert len(objects) <= 128, len(objects)
-    raw = b"\0" + b"".join(n.encode("ascii") + b"\0" for n in names[1:])
-    raw = raw.rstrip(b"\0") + b"\0"
-    assert len(raw) <= 750, len(raw)
-    print("world: %d objects (%d ground units, world object count %d), names %d bytes" % (len(objects), guc, woc, len(raw)))
+    print("world: %d objects (%d ground units, world object count %d), names %d bytes" % (len(objects), guc, woc, size()))
     # Central Europe's flights with the 2026 types: MiG-23 -> Su-34, MiG-25 -> MiG-31, MiG-29 -> Su-35
     # (the IL-76 stands in for the A-50).
     remap = {0: 31, 1: 3, 2: 32}
     flights = [dict(f, plane_type=remap.get(f["plane_type"], f["plane_type"])) for f in w["flights"]]
-    world = dict(header=(91 << 8) | 102, ground_unit_count=guc, world_object_count=woc, objects=objects, flights=flights,
-                 buf7=w["buf7"], buf8=w["buf8"], object_types=w["object_types"], names_raw=list(raw), names=names)
+    world = dict(land_rubble=102, water_rubble=91, ground_unit_count=guc, world_object_count=woc, objects=objects,
+                 flights=flights, shape_class=w["shape_class"], object_types=w["object_types"], names=names)
     return world, launch
-
-
-def flight_bytes(f):
-    return list(struct.pack("<hhhhiihhhhhhhhhh", f["waypoint"], f["x"], f["y"], f["alt"], f["xp"], f["yp"], f["heading"], f["pitch"],
-                            f["roll"], f["plane_type"], f["flags"], f["speed"], f["fuel"], *f["reserved"]))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -671,17 +662,13 @@ def write_ron(lay, grids, world, model_count, model_attr):
         tiles: [{", ".join(level(lv) for lv in tiles)}],
     ),
     world: (
-        header: {world['header']},
         ground_unit_count: {world['ground_unit_count']},
         world_object_count: {world['world_object_count']},
         objects: [
             {objs}
         ],
-        flights: [{", ".join(ron_list(flight_bytes(f)) for f in world['flights'])}],
-        table7: {ron_list(world['buf7'])},
-        table8: {ron_list(world['buf8'])},
+        shape_class: {ron_list(world['shape_class'])},
         object_types: {ron_list([v & 0xFF for v in world['object_types']])},
-        terrain: {ron_list(world['grid'])},
         names: [{", ".join(ron_str(n) for n in world['names'])}],
     ),
     model_count: {model_count},

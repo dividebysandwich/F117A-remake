@@ -2,7 +2,7 @@ use crate::math::{abs16, approx, bearing, cdiv, clamp_q, hi8s, s16, u16v};
 use crate::types::*;
 use crate::{ENEMY_SLOTS, Sim};
 
-/// Pure EMV function, bit-exact.
+/// Pure EMV function.
 /// `flags` = player flags, `view_z` = compressed altitude, `velocity` = knots*27.
 pub fn emv(view_z: i32, velocity: i32, roll: i32, flags: i32, diff: i32, lockheed: bool) -> i32 {
     let mut r = hi8s(roll).abs();
@@ -42,7 +42,7 @@ pub struct DetectCtx<'a> {
     pub grid: &'a [u8],
 }
 
-/// Pure radar signal, bit-exact.
+/// Pure radar signal.
 /// `threat` = (lethality, tier, flags) of the radar type. Returns (score, bearing, range).
 pub fn detect(
     sx: i32,

@@ -1,6 +1,6 @@
 //! Sound effects, recorded from the AdLib driver into assets/sounds/.
 //!
-//! - Effects are requested by id with a priority (`makeSound(id, prio)`); they play when
+//! - Effects are requested by id with a priority (`PlaySound`); they play when
 //!   `prio >= 3 - level` (level 3 = all sounds, 2 = no engine, 1 = firing and explosions only,
 //!   0 = none; Alt-V cycles, with an extra step at level 3 that halves the engine first).
 //!   Gear, bay doors, the error buzz and speech bypass the level.

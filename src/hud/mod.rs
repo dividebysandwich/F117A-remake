@@ -100,7 +100,7 @@ impl HudMessages {
 /// One weapon bay.
 #[derive(Debug, Clone)]
 pub struct Bay {
-    /// Classic weapon name, e.g. "IN Cluster".
+    /// Classic weapon name, e.g. "Incendiary".
     pub name: String,
     pub count: u32,
     /// Index of the weapon's side view picture (WPN page).
@@ -135,7 +135,7 @@ impl Default for Stores {
         };
         Self {
             bays: vec![
-                bay("IN Cluster", 2, 9, false),
+                bay("Incendiary", 2, 9, false),
                 bay("Durandal", 2, 8, false),
                 bay("Maverick", 2, 16, false),
                 bay("Sidewinder", 4, 0, true),

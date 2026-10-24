@@ -1,4 +1,4 @@
-//! Generate a mission from the JSON data (`assets/mission`) and print the briefing, the orders page and the hand-off block.
+//! Generate a mission from the JSON data (`assets/mission`) and print the briefing and the orders page.
 //!
 //! `cargo run -p stealth-mission --example mission -- MISSION_DIR THEATER ROE KIND OPP PLANE SRAND_HEX [SORTIES] [--json]`
 
@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
         roe: n(2),
         kind: MissionKind::from_index(n(3)).unwrap(),
         opponents: n(4),
-        plane: if n(5) != 0 { Plane::Lockheed } else { Plane::MicroProse },
+        plane: if n(5) != 0 { Plane::Lockheed } else { Plane::Fictional },
         sorties: a.get(7).and_then(|v| v.parse().ok()).unwrap_or(0),
         ..Default::default()
     };
@@ -32,7 +32,5 @@ fn main() -> anyhow::Result<()> {
         println!("{}", l.text);
     }
     println!("--- {}", m.rng.holdrand_exit);
-    let b = handoff_block(&m);
-    println!("{}", b.iter().map(|x| format!("{x:02x}")).collect::<String>());
     Ok(())
 }

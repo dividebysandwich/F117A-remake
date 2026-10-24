@@ -748,199 +748,199 @@
   "planes": [
     {
       "name": "MIG-23",
-      "nick": " Flogger",
+      "nick": "Flogger",
       "speed": 740,
       "range": 560
     },
     {
       "name": "MIG-25",
-      "nick": " Foxbat",
+      "nick": "Foxbat",
       "speed": 570,
       "range": 700
     },
     {
       "name": "MIG-29",
-      "nick": " Fulcrum",
+      "nick": "Fulcrum",
       "speed": 700,
       "range": 400
     },
     {
       "name": "MIG-31",
-      "nick": " Foxhound",
+      "nick": "Foxhound",
       "speed": 790,
       "range": 930
     },
     {
       "name": "Su-27",
-      "nick": " Flanker",
+      "nick": "Flanker",
       "speed": 725,
       "range": 715
     },
     {
       "name": "IL-76",
-      "nick": " Mainstay",
+      "nick": "Mainstay",
       "speed": 400,
       "range": 4000
     },
     {
       "name": "F-4E",
-      "nick": " Phantom",
+      "nick": "Phantom",
       "speed": 800,
       "range": 520
     },
     {
       "name": "F-14",
-      "nick": " Tomcat",
+      "nick": "Tomcat",
       "speed": 800,
       "range": 800
     },
     {
       "name": "F-18",
-      "nick": " Hornet",
+      "nick": "Hornet",
       "speed": 660,
       "range": 461
     },
     {
       "name": "An-72",
-      "nick": " Coaler",
+      "nick": "Coaler",
       "speed": 350,
       "range": 620
     },
     {
       "name": "F-18",
-      "nick": " Hornet",
+      "nick": "Hornet",
       "speed": 660,
       "range": 461
     },
     {
       "name": "MIG-23",
-      "nick": " Flogger",
+      "nick": "Flogger",
       "speed": 740,
       "range": 560
     },
     {
       "name": "F-14",
-      "nick": " Tomcat",
+      "nick": "Tomcat",
       "speed": 800,
       "range": 800
     },
     {
       "name": "F-4E",
-      "nick": " Phantom",
+      "nick": "Phantom",
       "speed": 800,
       "range": 520
     },
     {
       "name": "Yak-38",
-      "nick": " Forger",
+      "nick": "Forger",
       "speed": 550,
       "range": 300
     },
     {
       "name": "Tu-95",
-      "nick": " Bear",
+      "nick": "Bear",
       "speed": 410,
       "range": 5100
     },
     {
       "name": "Mi-24",
-      "nick": " Hind",
+      "nick": "Hind",
       "speed": 200,
       "range": 300
     },
     {
       "name": "F-5",
-      "nick": " Tiger",
+      "nick": "Tiger",
       "speed": 500,
       "range": 250
     },
     {
       "name": "767",
-      "nick": " Boeing",
+      "nick": "Boeing",
       "speed": 400,
       "range": 1000
     },
     {
       "name": "MIG-17",
-      "nick": " Fresco",
+      "nick": "Fresco",
       "speed": 570,
       "range": 560
     },
     {
       "name": "F-1",
-      "nick": " Mirage",
+      "nick": "Mirage",
       "speed": 790,
       "range": 560
     },
     {
       "name": "F-15",
-      "nick": " Eagle",
+      "nick": "Eagle",
       "speed": 800,
       "range": 800
     },
     {
       "name": "F-16",
-      "nick": " Falcon",
+      "nick": "Falcon",
       "speed": 800,
       "range": 800
     },
     {
       "name": "UH-60",
-      "nick": " Blackhawk",
+      "nick": "Blackhawk",
       "speed": 200,
       "range": 200
     },
     {
       "name": "A-6",
-      "nick": " Intruder",
+      "nick": "Intruder",
       "speed": 600,
       "range": 800
     },
     {
       "name": "MIG-21",
-      "nick": " Fishbed",
+      "nick": "Fishbed",
       "speed": 750,
       "range": 400
     },
     {
       "name": "EF-111",
-      "nick": " Aardvark",
+      "nick": "Aardvark",
       "speed": 800,
       "range": 3000
     },
     {
       "name": "C-5",
-      "nick": " Galaxy",
+      "nick": "Galaxy",
       "speed": 400,
       "range": 1000
     },
     {
       "name": "A-10",
-      "nick": " Tbolt II",
+      "nick": "Tbolt II",
       "speed": 400,
       "range": 300
     },
     {
       "name": "Geran-2",
-      "nick": " Shahed",
+      "nick": "Shahed",
       "speed": 115,
       "range": 1500
     },
     {
       "name": "Geran-3",
-      "nick": " Shahed",
+      "nick": "Shahed",
       "speed": 350,
       "range": 1000
     },
     {
       "name": "Su-34",
-      "nick": " Fullback",
+      "nick": "Fullback",
       "speed": 700,
       "range": 600
     },
     {
       "name": "Su-35",
-      "nick": " Flanker-E",
+      "nick": "Flanker-E",
       "speed": 750,
       "range": 800
     }
@@ -1259,20 +1259,20 @@
     "1X AGM-88A HARM",
     "2X PENGUIN-3 ASM",
     "1X AGM-84A HARPOON",
-    "2X AGM-650 MAVERICK",
+    "2X AGM-65 MAVERICK",
     "2X GBU-12 PAVEWAY",
     "2X MK 20 ROCKEYE",
     "2X DURANDAL BOMB",
-    "3X MK 82-0 SLICK",
-    "3X MK 82-1 SNAKEYE",
+    "3X MK 82 LDGP",
+    "3X MK 82 SNAKEYE",
     "2X MK 20 ROCKEYE II",
     "2X MK 122 FIREYE",
     "2X CBU-72 FAE",
-    "2X MK 35 IN CLUSTER",
-    "1X ISCB-1 MINELETS",
-    "1X 135MM/IR CAMERA",
-    "1X 1900 LBS. FUEL",
-    "1X SPECIAL EQUIP"
+    "2X MK 35 INCENDIARY",
+    "1X ISCB-1 MINES",
+    "1X IR/OPTICAL CAMERA",
+    "1X 1900 LB FUEL TANK",
+    "1X SPECIAL CARGO"
   ],
   "dir_dx": [
     -1,

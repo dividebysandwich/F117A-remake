@@ -171,7 +171,7 @@ pub(crate) fn defend(m: &mut Mission, data: &GameData, th: &TheaterData) -> Resu
     let (target_name, site_name, base_name) = (names(&to), names(&so), names(&bo));
     let nuclear = NPP_SHAPES.contains(&to.shape());
     let ott = |o: &WorldObject| m.world.ott(o.shape()) as i8;
-    let class = |o: &WorldObject| m.world.buf7.get(o.shape()).copied().unwrap_or(0) & 0xF;
+    let class = |o: &WorldObject| m.world.shape_class.get(o.shape()).copied().unwrap_or(0) & 0xF;
     let launch_names: Vec<String> =
         sites.iter().map(|&s| names(&m.world.objects[s as usize])).collect();
     let what = if nuclear { "the nuclear power plant" } else { "the city" };

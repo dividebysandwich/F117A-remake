@@ -456,8 +456,8 @@ fn bomb_vs_target_uses_effectiveness_table() {
         .find(|(m, _)| m.primary.mission_type == 2)
         .unwrap();
     let t = m.primary.object_index as usize;
-    let cat = (m.world.buf7[m.world.objects[t].shape()] & 0xF) as i32;
-    // Retarded weapons (spec 29): Rockeye 7, Durandal 8, Snakeye 10, IN Cluster 14, Minelets 15.
+    let cat = (m.world.shape_class[m.world.objects[t].shape()] & 0xF) as i32;
+    // Retarded weapons (spec 29): Rockeye 7, Durandal 8, Snakeye 10, Mk 35 incendiary 14, mines 15.
     let good = [7, 8, 10, 14, 15].into_iter().find(|&w| d.sim.compat_cat(w, cat) > 0);
     let bad = [7, 8, 10, 14, 15].into_iter().find(|&w| d.sim.compat_cat(w, cat) == 0);
     for (w, expect_kill) in [(good, true), (bad, false)] {
@@ -648,24 +648,24 @@ fn state_hash(sim: &Sim) -> u64 {
 #[test]
 fn classic_state_golden() {
     const GOLDEN: [u64; 18] = [
-        0xa540e20af6dbaf48,
-        0x5649e6e18af28b9f,
-        0xa3ffca7fdeb5c6bb,
-        0xa3701fa4c151d667,
-        0xcd3f7a3882299fb9,
-        0xd8de8d2b41c0386f,
-        0x0b42ccd03052c9c4,
-        0xe13634d6e5a429e8,
-        0x05c467c23d29d6d7,
-        0xfa3000665715bef7,
-        0x76c997ba7386a37f,
-        0x68823a5c222b3f49,
-        0x88b326349fc0b953,
-        0x83af8682dfce38b4,
-        0xfa9126d047bb8cfd,
-        0x2781a504e2640ab9,
-        0x1a458d5b4b9a5214,
-        0x02bd67088fb9b96d,
+        0x26bec1741250c262,
+        0xb0a05c2703a62333,
+        0x8b253708c58e4a18,
+        0x91369bedb474057c,
+        0xcd9266f3a3ef8711,
+        0x443f6790c107d6a5,
+        0x620bb333986c8954,
+        0x9629c627252309ec,
+        0x27e911ff5ba3ca7b,
+        0x8d84039dc5a1d4b9,
+        0x638e1187ecbd2f98,
+        0x2f2669b82e5aae26,
+        0xce82c1aa2d456393,
+        0x4260c4d304b6e272,
+        0x7bffb6892ef438af,
+        0xb73cd7b9c71c2443,
+        0x8c140fbee4673d51,
+        0x50a790c2e8094406,
     ];
     let d = data();
     let mut got = Vec::new();

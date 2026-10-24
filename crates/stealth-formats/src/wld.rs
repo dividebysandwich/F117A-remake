@@ -19,17 +19,12 @@ pub struct WorldObject {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct World {
-    pub header: u16,
     pub ground_unit_count: u16,
     pub world_object_count: u16,
     pub objects: Vec<WorldObject>,
-    /// Raw 36-byte flight unit records.
-    pub flights: Vec<Vec<u8>>,
-    pub table7: Vec<u8>,
-    pub table8: Vec<u8>,
+    /// Per shape; low nibble = weapon suitability class.
+    pub shape_class: Vec<u8>,
     pub object_types: Vec<u8>,
-    /// 16x16 terrain class grid (one cell per LOD3 tile); low 2 bits = class, 0 = land.
-    pub terrain: Vec<u8>,
     pub names: Vec<String>,
 }
 

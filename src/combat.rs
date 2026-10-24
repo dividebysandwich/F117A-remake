@@ -940,10 +940,8 @@ pub fn remote_motion(combat: &Combat, id: u8) -> Option<((f64, f64, f64), DVec3,
         "UH-60A"
     } else if p.external_stores {
         "F-16"
-    } else if p.lockheed {
-        "F-117A"
     } else {
-        "F-19"
+        "F-117A"
     };
     Some(((v.wx as f64, v.wy as f64, v.alt as f64), dir * v.knots as f64 * 0.514_444, name))
 }

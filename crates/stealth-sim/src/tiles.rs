@@ -39,7 +39,7 @@ const DIR_DY: [i32; 9] = [1, 1, -1, -1, 1, 0, -1, 0, 0];
 
 impl Sim {
     /// Nearest tile object to world point (X, Y): LOD levels 1..2, 9 neighbour cells, candidates with
-    /// `buf7[shape] != 0`, Manhattan distance.
+    /// `shape_class[shape] != 0`, Manhattan distance.
     pub(crate) fn find_nearest_tile(&self, x: i32, y: i32) -> Option<TileHit> {
         let tiles = self.tiles.as_ref()?;
         let mut best = None;
@@ -66,7 +66,7 @@ impl Sim {
                             && t.row == gy
                     });
                     let shape = dmg.map_or(sh as i32, |t| t.shape);
-                    if self.buf7.get((shape & 0x7F) as usize).copied().unwrap_or(0) == 0 {
+                    if self.shape_class.get((shape & 0x7F) as usize).copied().unwrap_or(0) == 0 {
                         continue;
                     }
                     let (mut tx, mut ty) = (s16(ox as i32 + sx), s16(oy as i32 + sy));
@@ -247,7 +247,7 @@ impl Sim {
                     return;
                 }
                 let base = t.map_or(o.shape & 0x7F, |t| t.base_shape);
-                if let Some(b) = self.buf8.get_mut((base & 0x7F) as usize) {
+                if let Some(b) = self.tile_hits.get_mut((base & 0x7F) as usize) {
                     *b = b.wrapping_add(1);
                 }
                 self.log_event(2, base);

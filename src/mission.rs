@@ -1,5 +1,5 @@
-//! Missions: the START generator (crate stealth-mission, byte-exact) running on the exported
-//! mission data (assets/mission/*.json).
+//! Missions: the mission generator (crate stealth-mission) running on the mission data
+//! (assets/mission/*.json).
 
 use std::sync::Arc;
 
@@ -91,7 +91,7 @@ pub fn settings(
         roe,
         kind,
         opponents,
-        plane: if lockheed { Plane::Lockheed } else { Plane::MicroProse },
+        plane: if lockheed { Plane::Lockheed } else { Plane::Fictional },
         weather,
         cloud_cover,
         ..default()
@@ -106,7 +106,7 @@ pub fn generate(
     stealth_mission::generate(&data.0, settings, Seed::Srand(seed))
 }
 
-/// Strips START's text control bytes (colour switches >= 0x80, CR).
+/// Strips text control bytes (colour switches >= 0x80, CR).
 pub fn clean_text(s: &str) -> String {
     s.chars().filter(|&c| (c as u32) < 0x80 && c != '\r').collect()
 }

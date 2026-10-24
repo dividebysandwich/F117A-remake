@@ -581,10 +581,10 @@ steady high tone when the target is in range: fire.
 | Penguin 3 / AGM-84A Harpoon | Anti-ship missiles, only against ships | 32 / 60 |
 | AGM-65D Maverick | Optical air-to-ground missile | 32 |
 | GBU-12 Paveway, Mk 20 Rockeye II, CBU-72 FAE | Guided bombs | 10 |
-| Durandal, Mk 82-1 Snakeye, Mk 20 Rockeye, Mk 35, Minelets | Retarded / cluster bombs | – |
-| Mk 82-0 Slick, Mk 122 Fireye | Free-fall bombs | – |
-| 135 mm camera | Reconnaissance photos of the target | – |
-| Extra fuel | 1900 lbs, transferred on release | – |
+| Durandal, Mk 82 Snakeye, Mk 20 Rockeye, Mk 35, ISCB-1 mines | Retarded / cluster bombs | – |
+| Mk 82 LDGP, Mk 122 Fireye | Free-fall bombs | – |
+| IR/optical camera | Reconnaissance photos of the target | – |
+| Fuel tank | 1900 lb, transferred on release | – |
 | AGM-114 Hellfire (AH-1Z) | Laser guided: flies to where the targeting pod looks | 8 |
 
 **Unguided bombs** leave with the aircraft's speed and direction and fall under gravity and

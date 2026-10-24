@@ -17,15 +17,6 @@ pub enum AircraftKind {
     AH1Z,
 }
 
-/// How the aircraft's shadow is drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Shadow {
-    /// A flat outline model of the STFLT file (the classic F-117A shadow is model 17).
-    Model(u16),
-    /// The exterior model squashed flat onto the ground.
-    Flattened,
-}
-
 /// The exterior model drawn from the cockpit: without its canopy glass, and without the parts
 /// reaching into the cockpit.
 pub struct CockpitView {
@@ -52,7 +43,6 @@ pub struct AircraftSpec {
     pub cockpit_view: Option<CockpitView>,
     /// Cockpit models (glb stem under `models/`): one, or the modern and the classic one.
     pub cockpits: &'static [(PanelStyle, &'static str)],
-    pub shadow: Shadow,
     /// VR cockpit size at 100% (rig scale: the fraction of life size the cockpit looks in the
     /// headset), what felt right in each.
     pub vr_scale: f32,
@@ -120,7 +110,6 @@ static F117: AircraftSpec = AircraftSpec {
     eye: Vec3::new(0.0, 1.6, -3.0),
     cockpit_view: None,
     cockpits: &[(PanelStyle::Modern, "cockpit_modern"), (PanelStyle::Classic, "cockpit_classic")],
-    shadow: Shadow::Model(17),
     vr_scale: 0.85 * 0.7,
     vr_eye_height: Some(2.7),
     hud_scale: crate::hud::modern::SCALE,
@@ -147,7 +136,6 @@ static F16: AircraftSpec = AircraftSpec {
         rotors: false,
     }),
     cockpits: &[(PanelStyle::F16, "cockpit_f16")],
-    shadow: Shadow::Flattened,
     // The symbology (about 920 x 470 canvas pixels) inside the combiner (x +-0.1675, z -0.12 ..
     // 0.095 at 0.70 m in front of the eye, tools/models/build_cockpit_f16.py).
     vr_scale: 1.25 * 0.7,
@@ -186,7 +174,6 @@ static UH60: AircraftSpec = AircraftSpec {
         rotors: true,
     }),
     cockpits: &[(PanelStyle::Uh60, "cockpit_uh60")],
-    shadow: Shadow::Flattened,
     // Life size, as the F-16's.
     vr_scale: 1.25 * 0.7,
     vr_eye_height: None,
@@ -223,7 +210,6 @@ static AH1Z: AircraftSpec = AircraftSpec {
         rotors: true,
     }),
     cockpits: &[(PanelStyle::Ah1z, "cockpit_ah1z")],
-    shadow: Shadow::Flattened,
     vr_scale: 1.25 * 0.7,
     vr_eye_height: None,
     hud_scale: crate::hud::modern::SCALE,

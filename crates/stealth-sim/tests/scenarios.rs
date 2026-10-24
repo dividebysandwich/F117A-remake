@@ -1739,6 +1739,56 @@ fn hellfire_follows_the_pod() {
     }
 }
 
+/// A Hellfire fired from the AH-1Z 500 ft up at a target `range` map units northeast, the pod's
+/// spot on it: the launch zone at the shot and whether it hit.
+fn hellfire_shot(guided: bool, range: i32) -> (Option<dlz::LaunchZone>, bool) {
+    let (mut sim, mx, my, mut p) = helicopter(true, guided);
+    let diag = (range as f64 / std::f64::consts::SQRT_2).round() as i32;
+    let (tx, ty) = (mx + diag, my - diag);
+    {
+        let o = &mut sim.objects_mut()[5];
+        o.x = tx;
+        o.y = ty;
+        o.flags = 0;
+    }
+    p.altitude = 500;
+    p.hud_mode = HudMode::Gnd;
+    p.pod = Some(PodAim { heading: 0x2000, pitch: -0x100, ground: Some((tx, ty)) });
+    sim.step(&p, 15);
+    let zone = sim.launch_zone();
+    p.cmd.fire = true;
+    let mut hit = false;
+    for _ in 0..15 * 150 {
+        for e in sim.step(&p, 15) {
+            if let SimEvent::Explosion { x, y, .. } = e {
+                hit |= (x - tx).abs() <= 2 && (y - ty).abs() <= 2;
+            }
+        }
+        p.cmd = Commands::default();
+    }
+    (zone, hit)
+}
+
+/// The Hellfire's launch zone is at the pod's spot, without a lock; with realistic guidance it
+/// glides only so far: it slows once burnt out, stalls and falls short.
+#[test]
+fn hellfire_launch_zone_at_the_spot() {
+    for guided in [false, true] {
+        let (z, hit) = hellfire_shot(guided, 400);
+        let z = z.expect("a launch zone");
+        let (lo, hi) = z.zone.expect("in reach");
+        assert!(z.in_zone() && hit, "guided {guided}: {z:?} hit {hit}");
+        assert!(lo < 100 && hi > 600, "guided {guided}: {z:?}");
+        if guided {
+            assert!(hi < 1200, "{z:?}");
+            let (z, hit) = hellfire_shot(guided, hi + 100);
+            assert!(!z.unwrap().in_zone() && !hit, "past the zone: {z:?} hit {hit}");
+            let (z, hit) = hellfire_shot(guided, hi - 60);
+            assert!(z.unwrap().in_zone() && hit, "inside the zone: {z:?} hit {hit}");
+        }
+    }
+}
+
 /// The AH-1Z's cannon fires where the pod looks, as far as its turret turns; the UH-60 has none.
 #[test]
 fn turret_gun_follows_the_pod() {

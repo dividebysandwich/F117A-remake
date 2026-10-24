@@ -8,6 +8,8 @@
 //! - **Motor**: a boost to full speed and, on missiles with a sustainer, a burn that holds it,
 //!   for the real motor's burn time; afterwards it glides, slowed by drag (thinner up high) and
 //!   by every turn it makes. Its smoke trail ends with the burn ([`Projectile::motor_visible`]).
+//!   Once too slow to fly it stalls: no more lift or steering, it falls to the ground, so the
+//!   launch altitude stretches its reach.
 //! - **Turning**: the lift it can pull falls with the speed squared and the air density, so a
 //!   slow missile high up can barely turn. It is roll stabilised and turns by skidding.
 //! - **Guidance**: pure proportional navigation (N = 4): the velocity turns four times as fast
@@ -26,7 +28,8 @@ use crate::math::{s16, view_z_f};
 use crate::types::*;
 
 /// A missile's motor and airframe: motor burn and smoke trail (s), seconds to full speed,
-/// lateral acceleration limit (g) at full lift, and launched vertically.
+/// lateral acceleration limit (g) at full lift, launched vertically, and its drag as a multiple
+/// of [`DRAG`].
 #[derive(Debug, Clone, Copy)]
 pub struct Profile {
     pub burn: f64,
@@ -34,19 +37,20 @@ pub struct Profile {
     pub boost: f64,
     pub g: f64,
     pub vertical: bool,
+    pub drag: f64,
 }
 
 const fn rocket(burn: f64, boost: f64, g: f64) -> Profile {
-    Profile { burn, smoke: burn, boost, g, vertical: false }
+    Profile { burn, smoke: burn, boost, g, vertical: false, drag: 1.0 }
 }
 
 const fn vertical(burn: f64, boost: f64, g: f64) -> Profile {
-    Profile { burn, smoke: burn, boost, g, vertical: true }
+    Profile { burn, smoke: burn, boost, g, vertical: true, drag: 1.0 }
 }
 
 /// Burns the whole way (a turbojet or a long sustainer); the smoke shows for `smoke` s.
 const fn cruise(smoke: f64, g: f64) -> Profile {
-    Profile { burn: 1e9, smoke, boost: 3.0, g, vertical: false }
+    Profile { burn: 1e9, smoke, boost: 3.0, g, vertical: false, drag: 1.0 }
 }
 
 /// The profile of a missile table entry; None for bombs and the other projectiles (they keep
@@ -76,7 +80,8 @@ pub fn profile(spec: i32) -> Option<Profile> {
         25 => cruise(1e9, 10.0),      // Penguin: a sustainer the whole way
         26 => cruise(3.0, 10.0),      // Harpoon: booster, then its turbojet
         27 => rocket(4.0, 1.0, 15.0), // Maverick
-        47 => rocket(2.5, 1.0, 20.0), // Hellfire
+        // Hellfire: light and blunt, it slows fast once burnt out (some 10 km from low down).
+        47 => Profile { drag: 4.0, ..rocket(2.5, 1.0, 20.0) },
         31 => rocket(15.0, 4.0, 25.0), // AIM-7
         41 => vertical(15.0, 4.0, 25.0), // SA-21
         43 => rocket(2.0, 2.0, 30.0), // SA-22: a booster, then the dart glides
@@ -109,7 +114,7 @@ const INDUCED: f64 = 0.12;
 /// Speed (wu/s) at which a missile pulls its full g at sea level; the least share of it left.
 const FULL_LIFT_SPEED: f64 = 2500.0;
 const MIN_LIFT: f64 = 0.08;
-/// After burnout, a missile slower than this (wu/s) is spent.
+/// After burnout, a missile slower than this (wu/s) stalls and falls.
 const MIN_SPEED: f64 = 500.0;
 /// Seconds a missile flies at most.
 const MAX_SECS: i32 = 150;
@@ -283,10 +288,6 @@ impl Sim {
                 self.ground_impact(s);
                 false
             }
-            Step::Spent => {
-                self.proj[s].ttl = 0;
-                false
-            }
         }
     }
 
@@ -312,6 +313,7 @@ pub(crate) fn start_flight(pm: &mut Projectile, pos: V3, vel: V3, fs: i32) {
         loft: 0,
         seen: false,
         lost: false,
+        stalled: false,
     });
     pm.ttl = MAX_SECS * fs;
     pm.roll = 0;
@@ -325,8 +327,6 @@ pub(crate) enum Step {
     Fused,
     /// It hit the ground (`alt` is -1).
     Ground,
-    /// Out of energy after burnout.
-    Spent,
 }
 
 /// One frame of the realistic flight of `pm` with top speed `vmax` (wu/s) and fuse `radius`:
@@ -357,6 +357,8 @@ pub(crate) fn flight_step(
     let mut cmd = mul(up, GRAVITY);
     // The seeker, once it has had the target in view, loses it for good when it leaves the view
     // (until then, turning over from a vertical launch or climbing a loft, it is steered to it).
+    // Stalled: nothing steers it any more.
+    let guide = guide.filter(|_| !f.stalled);
     let guide = guide.filter(|tg| {
         let r = sub(tg.p, p);
         let in_view = dot(r, vh) > GIMBAL_COS * len(r);
@@ -391,16 +393,17 @@ pub(crate) fn flight_step(
             cmd = add(cmd, mul(cross(omega, v), PN_GAIN));
         }
     }
-    let mut a_lat = across(cmd, vh);
+    // Stalled: no lift, it falls.
+    let mut a_lat = if f.stalled { [0.0; 3] } else { across(cmd, vh) };
     let a = len(a_lat);
     if a > a_max {
         a_lat = mul(a_lat, a_max / a);
     }
 
     // Along the flight path: thrust while the motor burns, drag.
-    let drag = DRAG * sigma * speed * speed + INDUCED * len(a_lat);
+    let drag = prof.drag * DRAG * sigma * speed * speed + INDUCED * len(a_lat);
     let thrust = if t < prof.burn {
-        let most = vmax / prof.boost + DRAG * sigma * vmax * vmax + GRAVITY;
+        let most = vmax / prof.boost + prof.drag * DRAG * sigma * vmax * vmax + GRAVITY;
         ((vmax - speed) / 0.5 + drag + GRAVITY * vh[2]).clamp(0.0, most)
     } else {
         0.0
@@ -424,6 +427,7 @@ pub(crate) fn flight_step(
 
     // Back into the record.
     let speed = len(v);
+    f.stalled |= t > prof.burn && speed < MIN_SPEED;
     let q = |a: f64| (a * fine).round() as i32;
     f.x = q(p[0]);
     f.y = q(p[1]);
@@ -447,9 +451,6 @@ pub(crate) fn flight_step(
     } else if p[2] < 0.0 {
         pm.alt = -1;
         Step::Ground
-    } else if t > prof.burn && speed < MIN_SPEED {
-        // Out of energy: the missile is spent.
-        Step::Spent
     } else {
         Step::Flying
     }

@@ -198,6 +198,9 @@ pub struct MissileFlight {
     pub seen: bool,
     #[serde(default)]
     pub lost: bool,
+    /// Burnt out and too slow to fly: it falls, unguided, to the ground.
+    #[serde(default)]
+    pub stalled: bool,
 }
 
 /// A falling bomb's position (fine units, [`ROUND_FINE`] per world unit: x east, y south like

@@ -5,6 +5,7 @@
 //!
 //! - Air-to-ground missiles against the ground lock (GND): capped by the range the seeker
 //!   locks on from at launch (the LOCK oval); fired without that lock the missile flies blind.
+//!   The Hellfire against the targeting pod's laser spot, which its seeker sees at any range.
 //! - Air-to-air missiles against the air lock (AIR): the target flies on as it does now, and
 //!   for the no-escape range turns tail at the launch.
 
@@ -20,6 +21,8 @@ const SAMPLES: i32 = 20;
 const REFINE: u32 = 7;
 /// Angle off the missile's heading (BAM) within which its seeker sees the target.
 const SEEKER_CONE: i32 = 0x1000;
+/// Hellfire: farthest range searched (map units, some 12 km).
+const HELLFIRE_SEARCH: i32 = 0x500;
 /// Map units ahead per unit of lock range within which the LOCK oval locks on: ground and air
 /// (lock_oval).
 const GROUND_LOCK: f64 = 56.0;
@@ -74,8 +77,9 @@ impl LaunchZone {
 
 impl Sim {
     /// The launch zone of the selected missile: an air-to-ground one (HARM, Penguin, Harpoon,
-    /// Maverick) against the ground lock in GND mode, an air-to-air one against the air lock in
-    /// AIR mode; None without one, or when the missile can do nothing to the target.
+    /// Maverick) against the ground lock in GND mode (the Hellfire against the pod's spot), an
+    /// air-to-air one against the air lock in AIR mode; None without one, or when the missile
+    /// can do nothing to the target.
     pub fn launch_zone(&self) -> Option<LaunchZone> {
         if self.pl.gun_selected {
             return None;
@@ -95,19 +99,24 @@ impl Sim {
         if count <= 0 || !matches!(cls, 4..=6) {
             return None;
         }
-        let g = usize::try_from(self.pl.gnd_lock).ok().filter(|&g| g < self.objects.len())?;
-        let o = self.objects[g];
-        if o.flags & oflags::DESTROYED != 0
-            || self.compat(w, g as i32) == 0
-            || (cls == 4 && o.unit_type == 0)
-            || (cls == 5 && !self.is_ship(g as i32))
-        {
-            return None;
-        }
-        let slant = GROUND_LOCK * mt.lock_range as f64;
-        let height = (self.pl.p.view_z >> 5) as f64;
-        let lock_max = (slant * slant - height * height).max(0.0).sqrt() as i32;
-        let (dx, dy) = (s16(o.x - self.pl.p.mx) as f64, s16(o.y - self.pl.p.my) as f64);
+        let (tx, ty, lock_max) = if spec == HELLFIRE_SPEC {
+            let (x, y) = self.pl.last_input.pod.and_then(|p| p.ground)?;
+            (x, y, HELLFIRE_SEARCH)
+        } else {
+            let g = usize::try_from(self.pl.gnd_lock).ok().filter(|&g| g < self.objects.len())?;
+            let o = self.objects[g];
+            if o.flags & oflags::DESTROYED != 0
+                || self.compat(w, g as i32) == 0
+                || (cls == 4 && o.unit_type == 0)
+                || (cls == 5 && !self.is_ship(g as i32))
+            {
+                return None;
+            }
+            let slant = GROUND_LOCK * mt.lock_range as f64;
+            let height = (self.pl.p.view_z >> 5) as f64;
+            (o.x, o.y, (slant * slant - height * height).max(0.0).sqrt() as i32)
+        };
+        let (dx, dy) = (s16(tx - self.pl.p.mx) as f64, s16(ty - self.pl.p.my) as f64);
         let d = dx.hypot(dy);
         let range = d.round() as i32;
         let zone = if lock_max < 1 || d < 1.0 {
@@ -178,10 +187,22 @@ impl Sim {
         let mut m = self.launch_projectile(w, spec);
         let fs = self.fs;
         let guided = self.guided(spec);
+        let hellfire = spec == HELLFIRE_SPEC;
+        let (pos, mut vel) = self.launch_motion();
+        if hellfire {
+            // It pitches onto the spot as it leaves the rail (`fire_missile`).
+            (m.heading, m.pitch) = guidance::heading_pitch([
+                track.p[0] - pos[0],
+                track.p[1] - pos[1],
+                track.p[2] - pos[2],
+            ]);
+            let speed = vel.iter().map(|v| v * v).sum::<f64>().sqrt();
+            vel = guidance::direction(m.heading, m.pitch).map(|d| d * speed);
+        }
         if guided {
-            let (pos, vel) = self.launch_motion();
             guidance::start_flight(&mut m, pos, vel, fs);
         }
+        let cone = if hellfire { HELLFIRE_SEEKER } else { SEEKER_CONE };
         let vmax = self.guided_vmax(spec);
         let radius = if air { guidance::FUSE_AAM } else { guidance::FUSE_GROUND };
         let top = (self.missile(spec).max_speed as i32) >> 6;
@@ -203,7 +224,7 @@ impl Sim {
             let (tx, ty) =
                 (((p[0] / 32.0).floor() as i32) & 0xFFFF, ((p[1] / 32.0).floor() as i32) & 0xFFFF);
             let (r, aim, off) = seeker_geometry(&m, tx, ty);
-            let seen = off <= SEEKER_CONE;
+            let seen = off <= cone;
             // Out of the seeker's view the missile flies straight on: it never sees a target
             // on the ground again, nor one flying on straight once that draws away. Nor does
             // a missile at its full speed or burnt out catch an aircraft drawing away.
@@ -225,7 +246,7 @@ impl Sim {
                 match guidance::flight_step(&mut m, vmax, radius, fs, guide, target) {
                     Step::Fused => return true,
                     Step::Flying => {}
-                    Step::Ground | Step::Spent => return false,
+                    Step::Ground => return false,
                 }
             } else {
                 if self.classic_step(&mut m, false, seen, aim, r, talt) {

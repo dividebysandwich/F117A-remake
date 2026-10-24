@@ -1626,9 +1626,10 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                 range_km,
                 zone_km: zone.map(|z| (z.0, z.1)),
                 no_escape_km: zone.and_then(|z| z.2),
-                // An air-to-air missile homes on the target fired outside the oval too.
+                // An air-to-air missile homes on the target fired outside the oval too, a
+                // Hellfire on the pod's spot.
                 shoot: zone.is_some_and(|z| (z.0..=z.1).contains(&range_km))
-                    && (air || t.lock_valid),
+                    && (air || t.lock_valid || spec == stealth_sim::HELLFIRE_SPEC),
                 too_close: zone.is_some_and(|z| range_km < z.0),
             }
         });

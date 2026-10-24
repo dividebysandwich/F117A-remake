@@ -3,7 +3,7 @@
 //!
 //! - GAME: cockpit, HUD, avionics and flight model style, auto trim, the cockpit tooltips, the
 //!   VR cockpit size and Tacview.
-//! - GRAPHICS: shaders, shadows, point lights, time of day.
+//! - GRAPHICS: shaders, anti-aliasing, shadows, point lights, time of day.
 //! - SOUND: the master, engine, effects and warning volumes, the engine low-pass inside the
 //!   aircraft.
 //! - CONTROLS: the key and joystick bindings (the CONTROLS dialog, `input_dialog.rs`) and head
@@ -202,7 +202,7 @@ fn graphics_options(ui: &mut egui::Ui, settings: &mut SettingsMut) {
             &mut s.modern_shading,
             "Shaders",
             &[
-                "Modern: MSAA anti-aliasing, subtle directional shading, smooth distance haze",
+                "Modern: subtle directional shading, smooth distance haze",
                 "Classic: the original's flat shading",
             ][..],
         ),
@@ -234,6 +234,11 @@ fn graphics_options(ui: &mut egui::Ui, settings: &mut SettingsMut) {
     ] {
         toggled |= facts(slide_switch(ui, name, modern), f).changed();
     }
+    toggled |= facts(
+        ui.checkbox(&mut s.msaa, "Anti-aliasing (MSAA)"),
+        &["Smooth edges: 4x MSAA, 2x in VR (costs GPU time)", "Off: the original's hard pixel edges"],
+    )
+    .changed();
     // The classic time of day can still show the sun and the moon.
     if !s.continuous_time {
         ui.indent("sun_moon", |ui| {

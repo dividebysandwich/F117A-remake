@@ -53,6 +53,7 @@ pub struct Prefs {
     pub air_defence: bool,
     pub head_tracking: bool,
     pub modern_shading: bool,
+    pub msaa: bool,
     pub shadows: bool,
     pub local_lights: bool,
     pub continuous_time: bool,
@@ -111,6 +112,7 @@ impl Default for Prefs {
             // New players: modern shaders and time of day; classic shadows and lighting;
             // modern cockpit, HUD, avionics and flight model.
             modern_shading: true,
+            msaa: true,
             shadows: false,
             local_lights: false,
             continuous_time: true,
@@ -176,6 +178,7 @@ impl Prefs {
             air_defence: s.air_defence,
             head_tracking: s.head_tracking,
             modern_shading: s.modern_shading,
+            msaa: s.msaa,
             shadows: s.shadows,
             local_lights: s.local_lights,
             continuous_time: s.continuous_time,
@@ -234,6 +237,7 @@ impl Prefs {
         s.air_defence |= self.air_defence;
         s.head_tracking |= self.head_tracking;
         s.modern_shading |= self.modern_shading;
+        s.msaa &= self.msaa;
         s.shadows |= self.shadows;
         s.local_lights |= self.local_lights;
         s.continuous_time |= self.continuous_time;
@@ -263,6 +267,7 @@ impl Prefs {
     /// tracking) from `s`.
     fn copy_options(&mut self, s: &Settings) {
         self.modern_shading = s.modern_shading;
+        self.msaa = s.msaa;
         self.shadows = s.shadows;
         self.local_lights = s.local_lights;
         self.continuous_time = s.continuous_time;

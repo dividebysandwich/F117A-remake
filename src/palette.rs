@@ -298,7 +298,7 @@ fn apply_remap_changes(palette: Res<Palette>, mut materials: ResMut<Assets<Palet
     }
 }
 
-/// `SM89_MSAA=off|2|4|8`: anti-aliasing in either shading mode (for measuring its cost).
+/// `SM89_MSAA=off|2|4|8`: anti-aliasing whatever the option says (for measuring its cost).
 fn msaa_override() -> Option<Msaa> {
     static MSAA: std::sync::OnceLock<Option<Msaa>> = std::sync::OnceLock::new();
     *MSAA.get_or_init(|| {
@@ -318,8 +318,8 @@ fn msaa_override() -> Option<Msaa> {
     })
 }
 
-/// Faithful mode renders without anti-aliasing; modern mode uses 4x MSAA,
-/// 2x in VR (4x cost the Steam Frame 2 ms per frame, over its 72 Hz budget).
+/// The MSAA option: 4x MSAA, 2x in VR (4x cost the Steam Frame 2 ms per frame, over its 72 Hz
+/// budget).
 fn apply_msaa(
     settings: Res<Settings>,
     mut cams: Query<&mut Msaa, (With<Camera3d>, Without<crate::camera::OffscreenCamera>)>,
@@ -328,8 +328,8 @@ fn apply_msaa(
     if !settings.is_changed() && added.is_empty() {
         return;
     }
-    let modern = if settings.vr { Msaa::Sample2 } else { Msaa::Sample4 };
-    let want = msaa_override().unwrap_or(if settings.modern_shading { modern } else { Msaa::Off });
+    let on = if settings.vr { Msaa::Sample2 } else { Msaa::Sample4 };
+    let want = msaa_override().unwrap_or(if settings.msaa { on } else { Msaa::Off });
     for mut m in &mut cams {
         if *m != want {
             *m = want;

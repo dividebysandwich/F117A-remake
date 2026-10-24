@@ -268,6 +268,7 @@ pub fn relaunch_campaign_in_vr(
 fn settings_args(cmd: &mut std::process::Command, settings: &crate::settings::Settings) {
     for (on, flag) in [
         (settings.modern_shading, "--modern"),
+        (!settings.msaa, "--no-msaa"),
         (settings.shadows, "--shadows"),
         (settings.local_lights, "--local-lights"),
         (settings.continuous_time, "--continuous-time"),

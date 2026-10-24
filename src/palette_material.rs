@@ -22,7 +22,7 @@ pub const FLAG_FLIR: u32 = 4;
 pub const FLAG_CLOUD: u32 = 8;
 /// Smoke plumes: alpha blended (soft edges in modern mode; classic mode dithers).
 pub const FLAG_CLOUD_SOFT: u32 = 16;
-/// Stratus sheet in modern mode: alpha to coverage (soft edges with MSAA, depth written).
+/// Stratus sheet with MSAA on: alpha to coverage (soft edges with MSAA, depth written).
 pub const FLAG_CLOUD_COVERAGE: u32 = 32;
 /// Dot lights: drawn in the transparent pass (after all opaque geometry, depth tested but not
 /// written; see dots.rs).

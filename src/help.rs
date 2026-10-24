@@ -63,7 +63,8 @@ Cockpit and graphics
   --classic-avionics           DOS era MFD pages
   --classic-flight             DOS era flight model (default for --script runs)
   --modern-flight              the modern flight model also in --script runs
-  --modern                     modern rendering (smooth gradients and haze, shading, MSAA)
+  --modern                     modern rendering (smooth gradients and haze, shading)
+  --no-msaa                    no MSAA anti-aliasing
   --shadows                    sun shadows
   --local-lights               cockpit lamps, explosions, flares, missile motors, runway lights
   --head-tracking              head/eye tracking through OpenTrack (FreeTrack or UDP 4242)

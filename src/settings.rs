@@ -43,8 +43,10 @@ pub fn configure(app: &mut App) {
 
 #[derive(Resource, Debug, Clone)]
 pub struct Settings {
-    /// Modern shading: MSAA, subtle directional shading, smooth haze.
+    /// Modern shading: subtle directional shading, smooth haze.
     pub modern_shading: bool,
+    /// MSAA anti-aliasing, on unless `--no-msaa`.
+    pub msaa: bool,
     pub initial_state: AppState,
     /// `--vr`: OpenXR headset (chosen at launch; falls back to the window without a runtime).
     pub vr: bool,
@@ -215,6 +217,7 @@ impl Settings {
         let vr = has("--vr");
         Self {
             modern_shading: has("--modern"),
+            msaa: !has("--no-msaa"),
             initial_state,
             vr,
             shadows: has("--shadows"),

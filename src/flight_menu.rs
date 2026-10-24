@@ -4,7 +4,7 @@
 //!
 //! The main page: RESUME, OPTIONS, KEY GUIDE, END MISSION. OPTIONS has the pages of the main
 //! menu's OPTIONS window (`options.rs`) that make sense in flight: GAME (cockpit, HUD and
-//! avionics style, auto trim, tooltips, the VR cockpit size), GRAPHICS (shaders, shadows, point
+//! avionics style, auto trim, tooltips, the VR cockpit size), GRAPHICS (shaders, MSAA, shadows, point
 //! lights, time of day), SOUND (volumes, the engine low-pass) and CONTROLS (head tracking, the
 //! key and joystick bindings, the key guide). The bindings are the main menu's dialog
 //! (`input_dialog.rs`) over the view (in VR on the menu panel in front of the head), the menu's
@@ -117,7 +117,7 @@ impl Page {
                 Back,
             ],
             Page::Game => &[Cockpit, Hud, Avionics, AutoTrim, Tooltips, CockpitSize, Back],
-            Page::Graphics => &[Shaders, Shadows, Lighting, TimeOfDay, SunMoon, Back],
+            Page::Graphics => &[Shaders, Msaa, Shadows, Lighting, TimeOfDay, SunMoon, Back],
             Page::Sound => &[
                 Volume(Vol::Master),
                 Volume(Vol::Engine),
@@ -189,6 +189,7 @@ enum Item {
     EndMission,
     Back,
     Shaders,
+    Msaa,
     Shadows,
     Lighting,
     TimeOfDay,
@@ -215,6 +216,7 @@ impl Item {
             Item::EndMission => "END MISSION",
             Item::Back => "BACK",
             Item::Shaders => "SHADERS",
+            Item::Msaa => "ANTI-ALIASING",
             Item::Shadows => "SHADOWS",
             Item::Lighting => "POINT LIGHTS",
             Item::TimeOfDay => "TIME OF DAY",
@@ -240,6 +242,7 @@ impl Item {
         let on = |b: bool| if b { "ON" } else { "OFF" }.to_string();
         match self {
             Item::Shaders => style(!s.modern_shading),
+            Item::Msaa => on(s.msaa),
             Item::Shadows => on(s.shadows),
             Item::Lighting => on(s.local_lights),
             Item::TimeOfDay => style(!s.continuous_time),
@@ -722,6 +725,7 @@ fn navigate(
     let s = &mut *settings;
     match item {
         Item::Shaders => s.modern_shading = !s.modern_shading,
+        Item::Msaa => s.msaa = !s.msaa,
         Item::Shadows => s.shadows = !s.shadows,
         Item::Lighting => s.local_lights = !s.local_lights,
         Item::TimeOfDay => s.continuous_time = !s.continuous_time,

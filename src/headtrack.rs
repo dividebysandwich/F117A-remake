@@ -5,9 +5,9 @@
 //! - Windows: the FreeTrack shared memory (`FT_SharedMem`), written by OpenTrack's "freetrack
 //!   2.0 Enhanced" output.
 //! - OpenTrack's "UDP over network" output (Linux, or by choice): datagrams of six little-endian
-//!   f64 (x, y, z in cm, yaw, pitch, roll in degrees; yaw right, pitch up, roll right, x right,
-//!   y up, z back) sent to 127.0.0.1 port 4242, OpenTrack's default. A loopback socket needs no
-//!   firewall rule.
+//!   f64 (x, y, z in cm, yaw, pitch, roll in degrees; yaw right, pitch up, roll left, x left,
+//!   y up, z back: the signs its FreeTrack, SimConnect and FlightGear outputs assume) sent to
+//!   127.0.0.1 port 4242, OpenTrack's default. A loopback socket needs no firewall rule.
 //!
 //! Home puts the current pose at the centre (OpenTrack's own centre key does too). Not in VR,
 //! where the headset tracks the head.
@@ -154,8 +154,8 @@ fn parse_opentrack(data: &[u8]) -> Option<HeadPose> {
     Some(HeadPose {
         yaw: -yaw.to_radians() as f32,
         pitch: pitch.to_radians() as f32,
-        roll: -roll.to_radians() as f32,
-        pos: Vec3::new(x as f32, y as f32, z as f32) / 100.0,
+        roll: roll.to_radians() as f32,
+        pos: Vec3::new(-x as f32, y as f32, z as f32) / 100.0,
     })
 }
 
@@ -261,14 +261,14 @@ mod freetrack {
         }
     }
 
-    /// A FreeTrack pose: yaw, pitch, roll (radians; OpenTrack writes yaw and pitch negated),
-    /// x, y, z (mm).
+    /// A FreeTrack pose: yaw, pitch, roll (radians; OpenTrack writes yaw and pitch negated,
+    /// roll as in its UDP output), x, y, z (mm).
     pub(super) fn pose([yaw, pitch, roll, x, y, z]: [f32; 6]) -> Option<HeadPose> {
         [yaw, pitch, roll, x, y, z].iter().all(|v| v.is_finite()).then(|| HeadPose {
             yaw,
             pitch: -pitch,
-            roll: -roll,
-            pos: Vec3::new(x, y, z) / 1000.0,
+            roll,
+            pos: Vec3::new(-x, y, z) / 1000.0,
         })
     }
 
@@ -293,8 +293,9 @@ mod tests {
 
     #[test]
     fn opentrack_axes() {
-        // Looking right and up, head tilted right, leaning right, up and forward.
-        let p = parse_opentrack(&datagram([2.0, 3.0, -10.0, 30.0, 20.0, 10.0])).unwrap();
+        // Looking right and up, head tilted right, leaning right, up and forward (OpenTrack:
+        // roll and x positive to the left).
+        let p = parse_opentrack(&datagram([-2.0, 3.0, -10.0, 30.0, 20.0, -10.0])).unwrap();
         let fwd = Quat::from_rotation_y(p.yaw) * Quat::from_rotation_x(p.pitch) * Vec3::NEG_Z;
         assert!(fwd.x > 0.0 && fwd.y > 0.0, "looks right and up: {fwd}");
         let up = Quat::from_rotation_z(p.roll) * Vec3::Y;

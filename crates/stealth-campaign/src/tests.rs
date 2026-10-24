@@ -1459,3 +1459,101 @@ fn a_helicopter_rescue_lands_by_the_pilot_and_brings_him_home() {
         assert_eq!(c.downed_pilot(d).unwrap().state, DownedState::Rescued);
     }
 }
+
+/// A campaign that knows the theater's land and water (the host's).
+fn campaign_on_terrain(code: &str, index: usize) -> CampaignState {
+    let mut c = campaign(code, index);
+    c.terrain = Terrain(Some(std::sync::Arc::new(theater(code))));
+    c
+}
+
+/// The battery the enemy pushes forward on the second tick (the first builds the board).
+fn deployed(c: &mut CampaignState) -> Option<(u32, i32, i32)> {
+    c.tick(1.0, &WorldView::default(), &[]);
+    c.tick(1.0, &WorldView::default(), &[]).iter().find_map(|e| match *e {
+        CampaignEvent::BatteryDeployed { id, x, y } => Some((id, x, y)),
+        _ => None,
+    })
+}
+
+/// Where nothing is a short helicopter flight from a player base, the enemy pushes a battery
+/// forward: on land, 15 to 35 km from a base. Cuba has none: the sea is all there is that near
+/// Key West.
+#[test]
+fn forward_batteries_go_on_land_near_a_base() {
+    for (code, index) in [
+        ("lb", 0),
+        ("pg", 1),
+        ("nc", 2),
+        ("ce", 3),
+        ("me", 5),
+        ("ku", 6),
+        ("cu", 7),
+        ("ko", 8),
+        ("ua", 9),
+    ] {
+        let mut c = campaign_on_terrain(code, index);
+        let battery = deployed(&mut c);
+        if code == "cu" {
+            assert_eq!(battery, None);
+            continue;
+        }
+        let Some((_, x, y)) = battery else { panic!("{code}: no battery") };
+        let t = c.terrain.0.clone().unwrap();
+        assert!(!t.is_water(x, y), "{code}: battery in the water at {x}, {y}");
+        let near = c
+            .player_bases()
+            .iter()
+            .filter_map(|&b| c.site(b))
+            .map(|s| dist(s.x - x, s.y - y))
+            .min()
+            .unwrap();
+        assert!(
+            (tuning::BATTERY_NEAR..=tuning::BATTERY_FAR + 2).contains(&near),
+            "{code}: {near} from the nearest base"
+        );
+        eprintln!("{code}: battery near {} {} km from a base", c.batteries[0].name, near / 64);
+    }
+}
+
+/// A target already in reach of a base: no battery.
+#[test]
+fn no_battery_with_a_target_in_reach() {
+    // Vientiane is 32 km from Udorn.
+    let mut c = campaign_on_terrain("vn", 4);
+    assert_eq!(deployed(&mut c), None);
+    assert!(c.batteries.is_empty());
+}
+
+/// Without the theater's terrain (a coop client's state) the campaign puts none anywhere.
+#[test]
+fn no_battery_without_terrain() {
+    let mut c = campaign("cu", 7);
+    assert_eq!(deployed(&mut c), None);
+}
+
+/// The battery's guns stand: it is on the board, flown like CAS; once they are all down it is
+/// gone.
+#[test]
+fn a_forward_battery_is_offered_until_its_guns_are_down() {
+    let mut c = campaign_on_terrain("ku", 6);
+    let (id, x, y) = deployed(&mut c).expect("battery");
+    let guns = |alive: bool| WorldView {
+        aaa: (0..4).map(|k| AaaView { x: x + 10 * k, y, side: Side::Red, alive }).collect(),
+        ..Default::default()
+    };
+    c.tick(1.0, &guns(true), &[]);
+    let o = c
+        .board
+        .iter()
+        .find(|o| matches!(o.objective, Objective::Battery { battery, .. } if battery == id))
+        .expect("battery offer")
+        .clone();
+    assert_eq!(o.kind, MissionKind::Cas);
+    assert!(o.title.starts_with("CAS - battery near"), "{}", o.title);
+    assert!(matches!(&o.objective, Objective::Battery { aaa, .. } if aaa.len() == 4));
+    let ev = c.tick(1.0, &guns(false), &[]);
+    assert!(c.batteries.is_empty());
+    assert!(ev.iter().any(|e| matches!(e, CampaignEvent::Message(m) if m.contains("destroyed"))));
+    assert!(!c.board.iter().any(|o| matches!(o.objective, Objective::Battery { .. })));
+}

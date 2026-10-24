@@ -410,7 +410,7 @@ impl CampaignState {
                     sites.iter().filter(|&&s| !self.site(s).is_some_and(Site::alive)).count();
                 share(sites.len(), done)
             }
-            Objective::Cas { aaa, .. } => {
+            Objective::Cas { aaa, .. } | Objective::Battery { aaa, .. } => {
                 share(aaa.len(), aaa.iter().filter(|a| p.aaa_destroyed.contains(a)).count())
             }
             Objective::Strike { airfield, .. } => !self.site(*airfield).is_some_and(Site::alive),

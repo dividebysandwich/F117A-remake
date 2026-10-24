@@ -231,6 +231,12 @@ pub enum CampaignEvent {
         #[serde(default)]
         task: FighterTask,
     },
+    /// The enemy pushes a battery of guns forward to (x, y).
+    BatteryDeployed {
+        id: u32,
+        x: i32,
+        y: i32,
+    },
     /// News for the players (shown on the HUD and in the campaign log).
     Message(String),
 }
@@ -278,6 +284,7 @@ impl CampaignState {
         self.enemy_offensive(view, &mut ev);
         self.run_awacs(&mut ev);
         self.drone_waves(&mut ev);
+        self.forward_batteries(view, &mut ev);
         if self.check_outcome(&mut ev) {
             return ev;
         }
@@ -323,6 +330,10 @@ impl CampaignState {
         self.caps.clear();
         // The AWACS went down with the simulation: another one goes up soon.
         self.awacs = None;
+        // The batteries' guns are placed again.
+        for b in &mut self.batteries {
+            b.seen = false;
+        }
         self.board_at = f64::MIN;
         for p in &mut self.plans {
             p.crew.clear();

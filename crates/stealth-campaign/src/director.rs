@@ -1127,12 +1127,23 @@ impl CampaignState {
 
     /// Live guns of a side near a point (AAA unit indices).
     fn guns_near(&self, view: &WorldView, x: i32, y: i32, side: Side) -> Vec<u32> {
+        self.guns_within(view, x, y, side, AAA_RANGE).collect()
+    }
+
+    /// Live guns of a side within `r` of a point (AAA unit indices).
+    pub(crate) fn guns_within<'v>(
+        &self,
+        view: &'v WorldView,
+        x: i32,
+        y: i32,
+        side: Side,
+        r: i32,
+    ) -> impl Iterator<Item = u32> + 'v {
         view.aaa
             .iter()
             .enumerate()
-            .filter(|(_, a)| a.alive && a.side == side && dist(a.x - x, a.y - y) <= AAA_RANGE)
+            .filter(move |(_, a)| a.alive && a.side == side && dist(a.x - x, a.y - y) <= r)
             .map(|(k, _)| k as u32)
-            .collect()
     }
 
     /// Rebuild the mission board; true if it changed. Offers keep their id while they stay.
@@ -1318,6 +1329,24 @@ impl CampaignState {
                 );
             }
         }
+        // The enemy's forward batteries, once their guns stand.
+        for b in self.batteries.clone() {
+            let aaa: Vec<u32> =
+                self.guns_within(view, b.x, b.y, side.enemy(), BATTERY_RADIUS).collect();
+            if aaa.is_empty() {
+                continue;
+            }
+            let threat = aaa.len() as i32;
+            add(
+                self,
+                MissionKind::Cas,
+                format!("CAS - battery near {}", b.name),
+                Objective::Battery { battery: b.id, aaa },
+                b.x,
+                b.y,
+                threat,
+            );
+        }
         // Escorts for the insertions under way.
         for ins in self.insertions.clone() {
             if ins.side != side
@@ -1401,6 +1430,8 @@ impl CampaignState {
         // Too many: the urgent ones stay, the front's furthest places go first.
         if offers.len() > BOARD_SIZE {
             let rank = |o: &MissionOffer| match o.kind {
+                // Near the bases for the helicopters, when nothing else is.
+                _ if matches!(o.objective, Objective::Battery { .. }) => 2,
                 MissionKind::Intercept
                 | MissionKind::Defend
                 | MissionKind::Csar
@@ -1461,5 +1492,6 @@ fn objective_key(o: &Objective) -> (u8, i64) {
         Objective::Interdict { object, .. } => (10, object as i64),
         Objective::Rescue { downed } => (11, downed as i64),
         Objective::Awacs { tag } => (12, tag as i64),
+        Objective::Battery { battery, .. } => (13, battery as i64),
     }
 }

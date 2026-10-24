@@ -1,11 +1,131 @@
 //! Events of opportunity and support: the enemy's AWACS, its drone waves (the Ukraine theater),
-//! and the AI SEAD a player calls in for his package.
+//! its forward batteries, and the AI SEAD a player calls in for his package.
 
-use crate::CampaignEvent;
 use crate::state::*;
 use crate::tuning::*;
+use crate::{CampaignEvent, WorldView};
 
 impl CampaignState {
+    /// Enemy forward batteries: when no target on the board is a short helicopter flight from
+    /// a player base, the enemy pushes a battery of guns forward near the base nearest its
+    /// front, on land. It is gone once its guns are.
+    pub(crate) fn forward_batteries(&mut self, view: &WorldView, ev: &mut Vec<CampaignEvent>) {
+        for k in (0..self.batteries.len()).rev() {
+            let b = &self.batteries[k];
+            let up = self.guns_within(view, b.x, b.y, Side::Red, BATTERY_RADIUS).next().is_some();
+            if up && !b.seen {
+                // Its guns stand: on the board at once.
+                self.batteries[k].seen = true;
+                self.board_at = f64::MIN;
+            } else if !up && b.seen {
+                let b = self.batteries.remove(k);
+                self.board_at = f64::MIN;
+                let text = format!("Enemy battery near {} destroyed", b.name);
+                self.note(text.clone());
+                ev.push(CampaignEvent::Message(text));
+            }
+        }
+        let now = self.clock;
+        // Judged on a built board, with the terrain to keep it out of the water.
+        if self.terrain.0.is_none()
+            || self.board_at == f64::MIN
+            || self.batteries.len() >= BATTERIES
+            || now - self.battery_at < BATTERY_EVERY
+        {
+            return;
+        }
+        self.battery_at = now;
+        let bases: Vec<(i32, i32)> = self
+            .player_bases()
+            .into_iter()
+            .filter_map(|b| self.site(b).map(|s| (s.x, s.y)))
+            .collect();
+        let in_reach = self.board.iter().any(|o| {
+            matches!(
+                o.kind,
+                MissionKind::Recon
+                    | MissionKind::Sead
+                    | MissionKind::Cas
+                    | MissionKind::Strike
+                    | MissionKind::AntiShip
+                    | MissionKind::Interdiction
+            ) && bases.iter().any(|&(x, y)| dist(o.x - x, o.y - y) <= BATTERY_REACH)
+        });
+        if in_reach {
+            return;
+        }
+        let Some((x, y, name)) = self.battery_spot(&bases) else { return };
+        if !self.pay(Side::Red, BATTERY_COST, Spend::Operations) {
+            return;
+        }
+        let id = self.id();
+        self.batteries.push(Battery { id, x, y, name: name.clone(), seen: false });
+        let text =
+            format!("Intelligence: the enemy has pushed a battery of guns forward near {name}");
+        self.note(text.clone());
+        ev.push(CampaignEvent::Message(text));
+        ev.push(CampaignEvent::BatteryDeployed { id, x, y });
+    }
+
+    /// Where a forward battery goes: out from one of the player bases nearest the enemy's
+    /// front, roughly towards it (else any way), on land (its guns too) and clear of every place, site, base
+    /// and other battery; with the name of the nearest place.
+    fn battery_spot(&mut self, bases: &[(i32, i32)]) -> Option<(i32, i32, String)> {
+        let front: Vec<(i32, i32)> = self
+            .front(Side::Blue)
+            .into_iter()
+            .map(|p| (self.places[p as usize].x, self.places[p as usize].y))
+            .collect();
+        let mut from: Vec<((i32, i32), (i32, i32), i32)> = bases
+            .iter()
+            .filter_map(|&b| {
+                let f = *front.iter().min_by_key(|f| dist(f.0 - b.0, f.1 - b.1))?;
+                Some((b, f, dist(f.0 - b.0, f.1 - b.1)))
+            })
+            .collect();
+        from.sort_by_key(|f| f.2);
+        from.truncate(3);
+        if from.is_empty() {
+            return None;
+        }
+        let dry = |c: &Self, x: i32, y: i32| c.terrain.is_water(x, y) == Some(false);
+        for k in 0..120 {
+            let (b, f, _) = from[self.rng.below(from.len() as i32) as usize];
+            let toward = ((f.1 - b.1) as f64).atan2((f.0 - b.0) as f64);
+            let spread = if k < 60 { 60 } else { 180 };
+            let turn = self.rng.below(2 * spread + 1) - spread;
+            let a = toward + turn as f64 * std::f64::consts::PI / 180.0;
+            let r = (BATTERY_NEAR + self.rng.below(BATTERY_FAR - BATTERY_NEAR)) as f64;
+            let (x, y) = (b.0 + (a.cos() * r) as i32, b.1 + (a.sin() * r) as i32);
+            let clear = |px: i32, py: i32, d: i32| dist(px - x, py - y) >= d;
+            if !(0x200..0x7E00).contains(&x)
+                || !(0x200..0x7E00).contains(&y)
+                || !self.sites.iter().all(|s| s.removed || clear(s.x, s.y, BATTERY_CLEAR))
+                || !self.places.iter().all(|p| clear(p.x, p.y, BATTERY_CLEAR))
+                || !bases.iter().all(|&(bx, by)| clear(bx, by, BATTERY_NEAR))
+                || !self.batteries.iter().all(|o| clear(o.x, o.y, 2 * BATTERY_CLEAR))
+            {
+                continue;
+            }
+            // Its guns stand around it: the ground there is land too.
+            let ring = (0..8).map(|k| {
+                let t = k as f64 * std::f64::consts::FRAC_PI_4;
+                let r = BATTERY_RADIUS as f64;
+                (x + (t.cos() * r) as i32, y + (t.sin() * r) as i32)
+            });
+            if !dry(self, x, y) || !ring.into_iter().all(|(px, py)| dry(self, px, py)) {
+                continue;
+            }
+            let name = self
+                .places
+                .iter()
+                .min_by_key(|p| dist(p.x - x, p.y - y))
+                .map_or(String::new(), |p| p.name.clone());
+            return Some((x, y, name));
+        }
+        None
+    }
+
     /// The enemy's AWACS: now and then it goes up to orbit behind its front for an hour, guiding
     /// its fighters (see `enemy_air`), then it is called home.
     pub(crate) fn run_awacs(&mut self, ev: &mut Vec<CampaignEvent>) {

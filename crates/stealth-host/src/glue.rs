@@ -35,6 +35,11 @@ pub fn base_mission(setup: &CampaignSetup, data: &GameData) -> anyhow::Result<Mi
     Ok(m)
 }
 
+/// The theater's land and water, for the campaign to put its forward batteries on land.
+pub fn terrain(setup: &CampaignSetup, data: &GameData) -> stealth_campaign::Terrain {
+    stealth_campaign::Terrain(data.theaters.get(setup.theater).cloned().map(std::sync::Arc::new))
+}
+
 /// What the simulation shows the campaign.
 pub fn world_view(sim: &Sim) -> WorldView {
     let aaa = sim
@@ -212,7 +217,11 @@ pub fn sortie_mission(base: &Mission, state: &CampaignState, sortie: &Sortie) ->
     s.shape_name = String::new();
     s.place_name = String::new();
     s.special_model = None;
-    let what = if sortie.aircraft.transport() { describe_heli(o.kind) } else { describe(o.kind) };
+    let what = match o.objective {
+        stealth_campaign::Objective::Battery { .. } => BATTERY_TASK,
+        _ if sortie.aircraft.transport() => describe_heli(o.kind),
+        _ => describe(o.kind),
+    };
     m.briefing.title = o.title.clone();
     m.briefing.primary_summary = summary(state, sortie);
     m.briefing.primary_objective = what.to_string();
@@ -252,6 +261,9 @@ pub fn airborne(kind: MissionKind) -> bool {
     )
 }
 
+/// What an enemy forward battery's offer asks for.
+pub const BATTERY_TASK: &str = "Destroy the guns of the enemy battery pushed forward near our base";
+
 /// The world object an objective is about (None: aircraft or an area), what it is for the
 /// kneeboard, and whether it is an area target.
 fn primary_target(
@@ -266,6 +278,7 @@ fn primary_target(
         | Objective::Strike { airfield: object, .. } => Some(object),
         Objective::Sead { ref sites, .. } => sites.first().copied(),
         Objective::Cas { .. } => return (None, "GUNS AND MANPADS".into(), true),
+        Objective::Battery { .. } => return (None, "GUN BATTERY".into(), true),
         _ => return (None, String::new(), false),
     };
     let name = object.and_then(|k| state.site(k)).map_or(String::new(), |s| {
@@ -294,6 +307,10 @@ pub fn summary(state: &CampaignState, sortie: &Sortie) -> String {
         Objective::Cas { ref aaa, .. } => {
             format!("{} guns and MANPADS teams defend the place.", aaa.len())
         }
+        Objective::Battery { ref aaa, .. } => format!(
+            "An enemy battery pushed forward: {} guns and a MANPADS team. Destroy them.",
+            aaa.len()
+        ),
         Objective::Strike { airfield, .. } => format!("The airfield of {}.", site(airfield)),
         Objective::Interdict { object, .. } => {
             format!("The city of {}: its stores and factories feed the enemy.", site(object))

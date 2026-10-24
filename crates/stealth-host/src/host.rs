@@ -93,6 +93,7 @@ impl Host {
         let mission = glue::base_mission(&setup, data)?;
         let mut state = CampaignState::new(setup, &mission.world);
         state.rules = Some(rules.into());
+        state.terrain = glue::terrain(&state.setup, data);
         Ok(Self::with_state(state, mission, rules))
     }
 
@@ -102,6 +103,7 @@ impl Host {
         let mission = glue::base_mission(&state.setup, data)?;
         let rules = state.rules.map_or(rules, Rules::from);
         state.rules = Some(rules.into());
+        state.terrain = glue::terrain(&state.setup, data);
         Ok(Self::with_state(state, mission, rules))
     }
 
@@ -153,6 +155,9 @@ impl Host {
             }
         }
         self.place_patriots(sim);
+        for b in &self.state.batteries {
+            sim.place_battery(b.x, b.y);
+        }
         sim.record_shells(true);
         let events = self.state.after_load();
         self.apply(sim, events)
@@ -410,6 +415,7 @@ impl Host {
                     sim.spawn_awacs(*from as usize, *x, *y, *tag, *side == Side::Blue);
                 }
                 CampaignEvent::Recall { tag } => sim.recall_flight(*tag),
+                CampaignEvent::BatteryDeployed { x, y, .. } => sim.place_battery(*x, *y),
                 CampaignEvent::GunRepaired { place } => {
                     if let Some(p) = self.state.place(*place) {
                         sim.restore_defence(p.x, p.y, p.owner == Side::Blue);

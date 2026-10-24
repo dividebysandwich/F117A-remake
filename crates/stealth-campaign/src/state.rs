@@ -276,6 +276,11 @@ pub enum Objective {
     Awacs {
         tag: u32,
     },
+    /// Destroy an enemy forward battery's guns (AAA unit indices).
+    Battery {
+        battery: u32,
+        aaa: Vec<u32>,
+    },
 }
 
 /// A mission on the board.
@@ -737,6 +742,56 @@ pub struct CampaignState {
     /// When the last drone wave was ordered.
     #[serde(default)]
     pub drones_at: f64,
+    /// The enemy's forward batteries, and when it last looked into pushing one forward.
+    #[serde(default)]
+    pub batteries: Vec<Battery>,
+    #[serde(default = "never")]
+    pub battery_at: f64,
+    #[serde(skip)]
+    pub terrain: Terrain,
+}
+
+fn never() -> f64 {
+    f64::MIN
+}
+
+/// Guns the enemy pushed forward, a short helicopter flight from the players' bases (when no
+/// other target is).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Battery {
+    pub id: u32,
+    /// Map units (x east, y south).
+    pub x: i32,
+    pub y: i32,
+    /// The place it is named after (the nearest).
+    pub name: String,
+    /// Its guns are in the simulation (it is gone once none of them is left).
+    #[serde(default)]
+    pub seen: bool,
+}
+
+/// The theater's land and water, for putting things on land: the host's (a coop client's
+/// state has none), not saved and not compared.
+#[derive(Clone, Default)]
+pub struct Terrain(pub Option<std::sync::Arc<stealth_mission::TheaterData>>);
+
+impl Terrain {
+    /// Water at a map point; None without the theater's terrain.
+    pub fn is_water(&self, x: i32, y: i32) -> Option<bool> {
+        self.0.as_ref().map(|t| t.is_water(x, y))
+    }
+}
+
+impl PartialEq for Terrain {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for Terrain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() { "Terrain" } else { "Terrain(none)" })
+    }
 }
 
 /// An AWACS orbiting a point until it is called home.
@@ -904,6 +959,9 @@ impl CampaignState {
             awacs_at: 0.0,
             awacs_down: Vec::new(),
             drones_at: 0.0,
+            batteries: Vec::new(),
+            battery_at: f64::MIN,
+            terrain: Terrain::default(),
         };
         c.note("Campaign started");
         c

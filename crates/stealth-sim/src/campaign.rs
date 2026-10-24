@@ -613,6 +613,42 @@ impl Sim {
         }
     }
 
+    /// Campaign: an enemy forward battery at (x, y): two Shilkas, an S-60 battery and a MANPADS
+    /// team, all within 80 map units of it.
+    pub fn place_battery(&mut self, x: i32, y: i32) {
+        let Some(mut c) = self.campaign.take() else { return };
+        if self.aaa.len() + 7 <= MAX_UNITS {
+            let mut rng = c.rng;
+            let mut add = |rng: &mut Rng, kind, x: i32, y: i32, lo: i32, hi: i32| {
+                let t = rng.random(0x4000) as f64 * 4.0 / 65536.0 * std::f64::consts::TAU;
+                let r = (lo + rng.random(hi - lo)) as f64;
+                self.aaa.push(AaaUnit {
+                    kind,
+                    x: (x + (t.sin() * r) as i32).clamp(0x40, 0x7FC0),
+                    y: (y - (t.cos() * r) as i32).clamp(0x40, 0x7FC0),
+                    aim_az: t as f32,
+                    aim_el: 0.3,
+                    ..Default::default()
+                });
+            };
+            for _ in 0..2 {
+                add(&mut rng, AaaKind::Zsu, x, y, 10, 50);
+            }
+            let (bx, by) = (x + rng.random(60) - 30, y + rng.random(60) - 30);
+            for _ in 0..2 + rng.random(2) {
+                add(&mut rng, AaaKind::S60, bx, by, 3, 8);
+            }
+            add(&mut rng, AaaKind::Manpads, x, y, 15, 60);
+            c.aaa_blue.resize(self.aaa.len(), false);
+            c.aaa_target.resize(self.aaa.len(), None);
+            c.rng = rng;
+        }
+        self.campaign = Some(c);
+        if self.aaa_rng.is_none() {
+            self.aaa_rng = Some(Rng::new(self.rng.hold ^ 0x5EAD_AAA0));
+        }
+    }
+
     /// Campaign: `n` of a side's live guns and MANPADS teams around a place are wrecks (lost
     /// before the simulation was built).
     pub fn wreck_defences(&mut self, x: i32, y: i32, blue: bool, n: usize) {

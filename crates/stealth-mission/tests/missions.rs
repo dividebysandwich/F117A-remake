@@ -174,3 +174,30 @@ fn helicopter_missions_are_short() {
     }
     assert!(all / (data.theaters.len() as f64) < 130.0, "mean {all:.0} km");
 }
+
+/// The sea and lakes as the 3D view draws them: every carrier is on water, every city and
+/// airfield on land.
+#[test]
+fn water_under_carriers_not_cities() {
+    use stealth_mission::world::flags as F;
+    let data = data();
+    for th in &data.theaters {
+        let w = &th.world;
+        let (mut wet, mut dry, mut towns) = (0, 0, 0);
+        for o in &w.objects[3..] {
+            let (x, y) = (o.x as u16 as i32, o.y as u16 as i32);
+            if (x, y) == (0, 0) {
+                continue;
+            }
+            if o.flags & F::CARRIER != 0 {
+                assert!(th.is_water(x, y), "{}: carrier on land", w.name(o.name as i32));
+                wet += 1;
+            } else if o.flags & F::SHIP == 0 && (o.flags & F::AIRFIELD != 0 || o.shape() == 62) {
+                towns += 1;
+                dry += !th.is_water(x, y) as i32;
+            }
+        }
+        assert_eq!(dry, towns, "theater {}: places in the water", th.index);
+        eprintln!("theater {}: {wet} carriers at sea, {dry} of {towns} places on land", th.index);
+    }
+}

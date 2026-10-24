@@ -103,6 +103,15 @@ impl MissionWorld {
     }
 }
 
+/// Point (px, py) in or on triangle `t` (`TheaterData::ground`).
+fn inside(t: &[f32; 7], px: f64, py: f64) -> bool {
+    let v = |i: usize| (t[2 * i] as f64, t[2 * i + 1] as f64);
+    let side =
+        |(ax, ay): (f64, f64), (bx, by): (f64, f64)| (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+    let (d0, d1, d2) = (side(v(0), v(1)), side(v(1), v(2)), side(v(2), v(0)));
+    !((d0 < 0.0 || d1 < 0.0 || d2 < 0.0) && (d0 > 0.0 || d1 > 0.0 || d2 > 0.0))
+}
+
 /// One entry of the random-object-of-shape candidate list.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Candidate {
@@ -140,6 +149,11 @@ pub struct TheaterData {
     pub(crate) cand_lod3: Vec<Vec<Candidate>>,
     /// Grid size per LOD level.
     pub(crate) grid_size: [i16; 5],
+    /// Per shape, its flat triangles as the 3D view draws them, in drawing order:
+    /// `[x0, y0, x1, y1, x2, y2, water]` in the level's units (x east, y north), water 1 for
+    /// the sea and lakes (`tools/models/water_shapes.py`). Empty for a theater without water.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) ground: Vec<Vec<[f32; 7]>>,
 }
 
 impl TheaterData {
@@ -171,6 +185,45 @@ impl TheaterData {
 
     pub(crate) fn tile_objects(&self, lv: usize, cell: i32) -> &[(i16, i16, u8)] {
         self.tiles.get(lv).and_then(|l| l.get(cell as usize)).map_or(&[], Vec::as_slice)
+    }
+
+    /// Water at a map point (x east, y south): the topmost flat triangle there is the sea or a
+    /// lake, finer levels drawn over coarser ones and later tile objects over earlier ones (as
+    /// `scenery::ground` sees the 3D view). Bare ground is land.
+    pub fn is_water(&self, x: i32, y: i32) -> bool {
+        if self.ground.is_empty() {
+            return false;
+        }
+        // World units, north up.
+        let (wx, wy) = ((x as f64) * 32.0, ((0x8000 - y) as f64) * 32.0);
+        let mut top: Option<((usize, usize, usize), bool)> = None;
+        for lv in 1..=4usize {
+            let unit = [0.0, 1.0, 4.0, 16.0, 64.0][lv];
+            let size = 4096.0 * unit;
+            let (col, row) = ((wx / size).floor() as i32, (wy / size).floor() as i32);
+            // Neighbouring tiles' objects may reach over the edge.
+            for (dc, dr) in (-1..=1).flat_map(|dc| (-1..=1).map(move |dr| (dc, dr))) {
+                let (c, r) = (col + dc, row + dr);
+                let cell = self.lookup(lv, c, r);
+                if cell == -1 {
+                    continue;
+                }
+                let (cx, cy) =
+                    ((c as f64 * 4096.0 + 2048.0) * unit, (r as f64 * 4096.0 + 2048.0) * unit);
+                for (k, &(ox, oy, sh)) in self.tile_objects(lv, cell).iter().enumerate() {
+                    let Some(tris) = self.ground.get(sh as usize) else { continue };
+                    let (px, py) = ((wx - cx) / unit - ox as f64, (wy - cy) / unit - oy as f64);
+                    for (j, t) in tris.iter().enumerate() {
+                        let order = (4 - lv, k, j);
+                        if top.is_some_and(|(o, _)| o > order) || !inside(t, px, py) {
+                            continue;
+                        }
+                        top = Some((order, t[6] != 0.0));
+                    }
+                }
+            }
+        }
+        top.is_some_and(|(_, water)| water)
     }
 
     /// Scan the enemy tiles once and bucket the objects by shape, keeping the scan order of

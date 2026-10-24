@@ -770,3 +770,18 @@ fn a_drone_that_crashes_short_destroys_nothing() {
     assert!(gone);
     assert_eq!(sim.objects()[to].flags & oflags::DESTROYED, 0);
 }
+
+#[test]
+fn a_forward_battery_is_enemy_guns_around_its_point() {
+    let (_, mut sim) = campaign();
+    quiet(&mut sim);
+    let (x, y) = (0x4000, 0x4000);
+    sim.place_battery(x, y);
+    let units = sim.aaa_units();
+    assert!((5..=7).contains(&units.len()), "{} units", units.len());
+    for (k, u) in units.iter().enumerate() {
+        assert!(!sim.aaa_blue(k) && !u.destroyed);
+        let d = stealth_sim::math::approx(u.x - x, u.y - y);
+        assert!(d <= 0x60, "unit {k} {d} away");
+    }
+}

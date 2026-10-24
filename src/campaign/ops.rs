@@ -805,6 +805,7 @@ fn describe_offer(c: &ActiveCampaign, o: &MissionOffer) -> &'static str {
         Objective::Defend { raid } if c.state().raid(raid).is_some_and(|r| r.drones) => {
             "Shoot down the attack drones before they dive into the target: one getting through destroys it"
         }
+        Objective::Battery { .. } => stealth_host::glue::BATTERY_TASK,
         _ => describe(o.kind),
     }
 }

@@ -204,6 +204,20 @@ pub const AWACS_STANDOFF: i32 = 0x1400;
 pub const AWACS_COST: f64 = 20.0;
 pub const AWACS_LOSS: f64 = 60.0;
 
+/// Enemy forward batteries: when no target on the board is within this of a player base
+/// (50 km, a short helicopter flight), the enemy pushes a battery of guns forward this far from
+/// the base nearest its front (15 to 35 km), on land and clear of every place, site and player
+/// base (8 km). It looks into it this often, keeps this many at most, and pays this much for
+/// one; the battery's guns stand within this radius of it (1.5 km).
+pub const BATTERY_REACH: i32 = 0xC80;
+pub const BATTERY_NEAR: i32 = 0x3C0;
+pub const BATTERY_FAR: i32 = 0x8C0;
+pub const BATTERY_CLEAR: i32 = 0x200;
+pub const BATTERY_EVERY: f64 = 10.0 * 60.0;
+pub const BATTERIES: usize = 2;
+pub const BATTERY_COST: f64 = 6.0;
+pub const BATTERY_RADIUS: i32 = 0x60;
+
 /// Drone waves (the Ukraine theater): this often by the opponents' skill, this many drones,
 /// announced this long before launch, at a target this far from their base at most (300 km),
 /// at this cost.

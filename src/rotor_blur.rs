@@ -294,7 +294,8 @@ fn own_rotor_blur(
     let blur = t * t * (3.0 - 2.0 * t);
     for (e, was) in &own {
         if was.is_none_or(|b| (b.0 - blur).abs() > 0.005) {
-            commands.entity(e).insert(RotorBlur(blur));
+            // The model may be going this frame (another aircraft type).
+            commands.entity(e).try_insert(RotorBlur(blur));
         }
     }
 }

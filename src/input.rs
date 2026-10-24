@@ -136,6 +136,8 @@ pub enum Action {
     TrimRight,
     /// Centres the trim.
     TrimReset,
+    /// Master caution: silences the alarms sounding.
+    MasterCaution,
 }
 
 impl Action {
@@ -314,6 +316,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::Digit9, Flaps),
         (None, K::Digit0, Brakes),
         (Shift, K::F10, Eject),
+        (Alt, K::KeyC, MasterCaution),
         (None, K::F2, HudMode),
         (Alt, K::F2, BombMode),
         (None, K::KeyV, HudDeclutter),

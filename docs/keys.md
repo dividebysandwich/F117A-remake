@@ -29,6 +29,7 @@ grouped by topic, with the mouse (desktop) or the VR controllers.
 | | decoy | 5 |
 | Equipment | gear / autopilot / bay doors / flaps / brakes | 6 / 7 / 8 / 9 / 0 |
 | | eject | Shift F10 |
+| | master caution (remake): silence the alarms (also the MASTER CAUTION / MW light in the cockpit) | Alt C |
 | Displays | HUD modes / declutter | F2 / V |
 | | bombsight CCIP / CCRP (remake; also A-G pressed again on the F-16) | Alt F2 |
 | | maps (left MFD) | F3 |

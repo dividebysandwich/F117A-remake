@@ -46,6 +46,7 @@ const SECTIONS: &[(&str, &[(Keys, &str)])] = {
                 (Actions(&[Flaps]), "Flaps"),
                 (Actions(&[Brakes]), "Wheel brakes, speed brake"),
                 (Actions(&[BayDoors]), "Weapon bay doors"),
+                (Actions(&[MasterCaution]), "Master caution: silence the alarms"),
                 (Actions(&[Eject]), "Eject"),
             ],
         ),

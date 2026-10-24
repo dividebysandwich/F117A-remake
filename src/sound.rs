@@ -14,6 +14,9 @@
 //!   when it stops (`cannon_loop.flac`, `cannon_tail.flac`, tools/cut_cannon.py).
 //! - A fire on board sounds the fire warning siren (`fire_siren.flac`, tools/gen_fire_siren.py)
 //!   without a break until the fire is out (or the pilot has ejected).
+//! - The master caution (its cockpit light or key) silences the alarms sounding: the fire
+//!   siren until that fire is out, the stall horn and the radar warning tones while they keep
+//!   repeating (one that pauses for `ALARM_REARM` sounds again).
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
 //!   ejection, explosions and flares, and on the ground the emergency beacon (`beacon.flac`, two
 //!   chirps every 3 s at half volume) until the rescue ends.
@@ -51,6 +54,7 @@ impl Plugin for SoundPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<PlaySound>()
             .init_resource::<SoundLevel>()
+            .init_resource::<Alarms>()
             .add_systems(Startup, load_bank)
             .add_systems(
                 Update,
@@ -127,6 +131,41 @@ const EJECTED_SOUNDS: [u8; 4] = [4, 5, 0x14, 0x1C];
 
 /// Fire warning siren volume.
 const SIREN_VOLUME: f32 = 0.35;
+
+/// The alarm tones the master caution silences: radar detection and missile warning (the
+/// AdLib ones), the stall horn and the radar warning tones.
+const ALARM_TONES: [u8; 8] = [8, 9, 14, 100, 101, 102, 103, 104];
+
+/// Seconds an alarm tone silenced by the master caution has to pause to sound again.
+const ALARM_REARM: f64 = 5.0;
+
+/// Alarms and the master caution.
+#[derive(Resource, Default)]
+struct Alarms {
+    /// Alarm tone ids: when each was last asked for (real seconds), and whether the master
+    /// caution silenced it.
+    tones: HashMap<u8, (f64, bool)>,
+    /// The fire siren is silenced until the fire is out.
+    fire_silenced: bool,
+}
+
+impl Alarms {
+    /// The master caution: silences the alarm tones heard lately, and the fire siren.
+    fn silence(&mut self, now: f64) {
+        self.fire_silenced = true;
+        for (last, quiet) in self.tones.values_mut() {
+            *quiet |= now - *last < ALARM_REARM;
+        }
+    }
+
+    /// An alarm tone is asked for: false while it is silenced.
+    fn sounds(&mut self, id: u8, now: f64) -> bool {
+        let (last, quiet) = self.tones.entry(id).or_insert((now, false));
+        *quiet &= now - *last < ALARM_REARM;
+        *last = now;
+        !*quiet
+    }
+}
 
 /// Emergency beacon interval (real seconds) and volume.
 const BEACON_INTERVAL: f32 = 3.0;
@@ -296,14 +335,27 @@ fn play_sounds(
     combat: Option<Res<crate::combat::Combat>>,
     playing: Query<(Entity, &OneShot)>,
     mut silenced: Local<bool>,
+    mut alarms: ResMut<Alarms>,
+    real: Res<Time<Real>>,
 ) {
+    let now = real.elapsed_secs_f64();
     for ActionEvent(a) in actions.read() {
-        if *a == Action::Volume {
-            *level = match *level {
-                SoundLevel(3, false) => SoundLevel(3, true),
-                SoundLevel(0, _) => SoundLevel(3, false),
-                SoundLevel(l, _) => SoundLevel(l - 1, false),
-            };
+        match a {
+            Action::Volume => {
+                *level = match *level {
+                    SoundLevel(3, false) => SoundLevel(3, true),
+                    SoundLevel(0, _) => SoundLevel(3, false),
+                    SoundLevel(l, _) => SoundLevel(l - 1, false),
+                };
+            }
+            Action::MasterCaution => {
+                info!("master caution: alarms silenced");
+                alarms.silence(now);
+                for (e, _) in playing.iter().filter(|(_, p)| ALARM_TONES.contains(&p.0)) {
+                    commands.entity(e).despawn();
+                }
+            }
+            _ => {}
         }
     }
     // Ejecting cuts off the aircraft's sounds at once.
@@ -321,6 +373,9 @@ fn play_sounds(
         return;
     };
     for r in requests.read() {
+        if ALARM_TONES.contains(&r.id) && !alarms.sounds(r.id, now) {
+            continue;
+        }
         let allowed =
             r.priority == DIRECT || (level.0 > 0 && r.priority as i32 >= 3 - level.0 as i32);
         if !allowed || !survives(r.id) || playing.iter().any(|(_, p)| p.0 == r.id && survives(p.0))
@@ -619,6 +674,7 @@ fn beacon(
 
 /// The fire warning: a siren sounding without a break while the aircraft is on fire (held while
 /// the flight is paused).
+#[allow(clippy::too_many_arguments)]
 fn fire_siren(
     mut commands: Commands,
     bank: Option<Res<SoundBank>>,
@@ -627,14 +683,21 @@ fn fire_siren(
     player: Query<&Aircraft, With<Player>>,
     virt: Res<Time<Virtual>>,
     siren: Query<(Entity, Option<&AudioSink>), With<FireSiren>>,
+    mut alarms: ResMut<Alarms>,
 ) {
+    let on_fire = combat
+        .as_deref()
+        .is_some_and(|c| c.sim.damage_effects().bits & stealth_sim::dmg::FIRE != 0);
+    // The master caution silences this fire only.
+    if !on_fire && alarms.fire_silenced {
+        alarms.fire_silenced = false;
+    }
     // Out of the aircraft: ejected, or (campaign) back at the board with the damage of the
     // sortie still on record until the next one.
-    let burning = combat.as_deref().is_some_and(|c| {
-        c.sim.damage_effects().bits & stealth_sim::dmg::FIRE != 0
-            && c.end.is_none()
-            && !c.sim.player_absent()
-    }) && !has_ejected(combat.as_deref())
+    let burning = on_fire
+        && combat.as_deref().is_some_and(|c| c.end.is_none() && !c.sim.player_absent())
+        && !alarms.fire_silenced
+        && !has_ejected(combat.as_deref())
         && player.single().is_ok_and(|a| a.ended.is_none())
         && level.0 > 0;
     let Some(handle) = bank.as_ref().and_then(|b| b.siren.clone()).filter(|_| burning) else {
@@ -889,5 +952,27 @@ type FlightSound = Or<(
 fn stop_all(mut commands: Commands, q: Query<Entity, FlightSound>) {
     for e in &q {
         commands.entity(e).despawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The master caution silences the tones sounding while they repeat; a tone that pauses,
+    /// or one not heard before, sounds again.
+    #[test]
+    fn master_caution_silences_alarms() {
+        let mut a = Alarms::default();
+        assert!(a.sounds(14, 0.0));
+        assert!(a.sounds(103, 0.5));
+        a.silence(1.0);
+        assert!(a.fire_silenced);
+        assert!(!a.sounds(14, 1.1));
+        assert!(!a.sounds(14, 4.0));
+        assert!(!a.sounds(103, 5.0));
+        assert!(a.sounds(101, 5.0), "a new tone");
+        assert!(a.sounds(14, 4.0 + ALARM_REARM + 0.1), "the stall horn after a pause");
+        assert!(a.sounds(103, 20.0), "a new launch");
     }
 }

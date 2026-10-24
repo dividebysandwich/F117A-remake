@@ -1186,12 +1186,14 @@ fn draw_zoom_window(c: &mut Canvas, cursor: Vec2, draw: impl FnOnce(&mut Canvas,
     stroke_text_at(c, a.x + 5.0, b.y - 10.0, "X4", 9.0, 1.3, WHITE, Align::Left);
 }
 
+/// The HARM display shows the radars heard lately ([`EmitterView::heard`]) that pass its filter.
 fn harm_shows(filter: HarmFilter, e: &EmitterView) -> bool {
-    match filter {
-        HarmFilter::All => true,
-        HarmFilter::Sam => !e.air,
-        HarmFilter::Air => e.air,
-    }
+    e.heard
+        && match filter {
+            HarmFilter::All => true,
+            HarmFilter::Sam => !e.air,
+            HarmFilter::Air => e.air,
+        }
 }
 
 fn emitter_source(r: ContactRef) -> Option<stealth_sim::EmitterSource> {

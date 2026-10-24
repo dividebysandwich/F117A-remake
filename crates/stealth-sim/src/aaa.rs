@@ -633,6 +633,7 @@ impl Sim {
                     + if u.tracking { 120 } else { 0 }
                     + if range < 3 { 60 } else { 0 }
                     + (GUN_DISH.0 - range) / 4,
+                signal: detect(u.x, u.y, 0, 1, Some(GUN_DISH), &self.detect_ctx()).0.max(0),
             });
         }
     }

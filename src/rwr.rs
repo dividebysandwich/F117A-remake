@@ -1,9 +1,11 @@
 //! Radar warning receiver: the radars painting the player
 //! (`Sim::emitters`), published every frame, and the circular threat display of the F-16's RWR.
-//! The HARM display (modern avionics) shows the same picture.
+//! The HARM display (modern avionics) shows the same picture, of the radars heard lately.
 //!
 //! Like a real RWR the scope does not show range: a symbol's distance from the centre gives its
 //! priority (the most dangerous emitters innermost), its direction the relative bearing.
+
+use std::collections::HashMap;
 
 use bevy::prelude::*;
 use stealth_sim::{Emitter, EmitterSource};
@@ -30,12 +32,21 @@ pub struct EmitterView {
     pub tracking: bool,
     pub launch: bool,
     pub priority: i32,
+    /// Its signal reached the player with some strength lately (shown on the HARM display).
+    pub heard: bool,
 }
+
+/// The HARM display shows a radar whose signal at the player has been at least this strong
+/// (the radar sweep's score) in the last `HEARD_SECONDS` of mission time.
+pub const HEARD_SIGNAL: i32 = 5;
+pub const HEARD_SECONDS: i32 = 60;
 
 /// The emitters, most dangerous first.
 #[derive(Resource, Default, Debug)]
 pub struct Emitters {
     pub list: Vec<EmitterView>,
+    /// Mission second each radar's signal was last heard (see [`HEARD_SIGNAL`]).
+    pub heard: HashMap<EmitterSource, i32>,
 }
 
 /// RWR symbol of a radar type ("SA-10" -> "10", "SA-N-6" -> "N6") or an aircraft type
@@ -88,6 +99,7 @@ pub fn view(e: &Emitter, name: &str, heading_bam: f32) -> EmitterView {
         tracking: e.tracking,
         launch: e.launch,
         priority: e.priority,
+        heard: false,
     }
 }
 

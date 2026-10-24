@@ -1460,6 +1460,10 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         });
     }
     let heading_bam = to_bam(a.euler().0);
+    // The radars heard lately (forgotten after a while, and when the mission clock restarts).
+    let now = sim.mission_tick();
+    let mut heard = std::mem::take(&mut emitters.heard);
+    heard.retain(|_, t| *t <= now && now - *t < crate::rwr::HEARD_SECONDS);
     emitters.list = sim
         .emitters()
         .iter()
@@ -1469,9 +1473,15 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                 stealth_sim::EmitterSource::Aircraft(i) => sim.aircraft_name(sim.flights()[i].spec),
                 stealth_sim::EmitterSource::Gun(_) => "ZSU-23-4".to_string(),
             };
-            crate::rwr::view(e, &name, heading_bam)
+            if e.signal >= crate::rwr::HEARD_SIGNAL {
+                heard.insert(e.source, now);
+            }
+            let mut v = crate::rwr::view(e, &name, heading_bam);
+            v.heard = heard.contains_key(&e.source);
+            v
         })
         .collect();
+    emitters.heard = heard;
     let done = [o.primary_done, o.secondary_done];
     for (k, t) in sim.target_slots().iter().enumerate() {
         if done[k] || !matches!(t.mission_type, 1..=3 | 9) {

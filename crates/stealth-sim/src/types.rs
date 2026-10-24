@@ -217,7 +217,7 @@ pub struct BombFall {
 }
 
 /// What emits a radar signal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EmitterSource {
     /// Ground site (object index).
     Site(usize),
@@ -250,6 +250,9 @@ pub struct Emitter {
     pub launch: bool,
     /// Higher = more dangerous.
     pub priority: i32,
+    /// Strength of its signal at the player (the radar sweep's score; 0 while it is off the
+    /// air or the player is outside its cone).
+    pub signal: i32,
 }
 
 /// Fine units of a gun round's position and velocity per world unit (1/256 wu).

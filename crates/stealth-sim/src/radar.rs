@@ -199,9 +199,7 @@ impl Sim {
                 self.objects[i].flags &= !oflags::SWEPT;
                 continue;
             }
-            let k = if self.alarm_last < 0x80 { 2 * self.roe + 1 } else { 2 * self.roe + 3 };
-            let ph = (-((s16(self.frame) >> 10) * i as i32)) & 7;
-            if k < ph && o.alert == 0 && o.flags & oflags::NEUTRAL == 0 {
+            if self.site_silent(i) {
                 self.objects[i].flags &= !oflags::SWEPT;
                 continue;
             }
@@ -236,6 +234,15 @@ impl Sim {
                 }
             }
         }
+    }
+
+    /// Site `i`'s radar is off the air for now: calm sites take turns, fewer the hotter the
+    /// war and after an alarm.
+    fn site_silent(&self, i: usize) -> bool {
+        let o = self.objects[i];
+        let k = if self.alarm_last < 0x80 { 2 * self.roe + 1 } else { 2 * self.roe + 3 };
+        let ph = (-((s16(self.frame) >> 10) * i as i32)) & 7;
+        k < ph && o.alert == 0 && o.flags & oflags::NEUTRAL == 0
     }
 
     /// The pilot site `i` sweeps for: the one it tracks while he is in the world, else the
@@ -570,7 +577,9 @@ impl Sim {
                         radar_type: i32,
                         missile: i32,
                         painted: bool,
-                        tracking: bool| {
+                        tracking: bool,
+                        on_air: bool,
+                        facing: Option<i32>| {
             let Some(t) = self.threat_type(radar_type) else { return };
             let (dx, dy) = (s16(px - x), s16(py - y));
             let range = approx(dx, dy) >> 6;
@@ -585,6 +594,14 @@ impl Sim {
             let bearing = bearing(s16(x - px), s16(py - y));
             let lock_range = self.missile(missile).lock_range as i32;
             let launch = launched(source);
+            // Its signal at the player: the sweep's score (none off the air or outside an
+            // airborne radar's cone).
+            let th =
+                Some(((t.lethality as i32 * tenths / 10).max(1), t.tier as i32, t.flags as i32));
+            let (score, brg, _) = detect(x, y, alt, radar_type, th, &self.detect_ctx());
+            let in_cone =
+                facing.is_none_or(|h| hi8s(abs16(s16(h - brg))) <= 0x30 || t.flags & 2 != 0);
+            let signal = if on_air && in_cone { score.max(0) } else { 0 };
             let priority = t.tier as i32 * 8
                 + if launch { 300 } else { 0 }
                 + if tracking { 120 } else { 0 }
@@ -604,6 +621,7 @@ impl Sim {
                 tracking,
                 launch,
                 priority,
+                signal,
             });
         };
         for (i, o) in self.objects.iter().enumerate().take(self.ground_units) {
@@ -625,6 +643,8 @@ impl Sim {
                 missile,
                 mine && o.flags & oflags::PAINTED != 0,
                 tracking,
+                !self.site_silent(i),
+                None,
             );
         }
         for (i, u) in self.flights.iter().enumerate() {
@@ -645,6 +665,8 @@ impl Sim {
                 u.missile,
                 mine && u.flags & fflags::CONTACT != 0,
                 mine && u.heat > 0xC0,
+                true,
+                Some(u.heading),
             );
         }
         self.aaa_emitters(&mut out);

@@ -50,7 +50,8 @@ impl Plugin for KneeboardPlugin {
 
 /// Board size (metres) and where it lies in the cockpit frame (the eye at the origin): on top of
 /// the left thigh, from the ejection handle at the front of the seat between the knees (inboard
-/// enough to clear the F-16's throttle grip over its whole travel).
+/// enough to clear the F-16's throttle grip over its whole travel), in the F-16's cockpit model:
+/// both scale with the flown one (`AircraftSpec::cockpit_model_scale`).
 const SIZE: Vec2 = Vec2::new(0.15, 0.20);
 const FROM_EJECT: Vec3 = Vec3::new(-0.12, 0.11, 0.06);
 /// Canvas pixels.
@@ -275,6 +276,7 @@ fn within_reach(local: Vec3) -> bool {
 /// The board on the thigh of the cockpit model's seat, facing the eye, its top towards the knee;
 /// in VR a free hand squeezing its grip on the board carries it, and it stays where let go.
 fn carry(
+    settings: Res<Settings>,
     anchors: Res<crate::cockpit3d::levers::CockpitAnchors>,
     mut kb: ResMut<Kneeboard>,
     mut hands: ResMut<Hands>,
@@ -292,8 +294,11 @@ fn carry(
         }
         return;
     }
-    let at = anchors.eject + FROM_EJECT;
-    let rest = kb.placed.unwrap_or(Transform::from_translation(at).looking_to(at, Vec3::NEG_Z));
+    let scale = settings.aircraft.spec().cockpit_model_scale();
+    let at = anchors.eject + FROM_EJECT * scale;
+    let rest = kb.placed.unwrap_or(
+        Transform::from_translation(at).looking_to(at, Vec3::NEG_Z).with_scale(Vec3::splat(scale)),
+    );
     if let Some((i, _)) = kb.held {
         let h = &mut hands.hands[i];
         if kb.hidden || !h.active || h.squeeze < 0.4 {

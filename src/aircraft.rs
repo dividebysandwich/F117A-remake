@@ -84,6 +84,12 @@ pub enum Hmd {
 }
 
 impl AircraftSpec {
+    /// Size of the cockpit model against the F-16's: the models are built at different scales,
+    /// which `vr_scale` brings to life size.
+    pub fn cockpit_model_scale(&self) -> f32 {
+        F16.vr_scale / self.vr_scale
+    }
+
     pub fn flight(&self) -> FlightConstants {
         (self.flight)()
     }

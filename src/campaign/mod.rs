@@ -545,6 +545,10 @@ fn park(c: &mut ActiveCampaign, s: &mut Session, base: Option<usize>) {
     let base = base.or(c.parked);
     c.parked = base;
     s.combat.campaign_events.clear();
+    // The aircraft waiting unseen is an F-117A whatever the last sortie flew (a helicopter
+    // would idle there with its rotor turning); the sortie puts the chosen one there.
+    s.settings.aircraft = crate::aircraft::AircraftKind::F117;
+    *s.constants = crate::flight::constants_for(s.settings.aircraft, c.rules.no_crashes);
     if let Some(b) = base {
         let st = s.combat.sim.start_state_at(b);
         place_player(s, &st, b);
@@ -929,6 +933,7 @@ fn begin_sortie(c: &mut ActiveCampaign, s: &mut Session, sortie: &Sortie, start:
 fn leave(
     mut commands: Commands,
     c: Option<Res<ActiveCampaign>>,
+    mut settings: ResMut<crate::settings::Settings>,
     cams: Query<Entity, With<ops::OpsCamera>>,
     mut view: ResMut<UnitView>,
     mut sites: ResMut<crate::world::StreamSites>,
@@ -951,6 +956,8 @@ fn leave(
         commands.remove_resource::<NetLink>();
     }
     if let Some(c) = c {
+        // The menu keeps the campaign's aircraft choice, not the parked F-117A.
+        settings.aircraft = kind_of(c.aircraft);
         c.save();
         commands.remove_resource::<ActiveCampaign>();
     }

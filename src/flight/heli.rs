@@ -205,6 +205,10 @@ fn collective(a: &mut Aircraft, controls: &FlightControls, dt: f32) -> f32 {
 const TRIM_GAIN: f32 = 2.5;
 const TRIM_HOLD_GAIN: f32 = 2.0;
 
+/// Yaw acceleration the wheels' grip holds against the torque with the full weight on them
+/// (rad/s^2).
+const WHEEL_YAW_GRIP: f32 = 2.0;
+
 /// Collective travel per second with the keys held (percent).
 pub const COLLECTIVE_RATE: f32 = 40.0;
 
@@ -320,12 +324,12 @@ pub(super) fn step(
 
     // --- rotation
     let fin = smoothstep(15.0, 60.0, horizontal);
+    let pedal_yaw = -r.pedal_accel * pedal * nr2;
+    let torque_yaw = -r.torque_yaw * (torque - r.torque_rigging) * nr2;
     let mut rate_dot = Vec3::new(
         r.pitch_accel * pitch * nr2 + r.flapback * (-vb.z) + r.stall_pitch * stall * nr2
             - r.sas.x * rates.x,
-        -r.pedal_accel * pedal * nr2 - r.torque_yaw * (torque - r.torque_rigging) * nr2
-            + r.weathervane * fin * (-vb.x)
-            - r.sas.y * rates.y,
+        pedal_yaw + torque_yaw + r.weathervane * fin * (-vb.x) - r.sas.y * rates.y,
         -r.roll_accel * roll * nr2 + r.dihedral * vb.x + r.stall_roll * stall * nr2
             - r.sas.z * rates.z,
     );
@@ -337,8 +341,18 @@ pub(super) fn step(
         let wow = (1.0 - thrust * up.y).clamp(0.0, 1.0);
         rate_dot.x += wow * (-60.0 * p - 12.0 * rates.x);
         rate_dot.z += wow * (60.0 * b - 12.0 * rates.z);
-        // The wheels hold the heading against the torque; the pedals still turn it slowly.
-        rate_dot.y = rate_dot.y * (1.0 - 0.8 * wow) - wow * 20.0 * rates.y;
+        // The wheels hold the heading against the torque (as much as the weight on them
+        // grips: lifting off, the pedals take over); the pedals still turn it slowly. Held and
+        // without pedals, a slow turn stops dead.
+        let hold = wow * WHEEL_YAW_GRIP;
+        let torque_left = torque_yaw - torque_yaw.clamp(-hold, hold);
+        rate_dot.y = pedal_yaw * (1.0 - 0.8 * wow) + torque_left
+            - r.sas.y * rates.y
+            - wow * 20.0 * rates.y;
+        if pedal.abs() < 0.05 && torque_left == 0.0 && (rates.y + rate_dot.y * dt).abs() < 0.05 {
+            rates.y = 0.0;
+            rate_dot.y = 0.0;
+        }
         let flat = Vec3::new(vel.x, 0.0, vel.z);
         let fwd = (a.orientation * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
         let side = Vec3::new(-fwd.z, 0.0, fwd.x);
@@ -691,6 +705,24 @@ mod tests {
             pilot(a, c, 0.0);
         });
         assert!(!a.on_ground && a.altitude > 5.0, "alt {}", a.altitude);
+    }
+
+    #[test]
+    fn holds_its_heading_on_the_ground() {
+        // Parked with the rotor turning and the collective down: the wheels hold it still.
+        let mut a0 = Aircraft::new_on_runway(2400.0);
+        a0.heli = State::turning();
+        let (a, _) = fly(a0, 60.0, 1, |_, c| c.throttle = Some(0.0));
+        let (h, ..) = a.euler();
+        assert!(a.on_ground && a.heli.rates.y == 0.0, "yaw rate {}", a.heli.rates.y);
+        assert!(h.abs() < 0.01, "heading {:.1}", h.to_degrees());
+        // The pedals still turn it.
+        let (a, _) = fly(a, 3.0, 1, |_, c| {
+            c.throttle = Some(0.0);
+            c.yaw = 1.0;
+        });
+        let (h, ..) = a.euler();
+        assert!(h.abs() > 0.1, "heading {:.1}", h.to_degrees());
     }
 
     #[test]

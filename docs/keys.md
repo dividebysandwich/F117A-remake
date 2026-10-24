@@ -45,7 +45,6 @@ grouped by topic, with the mouse (desktop) or the VR controllers.
 | | sensor of interest to the other MFD | Alt S |
 | INS | select waypoint / change waypoint / reset waypoint | F7 / F8 / Shift F8 |
 | | last / next waypoint | PgUp / PgDn (shift if no joystick) |
-| | move waypoint up/down/left/right | arrows / keypad (shift if no joystick) |
 | Cockpit views | cockpit | F1 |
 | | look ahead / rear / left / right | Shift `/` / Shift `.` / Shift `,` / Shift M |
 | External views | slot / chase / side / missile / tactical / inverse tactical | Shift F1 .. Shift F6 |
@@ -55,4 +54,4 @@ grouped by topic, with the mouse (desktop) or the VR controllers.
 | | volume / detail level | Alt V / Alt D |
 | | kneeboard (remake): show, next page, hide | K |
 | | chat (remake, multiplayer): type a message, Enter sends, Esc cancels | Y |
-| Training | go to training / resupply / day-night / teleport | Alt T / Alt R / Alt N / Alt + arrows |
+| Training | go to training / resupply / day-night | Alt T / Alt R / Alt N |

@@ -203,8 +203,11 @@ fn toggle(
     mut view: ResMut<ViewState>,
     sinks: Query<&AudioSink>,
     campaign: Option<Res<crate::campaign::ActiveCampaign>>,
+    boss: Res<crate::boss_key::BossKey>,
 ) {
-    let pressed = actions.read().filter(|a| a.0 == Action::Menu).count() % 2 == 1;
+    // Not behind the boss screen (closing the menu would resume the flight it paused).
+    let pressed =
+        actions.read().filter(|a| a.0 == Action::Menu).count() % 2 == 1 && !boss.showing();
     // Esc in the key guide goes back to the entries.
     if pressed && menu.open && menu.guide {
         menu.guide = false;

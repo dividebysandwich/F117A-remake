@@ -2,6 +2,7 @@ mod aircraft;
 mod asset_path;
 mod autoshot;
 mod avionics;
+mod boss_key;
 mod camera;
 mod campaign;
 mod canvas;
@@ -173,6 +174,7 @@ fn main() {
             models::ModelsPlugin,
             dots::DotsPlugin,
             canvas::CanvasPlugin,
+            boss_key::BossKeyPlugin,
         ))
         .add_plugins((
             menu::MenuPlugin,

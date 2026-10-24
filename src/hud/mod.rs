@@ -240,6 +240,8 @@ pub struct LaunchZoneCue {
     pub shoot: bool,
     /// Inside the shortest range.
     pub too_close: bool,
+    /// The zone is against the locked target (its box), not a pod point slewed away from it.
+    pub at_lock: bool,
 }
 
 /// How close the camera has to get to the locked recon target: a frame counts within

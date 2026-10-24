@@ -1638,6 +1638,7 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                         || (t.lock_valid && z.at_lock)
                         || spec == stealth_sim::HELLFIRE_SPEC),
                 too_close: zone.is_some_and(|z| range_km < z.0),
+                at_lock: z.at_lock,
             }
         });
     }

@@ -749,7 +749,8 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2, down: Vec2) {
         let s = 16.0;
         c.frame(q - Vec2::splat(s), q + Vec2::splat(s), PEN, INK);
         c.ring(q, 1.5, PEN, INK);
-        match cues.launch_zone {
+        // A zone against the slewed pod point has its cue by the zone scale instead.
+        match cues.launch_zone.filter(|z| z.at_lock) {
             Some(z) if z.shoot => {
                 if f.blink {
                     small(c, q.x, q.y - s - 14.0, "SHOOT", Align::Centre);
@@ -768,6 +769,10 @@ fn air_to_ground(c: &mut Canvas, f: &HudFrame, fpm: Vec2, down: Vec2) {
     }
     if let Some(z) = &cues.launch_zone {
         dynamic_launch_zone(c, z);
+        let cue = if z.shoot { f.blink.then_some("SHOOT") } else { z.too_close.then_some("TOO CLOSE") };
+        if let Some(s) = cue.filter(|_| !z.at_lock || cues.target_dir.is_none()) {
+            small(c, 820.0, CY + 124.0, s, Align::Centre);
+        }
     }
     let bomb = cues.bomb;
     if let Some(dir) = cues.ccip_dir.filter(|_| bomb.is_none_or(|b| !b.ccrp)) {
@@ -944,6 +949,7 @@ mod tests {
             no_escape_km: None,
             shoot: false,
             too_close: false,
+            at_lock: true,
         };
         // No zone: nothing to draw.
         f.cues.launch_zone = Some(z);
@@ -955,6 +961,21 @@ mod tests {
         z.shoot = true;
         f.cues.launch_zone = Some(z);
         assert!(ink(&f) > zone, "SHOOT");
+        // Against a pod point slewed off the lock: SHOOT by the zone scale, not over the box.
+        let lower_right = |f: &HudFrame| {
+            let mut c = Canvas::new(WIDTH, HEIGHT);
+            draw(&mut c, f);
+            let rows = (CY + 110.0) as usize..(CY + 140.0) as usize;
+            rows.flat_map(|y| (760..880).map(move |x| (x, y)))
+                .filter(|&(x, y)| c.px[y * WIDTH + x] != 0)
+                .count()
+        };
+        let at_box = lower_right(&f);
+        z.at_lock = false;
+        f.cues.launch_zone = Some(z);
+        assert!(lower_right(&f) > at_box, "SHOOT by the scale");
+        assert_eq!(ink(&f) - lower_right(&f), zone - at_box, "no SHOOT over the box");
+        z.at_lock = true;
         z.shoot = false;
         z.too_close = true;
         z.range_km = 1.0;
@@ -979,6 +1000,7 @@ mod tests {
             no_escape_km: None,
             shoot: false,
             too_close: false,
+            at_lock: true,
         };
         f.cues.launch_zone = Some(z);
         let zone = ink(&f);

@@ -178,12 +178,10 @@ const HEAVY_DAMAGE_SMOKE: Style = Style {
     fade_in: 4.0,
 };
 
-/// Where the damaged aircraft's smoke and fire come out (aircraft frame, metres: behind the
-/// middle, at the engines).
-pub const DAMAGE_EMITTER: Vec3 = Vec3::new(0.0, 0.3, 8.0);
-
-/// Contrail emitters: behind the aircraft centre, left and right (aircraft frame, metres).
-const ENGINES: [Vec3; 2] = [Vec3::new(-3.0, 0.0, 8.0), Vec3::new(3.0, 0.0, 8.0)];
+/// Contrail emitters: left and right of the exhaust (aircraft frame, metres).
+const ENGINES: [Vec3; 2] = [Vec3::new(-3.0, 0.0, 0.0), Vec3::new(3.0, 0.0, 0.0)];
+/// The AI aircraft's exhaust: behind the aircraft centre (aircraft frame, metres).
+const AI_EXHAUST: Vec3 = Vec3::new(0.0, 0.0, 8.0);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Source {
@@ -311,6 +309,7 @@ fn update_trails(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<TrailMaterial>>,
     player: Query<(&Aircraft, &WorldPos), With<Player>>,
+    settings: Res<crate::settings::Settings>,
     mut visibility: Query<&mut Visibility>,
 ) {
     let trails = &mut *trails;
@@ -342,16 +341,18 @@ fn update_trails(
             emitters.push((
                 Source::Aircraft(i, k),
                 &CONTRAIL,
-                wu_to_bevy(east, north, alt) + (rot * o).as_dvec3(),
+                wu_to_bevy(east, north, alt) + (rot * (AI_EXHAUST + o)).as_dvec3(),
             ));
         }
     }
+    let exhaust = settings.aircraft.spec().exhaust;
     if let Ok((a, pos)) = player.single()
         && !a.on_ground
         && sim.player().view_z >= CONTRAIL_VIEW_Z
     {
         for (k, &o) in ENGINES.iter().enumerate() {
-            emitters.push((Source::Player(k), &CONTRAIL, pos.0 + (a.orientation * o).as_dvec3()));
+            let at = pos.0 + (a.orientation * (exhaust + o)).as_dvec3();
+            emitters.push((Source::Player(k), &CONTRAIL, at));
         }
     }
     let d = sim.damage_effects();
@@ -363,7 +364,7 @@ fn update_trails(
         emitters.push((
             Source::PlayerSmoke(heavy),
             if heavy { &HEAVY_DAMAGE_SMOKE } else { &DAMAGE_SMOKE },
-            pos.0 + (a.orientation * DAMAGE_EMITTER).as_dvec3(),
+            pos.0 + (a.orientation * exhaust).as_dvec3(),
         ));
     }
 
@@ -383,7 +384,7 @@ fn update_trails(
             emitters.push((
                 Source::RemoteSmoke(p.id, heavy),
                 if heavy { &HEAVY_DAMAGE_SMOKE } else { &DAMAGE_SMOKE },
-                pos + (rot * DAMAGE_EMITTER).as_dvec3(),
+                pos + (rot * crate::aircraft::AircraftKind::of_remote(p).spec().exhaust).as_dvec3(),
             ));
         }
     }

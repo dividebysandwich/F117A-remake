@@ -1441,16 +1441,7 @@ fn sync_remote_pilots(
         if p.chute.is_some() {
             continue;
         }
-        let kind = if p.gunship {
-            crate::aircraft::AircraftKind::AH1Z
-        } else if p.helicopter {
-            crate::aircraft::AircraftKind::UH60
-        } else if p.external_stores {
-            crate::aircraft::AircraftKind::F16
-        } else {
-            crate::aircraft::AircraftKind::F117
-        };
-        let spec = kind.spec();
+        let spec = crate::aircraft::AircraftKind::of_remote(p).spec();
         if vis.planes.get(&p.id).is_some_and(|v| v.1 != spec.model) {
             if let Some((e, ..)) = vis.planes.remove(&p.id) {
                 commands.entity(e).try_despawn();

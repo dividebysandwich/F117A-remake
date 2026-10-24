@@ -67,6 +67,9 @@ pub struct AircraftSpec {
     pub hmd: bool,
     /// The cannon's muzzle (aircraft frame, m), where it is not at the nose.
     pub muzzle: Option<Vec3>,
+    /// Where the damage smoke and fire come out, the contrails either side of it (aircraft
+    /// frame, m).
+    pub exhaust: Vec3,
     flight: fn() -> FlightConstants,
 }
 
@@ -104,6 +107,9 @@ const F117_LIFT: f32 = (10.0 * AIRCRAFT_MODEL_SCALE) as f32 + 0.7;
 /// the origin) is held 0.8 m above the ground.
 const F16_LIFT: f32 = (21.6 * AIRCRAFT_MODEL_SCALE) as f32 + 0.8;
 
+/// Behind the middle, at the engines (the F-117A's, and the helicopters').
+const EXHAUST: Vec3 = Vec3::new(0.0, 0.3, 8.0);
+
 static F117: AircraftSpec = AircraftSpec {
     model: "stflt_024",
     model_lift: F117_LIFT,
@@ -120,6 +126,7 @@ static F117: AircraftSpec = AircraftSpec {
     turret: false,
     hmd: false,
     muzzle: None,
+    exhaust: EXHAUST,
     flight: FlightConstants::default,
 };
 
@@ -147,6 +154,8 @@ static F16: AircraftSpec = AircraftSpec {
     turret: false,
     hmd: false,
     muzzle: None,
+    // The nozzle: 0.3 m above the model origin.
+    exhaust: Vec3::new(0.0, F16_LIFT + 0.3, 8.0),
     flight: FlightConstants::f16,
 };
 
@@ -184,6 +193,7 @@ static UH60: AircraftSpec = AircraftSpec {
     turret: false,
     hmd: false,
     muzzle: None,
+    exhaust: EXHAUST,
     flight: FlightConstants::uh60,
 };
 
@@ -220,12 +230,26 @@ static AH1Z: AircraftSpec = AircraftSpec {
     hmd: true,
     // The chin turret's barrels.
     muzzle: Some(ah1z_point(0.0, 5.30, 0.58)),
+    exhaust: EXHAUST,
     flight: FlightConstants::ah1z,
 };
 
 impl AircraftKind {
     pub const ALL: [AircraftKind; 4] =
         [AircraftKind::F117, AircraftKind::F16, AircraftKind::UH60, AircraftKind::AH1Z];
+
+    /// What another pilot flies.
+    pub fn of_remote(p: &stealth_sim::net::RemotePilot) -> Self {
+        if p.gunship {
+            AircraftKind::AH1Z
+        } else if p.helicopter {
+            AircraftKind::UH60
+        } else if p.external_stores {
+            AircraftKind::F16
+        } else {
+            AircraftKind::F117
+        }
+    }
 
     pub fn spec(self) -> &'static AircraftSpec {
         match self {

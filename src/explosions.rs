@@ -443,8 +443,6 @@ fn spawn_blasts(
     }
 }
 
-/// Where the damaged aircraft's smoke and fire come out (aircraft frame, metres: behind the
-/// middle, at the engines).
 /// Metres flown per smoke puff and per flame puff.
 const SMOKE_SPACING: f32 = 4.0;
 const FIRE_SPACING: f32 = 2.5;
@@ -457,6 +455,7 @@ fn damage_trail(
     mut p: ResMut<Particles>,
     time: Res<Time>,
     player: Query<(&crate::flight::Aircraft, &WorldPos), With<crate::flight::Player>>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let p = &mut *p;
     let dt = time.delta_secs();
@@ -473,7 +472,7 @@ fn damage_trail(
         let fire = d.bits & stealth_sim::dmg::FIRE != 0;
         // Severity 0 (one hit; the count starts at 2) .. 1 (eight or more).
         let sev = ((d.hits - 3) as f32 / 7.0).clamp(0.0, 1.0);
-        let at = pos.0 + (a.orientation * crate::trails::DAMAGE_EMITTER).as_dvec3();
+        let at = pos.0 + (a.orientation * settings.aircraft.spec().exhaust).as_dvec3();
         emitters.push((None, at, if fire { 1.0 } else { sev }, fire));
     }
     let me = combat.sim.active_pilot();
@@ -482,7 +481,8 @@ fn damage_trail(
             continue;
         }
         let (pos, rot) = crate::sim_render::remote_pose(&combat, o);
-        let at = pos + (rot * crate::trails::DAMAGE_EMITTER).as_dvec3();
+        let at =
+            pos + (rot * crate::aircraft::AircraftKind::of_remote(o).spec().exhaust).as_dvec3();
         let fire = o.smoke >= 3 || o.burning;
         let heavy = if fire { 1.0 } else { [0.0, 0.1, 0.6][o.smoke as usize] };
         emitters.push((Some(o.id), at, heavy, fire));

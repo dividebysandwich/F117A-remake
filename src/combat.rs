@@ -1378,8 +1378,11 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
             for (d, s) in sym.iter_mut().zip(label.bytes()) {
                 *d = s;
             }
-            let ring_km = crate::rwr::km(sim.site_lock_range(ob.unit_type));
-            let threat = Some((ring_km, sym));
+            let threat = Some(crate::mfd::Threat {
+                km: crate::rwr::km(sim.site_lock_range(ob.unit_type)),
+                label: sym,
+                doppler: sim.radar_doppler(ob.unit_type),
+            });
             contacts.list.push(Contact {
                 kind: ContactKind::GroundRadar,
                 east,
@@ -1402,7 +1405,11 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         let (east, north) = map_wu(ob.x, ob.y);
         let friendly = ob.flags & (oflags::FRIENDLY | oflags::NEUTRAL) != 0;
         let armed = ob.unit_type > 0 && i < sim.ground_unit_count() && !friendly;
-        let threat = armed.then(|| (crate::rwr::km(sim.site_lock_range(ob.unit_type)), [0u8; 3]));
+        let threat = armed.then(|| crate::mfd::Threat {
+            km: crate::rwr::km(sim.site_lock_range(ob.unit_type)),
+            label: [0; 3],
+            doppler: sim.radar_doppler(ob.unit_type),
+        });
         let target = Some(ContactRef::Object(i));
         contacts.list.push(Contact {
             kind: ContactKind::Ship,

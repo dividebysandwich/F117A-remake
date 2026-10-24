@@ -657,6 +657,11 @@ impl Sim {
         self.threat_type(t).map_or(0, |t| t.lethality as i32)
     }
 
+    /// Radar type `t` is a Doppler radar (else a pulse radar).
+    pub fn radar_doppler(&self, t: i32) -> bool {
+        self.threat_type(t).is_some_and(|t| t.flags & 1 != 0)
+    }
+
     /// Lock range (km) of the missile a site of radar type `t` fires.
     pub fn site_lock_range(&self, t: i32) -> i32 {
         self.missile(self.site_missile(t)).lock_range as i32

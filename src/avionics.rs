@@ -624,6 +624,7 @@ const GREEN: u8 = 10;
 const CYAN: u8 = 11;
 const RED: u8 = 13;
 const WHITE: u8 = 15;
+const YELLOW: u8 = 17;
 
 /// Draws an MFD with the modern avionics.
 pub fn draw(p: &MfdParams, side: MfdSide, c: &mut Canvas, art: &CockpitArt, fonts: &Fonts) {
@@ -980,9 +981,10 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
         match k.kind {
             ContactKind::GroundRadar => {
                 let colour = if k.friendly { GREEN } else { RED };
-                if let Some((km, label)) = k.threat {
-                    c.ring(q, km * px_per_km, 1.0, colour);
-                    let text = String::from_utf8_lossy(&label).trim_end_matches('\0').to_string();
+                if let Some(t) = k.threat {
+                    let ring = if k.friendly { GREEN } else { YELLOW };
+                    threat_ring(c, q, t.km * px_per_km, t.doppler, ring);
+                    let text = String::from_utf8_lossy(&t.label).trim_end_matches('\0').to_string();
                     stroke_text_at(c, q.x, q.y, &text, 9.0, 1.3, colour, Align::Centre);
                 } else {
                     c.fill_rect(q.x as i32 - 2, q.y as i32 - 2, 4, 4, colour);
@@ -1012,8 +1014,8 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
                     1.3,
                     colour,
                 );
-                if let Some((km, _)) = k.threat {
-                    c.ring(q, km * px_per_km, 1.0, RED);
+                if let Some(t) = k.threat {
+                    threat_ring(c, q, t.km * px_per_km, t.doppler, YELLOW);
                 }
             }
             ContactKind::Target => {
@@ -1083,6 +1085,22 @@ fn hsd_picture(p: &MfdParams, c: &mut Canvas, view: HsdView) {
     c.stroke(o + Vec2::new(0.0, -6.0), o + Vec2::new(0.0, 6.0), 1.6, CYAN);
     c.stroke(o + Vec2::new(-6.0, -1.0), o + Vec2::new(6.0, -1.0), 1.6, CYAN);
     c.stroke(o + Vec2::new(-3.0, 5.0), o + Vec2::new(3.0, 5.0), 1.6, CYAN);
+}
+
+/// A threat ring: solid around a pulse radar, dotted around a Doppler one.
+fn threat_ring(c: &mut Canvas, centre: Vec2, r: f32, doppler: bool, colour: u8) {
+    if !doppler {
+        c.ring(centre, r, 1.0, colour);
+        return;
+    }
+    // Dots about 2 px long, 5 px apart.
+    let n = ((r * std::f32::consts::TAU / 5.0) as i32).clamp(12, 720);
+    let step = std::f32::consts::TAU / n as f32;
+    let dot = (2.0 / r.max(1.0)).min(step * 0.5);
+    for i in 0..n {
+        let a = i as f32 * step;
+        c.arc(centre, r, a, a + dot, 1.0, colour);
+    }
 }
 
 /// HARM display: the radars painting the aircraft (filtered), placed by danger like the RWR.

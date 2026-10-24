@@ -521,8 +521,19 @@ pub struct Contact {
     pub friendly: bool,
     /// What a lock on it locks (aircraft: flight unit; sites and targets: world object).
     pub target: Option<ContactRef>,
-    /// Ground radar: its missile's lock range (km) and RWR symbol.
-    pub threat: Option<(f32, [u8; 3])>,
+    /// Ground radar or armed ship: its threat ring.
+    pub threat: Option<Threat>,
+}
+
+/// A radar's threat ring on the HSD.
+#[derive(Debug, Clone, Copy)]
+pub struct Threat {
+    /// Its missile's lock range (km).
+    pub km: f32,
+    /// RWR symbol (NUL padded; none for ships).
+    pub label: [u8; 3],
+    /// Doppler radar (dotted ring; pulse radars solid).
+    pub doppler: bool,
 }
 
 /// A lockable simulation object.

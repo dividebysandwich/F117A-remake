@@ -1826,6 +1826,40 @@ fn pod_designates_a_ground_point() {
     assert_eq!(sim.targeting().ground, Some(o));
 }
 
+/// Slewing the pod moves the launch zone's target with it (the SPI): the Hellfire's, and a
+/// Maverick's without a lock; the zone is against the lock again once the pod rests on it.
+#[test]
+fn launch_zone_follows_the_slewed_pod() {
+    let (mut sim, mx, my, mut p) = helicopter(true, true);
+    p.altitude = 500;
+    p.hud_mode = HudMode::Gnd;
+    let pod = |x: i32, y: i32| Some(PodAim { heading: 0x2000, pitch: -0x100, ground: Some((x, y)) });
+    p.pod = pod(mx + 150, my - 150);
+    p.cmd.designate_at = Some((mx + 150, my - 150));
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    let z = sim.launch_zone().unwrap();
+    assert!(z.at_lock && (z.range - 212).abs() <= 3, "{z:?}");
+    p.pod = pod(mx + 300, my - 300);
+    sim.step(&p, 15);
+    let z = sim.launch_zone().unwrap();
+    assert!(!z.at_lock && (z.range - 424).abs() <= 3, "{z:?}");
+
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let opts = SimOptions { realistic_guidance: true, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    sim.set_training(true);
+    sim.set_loadout(&[(5, 2)]);
+    let mut p = player_at(mx, my, 3000, 0x2000, 450);
+    p.hud_mode = HudMode::Gnd;
+    p.pod = pod(mx + 200, my - 200);
+    sim.step(&p, 15);
+    let z = sim.launch_zone().expect("a zone against the pod's point");
+    assert!(!z.at_lock && (z.range - 283).abs() <= 3, "{z:?}");
+}
+
 /// The AH-1Z's cannon fires where the pod looks, as far as its turret turns; the UH-60 has none.
 #[test]
 fn turret_gun_follows_the_pod() {

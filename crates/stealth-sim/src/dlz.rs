@@ -6,12 +6,14 @@
 //! - Air-to-ground missiles against the ground lock (GND): capped by the range the seeker
 //!   locks on from at launch (the LOCK oval); fired without that lock the missile flies blind.
 //!   The Hellfire against the targeting pod's laser spot, which its seeker sees at any range.
+//!   Mavericks and Hellfires against the pod's ground point (the SPI) as it is slewed, the
+//!   ground lock while the pod rests on it or without the pod.
 //! - Air-to-air missiles against the air lock (AIR): the target flies on as it does now, and
 //!   for the no-escape range turns tail at the launch.
 
 use crate::Sim;
 use crate::guidance::{self, Step, Target};
-use crate::math::s16;
+use crate::math::{approx, s16};
 use crate::missiles::seeker_geometry;
 use crate::types::*;
 
@@ -61,6 +63,8 @@ pub struct LaunchZone {
     /// Air-to-air: the longest range from which the missile still reaches a target that turns
     /// tail at the launch (no escape inside it); None for ground targets or when there is none.
     pub no_escape: Option<i32>,
+    /// The zone is against the lock (air, or the ground lock), not a pod point away from it.
+    pub at_lock: bool,
 }
 
 impl LaunchZone {
@@ -99,11 +103,25 @@ impl Sim {
         if count <= 0 || !matches!(cls, 4..=6) {
             return None;
         }
-        let (tx, ty, lock_max) = if spec == HELLFIRE_SPEC {
+        let lock = usize::try_from(self.pl.gnd_lock).ok().filter(|&g| g < self.objects.len());
+        // The pod's ground point, unless it rests on the lock.
+        let spi = self.pl.last_input.pod.and_then(|p| p.ground).filter(|&(x, y)| {
+            cls == 6
+                && lock.is_none_or(|g| {
+                    let o = self.objects[g];
+                    approx(o.x - x, o.y - y) > DESIGNATE_RADIUS
+                })
+        });
+        let slant = GROUND_LOCK * mt.lock_range as f64;
+        let height = (self.pl.p.view_z >> 5) as f64;
+        let lock_max = (slant * slant - height * height).max(0.0).sqrt() as i32;
+        let (tx, ty, lock_max, at_lock) = if spec == HELLFIRE_SPEC {
             let (x, y) = self.pl.last_input.pod.and_then(|p| p.ground)?;
-            (x, y, HELLFIRE_SEARCH)
+            (x, y, HELLFIRE_SEARCH, spi.is_none())
+        } else if let Some((x, y)) = spi {
+            (x, y, lock_max, false)
         } else {
-            let g = usize::try_from(self.pl.gnd_lock).ok().filter(|&g| g < self.objects.len())?;
+            let g = lock?;
             let o = self.objects[g];
             if o.flags & oflags::DESTROYED != 0
                 || self.compat(w, g as i32) == 0
@@ -112,9 +130,7 @@ impl Sim {
             {
                 return None;
             }
-            let slant = GROUND_LOCK * mt.lock_range as f64;
-            let height = (self.pl.p.view_z >> 5) as f64;
-            (o.x, o.y, (slant * slant - height * height).max(0.0).sqrt() as i32)
+            (o.x, o.y, lock_max, true)
         };
         let (dx, dy) = (s16(tx - self.pl.p.mx) as f64, s16(ty - self.pl.p.my) as f64);
         let d = dx.hypot(dy);
@@ -131,7 +147,7 @@ impl Sim {
             };
             find_zone(lock_max, 0, at)
         };
-        Some(LaunchZone { range, lock_max, zone, no_escape: None })
+        Some(LaunchZone { range, lock_max, zone, no_escape: None, at_lock })
     }
 
     fn air_zone(&self) -> Option<LaunchZone> {
@@ -158,7 +174,7 @@ impl Sim {
         let d = dx.hypot(dy) / 32.0;
         let range = d.round() as i32;
         if d < 1.0 || lock_max < 1 {
-            return Some(LaunchZone { range, lock_max, zone: None, no_escape: None });
+            return Some(LaunchZone { range, lock_max, zone: None, no_escape: None, at_lock: true });
         }
         let (ux, uy) = (dx / 32.0 / d, dy / 32.0 / d);
         let hits = |r: i32, v: [f64; 3]| {
@@ -178,7 +194,7 @@ impl Sim {
         let vh = tg.v[0].hypot(tg.v[1]);
         let away = [ux * vh, uy * vh, tg.v[2]];
         let no_escape = zone.and_then(|(lo, hi)| far_edge(lo, hi, |r| at(r, away)));
-        Some(LaunchZone { range, lock_max, zone, no_escape })
+        Some(LaunchZone { range, lock_max, zone, no_escape, at_lock: true })
     }
 
     /// A missile `spec` (store `w`) fired now reaches the target flying `track` (`air`: an

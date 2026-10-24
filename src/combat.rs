@@ -1621,8 +1621,10 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         new_cues.in_range = t.in_range;
         new_cues.launch_zone = combat.launch_zone.1.filter(|_| hud.mode != HudMode::Nav).map(|z| {
             let air = hud.mode == HudMode::Air;
-            // The range now (the zone is a few frames old), as the HUD shows it.
-            let km = info.range_km.unwrap_or(z.range as f32 * 32.0 * WU as f32 / 1000.0);
+            // The range now (the zone is a few frames old), as the HUD shows it; to the pod's
+            // ground point when the zone is against it.
+            let spi_km = z.range as f32 * 32.0 * WU as f32 / 1000.0;
+            let km = info.range_km.filter(|_| z.at_lock).unwrap_or(spi_km);
             let range_km = zone.range(km, fresh, dt);
             let zone = zone.shown;
             crate::hud::LaunchZoneCue {
@@ -1632,7 +1634,9 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
                 // An air-to-air missile homes on the target fired outside the oval too, a
                 // Hellfire on the pod's spot.
                 shoot: zone.is_some_and(|z| (z.0..=z.1).contains(&range_km))
-                    && (air || t.lock_valid || spec == stealth_sim::HELLFIRE_SPEC),
+                    && (air
+                        || (t.lock_valid && z.at_lock)
+                        || spec == stealth_sim::HELLFIRE_SPEC),
                 too_close: zone.is_some_and(|z| range_km < z.0),
             }
         });

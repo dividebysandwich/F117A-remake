@@ -1293,6 +1293,7 @@ fn own_shadow(
             | crate::camera::View::Side
             | crate::camera::View::Tactical
             | crate::camera::View::Weapon
+            | crate::camera::View::Free
     );
     let show =
         a.altitude < 1000.0 && !assets.palette.lights_on() && !(settings.shadows && external);

@@ -123,6 +123,7 @@ const SECTIONS: &[(&str, &[(Keys, &str)])] = {
                 (Actions(&[ViewMissile]), "Missile view"),
                 (Actions(&[ViewTactical]), "Tactical view"),
                 (Actions(&[ViewInverseTactical]), "Inverse tactical view"),
+                (Actions(&[ViewFree]), "Free camera: W/S/A/D/Q/E, mouse, wheel"),
                 (Actions(&[Zoom, Unzoom]), "Zoom in / out"),
                 (Actions(&[WideAngle]), "Wide angle"),
             ],

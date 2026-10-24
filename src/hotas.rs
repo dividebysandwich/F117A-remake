@@ -273,8 +273,9 @@ pub struct InputConfig {
 /// 3: the left VR trigger holds the brakes, the bay doors move to the right thumbstick left;
 /// the bombsight mode key. 4: the stick keys (the arrows) became bindable. 5: the rudder keys
 /// (Q / E); the VR thumbsticks as a HOTAS (the right one targets only). 6: the trim keys
-/// (Alt + arrows, Alt + Home). 7: the master caution key (Alt + C).
-const VERSION: u32 = 7;
+/// (Alt + arrows, Alt + Home). 7: the master caution key (Alt + C). 8: the free view key
+/// (Shift + F7).
+const VERSION: u32 = 8;
 
 impl Default for InputConfig {
     fn default() -> Self {

@@ -90,6 +90,8 @@ pub enum Action {
     ViewMissile,
     ViewTactical,
     ViewInverseTactical,
+    /// The free camera, moved with the keys and turned with the mouse (`camera::FreeView`).
+    ViewFree,
     Zoom,
     Unzoom,
     /// Map display only (bezel buttons; Z/X also zoom the external views).
@@ -351,6 +353,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (Shift, K::F4, ViewMissile),
         (Shift, K::F5, ViewTactical),
         (Shift, K::F6, ViewInverseTactical),
+        (Shift, K::F7, ViewFree),
         (None, K::KeyZ, Zoom),
         (None, K::KeyX, Unzoom),
         (Alt, K::KeyZ, MapZoomIn),
@@ -413,6 +416,7 @@ fn read_keyboard(
     mut controls: ResMut<FlightControls>,
     mut actions: MessageWriter<ActionEvent>,
     block: Res<InputBlock>,
+    view: Option<Res<crate::camera::ViewState>>,
 ) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
@@ -423,10 +427,16 @@ fn read_keyboard(
     } else {
         Mods::None
     };
+    // The free view's movement keys move it, not the aircraft (with Alt they still do).
+    let free = view.is_some_and(|v| v.view == crate::camera::View::Free) && mods != Mods::Alt;
+    let camera_key = |k: KeyCode| free && crate::camera::FREE_KEYS.contains(&k);
     for m in &config.keys {
         let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
         // The stick keys are held, read below.
-        if (block.0 && action != Action::Menu) || action.stick_direction().is_some() {
+        if (block.0 && action != Action::Menu)
+            || action.stick_direction().is_some()
+            || camera_key(m.key)
+        {
             continue;
         }
         if m.mods == mods && keys.just_pressed(m.key) {
@@ -459,7 +469,7 @@ fn read_keyboard(
     for m in &config.keys {
         let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
         let Some((r, p, y)) = action.stick_direction() else { continue };
-        if m.mods != mods {
+        if m.mods != mods || camera_key(m.key) {
             continue;
         }
         if keys.just_pressed(m.key) {
@@ -486,6 +496,7 @@ fn read_keyboard(
     controls.gun = config.keys.iter().any(|m| {
         m.target == crate::hotas::ButtonTarget::Gun
             && keys.pressed(m.key)
+            && !camera_key(m.key)
             && (m.mods == Mods::None || m.mods == mods)
     });
     let held = |a: Action| {

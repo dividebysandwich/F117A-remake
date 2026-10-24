@@ -116,6 +116,9 @@ pub struct MissionSettings {
     /// the renderer's sky uses it.
     #[serde(default)]
     pub moon: Option<u8>,
+    /// Flown in a helicopter: short missions, targets a short flight from a friendly base.
+    #[serde(default)]
+    pub helicopter: bool,
 }
 
 fn clear_sky() -> Option<Sky> {
@@ -136,6 +139,7 @@ impl Default for MissionSettings {
             cloud_cover: None,
             start_hour: None,
             moon: None,
+            helicopter: false,
         }
     }
 }
@@ -424,6 +428,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
         input.stale_special_start,
     )
     .start_hour(s.start_hour)
+    .helicopter(s.helicopter)
     .run();
     let mut avail = input.weapon_unavailable;
     avail[0] = lockheed as u8;

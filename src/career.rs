@@ -259,6 +259,7 @@ pub fn next_sortie(
             menu.cloud_cover,
         );
         settings.moon = menu.moon;
+        settings.helicopter = aircraft.spec().helicopter;
         settings.pilot = pilot.title();
         settings.sorties = pilot.sorties as u16;
         let Ok(m) = stealth_mission::generate(&data.0, &settings, Seed::Srand(s)) else { continue };

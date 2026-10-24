@@ -80,6 +80,7 @@ fn random_missions_do_not_panic() {
                 cloud_cover: None,
                 start_hour: None,
                 moon: None,
+                helicopter: i % 4 == 1,
             };
             let seed = if i % 2 == 0 { Seed::Srand(next() as u16) } else { Seed::Holdrand(next()) };
             let m = generate(data, &s, seed).unwrap_or_else(|e| panic!("{s:?} {seed:?}: {e}"));
@@ -121,4 +122,55 @@ fn briefing_wording_varies_by_seed() {
         summaries.entry(m.primary.row).or_default().insert(m.briefing.primary_summary.clone());
     }
     assert!(summaries.values().any(|v| v.len() > 1), "no row showed more than one summary");
+}
+
+/// Helicopter missions are short (the classic generator's are 450 km and more): the targets a
+/// short flight from a friendly takeoff base, the landing base near too. Libya and the North
+/// Cape have nothing within 130 km of a base.
+#[test]
+fn helicopter_missions_are_short() {
+    let data = data();
+    let mut all = 0.0;
+    let km = |a: MapPoint, b: MapPoint| {
+        (((a.x - b.x) as f64).powi(2) + ((a.y - b.y) as f64).powi(2)).sqrt() * 15.625 / 1000.0
+    };
+    for theater in 0..data.theaters.len() {
+        let mut longest: f64 = 0.0;
+        let (mut n, mut forward, mut total) = (0, 0, 0.0);
+        for seed in 0..40u16 {
+            for kind in MissionKind::ALL {
+                let s = MissionSettings { theater, kind, helicopter: true, ..Default::default() };
+                let m = generate(data, &s, Seed::Srand(seed)).unwrap();
+                if theater == 0 && kind.is_training() {
+                    continue; // the Libya training range is fixed
+                }
+                let route = km(m.takeoff.position, m.primary.position)
+                    + km(m.primary.position, m.secondary.position)
+                    + km(m.secondary.position, m.landing.position);
+                longest = longest.max(route);
+                let g = &m.world.grid;
+                let p = m.primary.position;
+                forward += (g[((p.y >> 11) * 16 + (p.x >> 11)) as usize] & 3 != 0) as i32;
+                n += 1;
+                total += route;
+                assert!(
+                    route < 350.0,
+                    "{} seed {seed} {kind:?}: {route:.0} km ({} -> {} / {} -> {})",
+                    m.theater_code,
+                    m.takeoff.name,
+                    m.orders.primary,
+                    m.orders.secondary,
+                    m.landing.name
+                );
+                assert!(!m.takeoff.neutral && !m.landing.neutral);
+            }
+        }
+        eprintln!(
+            "{}: mean {:.0} km, longest {longest:.0} km, forward {forward}/{n}",
+            THEATER_NAMES[theater],
+            total / n as f64
+        );
+        all += total / n as f64;
+    }
+    assert!(all / (data.theaters.len() as f64) < 130.0, "mean {all:.0} km");
 }

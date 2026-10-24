@@ -1128,6 +1128,7 @@ fn menu_ui(
             );
             mission_settings.start_hour = state.start_hour;
             mission_settings.moon = state.moon;
+            mission_settings.helicopter = settings.aircraft.spec().helicopter;
             let transport = settings.aircraft.spec().transport();
             state.mission = Some(
                 crate::mission::generate(&data, &mission_settings, state.seed)
@@ -1225,8 +1226,11 @@ fn menu_ui(
                         group(ui, "Vehicle", |ui| {
                             let was = settings.aircraft;
                             vehicle_options(ui, &mut settings, Some(&mut state.lockheed));
-                            // A troop helicopter flies the same seed's targets as insertions.
-                            if settings.aircraft.spec().transport() != was.spec().transport() {
+                            // A troop helicopter flies the same seed's targets as insertions;
+                            // helicopters fly short missions.
+                            let (now, was) = (settings.aircraft.spec(), was.spec());
+                            if now.transport() != was.transport() || now.helicopter != was.helicopter
+                            {
                                 state.regenerate();
                             }
                         });

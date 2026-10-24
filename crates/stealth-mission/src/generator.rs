@@ -3,7 +3,9 @@
 
 use crate::rng::MscRand;
 use crate::tables::StartTables;
-use crate::world::{Candidate, FlightUnit, MissionWorld, TheaterData, WorldObject, flags as F};
+use crate::world::{
+    Candidate, FlightUnit, MissionWorld, TABLE, TheaterData, WorldObject, flags as F,
+};
 
 /// Truncate to a signed 16-bit value.
 #[inline]
@@ -66,6 +68,40 @@ fn scale(lv: usize, c: u32) -> u32 {
         3 => c >> 4,
         _ => c >> 6,
     }
+}
+
+/// World position (32-bit world units, y north) of a random-object candidate.
+fn candidate_world(c: &Candidate) -> (i32, i32) {
+    let (mut x, mut y) = ((c.a as i64) << 12, (c.e as i64) << 12);
+    let (ox, oy) = (c.ox as i32, c.oy as i32);
+    match c.level {
+        1 => {
+            x += s16(ox + 0x800) as i64;
+            y += s16(oy + 0x800) as i64;
+        }
+        2 => {
+            x += s16((ox + 0x800) << 2) as i64;
+            y += s16((oy + 0x800) << 2) as i64;
+        }
+        _ => {
+            x += s16(ox << 4) as i64 + 0x8000;
+            y += s16(oy << 4) as i64 + 0x8000;
+        }
+    }
+    (s32(x), s32(y))
+}
+
+/// A tile target on enemy ground for a helicopter mission: its shape, world and map position,
+/// and the nearest friendly base with its distance.
+#[derive(Debug, Clone, Copy)]
+struct HeliTile {
+    shape: u8,
+    wx: i32,
+    wy: i32,
+    mx: i32,
+    my: i32,
+    base: i32,
+    dist: i32,
 }
 
 /// Target record `targets[k]`.
@@ -132,7 +168,31 @@ pub(crate) struct Gen<'a> {
     /// The special aircraft's start object; a stale global between missions.
     special_start: i32,
     start_hour: Option<u8>,
+    /// Helicopter missions ([`Gen::helicopter`]).
+    helicopter: bool,
+    /// Their candidates ([`Gen::heli_tile_targets`]).
+    heli_tiles: Option<Vec<HeliTile>>,
 }
+
+/// Helicopter missions: the primary target this far from the takeoff base (map units, 10 to
+/// 48 km) and the secondary this close to the primary (16 km); targets picked this many times
+/// at most before the classic mission is generated instead.
+const HELI_MIN: i32 = 0x280;
+const HELI_REACH: i32 = 0xC00;
+const HELI_SPREAD: i32 = 0x400;
+const HELI_TRIES: i32 = 64;
+/// Without enemy ground in reach of any friendly base, a forward position this far from one
+/// at most (36 km) is the target.
+const HELI_FORWARD: i32 = 0x900;
+/// What a forward position is never (target categories): airstrips, hangars, airbases and
+/// aircraft, warships and submarine pens, nuclear, chemical and biological plants, palaces,
+/// mosques.
+const HELI_NOT_FORWARD: [i32; 13] = [1, 8, 10, 11, 15, 16, 18, 21, 22, 24, 25, 27, 34];
+/// Bases with nothing on land that near (far out at sea): one of this many targets on enemy
+/// ground nearest a base.
+const HELI_NEAREST: usize = 12;
+/// Random points tried for a forward position.
+const HELI_POINTS: i32 = 300;
 
 /// Roll which weapons are out of stock. Quirk kept: it tests `avail[map[r]]` but sets
 /// `avail[r]`.
@@ -189,7 +249,16 @@ impl<'a> Gen<'a> {
             avail,
             special_start: special_start as i32,
             start_hour: None,
+            helicopter: false,
+            heli_tiles: None,
         }
+    }
+
+    /// A helicopter's mission: short, near a friendly base (else the classic generator's
+    /// 450 km and more). Other random numbers are drawn, so the seed gives another mission.
+    pub fn helicopter(mut self, on: bool) -> Self {
+        self.helicopter = on;
+        self
     }
 
     /// Starts the mission at this hour instead of the rolled time (the roll still happens, so
@@ -282,24 +351,8 @@ impl<'a> Gen<'a> {
             return (None, 0);
         }
         let k = if lst.len() > 1 { self.r.r(lst.len() as i32) as usize } else { 0 };
-        let c = lst[k];
-        let (mut x, mut y) = ((c.a as i64) << 12, (c.e as i64) << 12);
-        let (ox, oy) = (c.ox as i32, c.oy as i32);
-        match c.level {
-            1 => {
-                x += s16(ox + 0x800) as i64;
-                y += s16(oy + 0x800) as i64;
-            }
-            2 => {
-                x += s16((ox + 0x800) << 2) as i64;
-                y += s16((oy + 0x800) << 2) as i64;
-            }
-            _ => {
-                x += s16(ox << 4) as i64 + 0x8000;
-                y += s16(oy << 4) as i64 + 0x8000;
-            }
-        }
-        (Some((shape as u8, s32(x), s32(y))), lst.len())
+        let (x, y) = candidate_world(&lst[k]);
+        (Some((shape as u8, x, y)), lst.len())
     }
 
     /// Reuse an object at the found position, or put the tile object into scratch `slot`.
@@ -413,6 +466,188 @@ impl<'a> Gen<'a> {
         format!("{h:02}:{m:02}")
     }
 
+    // --- helicopter missions ----------------------------------------------------------------
+
+    /// Friendly airfields and carriers a helicopter flies from.
+    fn heli_bases(&self) -> Vec<i32> {
+        (self.woc()..self.n())
+            .filter(|&i| {
+                let o = self.o(i);
+                let f = o.flags;
+                f & F::FRIENDLY != 0
+                    && f & (F::AIRFIELD | F::CARRIER) != 0
+                    && f & F::NEUTRAL == 0
+                    && !(self.theater == 7 && o.name == 0x11)
+                    && !(self.realism != 0 && f & F::CARRIER != 0)
+            })
+            .collect()
+    }
+
+    /// Object `i` can be a helicopter's target: hostile, a target shape (an intact airfield
+    /// only in an air mission).
+    fn heli_target(&self, i: i32, strike: bool) -> bool {
+        if i == -1 {
+            return false;
+        }
+        let o = self.o(i);
+        o.flags & (F::FRIENDLY | F::NEUTRAL) == 0
+            && self.ott(o.shape()) != 0
+            && !(strike && o.flags & 0x801 == 1)
+    }
+
+    /// Object `i` can be the enemy's forward position (not a friendly airfield's hangar or a
+    /// power plant).
+    fn heli_forward(&self, i: i32) -> bool {
+        !HELI_NOT_FORWARD.contains(&self.ott(self.o(i).shape()))
+    }
+
+    /// A random map point within `reach` of (x, y) on each axis.
+    fn heli_point(&mut self, x: i32, y: i32, reach: i32) -> (i32, i32) {
+        let px = s16(self.r.r(2 * reach) + x - reach).clamp(0x840, 0x77BF);
+        let py = s16(self.r.r(2 * reach) + y - reach).clamp(0x840, 0x77BF);
+        (px, py)
+    }
+
+    /// The secondary target near the primary `t0` (into scratch slot 2): a target on enemy
+    /// ground of another category (a category may have a single mission table row), else the
+    /// nearest target to a point around it (a forward position's: another one).
+    fn heli_secondary(
+        &mut self,
+        t0: i32,
+        strike: bool,
+        forward: bool,
+        bases: &[i32],
+    ) -> Option<i32> {
+        let (x0, y0) = (self.o(t0).x as i32, self.o(t0).y as i32);
+        let cat = self.ott(self.o(t0).shape());
+        let near: Vec<HeliTile> = self
+            .heli_tile_targets(bases)
+            .iter()
+            .filter(|t| approx(t.mx - x0, t.my - y0) <= 2 * HELI_SPREAD)
+            .copied()
+            .collect();
+        let near: Vec<_> = near.into_iter().filter(|t| self.ott(t.shape as usize) != cat).collect();
+        for k in 0..60 {
+            let enemy_ground = k < 20 && !near.is_empty();
+            let t1 = if enemy_ground {
+                let t = near[self.r.r(near.len() as i32) as usize];
+                self.place(Some((t.shape, t.wx, t.wy)), 2)
+            } else {
+                let (x, y) = self.heli_point(x0, y0, HELI_SPREAD);
+                self.find_or_place(x, y, 2)
+            };
+            if !self.heli_target(t1, strike)
+                || (k < 40 && self.ott(self.o(t1).shape()) == cat)
+                || (forward && !enemy_ground && !self.heli_forward(t1))
+            {
+                continue;
+            }
+            let o = *self.o(t1);
+            if (o.x as i32, o.y as i32) != (x0, y0) && self.dist(t0, t1) <= 2 * HELI_SPREAD {
+                return Some(t1);
+            }
+        }
+        None
+    }
+
+    /// The theater's tile targets on enemy ground with the nearest friendly base, worked out
+    /// once.
+    fn heli_tile_targets(&mut self, bases: &[i32]) -> &[HeliTile] {
+        if self.heli_tiles.is_none() {
+            let mut v = Vec::new();
+            for sh in (0..TABLE).filter(|&sh| !matches!(self.ott(sh), 0 | 0x15)) {
+                for c in self.shape_candidates(sh) {
+                    let (x, y) = candidate_world(c);
+                    let (mx, my) = (s16(x >> 5), s16(-(s16(y >> 5) - 0x8000)));
+                    let near = bases.iter().map(|&b| {
+                        let o = self.o(b);
+                        (b, approx(mx - o.x as i32, my - o.y as i32))
+                    });
+                    if let Some((base, dist)) = near.min_by_key(|n| n.1) {
+                        v.push(HeliTile { shape: sh as u8, wx: x, wy: y, mx, my, base, dist });
+                    }
+                }
+            }
+            self.heli_tiles = Some(v);
+        }
+        self.heli_tiles.as_deref().unwrap_or_default()
+    }
+
+    /// A helicopter mission's targets and bases: (primary, secondary, takeoff base, landing
+    /// base). Air missions go for an enemy airfield in reach of a friendly base, if there is
+    /// one; the rest for a target on enemy ground in reach of one. With no enemy ground in
+    /// reach of any base, the enemy holds a forward position short of the front (a tile object
+    /// there, put into the scratch slots as the generator does with every tile target); with
+    /// no land near either (carriers far out), one of the nearest targets on enemy ground. None
+    /// without a friendly base.
+    fn local_targets(&mut self, strike: bool) -> Option<[i32; 4]> {
+        let bases = self.heli_bases();
+        if bases.is_empty() {
+            return None;
+        }
+        let nearest = |g: &Self, t: i32| *bases.iter().min_by_key(|&&b| g.dist(t, b)).unwrap();
+        let found = |g: &mut Self, t0: i32, b: i32, forward: bool| {
+            let t1 = g.heli_secondary(t0, strike, forward, &bases)?;
+            Some([t0, t1, b, nearest(g, t1)])
+        };
+        if !strike {
+            let fields: Vec<(i32, i32)> = (3..self.woc())
+                .filter(|&i| self.o(i).flags & 0xD01 == 1)
+                .flat_map(|i| bases.iter().map(move |&b| (i, b)))
+                .filter(|&(i, b)| self.dist(i, b) <= HELI_REACH)
+                .collect();
+            if !fields.is_empty() {
+                let (t0, b) = fields[self.r.r(fields.len() as i32) as usize];
+                if let Some(f) = found(self, t0, b, false) {
+                    return Some(f);
+                }
+            }
+        }
+        let mut tiles: Vec<_> =
+            self.heli_tile_targets(&bases).iter().filter(|t| t.dist >= HELI_MIN).copied().collect();
+        let in_reach: Vec<_> = tiles.iter().filter(|t| t.dist <= HELI_REACH).copied().collect();
+        tiles.sort_by_key(|t| t.dist);
+        tiles.truncate(HELI_NEAREST);
+        // A kind of target first (bridges may outnumber everything else), then one of them.
+        let pick = |g: &mut Self, list: &[HeliTile]| {
+            let mut cats: Vec<i32> = list.iter().map(|t| g.ott(t.shape as usize)).collect();
+            cats.sort_unstable();
+            cats.dedup();
+            for _ in 0..list.len().min(20) {
+                let cat = cats[g.r.r(cats.len() as i32) as usize];
+                let of: Vec<_> = list.iter().filter(|t| g.ott(t.shape as usize) == cat).collect();
+                let t = *of[g.r.r(of.len() as i32) as usize];
+                let t0 = g.place(Some((t.shape, t.wx, t.wy)), 1);
+                if g.heli_target(t0, strike)
+                    && let Some(f) = found(g, t0, t.base, false)
+                {
+                    return Some(f);
+                }
+            }
+            None
+        };
+        if let Some(f) = pick(self, &in_reach) {
+            return Some(f);
+        }
+        for _ in 0..HELI_POINTS {
+            let b = bases[self.r.r(bases.len() as i32) as usize];
+            let (x, y) = self.heli_point(self.o(b).x as i32, self.o(b).y as i32, HELI_FORWARD);
+            let t0 = self.find_or_place(x, y, 1);
+            // Clear of every friendly base.
+            if !self.heli_target(t0, strike)
+                || !self.heli_forward(t0)
+                || self.dist(t0, b) > HELI_FORWARD
+                || bases.iter().any(|&f| self.dist(t0, f) < HELI_MIN)
+            {
+                continue;
+            }
+            if let Some(f) = found(self, t0, b, true) {
+                return Some(f);
+            }
+        }
+        pick(self, &tiles)
+    }
+
     // --- generator main loop ---------------------------------------------------------------
     pub fn run(mut self) -> GenResult {
         let mut t = [RawTarget::default(); 2];
@@ -428,6 +663,7 @@ impl<'a> Gen<'a> {
         let strike = self.kind & 1 != 0;
         let training = self.kind & 2 != 0;
         let libya_training = training && self.theater == 0;
+        let mut heli_tries = 0;
         loop {
             // RESTART: new strike category on the first pass / after 50 failures.
             if stage == Stage::Restart {
@@ -444,133 +680,156 @@ impl<'a> Gen<'a> {
                 }
             }
             stage = Stage::Primary;
-            // primary target
-            let t0;
-            if !strike {
-                loop {
-                    let c = self.r.r(self.woc() - 3) + 3;
-                    if self.o(c).flags & 0xD01 == 1 {
-                        t0 = c;
-                        break;
-                    }
-                }
-                t[0].idx = t0;
+            // Helicopters: targets a short flight from a friendly base.
+            let local = if self.helicopter && !libya_training {
+                heli_tries += 1;
+                if heli_tries <= HELI_TRIES { self.local_targets(strike) } else { None }
             } else {
-                let mut found = -1;
-                let mut last = None;
-                loop {
-                    let (res, count) = self.find_random_of_shape(shape);
-                    let c = self.place(res, 1);
-                    t[0].idx = c;
-                    if c == -1 {
-                        break;
+                None
+            };
+            if self.helicopter && !libya_training && local.is_none() {
+                // No friendly base, or nothing in reach that makes a mission: the classic one.
+                self.helicopter = false;
+                attempt = 900;
+                stage = Stage::Restart;
+                continue;
+            }
+            if let Some([t0, t1, b0, b1]) = local {
+                (t[0].idx, t[1].idx, t[0].base, t[1].base) = (t0, t1, b0, b1);
+                bd = [self.dist(t0, b0), self.dist(t1, b1)];
+                total = s16((self.dist(t0, t1) >> 6) + (bd[1] >> 6) + (bd[0] >> 6));
+            } else {
+                // primary target
+                let t0;
+                if !strike {
+                    loop {
+                        let c = self.r.r(self.woc() - 3) + 3;
+                        if self.o(c).flags & 0xD01 == 1 {
+                            t0 = c;
+                            break;
+                        }
                     }
-                    let o = *self.o(c);
-                    let ok = !(o.flags & 0x801 == 1) && o.shape() == shape;
-                    if ok {
-                        found = c;
-                        break;
+                    t[0].idx = t0;
+                } else {
+                    let mut found = -1;
+                    let mut last = None;
+                    loop {
+                        let (res, count) = self.find_random_of_shape(shape);
+                        let c = self.place(res, 1);
+                        t[0].idx = c;
+                        if c == -1 {
+                            break;
+                        }
+                        let o = *self.o(c);
+                        let ok = !(o.flags & 0x801 == 1) && o.shape() == shape;
+                        if ok {
+                            found = c;
+                            break;
+                        }
+                        // A single candidate draws no random number, so a retry would pick the
+                        // same object forever. Treat it as "nothing found" instead.
+                        if count <= 1 && last == Some(c) {
+                            break;
+                        }
+                        last = Some(c);
                     }
-                    // A single candidate draws no random number, so a retry would pick the
-                    // same object forever. Treat it as "nothing found" instead.
-                    if count <= 1 && last == Some(c) {
-                        break;
+                    if found == -1 {
+                        attempt = 900;
+                        stage = Stage::Restart;
+                        continue;
                     }
-                    last = Some(c);
+                    t0 = found;
                 }
-                if found == -1 {
-                    attempt = 900;
+                // secondary target
+                let mut tries = 0;
+                let mut t1;
+                loop {
+                    let (p0x, p0y) = (self.o(t0).x as i32, self.o(t0).y as i32);
+                    let (mut x, mut y);
+                    loop {
+                        x = s16(self.r.r(0x3200) + p0x - 0x1900).clamp(0x840, 0x77BF);
+                        y = s16(self.r.r(0x3200) + p0y - 0x1900).clamp(0x840, 0x77BF);
+                        if self.w.grid[((y >> 11) * 16 + (x >> 11)) as usize] & 3 == 0 {
+                            break;
+                        }
+                    }
+                    t1 = self.find_or_place(x, y, 2);
+                    t[1].idx = t1;
+                    let ok = t1 != -1 && !(strike && self.o(t1).flags & 0x801 == 1);
+                    tries += 1;
+                    if tries > 100 || ok {
+                        break;
+                    }
+                }
+                if tries > 100 {
                     stage = Stage::Restart;
                     continue;
                 }
-                t0 = found;
-            }
-            // secondary target
-            let mut tries = 0;
-            let mut t1;
-            loop {
-                let (p0x, p0y) = (self.o(t0).x as i32, self.o(t0).y as i32);
-                let (mut x, mut y);
-                loop {
-                    x = s16(self.r.r(0x3200) + p0x - 0x1900).clamp(0x840, 0x77BF);
-                    y = s16(self.r.r(0x3200) + p0y - 0x1900).clamp(0x840, 0x77BF);
-                    if self.w.grid[((y >> 11) * 16 + (x >> 11)) as usize] & 3 == 0 {
-                        break;
-                    }
+                let (p0, p1) = (*self.o(t0), *self.o(t1));
+                if (p1.x == p0.x && p1.y == p0.y) || s16(self.dist(t0, t1) & 0xFFC0) > 0x6400 {
+                    continue; // back to PRIMARY
                 }
-                t1 = self.find_or_place(x, y, 2);
-                t[1].idx = t1;
-                let ok = t1 != -1 && !(strike && self.o(t1).flags & 0x801 == 1);
-                tries += 1;
-                if tries > 100 || ok {
-                    break;
-                }
-            }
-            if tries > 100 {
-                stage = Stage::Restart;
-                continue;
-            }
-            let (p0, p1) = (*self.o(t0), *self.o(t1));
-            if (p1.x == p0.x && p1.y == p0.y) || s16(self.dist(t0, t1) & 0xFFC0) > 0x6400 {
-                continue; // back to PRIMARY
-            }
-            // bases
-            for slot in 0..2 {
-                bd[slot] = 0x7FFF;
-                for i in self.woc()..self.n() {
-                    let o = *self.o(i);
-                    let f = o.flags as i32;
-                    if f & 0x500 == 0 || f & 0x201 == 0 {
-                        continue;
-                    }
-                    if self.theater == 7 && o.name == 0x11 {
-                        continue;
-                    }
-                    if self.realism != 0 && f & 0x200 != 0 {
-                        continue;
-                    }
-                    let mut d = if slot == 0 {
-                        s16(self.dist(t[0].idx, i) + ((self.r.r(150) - 75) << 6))
-                    } else {
-                        self.dist(t[slot].idx, i)
-                    };
-                    if f & 0x100 != 0 {
-                        d = s16(d + ((self.r.r(100) + 50) << 6));
-                    }
-                    // clamp quirk kept: d <= -0x4000 -> 0x7FFF
-                    d = if d > 0x7FFF {
-                        0x7FFF
-                    } else if d >= 0 {
-                        d
-                    } else if d > -0x4000 {
-                        0
-                    } else {
-                        0x7FFF
-                    };
-                    if d < 0x7FFF {
-                        let r = s16(self.r.r(0x500) + d);
-                        let thr = s16(bd[slot] + if f & 0x200 != 0 { 0xC80 } else { 0 });
-                        if thr > r {
-                            t[slot].base = i;
-                            bd[slot] = d;
+                // bases
+                for slot in 0..2 {
+                    bd[slot] = 0x7FFF;
+                    for i in self.woc()..self.n() {
+                        let o = *self.o(i);
+                        let f = o.flags as i32;
+                        if f & 0x500 == 0 || f & 0x201 == 0 {
+                            continue;
+                        }
+                        if self.theater == 7 && o.name == 0x11 {
+                            continue;
+                        }
+                        if self.realism != 0 && f & 0x200 != 0 {
+                            continue;
+                        }
+                        let mut d = if slot == 0 {
+                            s16(self.dist(t[0].idx, i) + ((self.r.r(150) - 75) << 6))
+                        } else {
+                            self.dist(t[slot].idx, i)
+                        };
+                        if f & 0x100 != 0 {
+                            d = s16(d + ((self.r.r(100) + 50) << 6));
+                        }
+                        // clamp quirk kept: d <= -0x4000 -> 0x7FFF
+                        d = if d > 0x7FFF {
+                            0x7FFF
+                        } else if d >= 0 {
+                            d
+                        } else if d > -0x4000 {
+                            0
+                        } else {
+                            0x7FFF
+                        };
+                        if d < 0x7FFF {
+                            let r = s16(self.r.r(0x500) + d);
+                            let thr = s16(bd[slot] + if f & 0x200 != 0 { 0xC80 } else { 0 });
+                            if thr > r {
+                                t[slot].base = i;
+                                bd[slot] = d;
+                            }
                         }
                     }
                 }
+                if libya_training {
+                    let v = if strike { [3, 15, 0x22, 0x21] } else { [0x16, 8, 0x22, 0x23] };
+                    (t[0].idx, t[1].idx, t[0].base, t[1].base) = (v[0], v[1], v[2], v[3]);
+                    bd[0] = self.dist(t[0].idx, t[0].base);
+                    bd[1] = self.dist(t[1].idx, t[1].base);
+                }
+                // length check
+                total = s16((self.dist(t[0].idx, t[1].idx) >> 6) + (bd[1] >> 6) + (bd[0] >> 6));
+                if total > limit + attempt || total < min_dist {
+                    min_dist = s16(min_dist + self.diff - 5);
+                    stage = Stage::Restart;
+                    continue;
+                }
             }
-            if libya_training {
-                let v = if strike { [3, 15, 0x22, 0x21] } else { [0x16, 8, 0x22, 0x23] };
-                (t[0].idx, t[1].idx, t[0].base, t[1].base) = (v[0], v[1], v[2], v[3]);
-                bd[0] = self.dist(t[0].idx, t[0].base);
-                bd[1] = self.dist(t[1].idx, t[1].base);
-            }
-            // length check
-            total = s16((self.dist(t[0].idx, t[1].idx) >> 6) + (bd[1] >> 6) + (bd[0] >> 6));
-            if total > limit + attempt || total < min_dist {
-                min_dist = s16(min_dist + self.diff - 5);
-                stage = Stage::Restart;
-                continue;
-            }
-            // mission table
+            // mission table (a helicopter's two targets of a kind may share a row: there may be
+            // nothing else in reach)
+            let shared_row = self.helicopter
+                && self.ott(self.o(t[0].idx).shape()) == self.ott(self.o(t[1].idx).shape());
             for slot in 0..2 {
                 t[slot].ty = 0;
                 let mut choice = 0;
@@ -586,7 +845,7 @@ impl<'a> Gen<'a> {
                         if cat != m.category as i32 {
                             continue;
                         }
-                        if slot != 0 && t[0].num == row as i32 {
+                        if slot != 0 && t[0].num == row as i32 && !shared_row {
                             continue;
                         }
                         if rep == 1 && choice == cnt {
@@ -611,13 +870,17 @@ impl<'a> Gen<'a> {
                 stage = Stage::Restart;
                 continue;
             }
-            if t[1].num == t[0].num {
+            if t[1].num == t[0].num && !shared_row {
                 stage = Stage::Restart;
                 continue;
             }
             if bd[1] > bd[0] && !training {
                 t.swap(0, 1);
                 bd.swap(0, 1);
+            }
+            if shared_row && t[1].num == t[0].num {
+                // One deadline and one of what the row's flag 8 marks: the primary's.
+                t[1].code &= !0x2A;
             }
             if t[1].code & 2 != 0
                 || (5..=8).contains(&t[1].ty)
@@ -720,10 +983,12 @@ impl<'a> Gen<'a> {
             let ti = tk.idx;
             tk.coord = self.obj_ref(ti);
             if ti < 3 {
-                // a scratch target takes the name of the nearest named non-base object
+                // a scratch target takes the name of the nearest named non-base object (a
+                // helicopter's forward position may be on friendly ground: any but neutral)
+                let skip = if self.helicopter { F::NEUTRAL } else { 0x500 };
                 let mut best = 0x7FFF;
                 for i in 3..self.n() {
-                    if self.o(i).flags & 0x500 != 0 {
+                    if self.o(i).flags & skip != 0 {
                         continue;
                     }
                     let d = self.dist(i, ti);

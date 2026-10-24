@@ -170,9 +170,8 @@ pub fn from_args(app: &mut App) {
         .unwrap_or(MissionKind::Strike);
     let opponents = get("--opponents").and_then(|s| s.parse().ok()).unwrap_or(1);
     // Realistic weapons are the F-117A's limits.
-    let f16 = get("--aircraft")
-        .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
-        .is_some_and(|k| k != crate::aircraft::AircraftKind::F117);
+    let aircraft = get("--aircraft").and_then(|s| crate::aircraft::AircraftKind::parse(&s));
+    let f16 = aircraft.is_some_and(|k| k != crate::aircraft::AircraftKind::F117);
     let lockheed = args.iter().any(|a| a == "--lockheed") && !f16;
     let weather = crate::settings::weather_arg(&args);
     let cloud_cover = crate::settings::cover_arg(&args);
@@ -182,12 +181,9 @@ pub fn from_args(app: &mut App) {
     settings.start_hour = get("--start-hour").and_then(|s| s.parse::<u8>().ok()).map(|h| h.min(23));
     // `--moon <0-7>`: the moon's phase in eighths (0 new, 4 full).
     settings.moon = get("--moon").and_then(|s| s.parse::<u8>().ok()).map(|m| m % 8);
+    settings.helicopter = aircraft.is_some_and(|k| k.spec().helicopter);
     let mut m = generate(&data, &settings, seed).expect("mission");
-    if f16
-        && get("--aircraft")
-            .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
-            .is_some_and(|k| k.spec().transport())
-    {
+    if aircraft.is_some_and(|k| k.spec().transport()) {
         stealth_mission::insertion::for_helicopter(&mut m);
     }
     // `--start-base <name>`: take off from another airfield (also an enemy one; for tests).
@@ -280,6 +276,7 @@ pub fn theater_index(code: &str) -> Option<usize> {
 /// (theater, night, time of day, start pose) then follows the mission.
 pub fn ensure_mission(
     mut commands: Commands,
+    settings: Res<crate::settings::Settings>,
     existing: Option<Res<ActiveMission>>,
     data: Option<Res<MissionData>>,
     tables: Res<crate::flight::SimTables>,
@@ -304,11 +301,17 @@ pub fn ensure_mission(
     let theater = theater_index(&setup.theater).unwrap_or(3);
     for _ in 0..16 {
         let seed: u16 = rand::random();
-        match generate(
-            &data,
-            &settings(theater, 1, MissionKind::Strike, 1, false, setup.weather, setup.cloud_cover),
-            seed,
-        ) {
+        let mut s = self::settings(
+            theater,
+            1,
+            MissionKind::Strike,
+            1,
+            false,
+            setup.weather,
+            setup.cloud_cover,
+        );
+        s.helicopter = settings.aircraft.spec().helicopter;
+        match generate(&data, &s, seed) {
             Ok(m) => {
                 info!("generated mission {seed} for {}: {}", m.theater_code, m.orders.primary);
                 let freecam = setup.freecam;

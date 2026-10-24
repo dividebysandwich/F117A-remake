@@ -1,6 +1,6 @@
 //! Generate a mission from the JSON data (`assets/mission`) and print the briefing and the orders page.
 //!
-//! `cargo run -p stealth-mission --example mission -- MISSION_DIR THEATER ROE KIND OPP PLANE SRAND_HEX [SORTIES] [--json]`
+//! `cargo run -p stealth-mission --example mission -- MISSION_DIR THEATER ROE KIND OPP PLANE SRAND_HEX [SORTIES] [--json] [--helicopter]`
 
 use stealth_mission::*;
 
@@ -18,6 +18,7 @@ fn main() -> anyhow::Result<()> {
         opponents: n(4),
         plane: if n(5) != 0 { Plane::Lockheed } else { Plane::Fictional },
         sorties: a.get(7).and_then(|v| v.parse().ok()).unwrap_or(0),
+        helicopter: a.iter().any(|v| v == "--helicopter"),
         ..Default::default()
     };
     let seed = Seed::Srand(u16::from_str_radix(&a[6], 16)?);

@@ -276,6 +276,7 @@ fn settings_args(cmd: &mut std::process::Command, settings: &crate::settings::Se
         (settings.classic_avionics, "--classic-avionics"),
         (settings.classic_flight, "--classic-flight"),
         (settings.no_crashes, "--no-crashes"),
+        (!settings.auto_trim, "--no-auto-trim"),
         (settings.realistic_damage, "--realistic-damage"),
         (settings.realistic_guidance, "--realistic-guidance"),
         (settings.tacview, "--tacview"),
@@ -790,6 +791,7 @@ pub(crate) fn simulation_options(
     group(ui, "Simulation", |ui| {
         realism_options(ui, settings);
         crash_option(ui, settings);
+        auto_trim_option(ui, settings);
         if let Some(note) = note {
             ui.label(egui::RichText::new(note).small().color(DIM));
         }
@@ -806,6 +808,22 @@ fn crash_option(ui: &mut egui::Ui, settings: &mut SettingsMut) {
             "Pulls up automatically near the ground (gear up)",
             "Ground contact and collisions are not fatal",
             "Off: the ground can always be hit",
+        ],
+    )
+    .changed()
+    {
+        settings.set_changed();
+    }
+}
+
+fn auto_trim_option(ui: &mut egui::Ui, settings: &mut SettingsMut) {
+    let s = settings.bypass_change_detection();
+    if facts(
+        ui.checkbox(&mut s.auto_trim, "Auto trim"),
+        &[
+            "With the stick released, the trim holds the attitude where you left it",
+            "Helicopters: no more nose rising with speed; jets: trims out damaged control surfaces",
+            "Manual trim: Alt + arrow keys, Alt + Home centres it",
         ],
     )
     .changed()

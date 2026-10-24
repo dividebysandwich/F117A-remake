@@ -345,6 +345,11 @@ pub(super) fn grab_levers(
                         actions.write(ActionEvent(Action::LockCursor));
                     }
                 }
+                ButtonTarget::Action(a) if a.trim_direction().is_some() => {
+                    if held && !block.0 {
+                        controls.trim += a.trim_direction().unwrap_or_default();
+                    }
+                }
                 ButtonTarget::Action(a) if pressed && (!block.0 || a == Action::Menu) => {
                     actions.write(ActionEvent(a));
                 }

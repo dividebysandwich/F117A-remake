@@ -15,6 +15,8 @@ grouped by topic, with the mouse (desktop) or the VR controllers.
 | Stick | pitch down / up | Up / Down arrow |
 | | roll left / right | Left / Right arrow |
 | | yaw (rudder) left / right (remake) | Q / E |
+| | trim nose down / up, left / right (remake; held) | Alt + Up / Down, Alt + Left / Right arrow |
+| | centre the trim (remake) | Alt Home |
 | | stick sensitivity (tiny/small/medium) | Ins |
 | | max stick movement | fast double-press of a direction |
 | Throttle | max power / no power | Shift + `=` (`+`) / Shift + `-` |

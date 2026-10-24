@@ -69,6 +69,9 @@ pub struct Settings {
     /// `--classic-flight`: the classic flight model instead of the modern aerodynamic one
     /// (the default for `--script` runs unless `--modern-flight` is given).
     pub classic_flight: bool,
+    /// Auto trim, on unless `--no-auto-trim`: with the stick released, the trim holds the
+    /// attitude (helicopters, the classic model) or takes out what damage puts out of trim.
+    pub auto_trim: bool,
     /// `--no-crashes`: crash protection (auto pull-up, no ground crashes, collisions bounce).
     pub no_crashes: bool,
     /// `--realistic-damage`: realistic weapon damage instead of the classic
@@ -214,6 +217,7 @@ impl Settings {
             classic_hud: has("--classic-hud"),
             classic_avionics: has("--classic-avionics"),
             classic_flight: has("--classic-flight") || (has("--script") && !has("--modern-flight")),
+            auto_trim: !has("--no-auto-trim"),
             no_crashes: has("--no-crashes"),
             realistic_damage: has("--realistic-damage"),
             realistic_guidance: has("--realistic-guidance"),

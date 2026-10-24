@@ -129,6 +129,13 @@ pub enum Action {
     /// Rudder keys (unbound by default).
     YawLeft,
     YawRight,
+    /// Trim switch (held, not a discrete action): moves the stick trim.
+    TrimNoseDown,
+    TrimNoseUp,
+    TrimLeft,
+    TrimRight,
+    /// Centres the trim.
+    TrimReset,
 }
 
 impl Action {
@@ -142,6 +149,17 @@ impl Action {
             Action::RollRight => Some((1.0, 0.0, 0.0)),
             Action::YawLeft => Some((0.0, 0.0, -1.0)),
             Action::YawRight => Some((0.0, 0.0, 1.0)),
+            _ => None,
+        }
+    }
+
+    /// The (roll, pitch) direction of a held trim switch action; None for the others.
+    pub fn trim_direction(self) -> Option<Vec2> {
+        match self {
+            Action::TrimNoseDown => Some(Vec2::new(0.0, -1.0)),
+            Action::TrimNoseUp => Some(Vec2::new(0.0, 1.0)),
+            Action::TrimLeft => Some(Vec2::new(-1.0, 0.0)),
+            Action::TrimRight => Some(Vec2::new(1.0, 0.0)),
             _ => None,
         }
     }
@@ -233,6 +251,8 @@ pub struct FlightControls {
     /// Helicopters: the collective moving while its keys (the throttle keys) or the gamepad
     /// triggers are held, -1 (down) .. 1 (up).
     pub collective_rate: f32,
+    /// Trim switch held: x roll right, y nose up (-1..1).
+    pub trim: Vec2,
     /// Gun trigger held.
     pub gun: bool,
     /// Fire button held (fires the gun when it is the selected weapon).
@@ -265,6 +285,12 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         // Remake: the rudder (the helicopters' pedals), left hand.
         (None, K::KeyQ, YawLeft),
         (None, K::KeyE, YawRight),
+        // Remake: the trim switch.
+        (Alt, K::ArrowUp, TrimNoseDown),
+        (Alt, K::ArrowDown, TrimNoseUp),
+        (Alt, K::ArrowLeft, TrimLeft),
+        (Alt, K::ArrowRight, TrimRight),
+        (Alt, K::Home, TrimReset),
         (None, K::Equal, ThrottleUp),
         (None, K::NumpadAdd, ThrottleUp),
         (None, K::Minus, ThrottleDown),
@@ -418,6 +444,7 @@ fn read_keyboard(
         controls.yaw = 0.0;
         controls.throttle = None;
         controls.collective_rate = 0.0;
+        controls.trim = Vec2::ZERO;
         controls.slew = Vec2::ZERO;
         return;
     }
@@ -471,6 +498,15 @@ fn read_keyboard(
     controls.throttle = None;
     controls.collective_rate =
         held(Action::ThrottleUp) as i8 as f32 - held(Action::ThrottleDown) as i8 as f32;
+    controls.trim = config
+        .keys
+        .iter()
+        .filter_map(|m| {
+            let crate::hotas::ButtonTarget::Action(a) = m.target else { return None };
+            let d = a.trim_direction()?;
+            (m.mods == mods && keys.pressed(m.key)).then_some(d)
+        })
+        .sum();
     let mut slew = Vec2::ZERO;
     if mods == Mods::None {
         for &(key, x, y) in SLEW_KEYS {

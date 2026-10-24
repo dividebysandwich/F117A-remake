@@ -25,7 +25,7 @@ use bevy::prelude::*;
 
 use super::{
     Aircraft, FlightConstants, FlightControls, Theater, WorldPos, bam, bam_diff, bevy_to_wu,
-    engine, ground_contact, to_bam, wu_to_bevy,
+    engine, ground_contact, stick_released, to_bam, wu_to_bevy,
 };
 
 const G: f32 = 32.174;
@@ -204,6 +204,10 @@ const HOLD_AFTER: f32 = 1.5;
 const HOLD_LATEST: f32 = 4.0;
 const HOLD_SETTLED: f32 = 0.02;
 const HOLD_GAIN: f32 = 0.5;
+/// Auto trim: trim (stick) per second per radian of flight path error held, and the share of
+/// the roll bias trimmed out per second with the stick released.
+const TRIM_PATH_GAIN: f32 = 0.5;
+const TRIM_ROLL_GAIN: f32 = 2.0;
 
 /// Ground: rolling friction, wheel brakes (g), nose-up rotation rate (rad/s), tail strike pitch.
 const ROLL_FRICTION: f32 = 0.02;
@@ -459,8 +463,18 @@ pub(super) fn step(
         let mut q_cmd =
             q_turn + q_stick + st.hold.map_or(0.0, |g0| (g0 - gamma) * HOLD_GAIN * roll.cos());
         let mut p_cmd = roll_stick * ae.roll_rate * (qbar / ROLL_Q_FULL).clamp(0.25, 1.0);
-        // Damaged control surfaces: out of trim or flapping, whatever the fly-by-wire wants.
+        // Damaged control surfaces: out of trim or flapping, whatever the fly-by-wire wants;
+        // the trim adds to them.
         let (roll_fault, pitch_fault) = a.damage.control_bias(a.time);
+        let (roll_fault, pitch_fault) = (roll_fault + a.stick_trim.x, pitch_fault + a.stick_trim.y);
+        // Auto trim: the held flight path's error is trimmed out (what the path hold alone
+        // leaves against a pitch bias), and with the stick released the roll bias.
+        if a.auto_trim && !a.autopilot() {
+            let pitch_trim = a.modern.hold.map_or(0.0, |g0| (g0 - gamma) * TRIM_PATH_GAIN);
+            let roll_free = stick_released(controls).0;
+            let roll_trim = if roll_free { -roll_fault * TRIM_ROLL_GAIN } else { 0.0 };
+            a.move_trim(Vec2::new(roll_trim, pitch_trim) * dt);
+        }
         if a.autopilot() {
             // Bank toward the waypoint bearing (at most 30 degrees), hold the altitude.
             let e = bam(bam_diff(a.waypoint_bearing, to_bam(heading)));

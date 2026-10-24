@@ -253,6 +253,11 @@ pub struct Aircraft {
     /// Seconds of simulated time since the start.
     pub time: f32,
     pub damage: FlightDamage,
+    /// Stick trim (x roll right, y pitch up; fractions of full stick), added to the stick.
+    pub stick_trim: Vec2,
+    /// Auto trim (`Settings::auto_trim`): with the stick released, the trim moves to hold the
+    /// attitude.
+    pub auto_trim: bool,
     fuel_timer: f32,
     stopped_timer: f32,
     /// Modern model state (unused by the classic one).
@@ -290,6 +295,8 @@ impl Aircraft {
             waypoint_bearing: 0.0,
             time: 0.0,
             damage: FlightDamage::default(),
+            stick_trim: Vec2::ZERO,
+            auto_trim: false,
             fuel_timer: 0.0,
             stopped_timer: 0.0,
             fpm: 0.0,
@@ -406,6 +413,7 @@ fn handle_actions(
                 }
             }
             Action::Flaps => a.flaps = !a.flaps,
+            Action::TrimReset => a.stick_trim = Vec2::ZERO,
             Action::Brakes => a.brakes = !a.brakes,
             // Bay doors (8) are run by the combat simulation, which mirrors them into `bay_open`.
             Action::Autopilot if !a.damage.autopilot_failed => {
@@ -415,6 +423,25 @@ fn handle_actions(
             _ => {}
         }
     }
+}
+
+/// Largest trim (fractions of full stick), and how fast the trim switch moves it (per second).
+const TRIM_MAX: f32 = 0.6;
+const TRIM_RATE: f32 = 0.1;
+/// Stick deflection below which the stick counts as released for the auto trim.
+const TRIM_STICK_FREE: f32 = 0.05;
+
+impl Aircraft {
+    /// Moves the trim by `d` (fractions of full stick), within its limits.
+    fn move_trim(&mut self, d: Vec2) {
+        self.stick_trim =
+            (self.stick_trim + d).clamp(Vec2::splat(-TRIM_MAX), Vec2::splat(TRIM_MAX));
+    }
+}
+
+/// (roll, pitch) stick released, for the auto trim.
+fn stick_released(controls: &FlightControls) -> (bool, bool) {
+    (controls.roll.abs() < TRIM_STICK_FREE, controls.pitch.abs() < TRIM_STICK_FREE)
 }
 
 /// Stick axis -1..1 to the classic -7..7 steps (joy = 0x80 + deflection).
@@ -446,10 +473,14 @@ fn step_flight(
     let total = time.delta_secs().min(1.0);
     let max_dt = if settings.classic_flight && k.heli.is_none() { 1.0 / 60.0 } else { 1.0 / 120.0 };
     for (mut a, mut pos, mut tf) in &mut q {
+        a.auto_trim = settings.auto_trim;
         let mut remaining = total;
         while remaining > 1e-6 {
             let dt = remaining.min(max_dt);
             remaining -= dt;
+            if a.ended.is_none() {
+                a.move_trim(controls.trim.clamp(Vec2::NEG_ONE, Vec2::ONE) * TRIM_RATE * dt);
+            }
             if let Some(r) = &k.heli {
                 heli::step(&mut a, &mut pos, &mut tf, dt, &controls, &k, r, theater.as_deref());
             } else if settings.classic_flight {
@@ -519,8 +550,18 @@ fn step_one(
         turb += a.damage.stick_jitter;
         if air {
             let (r, p) = a.damage.control_bias(a.time);
-            roll_input += r * 126.0;
-            pitch_input += p * 42.0;
+            roll_input += (r + a.stick_trim.x) * 126.0;
+            pitch_input += (p + a.stick_trim.y) * 42.0;
+            // Auto trim: with the stick released, the trim takes out what still rotates the
+            // aircraft (not in a stall, whose nose drop it would fight).
+            let (roll_free, pitch_free) = stick_released(controls);
+            if a.auto_trim && !a.autopilot() && a.velocity > a.stall_speed {
+                let d = Vec2::new(
+                    if roll_free { -roll_input / 126.0 } else { 0.0 },
+                    if pitch_free { -pitch_input / 42.0 } else { 0.0 },
+                );
+                a.move_trim(d * CLASSIC_TRIM_GAIN * dt);
+            }
         }
         if turb > 0.0 && air {
             roll_input += rand::random_range(0.0..turb) - turb / 2.0;
@@ -644,6 +685,9 @@ fn step_one(
         tf.rotation = a.orientation;
     }
 }
+
+/// Classic model auto trim: the share of the remaining rotation trimmed out per second.
+const CLASSIC_TRIM_GAIN: f32 = 2.0;
 
 /// Thrust spool and fuel burn (engine damage caps the thrust).
 fn engine(a: &mut Aircraft, controls: &FlightControls, k: &FlightConstants, dt: f32) {
@@ -1079,6 +1123,44 @@ mod tests {
             pitch_min > start - 1.0,
             "nose dropped from {start:.1} to {pitch_min:.1} with the flaps"
         );
+    }
+
+    /// A damaged elevator out of trim: hands off, the nose runs away without the auto trim and
+    /// stays with it (both models); the trim switch moves the trim.
+    #[test]
+    fn auto_trim_takes_out_damage() {
+        for classic in [true, false] {
+            let fly_damaged = |auto: bool| {
+                let mut a0 = airborne(8000.0, 400.0, 70.0);
+                a0.damage.pitch_trim = 0.3;
+                a0.damage.roll_trim = -0.2;
+                a0.auto_trim = auto;
+                fly(classic, a0, 20.0, 1, |_, _| {}).0
+            };
+            let (free, trimmed) = (fly_damaged(false), fly_damaged(true));
+            let (_, p0, r0) = free.euler();
+            let (_, p1, r1) = trimmed.euler();
+            println!(
+                "classic {classic}: damaged, 20 s hands off: pitch {:.0} roll {:.0} alt {:.0}; auto trim pitch {:.1} roll {:.1} alt {:.0} trim {:?}",
+                p0.to_degrees(),
+                r0.to_degrees(),
+                free.altitude,
+                p1.to_degrees(),
+                r1.to_degrees(),
+                trimmed.altitude,
+                trimmed.stick_trim
+            );
+            assert!(r1.to_degrees().abs() < 15.0, "classic {classic}: roll {}", r1.to_degrees());
+            assert!(
+                (trimmed.altitude - 8000.0).abs() < 500.0,
+                "classic {classic}: altitude {}",
+                trimmed.altitude
+            );
+            assert!(trimmed.stick_trim.y < -0.2 && trimmed.stick_trim.x > 0.1);
+        }
+        let mut a = airborne(8000.0, 400.0, 70.0);
+        a.move_trim(Vec2::new(0.0, 5.0));
+        assert_eq!(a.stick_trim.y, TRIM_MAX);
     }
 
     #[test]

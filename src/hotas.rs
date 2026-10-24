@@ -272,8 +272,9 @@ pub struct InputConfig {
 /// 1: the cursor lock (NumpadEnter, left thumbstick click) and SOI keys. 2: camera zoom keys.
 /// 3: the left VR trigger holds the brakes, the bay doors move to the right thumbstick left;
 /// the bombsight mode key. 4: the stick keys (the arrows) became bindable. 5: the rudder keys
-/// (Q / E); the VR thumbsticks as a HOTAS (the right one targets only).
-const VERSION: u32 = 5;
+/// (Q / E); the VR thumbsticks as a HOTAS (the right one targets only). 6: the trim keys
+/// (Alt + arrows, Alt + Home).
+const VERSION: u32 = 6;
 
 impl Default for InputConfig {
     fn default() -> Self {
@@ -630,6 +631,12 @@ pub fn read_hotas(
                         controls.roll = crate::input::stronger(controls.roll, r * d);
                         controls.pitch = crate::input::stronger(controls.pitch, p * d);
                         controls.yaw = crate::input::stronger(controls.yaw, y * d);
+                    }
+                    continue;
+                }
+                if let Some(d) = a.trim_direction() {
+                    if now {
+                        controls.trim += d;
                     }
                     continue;
                 }

@@ -12,7 +12,7 @@
 //! - with Sidewinders selected, their seeker's circle (the seeker follows the helmet sight as
 //!   far as its gimbals turn and locks the aircraft nearest its middle);
 //! - the targeting pod's line of sight (a small diamond) when it is not slaved;
-//! - the gun line (rounds and what it is slaved to) under the reticle, but not with Sidewinders
+//! - the gun line (rounds and what it is slaved to) under the reticle while the gun is
 //!   selected.
 //!
 //! The horizon, lock, pipper and pod sight are drawn where they are in the world.
@@ -178,9 +178,6 @@ fn draw(
     let head = head.compute_transform().rotation;
     let tex = &mut *tex;
     tex.canvas.px.fill(0);
-    // Sidewinders selected: no gun line.
-    let aim9 =
-        !stores.gun_selected && stores.bays.get(stores.selected).is_some_and(|b| b.air_to_air);
     let frame = Frame {
         to_head: head.inverse(),
         aircraft: a.orientation,
@@ -196,7 +193,7 @@ fn draw(
             .flatten(),
         gun_line: stores
             .gun_slave
-            .filter(|_| !aim9)
+            .filter(|_| stores.gun_selected)
             .map(|s| format!("GUN {} {s}", stores.gun_rounds.unwrap_or(0))),
         blink: crate::hud::blink(&time),
     };

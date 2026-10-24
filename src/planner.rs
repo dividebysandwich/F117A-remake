@@ -446,8 +446,8 @@ pub fn route_panel(
             ui.label(egui::RichText::new(format!("{detect:.0} km of the route detected")).color(if detect > 0.0 { AMBER } else { GREEN }));
             ui.label(egui::RichText::new("Radar coverage assumes 480kt level flight, bay doors closed.").small().color(DIM));
             section(ui, "Map");
-            legend(ui, Legend::Pulse, "Pulse radar detection range");
-            legend(ui, Legend::Doppler, "Doppler radar detection range");
+            legend(ui, Legend::Pulse, "Pulse radar (P) detection range");
+            legend(ui, Legend::Doppler, "Doppler radar (D) detection range");
             legend(ui, Legend::Missile, "Missile range");
             if m.drones.is_some() {
                 legend(ui, Legend::Drone, "Enemy UAV");
@@ -507,7 +507,8 @@ fn map_view(
         if ring.detect > 0.0 {
             painter.extend(detection_circle(c, ring.detect / scale, ring.doppler, alpha));
         }
-        map_draw::site(&painter, &view, c, &ring.name, alpha);
+        let tag = if ring.doppler { "D" } else { "P" };
+        map_draw::site(&painter, &view, c, &format!("{} {tag}", ring.name), alpha);
     }
     match overlay {
         Some(draw) => draw(&painter, &view),

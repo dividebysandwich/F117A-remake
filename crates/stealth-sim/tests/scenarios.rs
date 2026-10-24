@@ -648,24 +648,24 @@ fn state_hash(sim: &Sim) -> u64 {
 #[test]
 fn classic_state_golden() {
     const GOLDEN: [u64; 18] = [
-        0x26bec1741250c262,
-        0xb0a05c2703a62333,
-        0x8b253708c58e4a18,
-        0x91369bedb474057c,
-        0xcd9266f3a3ef8711,
-        0x443f6790c107d6a5,
-        0x620bb333986c8954,
-        0x9629c627252309ec,
-        0x27e911ff5ba3ca7b,
-        0x8d84039dc5a1d4b9,
-        0x638e1187ecbd2f98,
-        0x2f2669b82e5aae26,
-        0xce82c1aa2d456393,
-        0x4260c4d304b6e272,
-        0x7bffb6892ef438af,
-        0xb73cd7b9c71c2443,
-        0x8c140fbee4673d51,
-        0x50a790c2e8094406,
+        0x5870284a8d51640e,
+        0x210ce538047a4597,
+        0xf9d16afe9e35287c,
+        0xd1cdf5094579c380,
+        0x153f829d7482d4bd,
+        0x8335452cfd6d3191,
+        0x14913ac0ef149fd4,
+        0x2246ad8cd49cda80,
+        0x6db1b78e154bb1b1,
+        0x033acc6dbbe352ad,
+        0x57e9372a5f62d924,
+        0x4b831379b5a7cd7a,
+        0x369ebc19232ec8a9,
+        0x6a690c14a6887f4d,
+        0x31731939d0dbafc3,
+        0xdfe41c35ccd1229f,
+        0xa0017a2804538655,
+        0xf8d5531980e2ea72,
     ];
     let d = data();
     let mut got = Vec::new();
@@ -1470,7 +1470,7 @@ fn maverick_shot(guided: bool, range: i32) -> Option<(dlz::LaunchZone, bool)> {
 fn launch_zone_predicts_maverick_hits() {
     for guided in [false, true] {
         let shots: Vec<_> =
-            (1..=40).filter_map(|k| maverick_shot(guided, k * 50).map(|s| (k * 50, s))).collect();
+            (1..=40).filter_map(|k| maverick_shot(guided, k * 20).map(|s| (k * 20, s))).collect();
         assert!(shots.len() > 20, "guided {guided}: {} locks", shots.len());
         let mut hits = 0;
         for &(range, (z, hit)) in &shots {
@@ -1774,13 +1774,12 @@ fn hellfire_shot(guided: bool, range: i32) -> (Option<dlz::LaunchZone>, bool) {
 #[test]
 fn hellfire_launch_zone_at_the_spot() {
     for guided in [false, true] {
-        let (z, hit) = hellfire_shot(guided, 400);
+        let (z, hit) = hellfire_shot(guided, 300);
         let z = z.expect("a launch zone");
         let (lo, hi) = z.zone.expect("in reach");
         assert!(z.in_zone() && hit, "guided {guided}: {z:?} hit {hit}");
-        assert!(lo < 100 && hi > 600, "guided {guided}: {z:?}");
+        assert!(lo < 100 && (400..=512).contains(&hi), "guided {guided}: {z:?}");
         if guided {
-            assert!(hi < 1200, "{z:?}");
             let (z, hit) = hellfire_shot(guided, hi + 100);
             assert!(!z.unwrap().in_zone() && !hit, "past the zone: {z:?} hit {hit}");
             let (z, hit) = hellfire_shot(guided, hi - 60);

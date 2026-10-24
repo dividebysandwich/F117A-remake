@@ -23,8 +23,8 @@ const SAMPLES: i32 = 20;
 const REFINE: u32 = 7;
 /// Angle off the missile's heading (BAM) within which its seeker sees the target.
 const SEEKER_CONE: i32 = 0x1000;
-/// Hellfire: farthest range searched (map units, some 12 km).
-const HELLFIRE_SEARCH: i32 = 0x500;
+/// Hellfire: farthest range searched (map units, some 8 km).
+const HELLFIRE_SEARCH: i32 = 0x200;
 /// Map units ahead per unit of lock range within which the LOCK oval locks on: ground and air
 /// (lock_oval).
 const GROUND_LOCK: f64 = 56.0;

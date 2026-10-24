@@ -80,8 +80,8 @@ pub fn profile(spec: i32) -> Option<Profile> {
         25 => cruise(1e9, 10.0),      // Penguin: a sustainer the whole way
         26 => cruise(3.0, 10.0),      // Harpoon: booster, then its turbojet
         27 => rocket(4.0, 1.0, 15.0), // Maverick
-        // Hellfire: light and blunt, it slows fast once burnt out (some 10 km from low down).
-        47 => Profile { drag: 4.0, ..rocket(2.5, 1.0, 20.0) },
+        // Hellfire: light and blunt, it slows fast once burnt out (some 7 km from low down).
+        47 => Profile { drag: 12.0, ..rocket(2.5, 1.0, 20.0) },
         31 => rocket(15.0, 4.0, 25.0),   // AIM-7
         41 => vertical(15.0, 4.0, 25.0), // SA-21
         43 => rocket(2.0, 2.0, 30.0),    // SA-22: a booster, then the dart glides

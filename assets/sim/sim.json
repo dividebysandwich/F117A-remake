@@ -755,7 +755,7 @@
     },
     {
       "name": "AGM-65",
-      "lock_range": 32,
+      "lock_range": 14,
       "max_speed": 800,
       "class": 6,
       "turn": 2,
@@ -915,7 +915,7 @@
     },
     {
       "name": "AGM-114",
-      "lock_range": 8,
+      "lock_range": 4,
       "max_speed": 1000,
       "class": 6,
       "turn": 4,

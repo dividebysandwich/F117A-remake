@@ -360,6 +360,7 @@ impl Sim {
                 gunship,
                 unload: [0; 2],
                 scratch0: GroundObject::default(),
+                spi: None,
                 rounds: Vec::new(),
                 missiles: Default::default(),
                 last_input: PlayerState::default(),
@@ -1312,6 +1313,7 @@ impl Sim {
     /// Test / tool hook: set the ground lock.
     pub fn set_ground_lock(&mut self, obj: Option<usize>) {
         self.pl.gnd_lock = obj.map_or(-1, |o| o as i32);
+        self.pl.spi = None;
     }
 
     /// Test / tool hook: switch invulnerability.

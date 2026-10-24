@@ -1789,6 +1789,43 @@ fn hellfire_launch_zone_at_the_spot() {
     }
 }
 
+/// A point designated with the targeting pod away from any object is the ground lock itself
+/// (not the nearest object, which may be kilometres away): it holds while rounds hit the ground
+/// elsewhere, and the Hellfire's launch zone ranges to it. Next to an object, the object.
+#[test]
+fn pod_designates_a_ground_point() {
+    let (mut sim, mx, my, mut p) = helicopter(true, true);
+    let o = 5;
+    {
+        let ob = &mut sim.objects_mut()[o];
+        ob.x = mx + 300;
+        ob.y = my - 300;
+        ob.flags = 0;
+    }
+    p.altitude = 500;
+    p.hud_mode = HudMode::Gnd;
+    let (x, y) = (mx + 150, my - 150);
+    p.pod = Some(PodAim { heading: 0x2000, pitch: -0x100, ground: Some((x, y)) });
+    p.cmd.designate_at = Some((x, y));
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    for _ in 0..30 {
+        let mut q = p.clone();
+        q.cmd.gun = true;
+        sim.step(&q, 15);
+    }
+    let t = sim.targeting();
+    assert_eq!(t.ground, Some(0), "{t:?}");
+    let g = sim.objects()[0];
+    assert_eq!((g.x, g.y, g.shape), (x, y, 0));
+    let z = sim.launch_zone().expect("a launch zone");
+    assert!((z.range - 212).abs() <= 3 && z.in_zone(), "{z:?}");
+    // Close to the object: the object.
+    p.cmd.designate_at = Some((mx + 303, my - 297));
+    sim.step(&p, 15);
+    assert_eq!(sim.targeting().ground, Some(o));
+}
+
 /// The AH-1Z's cannon fires where the pod looks, as far as its turret turns; the UH-60 has none.
 #[test]
 fn turret_gun_follows_the_pod() {

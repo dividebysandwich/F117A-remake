@@ -78,6 +78,7 @@ impl Sim {
     }
 
     pub(crate) fn update_targeting(&mut self, ps: &PlayerState) {
+        self.hold_spi();
         self.select_ground();
         // The helmet-slaved seeker picks its own target.
         if self.seeker_sight(ps).is_none() {

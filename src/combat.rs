@@ -1503,7 +1503,10 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         let ob = objects[g];
         let place = sim.place_name(g);
         let kind = combat.names.get((ob.shape & 0x7F) as usize).cloned().unwrap_or_default();
-        info.name = if place.eq_ignore_ascii_case(&kind) || place.is_empty() {
+        // A point designated with the targeting pod away from any object.
+        info.name = if g == 0 && ob.shape == 0 {
+            ["GROUND POINT".to_string(), String::new()]
+        } else if place.eq_ignore_ascii_case(&kind) || place.is_empty() {
             [kind, String::new()]
         } else {
             [place, kind]

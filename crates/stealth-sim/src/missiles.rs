@@ -50,11 +50,7 @@ impl Sim {
         let t = match near {
             Some((i, _)) => i as i32,
             None => {
-                if let Some(o) = self.objects.get_mut(0) {
-                    o.x = x;
-                    o.y = y;
-                    o.flags = 0;
-                }
+                self.ground_point(x, y);
                 0
             }
         };
@@ -62,6 +58,24 @@ impl Sim {
         m.target = t;
         m.tgt_x = x;
         m.tgt_y = y;
+    }
+
+    /// Scratch object 0 as the plain ground at (x, y) (map units): no shape, nothing to destroy.
+    pub(crate) fn ground_point(&mut self, x: i32, y: i32) {
+        if let Some(o) = self.objects.get_mut(0) {
+            *o = GroundObject { x, y, ..Default::default() };
+        }
+    }
+
+    /// The designated ground point stays object 0 while it is the held ground lock (rounds and
+    /// bombs falling on tiles reuse object 0); another lock ends it.
+    pub(crate) fn hold_spi(&mut self) {
+        let Some((x, y)) = self.pl.spi else { return };
+        if self.pl.gnd_lock == 0 && self.pl.target_hold {
+            self.ground_point(x, y);
+        } else {
+            self.pl.spi = None;
+        }
     }
 
     pub(crate) fn update_missiles(&mut self, present: &[usize]) {
@@ -317,8 +331,12 @@ impl Sim {
                 if t == 0 {
                     let (gx, gy) = (self.proj[s].tgt_x, self.proj[s].tgt_y);
                     if self.objects.first().is_some_and(|o| (o.x, o.y) != (gx, gy)) {
-                        self.find_object_at(gx, gy);
-                        self.objects[0].flags = 0;
+                        if s >= 8 && self.pl.spi == Some((gx, gy)) {
+                            self.ground_point(gx, gy);
+                        } else {
+                            self.find_object_at(gx, gy);
+                            self.objects[0].flags = 0;
+                        }
                     }
                 }
                 let o = self.obj(t);
@@ -467,7 +485,7 @@ impl Sim {
                         self.proj[s].ttl = 0;
                     }
                 }
-            } else if hit == 0 && spec == HELLFIRE_SPEC {
+            } else if hit == 0 && self.objects.first().is_some_and(|o| o.shape == 0) {
                 // On the plain ground at the spot.
                 let o = self.obj(0);
                 self.flash = Flash { x: o.x, y: o.y, alt: 0, timer: 0x10 };

@@ -499,6 +499,9 @@ pub const TURRET_ELEVATION: i32 = 3641;
 pub const HELLFIRE_SPEC: i32 = 47;
 /// An object this close to the Hellfire's laser spot (map units) is what it homes on.
 pub const HELLFIRE_SPOT_RADIUS: i32 = 6;
+/// An object this close to a point designated with the targeting pod (map units) is locked;
+/// farther, the point itself.
+pub const DESIGNATE_RADIUS: i32 = 8;
 /// How far off its heading the Hellfire's seeker sees the spot (BAM, 45 degrees).
 pub const HELLFIRE_SEEKER: i32 = 0x2000;
 

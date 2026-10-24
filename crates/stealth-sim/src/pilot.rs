@@ -34,6 +34,10 @@ pub struct Pilot {
     /// World object 0 while this pilot is parked: the tile object his tile lock points at.
     #[serde(default)]
     pub(crate) scratch0: GroundObject,
+    /// The ground point designated with the targeting pod away from any object (map units):
+    /// the ground lock is object 0 on it, plain ground, while the lock holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) spi: Option<(i32, i32)>,
     /// His gun rounds and his weapons in flight while parked (the active pilot's are in the
     /// world's first gun-round slots and projectile slots 8..11).
     #[serde(default)]

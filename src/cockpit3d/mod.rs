@@ -546,7 +546,8 @@ fn set_projection(
         }
         if let Projection::Perspective(p) = projection.as_mut() {
             let base = if state.wide { 85f32 } else { 65f32 }.to_radians();
-            let magnify = if state.first_person() { state.magnify } else { 1.0 };
+            let zooms = state.first_person() || state.view == View::Free;
+            let magnify = if zooms { state.magnify } else { 1.0 };
             let fov = 2.0 * ((base / 2.0).tan() / magnify).atan();
             if p.fov != fov {
                 p.fov = fov;
@@ -612,7 +613,8 @@ fn mouse_look(
             c.visible = visible;
         }
     }
-    if !held {
+    // The free view turns and zooms itself (`camera::place_free_camera`).
+    if !held || state.view == View::Free {
         return;
     }
     // The wheel zooms while the button is held: in the cockpit (and under the parachute) it

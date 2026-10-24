@@ -18,7 +18,7 @@ pub use rng::MscRand;
 pub use tables::{MissionRow, PlaneInfo, StartTables};
 pub use text::{Briefing, Orders, OrdersLine};
 pub use weather::{CloudKind, Layer, Sky, Weather};
-pub use world::{FlightUnit, MissionWorld, NAMES_BYTES, TheaterData, WorldObject};
+pub use world::{FlightUnit, MissionWorld, TheaterData, WorldObject};
 
 pub const THEATER_NAMES: [&str; 10] = [
     "Libya",
@@ -82,7 +82,7 @@ impl MissionKind {
 pub enum Plane {
     /// 4 bays, carriers allowed.
     #[default]
-    MicroProse = 0,
+    Fictional = 0,
     /// 2 bays, no carriers, no AIM-9 / AIM-120.
     Lockheed = 1,
 }
@@ -129,7 +129,7 @@ impl Default for MissionSettings {
             roe: 2,
             kind: MissionKind::Strike,
             opponents: 1,
-            plane: Plane::MicroProse,
+            plane: Plane::Fictional,
             sorties: 0,
             pilot: "Pilot".into(),
             weather: clear_sky(),
@@ -258,7 +258,7 @@ pub struct Target {
     pub position: MapPoint,
     /// Target category (objectTypeTable of the shape).
     pub category: i8,
-    /// Weapon suitability class (buf7 & 0xF).
+    /// Weapon suitability class (shape class & 0xF).
     pub weapon_class: u8,
     /// ONC grid reference, e.g. "CC45".
     pub onc: String,
@@ -328,7 +328,7 @@ pub struct Bay {
 pub struct Loadout {
     /// All 4 bay words as the generator writes them.
     pub bays: Vec<Bay>,
-    /// Usable bays: 4 MicroProse, 2 Lockheed.
+    /// Usable bays: 4 fictional, 2 Lockheed.
     pub usable_bays: usize,
 }
 
@@ -465,7 +465,7 @@ pub fn generate_exact(data: &GameData, s: &MissionSettings, input: &GenInput) ->
             placed_by_generator: o.object_idx & 0x100 != 0,
             position: MapPoint { x: o.x as i32, y: o.y as i32 },
             category: w.ott(sh) as i8,
-            weapon_class: w.buf7.get(sh).copied().unwrap_or(0) & 0xF,
+            weapon_class: w.shape_class.get(sh).copied().unwrap_or(0) & 0xF,
             onc: t.coord.iter().map(|&c| c as char).collect(),
             onc_bytes: t.coord,
             dist: t.dist as i16,
@@ -577,71 +577,4 @@ fn type_name(t: i32) -> &'static str {
         8 => "destroy aircraft/patrol",
         _ => "",
     }
-}
-
-/// The generator -> flight hand-off block: the edited world, waypoints, targets and deadline.
-pub fn handoff_block(m: &Mission) -> Vec<u8> {
-    let w = &m.world;
-    let mut out = Vec::with_capacity(0x2000);
-    let w16 = |out: &mut Vec<u8>, v: i32| out.extend_from_slice(&(v as u16).to_le_bytes());
-    w16(&mut out, w.header as i32);
-    w16(&mut out, w.objects.len() as i32);
-    w16(&mut out, w.ground_unit_count as i32);
-    w16(&mut out, w.world_object_count as i32);
-    for o in &w.objects {
-        for v in
-            [o.name, o.x, o.y, o.unit_type, o.flags, o.occupant_type, o.patrol_count, o.object_idx]
-        {
-            w16(&mut out, v as i32);
-        }
-    }
-    w16(&mut out, w.flights.len() as i32);
-    for f in &w.flights {
-        for v in [f.waypoint, f.x, f.y, f.alt] {
-            w16(&mut out, v as i32);
-        }
-        out.extend_from_slice(&f.xp.to_le_bytes());
-        out.extend_from_slice(&f.yp.to_le_bytes());
-        for v in [
-            f.heading,
-            f.pitch,
-            f.roll,
-            f.plane_type,
-            f.flags,
-            f.speed,
-            f.fuel,
-            f.reserved[0],
-            f.reserved[1],
-            f.reserved[2],
-        ] {
-            w16(&mut out, v as i32);
-        }
-    }
-    out.extend_from_slice(&w.buf7);
-    out.extend_from_slice(&w.buf8);
-    let mut names = w.names_raw.clone();
-    names.resize(NAMES_BYTES, 0);
-    out.extend_from_slice(&names);
-    out.extend_from_slice(&w.grid);
-    w16(&mut out, m.time.deadline_ticks as i32);
-    w16(&mut out, m.escort as i32);
-    for p in &m.waypoints {
-        w16(&mut out, p.x);
-        w16(&mut out, p.y);
-    }
-    for t in [&m.primary, &m.secondary] {
-        for v in [t.mission_type, t.object_index, t.base_index, t.code, t.row] {
-            w16(&mut out, v as i32);
-        }
-        out.extend_from_slice(&t.onc_bytes);
-        out.extend_from_slice(&[0, 0]);
-        w16(&mut out, t.dist as i32);
-    }
-    out
-}
-
-/// Byte offset of the name block inside [`handoff_block`] (bytes past the end of the theater's
-/// name data are stale memory and are not compared).
-pub fn handoff_names_offset(m: &Mission) -> usize {
-    8 + 16 * m.world.objects.len() + 2 + 36 * m.world.flights.len() + 256
 }

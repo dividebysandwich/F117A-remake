@@ -127,8 +127,10 @@ pub struct Sim {
     pub(crate) objects: Vec<GroundObject>,
     pub(crate) ground_units: usize,
     pub(crate) woc: usize,
-    pub(crate) buf7: Vec<u8>,
-    pub(crate) buf8: Vec<u8>,
+    /// Per shape; low nibble = weapon suitability class, 0 = not a tile target.
+    pub(crate) shape_class: Vec<u8>,
+    /// Tile objects destroyed, per base shape.
+    pub(crate) tile_hits: Vec<u8>,
     pub(crate) grid: Vec<u8>,
     pub(crate) names: Vec<String>,
     pub(crate) land_rubble: i32,
@@ -358,6 +360,7 @@ impl Sim {
                 gunship,
                 unload: [0; 2],
                 scratch0: GroundObject::default(),
+                spi: None,
                 rounds: Vec::new(),
                 missiles: Default::default(),
                 last_input: PlayerState::default(),
@@ -453,12 +456,12 @@ impl Sim {
             ground_units: (w.ground_unit_count as usize).min(objects.len()),
             woc: (w.world_object_count as usize).min(objects.len()),
             objects,
-            buf7: w.buf7.clone(),
-            buf8: w.buf8.clone(),
+            shape_class: w.shape_class.clone(),
+            tile_hits: vec![0; w.shape_class.len()],
             grid: w.grid.clone(),
             names: w.names.clone(),
-            land_rubble: (w.header & 0xFF) as i32,
-            water_rubble: (w.header >> 8) as i32,
+            land_rubble: w.land_rubble as i32,
+            water_rubble: w.water_rubble as i32,
             display_shape,
             flights,
             escort_leader: m.escort as i32,
@@ -660,10 +663,10 @@ impl Sim {
         }
     }
 
-    /// Weapon category of an object (`buf7[shape & 0x7F] & 0xF`).
+    /// Weapon category of an object (`shape_class[shape & 0x7F] & 0xF`).
     pub(crate) fn category(&self, i: i32) -> i32 {
         let o = self.obj(i);
-        self.buf7.get((o.shape & 0x7F) as usize).map_or(0, |&b| (b & 0xF) as i32)
+        self.shape_class.get((o.shape & 0x7F) as usize).map_or(0, |&b| (b & 0xF) as i32)
     }
 
     /// Effectiveness of weapon `w` against object `obj`.
@@ -1310,6 +1313,7 @@ impl Sim {
     /// Test / tool hook: set the ground lock.
     pub fn set_ground_lock(&mut self, obj: Option<usize>) {
         self.pl.gnd_lock = obj.map_or(-1, |o| o as i32);
+        self.pl.spi = None;
     }
 
     /// Test / tool hook: switch invulnerability.

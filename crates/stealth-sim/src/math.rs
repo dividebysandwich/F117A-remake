@@ -36,7 +36,7 @@ pub fn approx(dx: i32, dy: i32) -> i32 {
 }
 
 /// Bearing of (x, y): x = east, y = north, returns a u16 BAM. Integer arctangent
-/// approximation (bit-exact).
+/// approximation.
 pub fn bearing(x: i32, y: i32) -> i32 {
     let x = s16(x);
     let y = s16(y);

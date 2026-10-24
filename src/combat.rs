@@ -325,7 +325,7 @@ fn start_combat(
         heading: bam(st.heading as f32),
         carrier: m.takeoff.carrier,
     });
-    orders.lines = m.orders.lines.iter().map(|l| (l.color, clean_text(&l.text))).collect();
+    orders.set(m.orders.lines.iter().map(|l| (l.color, clean_text(&l.text))).collect());
     // 1 clock tick = 2 s after 06:00 / 18:00.
     *clock = MissionClock {
         start_seconds: m.time.base_hour as f32 * 3600.0 + m.time.tod_ticks as f32 * 2.0,
@@ -906,6 +906,7 @@ struct Outputs<'w, 's> {
     tiles: Res<'w, TileOverrides>,
     time: Res<'w, Time>,
     mfd: Res<'w, MfdState>,
+    orders: ResMut<'w, MissionOrders>,
 }
 
 /// Map units -> world units (east, north).
@@ -939,10 +940,8 @@ pub fn remote_motion(combat: &Combat, id: u8) -> Option<((f64, f64, f64), DVec3,
         "UH-60A"
     } else if p.external_stores {
         "F-16"
-    } else if p.lockheed {
-        "F-117A"
     } else {
-        "F-19"
+        "F-117A"
     };
     Some(((v.wx as f64, v.wy as f64, v.alt as f64), dir * v.knots as f64 * 0.514_444, name))
 }
@@ -1171,7 +1170,14 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         tiles,
         time: _,
         mfd,
+        mut orders,
     } = out;
+    // Achieved stays achieved (a campaign sortie's objective is ticked by the campaign).
+    for (k, done) in [o.primary_done, o.secondary_done].into_iter().enumerate() {
+        if done && !orders.done[k] {
+            orders.done[k] = true;
+        }
+    }
     let eye = settings.cockpit_eye();
     let sim = &combat.sim;
     let data = &combat.data;
@@ -1497,7 +1503,10 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         let ob = objects[g];
         let place = sim.place_name(g);
         let kind = combat.names.get((ob.shape & 0x7F) as usize).cloned().unwrap_or_default();
-        info.name = if place.eq_ignore_ascii_case(&kind) || place.is_empty() {
+        // A point designated with the targeting pod away from any object.
+        info.name = if g == 0 && ob.shape == 0 {
+            ["GROUND POINT".to_string(), String::new()]
+        } else if place.eq_ignore_ascii_case(&kind) || place.is_empty() {
             [kind, String::new()]
         } else {
             [place, kind]
@@ -1612,17 +1621,22 @@ fn publish(mut combat: ResMut<Combat>, mut zone: Local<ZoneDisplay>, out: Output
         new_cues.in_range = t.in_range;
         new_cues.launch_zone = combat.launch_zone.1.filter(|_| hud.mode != HudMode::Nav).map(|z| {
             let air = hud.mode == HudMode::Air;
-            // The range now (the zone is a few frames old), as the HUD shows it.
-            let km = info.range_km.unwrap_or(z.range as f32 * 32.0 * WU as f32 / 1000.0);
+            // The range now (the zone is a few frames old), as the HUD shows it; to the pod's
+            // ground point when the zone is against it.
+            let spi_km = z.range as f32 * 32.0 * WU as f32 / 1000.0;
+            let km = info.range_km.filter(|_| z.at_lock).unwrap_or(spi_km);
             let range_km = zone.range(km, fresh, dt);
             let zone = zone.shown;
             crate::hud::LaunchZoneCue {
                 range_km,
                 zone_km: zone.map(|z| (z.0, z.1)),
                 no_escape_km: zone.and_then(|z| z.2),
-                // An air-to-air missile homes on the target fired outside the oval too.
+                // An air-to-air missile homes on the target fired outside the oval too, a
+                // Hellfire on the pod's spot.
                 shoot: zone.is_some_and(|z| (z.0..=z.1).contains(&range_km))
-                    && (air || t.lock_valid),
+                    && (air
+                        || (t.lock_valid && z.at_lock)
+                        || spec == stealth_sim::HELLFIRE_SPEC),
                 too_close: zone.is_some_and(|z| range_km < z.0),
             }
         });

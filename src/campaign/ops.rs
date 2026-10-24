@@ -121,7 +121,7 @@ pub fn overlay(
     let want = c.is_some_and(|c| c.screen_open() && !c.exit);
     // The overlay draws into the 3D view's picture only with the same anti-aliasing (else it
     // gets a picture of its own that nothing clears: the world gone behind the screen and
-    // moved windows leaving trails). The 3D view's MSAA follows the shading settings.
+    // moved windows leaving trails). The 3D view's MSAA follows the MSAA option.
     let msaa = eye.iter().next().copied().unwrap_or(Msaa::Off);
     for mut m in &mut cams {
         if *m != msaa {

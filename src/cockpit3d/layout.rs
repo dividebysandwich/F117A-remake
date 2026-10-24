@@ -611,7 +611,7 @@ impl PanelLayout {
 
     /// The F-16C's panel (millimetres, x right and y down, unfolded), after the Block 50's:
     /// - The centre column (|x| <= 85): the up-front controls on a pedestal under the HUD
-    ///   (y < -46): the round override buttons on top (COM1 = volume, LIST = menu, A-A, A-G),
+    ///   (y < -46): the round override buttons on top (COM1 = volume, MENU = menu, A-A, A-G),
     ///   the keypad with its page labels (T-ILS, STPT, TIME and MARK work) and the declutter
     ///   and NVG keys; under it the airspeed indicator, attitude indicator and altimeter, then
     ///   the AOA indicator, HSI and vertical velocity indicator, and the clock under the HSI.
@@ -641,7 +641,7 @@ impl PanelLayout {
             ("COM1", Some(E::Action(Action::Volume))),
             ("COM2", None),
             ("IFF", None),
-            ("LIST", Some(E::Action(Action::Menu))),
+            ("MENU", Some(E::Action(Action::Menu))),
             ("A-A", Some(E::HudMode(1))),
             ("A-G", Some(E::HudMode(2))),
         ]

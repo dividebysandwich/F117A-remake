@@ -2,19 +2,20 @@
 
 Overlay labels like `<`, `>`
 refer to the unshifted keys `,` and `.` on a US keyboard ("Shift >" = Shift + `.`).
-To be cross-checked against VGAME's keyboard dispatch table (M2).
 Keys are bound by position on the keyboard, so a binding works on any layout. The tables name the
 keys as on a US keyboard; the CONTROLS dialog shows them as your layout prints them (the key at
 the position of QWERTY's W reads Z on AZERTY).
-These are the defaults: the menu's CONTROLS dialog rebinds every key, the stick keys included.
-In flight the kneeboard's KEYS page and the settings menu's KEY GUIDE list the keys as currently bound,
+These are the defaults: the CONTROLS dialog (main menu OPTIONS > CONTROLS) rebinds every key, the stick keys included.
+In flight the kneeboard's KEYS page and the in-flight menu's KEY GUIDE list the keys as currently bound,
 grouped by topic, with the mouse (desktop) or the VR controllers.
 
 | Group | Action | Key |
 |---|---|---|
 | Stick | pitch down / up | Up / Down arrow |
 | | roll left / right | Left / Right arrow |
-| | yaw (rudder) left / right (remake) | unbound (bind them in the CONTROLS dialog) |
+| | yaw (rudder) left / right (remake) | Q / E |
+| | trim nose down / up, left / right (remake; held) | Alt + Up / Down, Alt + Left / Right arrow |
+| | centre the trim (remake) | Alt Home |
 | | stick sensitivity (tiny/small/medium) | Ins |
 | | max stick movement | fast double-press of a direction |
 | Throttle | max power / no power | Shift + `=` (`+`) / Shift + `-` |
@@ -27,6 +28,7 @@ grouped by topic, with the mouse (desktop) or the VR controllers.
 | | decoy | 5 |
 | Equipment | gear / autopilot / bay doors / flaps / brakes | 6 / 7 / 8 / 9 / 0 |
 | | eject | Shift F10 |
+| | master caution (remake): silence the alarms (also the MASTER CAUTION / MW light in the cockpit) | Alt C |
 | Displays | HUD modes / declutter | F2 / V |
 | | bombsight CCIP / CCRP (remake; also A-G pressed again on the F-16) | Alt F2 |
 | | maps (left MFD) | F3 |
@@ -45,14 +47,14 @@ grouped by topic, with the mouse (desktop) or the VR controllers.
 | | sensor of interest to the other MFD | Alt S |
 | INS | select waypoint / change waypoint / reset waypoint | F7 / F8 / Shift F8 |
 | | last / next waypoint | PgUp / PgDn (shift if no joystick) |
-| | move waypoint up/down/left/right | arrows / keypad (shift if no joystick) |
 | Cockpit views | cockpit | F1 |
 | | look ahead / rear / left / right | Shift `/` / Shift `.` / Shift `,` / Shift M |
 | External views | slot / chase / side / missile / tactical / inverse tactical | Shift F1 .. Shift F6 |
+| | free camera (remake): W / S forward / back, A / D left / right, Q / E down / up, Shift faster, Ctrl slower, right mouse button turns, wheel zooms; again to go back | Shift F7 |
 | View | zoom / unzoom / wide angle | Z / X / C |
 | Time | accelerate / normal | Shift Z / Shift X |
 | Misc | pause (remake: settings menu, also Esc) / boss / quit | Alt P / Alt B / Alt Q |
 | | volume / detail level | Alt V / Alt D |
 | | kneeboard (remake): show, next page, hide | K |
 | | chat (remake, multiplayer): type a message, Enter sends, Esc cancels | Y |
-| Training | go to training / resupply / day-night / teleport | Alt T / Alt R / Alt N / Alt + arrows |
+| Training | go to training / resupply / day-night | Alt T / Alt R / Alt N |

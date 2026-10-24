@@ -22,7 +22,7 @@ pub const FLAG_FLIR: u32 = 4;
 pub const FLAG_CLOUD: u32 = 8;
 /// Smoke plumes: alpha blended (soft edges in modern mode; classic mode dithers).
 pub const FLAG_CLOUD_SOFT: u32 = 16;
-/// Stratus sheet in modern mode: alpha to coverage (soft edges with MSAA, depth written).
+/// Stratus sheet with MSAA on: alpha to coverage (soft edges with MSAA, depth written).
 pub const FLAG_CLOUD_COVERAGE: u32 = 32;
 /// Dot lights: drawn in the transparent pass (after all opaque geometry, depth tested but not
 /// written; see dots.rs).
@@ -281,7 +281,7 @@ pub fn pack16(v: [f32; 16]) -> [Vec4; 4] {
 }
 
 /// Mesh tag layout for per-object haze: bits 0..2 level code (0..4 = LOD0..4, 5 = aircraft),
-/// bits 3..5 size class (.3DX attr & 7), bit 6 = no haze, bit 7 = dot billboard (`TAG_DOT`),
+/// bits 3..5 size class (model attr & 7), bit 6 = no haze, bit 7 = dot billboard (`TAG_DOT`),
 /// bits 8..10 dot size multiplier (`dot_scale`), bit 12 short-range dot (`TAG_DOT_NEAR`).
 pub fn mesh_tag(level: u32, size_class: u32, no_fog: bool) -> u32 {
     (level & 7) | ((size_class & 7) << 3) | ((no_fog as u32) << 6)

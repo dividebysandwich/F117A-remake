@@ -38,7 +38,7 @@
     },
     {
       "control": "Action(Menu)",
-      "key": "Item(Label(\"LIST\", 5, 7))",
+      "key": "Item(Label(\"MENU\", 5, 7))",
       "kind": "cap",
       "rect": [
         3.0,

@@ -150,7 +150,7 @@ fn a_safe_landing_keeps_the_sortie_going() {
 fn an_insertion_helicopter_lands_at_its_goal() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
-    let from = find(&sim, 0x401, Some("Neuberg"));
+    let from = find(&sim, 0x401, Some("Neuburg"));
     let to = find(&sim, 0x001, Some("Tabor"));
     let i = sim.spawn_insertion(from, to, 42, 0);
     assert_eq!(sim.campaign_flight(i).map(|f| f.tag), Some(42));
@@ -177,7 +177,7 @@ fn an_insertion_helicopter_lands_at_its_goal() {
 fn enemy_defences_shoot_down_helicopters() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
-    let from = find(&sim, 0x401, Some("Neuberg"));
+    let from = find(&sim, 0x401, Some("Neuburg"));
     let to = find(&sim, 0x001, Some("Tabor"));
     // A SAM site on the way.
     let (a, b) = (sim.objects()[from], sim.objects()[to]);
@@ -208,9 +208,9 @@ fn enemy_defences_shoot_down_helicopters() {
 fn fighters_go_for_the_helicopters() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
-    let from = find(&sim, 0x401, Some("Neuberg"));
+    let from = find(&sim, 0x401, Some("Neuburg"));
     let to = find(&sim, 0x001, Some("Tabor"));
-    let enemy = find(&sim, 0x001, Some("Konmarno"));
+    let enemy = find(&sim, 0x001, Some("Komarno"));
     sim.spawn_insertion(from, to, 7, 0);
     // Scrambled (as the campaign does) when the helicopter is 80 km out.
     run(&mut sim, &idle(), 20 * 60);
@@ -233,7 +233,7 @@ fn fighters_go_for_the_helicopters() {
 fn a_far_sam_site_leaves_helicopters_alone() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
-    let from = find(&sim, 0x401, Some("Neuberg"));
+    let from = find(&sim, 0x401, Some("Neuburg"));
     let to = find(&sim, 0x001, Some("Tabor"));
     // An SA-11 20 km off the route: well in its reach, but too far to see a helicopter.
     let (a, b) = (sim.objects()[from], sim.objects()[to]);
@@ -265,9 +265,9 @@ fn a_far_sam_site_leaves_helicopters_alone() {
 fn fighters_use_their_guns() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
-    let from = find(&sim, 0x401, Some("Neuberg"));
+    let from = find(&sim, 0x401, Some("Neuburg"));
     let to = find(&sim, 0x001, Some("Tabor"));
-    let enemy = find(&sim, 0x001, Some("Konmarno"));
+    let enemy = find(&sim, 0x001, Some("Komarno"));
     sim.spawn_insertion(from, to, 7, 0);
     run(&mut sim, &idle(), 20 * 60);
     let t = sim.objects()[to];
@@ -348,9 +348,9 @@ fn intelligence_shortens_detection() {
 #[test]
 fn a_long_campaign_stays_bounded() {
     let (_, mut sim) = campaign();
-    let from = find(&sim, 0x401, Some("Neuberg"));
+    let from = find(&sim, 0x401, Some("Neuburg"));
     let to = find(&sim, 0x001, Some("Tabor"));
-    let enemy = find(&sim, 0x001, Some("Konmarno"));
+    let enemy = find(&sim, 0x001, Some("Komarno"));
     let t = sim.objects()[to];
     let mut tag = 1;
     for minute in 0..30 {
@@ -404,10 +404,10 @@ fn until_near(sim: &mut Sim, f: usize, (x, y): (i32, i32), d: i32) {
     panic!("never got near");
 }
 
-/// An enemy patrol out of Konmarno over Neuberg (tag 8), and Neuberg.
+/// An enemy patrol out of Komarno over Neuburg (tag 8), and Neuberg.
 fn raid(sim: &mut Sim) -> (usize, usize) {
-    let home = find(sim, 0x401, Some("Neuberg"));
-    let enemy = find(sim, 0x001, Some("Konmarno"));
+    let home = find(sim, 0x401, Some("Neuburg"));
+    let enemy = find(sim, 0x001, Some("Komarno"));
     let t = sim.objects()[home];
     let f = sim.spawn_fighter(enemy, t.x, t.y, 8, false, FighterTask::Patrol);
     // Unarmed: what is tested is what shoots it down.
@@ -501,10 +501,10 @@ fn a_cap_defends_its_airfield_with_missiles() {
 fn a_cap_stays_home_and_lands() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
-    let home = find(&sim, 0x401, Some("Neuberg"));
-    let enemy = find(&sim, 0x001, Some("Konmarno"));
+    let home = find(&sim, 0x401, Some("Neuburg"));
+    let enemy = find(&sim, 0x001, Some("Komarno"));
     let (o, e) = (sim.objects()[home], sim.objects()[enemy]);
-    assert!((e.x - o.x).abs().max((e.y - o.y).abs()) > CAP_LEASH, "Konmarno too close");
+    assert!((e.x - o.x).abs().max((e.y - o.y).abs()) > CAP_LEASH, "Komarno too close");
     // An enemy patrol over its own base, out of the bubble.
     sim.spawn_fighter(enemy, e.x, e.y, 8, false, FighterTask::Patrol);
     let cap = sim.spawn_fighter(home, o.x, o.y, 9, true, FighterTask::Cap);
@@ -565,7 +565,7 @@ fn a_cap_does_not_follow_into_enemy_territory() {
 fn a_friendly_fighter_leaves_the_player_alone() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
-    let home = find(&sim, 0x401, Some("Neuberg"));
+    let home = find(&sim, 0x401, Some("Neuburg"));
     let o = sim.objects()[home];
     let cap = sim.spawn_fighter(home, o.x, o.y, 9, true, FighterTask::Cap);
     let st = sim.respawn_player(home, None);
@@ -592,7 +592,7 @@ fn an_enemy_strike_bombs_the_airfield_and_flies_home() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
     let from = find(&sim, 0x001, Some("Tabor"));
-    let to = find(&sim, 0x401, Some("Neuberg"));
+    let to = find(&sim, 0x401, Some("Neuburg"));
     let i = sim.spawn_striker(from, to, 55, false);
     assert!(!sim.campaign_flight(i).unwrap().blue);
     let (mut bombed, mut landed) = (false, false);
@@ -659,7 +659,7 @@ fn an_enemy_helicopter_lands_at_a_friendly_place() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
     let from = find(&sim, 0x001, Some("Tabor"));
-    let to = find(&sim, 0x401, Some("Neuberg"));
+    let to = find(&sim, 0x401, Some("Neuburg"));
     let i = sim.spawn_insertion_for(from, to, 9, 0, false);
     let f = sim.campaign_flight(i).unwrap();
     assert!(!f.blue && !sim.friendly_unit(i, sim.flights()[i].spec));
@@ -695,7 +695,7 @@ fn an_attack_drone_dives_into_its_target() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
     let from = find(&sim, 0x001, Some("Tabor"));
-    let to = find(&sim, 0x401, Some("Neuberg"));
+    let to = find(&sim, 0x401, Some("Neuburg"));
     sim.spawn_drone(from, to, 77, false);
     let t = sim.objects()[to];
     let (mut hit, mut gone) = (false, false);
@@ -753,7 +753,7 @@ fn a_drone_that_crashes_short_destroys_nothing() {
     let (_, mut sim) = campaign();
     quiet(&mut sim);
     let from = find(&sim, 0x001, Some("Tabor"));
-    let to = find(&sim, 0x401, Some("Neuberg"));
+    let to = find(&sim, 0x401, Some("Neuburg"));
     let i = sim.spawn_drone(from, to, 78, false);
     // On the ground far from its target: it crashes there.
     sim.flights_mut()[i].alt = 0;

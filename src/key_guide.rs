@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 
 use crate::canvas::Canvas;
-use crate::font::{Align, stroke_has, stroke_text_at};
+use crate::font::{Align, stroke_has, stroke_text_at, stroke_text_keep_case};
 use crate::hotas::{ButtonTarget, InputConfig, VrHand};
 use crate::input::{Action, Mods};
 
@@ -28,6 +28,9 @@ const SECTIONS: &[(&str, &[(Keys, &str)])] = {
                 (Actions(&[PitchDown, PitchUp]), "Nose down / up"),
                 (Actions(&[RollLeft, RollRight]), "Roll left / right"),
                 (Actions(&[YawLeft, YawRight]), "Rudder left / right"),
+                (Actions(&[TrimNoseDown, TrimNoseUp]), "Trim nose down / up"),
+                (Actions(&[TrimLeft, TrimRight]), "Trim left / right"),
+                (Actions(&[TrimReset]), "Centre the trim"),
                 (Actions(&[StickSensitivity]), "Stick sensitivity (double-tap a stick key: full)"),
                 (Actions(&[ThrottleUp]), "Throttle (collective) up"),
                 (Actions(&[ThrottleDown]), "Throttle (collective) down"),
@@ -43,6 +46,7 @@ const SECTIONS: &[(&str, &[(Keys, &str)])] = {
                 (Actions(&[Flaps]), "Flaps"),
                 (Actions(&[Brakes]), "Wheel brakes, speed brake"),
                 (Actions(&[BayDoors]), "Weapon bay doors"),
+                (Actions(&[MasterCaution]), "Master caution: silence the alarms"),
                 (Actions(&[Eject]), "Eject"),
             ],
         ),
@@ -119,6 +123,7 @@ const SECTIONS: &[(&str, &[(Keys, &str)])] = {
                 (Actions(&[ViewMissile]), "Missile view"),
                 (Actions(&[ViewTactical]), "Tactical view"),
                 (Actions(&[ViewInverseTactical]), "Inverse tactical view"),
+                (Actions(&[ViewFree]), "Free camera: W/S/A/D/Q/E, mouse, wheel"),
                 (Actions(&[Zoom, Unzoom]), "Zoom in / out"),
                 (Actions(&[WideAngle]), "Wide angle"),
             ],
@@ -230,10 +235,14 @@ fn keys_of(config: &InputConfig, target: ButtonTarget) -> String {
         .join(", ")
 }
 
+/// Stands for a key printed "_" in a key text (where `_` is a space), drawn as `_`.
+const UNDERSCORE: char = '\u{E000}';
+
 /// A key as the layout prints it if the stroke font has its characters, else by its US name.
 fn key_text(mods: Mods, key: KeyCode) -> String {
     let name = crate::keyboard_layout::key_name(key)
         .filter(|n| !n.trim().is_empty() && n.chars().all(stroke_has))
+        .map(|n| n.replace('_', &UNDERSCORE.to_string()))
         .unwrap_or_else(|| us_name(&crate::input::qwerty_key_label(Mods::None, key)));
     match mods {
         Mods::None => name,
@@ -376,15 +385,14 @@ pub fn draw(c: &mut Canvas, lines: &[Line], area: [f32; 4], scroll: &mut f32, st
                 let kc = if *bound { style.keys } else { style.dim };
                 for (j, s) in k.iter().enumerate() {
                     let mid = top + line * (j as f32 + 0.5);
-                    stroke_text_at(
+                    stroke_text_keep_case(
                         c,
                         keys_x,
-                        mid,
-                        &s.replace('_', " "),
+                        mid - text / 2.0,
+                        &s.replace('_', " ").replace(UNDERSCORE, "_"),
                         text,
                         pen,
                         kc,
-                        Align::Left,
                     );
                 }
                 for (j, s) in w.iter().enumerate() {
@@ -440,13 +448,24 @@ mod tests {
         let lines = lines(&InputConfig::default(), false);
         for l in &lines {
             if let Line::Row(keys, _, _) = l {
-                assert!(keys.chars().all(|c| c == '_' || stroke_has(c)), "{keys}");
+                assert!(
+                    keys.chars().all(|c| c == '_' || c == UNDERSCORE || stroke_has(c)),
+                    "{keys}"
+                );
                 let longest = keys.split_whitespace().map(|w| stroke_width(w, TEXT));
                 assert!(longest.fold(0.0, f32::max) <= KEYS_W, "{keys}");
             }
         }
         assert!(lines.iter().any(|l| matches!(l, Line::Row(k, _, true) if k == "UP / DOWN")));
-        assert!(lines.iter().any(|l| matches!(l, Line::Row(k, _, false) if k == "UNBOUND")));
+        let rudder = |l: &Line| matches!(l, Line::Row(_, w, true) if w == "Rudder left / right");
+        assert!(lines.iter().any(rudder));
+        let mut config = InputConfig::default();
+        config.keys.retain(|k| {
+            !matches!(k.target, ButtonTarget::Action(Action::YawLeft | Action::YawRight))
+        });
+        let unbound = super::lines(&config, false);
+        assert!(unbound.iter().any(|l| matches!(l, Line::Row(k, _, false) if k == "UNBOUND")));
+        assert!(!unbound.iter().any(rudder));
     }
 
     #[test]

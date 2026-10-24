@@ -218,6 +218,8 @@ pub enum MfdCmd {
     TgpSp,
     /// Targeting pod back to slaved (a target key).
     TgpSlave,
+    /// Targeting pod cursor zero: point track on the current steerpoint.
+    TgpCz,
 }
 
 /// Sent by the cockpit's bezel buttons.
@@ -363,6 +365,7 @@ pub fn cmd_action(cmd: MfdCmd) -> Action {
         MfdCmd::CamZoomCycle => Action::CameraZoomIn,
         MfdCmd::TgpSp => Action::ClearTarget,
         MfdCmd::TgpSlave => Action::SelectTarget,
+        MfdCmd::TgpCz => Action::SelectWaypoint,
         MfdCmd::MapWay => Action::SelectWaypoint,
         MfdCmd::Sms(true) => Action::MissionOrders,
         MfdCmd::Sms(false) => Action::Ordnance,
@@ -428,11 +431,29 @@ pub fn apply(state: &mut MfdState, raster: &mut MapRaster, cmd: MfdCmd) {
 #[derive(Resource, Debug, Clone)]
 pub struct MissionOrders {
     pub lines: Vec<(u8, String)>,
+    /// The primary and the secondary objective achieved (ticked on the ORD page and the
+    /// kneeboard).
+    pub done: [bool; 2],
 }
 
 impl Default for MissionOrders {
     fn default() -> Self {
-        Self { lines: vec![(10, "RETURN TO BASE".into())] }
+        Self { lines: vec![(10, "RETURN TO BASE".into())], done: [false; 2] }
+    }
+}
+
+impl MissionOrders {
+    /// The orders for a new mission, nothing achieved yet.
+    pub fn set(&mut self, lines: Vec<(u8, String)>) {
+        *self = Self { lines, done: [false; 2] };
+    }
+
+    /// Rows to tick: the first line in each achieved objective's colour.
+    fn ticked(&self) -> impl Iterator<Item = usize> + '_ {
+        [(17, self.done[0]), (41, self.done[1])]
+            .into_iter()
+            .filter(|o| o.1)
+            .filter_map(|(c, _)| self.lines.iter().position(|l| l.0 == c))
     }
 }
 
@@ -1560,6 +1581,12 @@ impl MfdParams<'_, '_> {
             s.extend(upper(line));
             fonts.text(c, 4, 6 * row as i32, &s, 15);
         }
+        // Achieved objectives: a tick in the margin.
+        for row in self.orders.ticked().filter(|&r| r < 10) {
+            let y = 6 * row as i32;
+            c.line(0, y + 2, 1, y + 3, 15);
+            c.line(1, y + 3, 3, y, 15);
+        }
     }
 
     // --- Modern (231x180) pages ---------------------------------------------------------------
@@ -1860,6 +1887,11 @@ impl MfdParams<'_, '_> {
             let mut s = vec![ink(*colour)];
             s.extend(upper(line));
             fonts.text_scaled(c, 6, 6 + 13 * row as i32, &s, 15, 2);
+        }
+        for row in self.orders.ticked().filter(|&r| r < 13) {
+            let y = 6 + 13 * row as i32;
+            c.stroke(Vec2::new(0.5, y as f32 + 5.0), Vec2::new(2.0, y as f32 + 8.0), 1.2, 15);
+            c.stroke(Vec2::new(2.0, y as f32 + 8.0), Vec2::new(5.0, y as f32 + 1.0), 1.2, 15);
         }
     }
 }

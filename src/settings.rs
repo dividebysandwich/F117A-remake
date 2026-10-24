@@ -43,8 +43,10 @@ pub fn configure(app: &mut App) {
 
 #[derive(Resource, Debug, Clone)]
 pub struct Settings {
-    /// Modern shading: MSAA, subtle directional shading, smooth haze.
+    /// Modern shading: subtle directional shading, smooth haze.
     pub modern_shading: bool,
+    /// MSAA anti-aliasing, on unless `--no-msaa`.
+    pub msaa: bool,
     pub initial_state: AppState,
     /// `--vr`: OpenXR headset (chosen at launch; falls back to the window without a runtime).
     pub vr: bool,
@@ -69,6 +71,9 @@ pub struct Settings {
     /// `--classic-flight`: the classic flight model instead of the modern aerodynamic one
     /// (the default for `--script` runs unless `--modern-flight` is given).
     pub classic_flight: bool,
+    /// Auto trim, on unless `--no-auto-trim`: with the stick released, the trim holds the
+    /// attitude (helicopters, the classic model) or takes out what damage puts out of trim.
+    pub auto_trim: bool,
     /// `--no-crashes`: crash protection (auto pull-up, no ground crashes, collisions bounce).
     pub no_crashes: bool,
     /// `--realistic-damage`: realistic weapon damage instead of the classic
@@ -97,6 +102,14 @@ pub struct Settings {
     pub aircraft: crate::aircraft::AircraftKind,
     /// Tooltips over the cockpit's parts (in-flight menu; on by default).
     pub tooltips: bool,
+    /// Sound volumes (0..1): everything, then the engine, the other effects and the warnings
+    /// (`sound::Mix`).
+    pub master_volume: f32,
+    pub engine_volume: f32,
+    pub effects_volume: f32,
+    pub warning_volume: f32,
+    /// The engine sounds muffled inside the aircraft (`sound::muffle`).
+    pub engine_low_pass: bool,
 }
 
 /// Default VR cockpit size.
@@ -204,6 +217,7 @@ impl Settings {
         let vr = has("--vr");
         Self {
             modern_shading: has("--modern"),
+            msaa: !has("--no-msaa"),
             initial_state,
             vr,
             shadows: has("--shadows"),
@@ -214,6 +228,7 @@ impl Settings {
             classic_hud: has("--classic-hud"),
             classic_avionics: has("--classic-avionics"),
             classic_flight: has("--classic-flight") || (has("--script") && !has("--modern-flight")),
+            auto_trim: !has("--no-auto-trim"),
             no_crashes: has("--no-crashes"),
             realistic_damage: has("--realistic-damage"),
             realistic_guidance: has("--realistic-guidance"),
@@ -235,6 +250,11 @@ impl Settings {
                 .and_then(|s| crate::aircraft::AircraftKind::parse(&s))
                 .unwrap_or_default(),
             tooltips: true,
+            master_volume: 1.0,
+            engine_volume: 1.0,
+            effects_volume: 1.0,
+            warning_volume: 1.0,
+            engine_low_pass: true,
         }
     }
 }

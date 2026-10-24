@@ -113,6 +113,21 @@ impl Control {
         })
     }
 
+    /// A lamp face that is pushed as a whole (the master caution): `half` its half size
+    /// (metres), flat on its object's origin, not moving.
+    pub(super) fn push_light(effect: Effect, half: Vec2) -> Self {
+        Self {
+            kind: Kind::Cap,
+            effect,
+            half,
+            height: 0.0,
+            travel: 0.0,
+            depth: 0.0,
+            touched: false,
+            click: 0.0,
+        }
+    }
+
     pub(super) fn is_eject(&self) -> bool {
         self.kind == Kind::EjectHandle
     }

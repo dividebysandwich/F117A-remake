@@ -96,13 +96,31 @@ impl Sim {
             }
         }
         if let Some((x, y)) = c.designate_at {
-            let o = self.find_object_at(x, y);
-            if o < 0 {
-                self.msg("No target");
-            } else if !self.player_sees(self.obj(o).x, self.obj(o).y, 0) {
+            // The object there (a world object, else a scenery tile), else the plain ground
+            // (scratch object 0).
+            let world = (3..self.objects.len())
+                .filter(|&i| self.objects[i].flags & oflags::DESTROYED == 0)
+                .map(|i| (i as i32, approx(self.objects[i].x - x, self.objects[i].y - y)))
+                .filter(|&(_, d)| d <= DESIGNATE_RADIUS)
+                .min_by_key(|&(_, d)| d)
+                .map(|(i, _)| i);
+            let near = world.or_else(|| {
+                let o = self.find_object_at(x, y);
+                let ob = self.obj(o);
+                (o >= 0 && approx(ob.x - x, ob.y - y) <= DESIGNATE_RADIUS).then_some(o)
+            });
+            let (o, spi) = match near {
+                Some(o) => (o, None),
+                None => (0, Some((x, y))),
+            };
+            if spi.is_some() {
+                self.ground_point(x, y);
+            }
+            if !self.player_sees(self.obj(o).x, self.obj(o).y, 0) {
                 self.msg("Target obscured");
             } else {
                 self.pl.gnd_lock = o;
+                self.pl.spi = spi;
                 self.pl.target_hold = true;
                 self.pl.nearest_req = 0;
                 self.pl.targeting.target_killed = false;

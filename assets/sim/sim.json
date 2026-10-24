@@ -948,13 +948,13 @@
       "picture": 10
     },
     {
-      "short_name": "AGM-86A",
+      "short_name": "AGM-84A",
       "long_name": "Harpoon",
       "spec": 26,
       "picture": 12
     },
     {
-      "short_name": "AGM-65D",
+      "short_name": "AGM-65",
       "long_name": "Maverick",
       "spec": 27,
       "picture": 16
@@ -972,19 +972,19 @@
       "picture": 4
     },
     {
-      "short_name": "Dndl",
+      "short_name": "BLU-107",
       "long_name": "Durandal",
       "spec": 29,
       "picture": 8
     },
     {
-      "short_name": "Mk 82-0",
-      "long_name": "Slick",
+      "short_name": "Mk 82",
+      "long_name": "LDGP",
       "spec": 30,
       "picture": 11
     },
     {
-      "short_name": "Mk 82-1",
+      "short_name": "Mk 82",
       "long_name": "Snakeye",
       "spec": 29,
       "picture": 13
@@ -997,7 +997,7 @@
     },
     {
       "short_name": "Mk 122",
-      "long_name": "Fireeye",
+      "long_name": "Fireye",
       "spec": 30,
       "picture": 2
     },
@@ -1009,31 +1009,31 @@
     },
     {
       "short_name": "Mk 35",
-      "long_name": "IN Cluster",
+      "long_name": "Incendiary",
       "spec": 29,
       "picture": 9
     },
     {
-      "short_name": "ISC B-1",
-      "long_name": "Minelets",
+      "short_name": "ISCB-1",
+      "long_name": "Mines",
       "spec": 29,
       "picture": 14
     },
     {
-      "short_name": "135 mm",
+      "short_name": "IR/opt",
       "long_name": "Camera",
       "spec": -1,
       "picture": 15
     },
     {
-      "short_name": "1900lbs",
-      "long_name": "Extra Fuel",
+      "short_name": "1900 lb",
+      "long_name": "Fuel tank",
       "spec": -2,
       "picture": 18
     },
     {
       "short_name": "Special",
-      "long_name": "Equip",
+      "long_name": "Cargo",
       "spec": 38,
       "picture": 5
     },

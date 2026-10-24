@@ -111,7 +111,7 @@ pub struct OrdersLine {
 pub struct Orders {
     /// The lines as the orders page shows them (mixed case).
     pub lines: Vec<OrdersLine>,
-    /// Primary order as one upper-case line, e.g. "DESTROY ENEMY SS MISSILE AT LIBEREC".
+    /// Primary order as one upper-case line, e.g. "STRIKE THE SS MISSILE AT LIBEREC".
     pub primary: String,
     pub secondary: String,
     /// "RETURN TO <landing base>".
@@ -317,7 +317,7 @@ impl TextCtx<'_> {
 
     /// Object display name: place name, or the shape name if unnamed; longer than 18
     /// characters is cut to 18 + ".".
-    fn vgame_obj_name(&self, i: i32) -> String {
+    fn orders_obj_name(&self, i: i32) -> String {
         let o = self.obj(i);
         let place = self.name(o.name as i32);
         let mut s: String =
@@ -329,7 +329,7 @@ impl TextCtx<'_> {
     }
 
     /// Mission clock: `t + tod` as "HH:MM:SS" from 06:00 / 18:00 (or the chosen start hour).
-    pub fn vgame_time(&self, t: i32) -> String {
+    pub fn mission_clock(&self, t: i32) -> String {
         fn two(buf: &mut Vec<u8>, v: i32) {
             let r = s16(v) % 60;
             if r < 10 {
@@ -353,14 +353,14 @@ impl TextCtx<'_> {
     /// Orders MFD page.
     pub fn orders(&self) -> Orders {
         const VERBS: [&str; 8] = [
-            "Photograph enemy",
-            "Destroy enemy",
-            "Drop supplies over",
-            "Land supplies at",
-            "Hit AN72 flying to",
-            "Hit AN72 leaving",
-            "Plane returning to",
-            "Destroy plane over",
+            "Recon photos of",
+            "Strike the",
+            "Supply drop near",
+            "Land and load at",
+            "Intercept An-72 to",
+            "Intercept An-72 at",
+            "Intercept plane to",
+            "Shoot down over",
         ];
         let g = self.g;
         let mut lines = Vec::new();
@@ -376,21 +376,21 @@ impl TextCtx<'_> {
             if named {
                 what += " at ";
                 lines.push(OrdersLine { text: what, color });
-                let place = self.vgame_obj_name(t.idx);
+                let place = self.orders_obj_name(t.idx);
                 one = format!("{one} at {place}");
                 lines.push(OrdersLine { text: place, color });
             } else {
                 lines.push(OrdersLine { text: what, color });
             }
             if t.code & 2 != 0 {
-                let before = format!("Before {}", self.vgame_time(g.mtime));
+                let before = format!("Before {}", self.mission_clock(g.mtime));
                 one = format!("{one} {before}");
                 lines.push(OrdersLine { text: before, color: 7 });
             }
             summary[k] = one.to_uppercase();
         }
         lines.push(OrdersLine { text: "Return to".into(), color: 0xA });
-        let base = self.vgame_obj_name(g.targets[1].base);
+        let base = self.orders_obj_name(g.targets[1].base);
         let return_to = format!("RETURN TO {}", base.to_uppercase());
         lines.push(OrdersLine { text: base, color: 0xA });
         let [primary, secondary] = summary;

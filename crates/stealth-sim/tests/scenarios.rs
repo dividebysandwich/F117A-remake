@@ -456,8 +456,8 @@ fn bomb_vs_target_uses_effectiveness_table() {
         .find(|(m, _)| m.primary.mission_type == 2)
         .unwrap();
     let t = m.primary.object_index as usize;
-    let cat = (m.world.buf7[m.world.objects[t].shape()] & 0xF) as i32;
-    // Retarded weapons (spec 29): Rockeye 7, Durandal 8, Snakeye 10, IN Cluster 14, Minelets 15.
+    let cat = (m.world.shape_class[m.world.objects[t].shape()] & 0xF) as i32;
+    // Retarded weapons (spec 29): Rockeye 7, Durandal 8, Snakeye 10, Mk 35 incendiary 14, mines 15.
     let good = [7, 8, 10, 14, 15].into_iter().find(|&w| d.sim.compat_cat(w, cat) > 0);
     let bad = [7, 8, 10, 14, 15].into_iter().find(|&w| d.sim.compat_cat(w, cat) == 0);
     for (w, expect_kill) in [(good, true), (bad, false)] {
@@ -648,24 +648,24 @@ fn state_hash(sim: &Sim) -> u64 {
 #[test]
 fn classic_state_golden() {
     const GOLDEN: [u64; 18] = [
-        0xa540e20af6dbaf48,
-        0x5649e6e18af28b9f,
-        0xa3ffca7fdeb5c6bb,
-        0xa3701fa4c151d667,
-        0xcd3f7a3882299fb9,
-        0xd8de8d2b41c0386f,
-        0x0b42ccd03052c9c4,
-        0xe13634d6e5a429e8,
-        0x05c467c23d29d6d7,
-        0xfa3000665715bef7,
-        0x76c997ba7386a37f,
-        0x68823a5c222b3f49,
-        0x88b326349fc0b953,
-        0x83af8682dfce38b4,
-        0xfa9126d047bb8cfd,
-        0x2781a504e2640ab9,
-        0x1a458d5b4b9a5214,
-        0x02bd67088fb9b96d,
+        0x26bec1741250c262,
+        0xb0a05c2703a62333,
+        0x8b253708c58e4a18,
+        0x91369bedb474057c,
+        0xcd9266f3a3ef8711,
+        0x443f6790c107d6a5,
+        0x620bb333986c8954,
+        0x9629c627252309ec,
+        0x27e911ff5ba3ca7b,
+        0x8d84039dc5a1d4b9,
+        0x638e1187ecbd2f98,
+        0x2f2669b82e5aae26,
+        0xce82c1aa2d456393,
+        0x4260c4d304b6e272,
+        0x7bffb6892ef438af,
+        0xb73cd7b9c71c2443,
+        0x8c140fbee4673d51,
+        0x50a790c2e8094406,
     ];
     let d = data();
     let mut got = Vec::new();
@@ -1737,6 +1737,127 @@ fn hellfire_follows_the_pod() {
         }
         assert_eq!(at, Some((mx + 110, my - 88)), "guided {guided}");
     }
+}
+
+/// A Hellfire fired from the AH-1Z 500 ft up at a target `range` map units northeast, the pod's
+/// spot on it: the launch zone at the shot and whether it hit.
+fn hellfire_shot(guided: bool, range: i32) -> (Option<dlz::LaunchZone>, bool) {
+    let (mut sim, mx, my, mut p) = helicopter(true, guided);
+    let diag = (range as f64 / std::f64::consts::SQRT_2).round() as i32;
+    let (tx, ty) = (mx + diag, my - diag);
+    {
+        let o = &mut sim.objects_mut()[5];
+        o.x = tx;
+        o.y = ty;
+        o.flags = 0;
+    }
+    p.altitude = 500;
+    p.hud_mode = HudMode::Gnd;
+    p.pod = Some(PodAim { heading: 0x2000, pitch: -0x100, ground: Some((tx, ty)) });
+    sim.step(&p, 15);
+    let zone = sim.launch_zone();
+    p.cmd.fire = true;
+    let mut hit = false;
+    for _ in 0..15 * 150 {
+        for e in sim.step(&p, 15) {
+            if let SimEvent::Explosion { x, y, .. } = e {
+                hit |= (x - tx).abs() <= 2 && (y - ty).abs() <= 2;
+            }
+        }
+        p.cmd = Commands::default();
+    }
+    (zone, hit)
+}
+
+/// The Hellfire's launch zone is at the pod's spot, without a lock; with realistic guidance it
+/// glides only so far: it slows once burnt out, stalls and falls short.
+#[test]
+fn hellfire_launch_zone_at_the_spot() {
+    for guided in [false, true] {
+        let (z, hit) = hellfire_shot(guided, 400);
+        let z = z.expect("a launch zone");
+        let (lo, hi) = z.zone.expect("in reach");
+        assert!(z.in_zone() && hit, "guided {guided}: {z:?} hit {hit}");
+        assert!(lo < 100 && hi > 600, "guided {guided}: {z:?}");
+        if guided {
+            assert!(hi < 1200, "{z:?}");
+            let (z, hit) = hellfire_shot(guided, hi + 100);
+            assert!(!z.unwrap().in_zone() && !hit, "past the zone: {z:?} hit {hit}");
+            let (z, hit) = hellfire_shot(guided, hi - 60);
+            assert!(z.unwrap().in_zone() && hit, "inside the zone: {z:?} hit {hit}");
+        }
+    }
+}
+
+/// A point designated with the targeting pod away from any object is the ground lock itself
+/// (not the nearest object, which may be kilometres away): it holds while rounds hit the ground
+/// elsewhere, and the Hellfire's launch zone ranges to it. Next to an object, the object.
+#[test]
+fn pod_designates_a_ground_point() {
+    let (mut sim, mx, my, mut p) = helicopter(true, true);
+    let o = 5;
+    {
+        let ob = &mut sim.objects_mut()[o];
+        ob.x = mx + 300;
+        ob.y = my - 300;
+        ob.flags = 0;
+    }
+    p.altitude = 500;
+    p.hud_mode = HudMode::Gnd;
+    let (x, y) = (mx + 150, my - 150);
+    p.pod = Some(PodAim { heading: 0x2000, pitch: -0x100, ground: Some((x, y)) });
+    p.cmd.designate_at = Some((x, y));
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    for _ in 0..30 {
+        let mut q = p.clone();
+        q.cmd.gun = true;
+        sim.step(&q, 15);
+    }
+    let t = sim.targeting();
+    assert_eq!(t.ground, Some(0), "{t:?}");
+    let g = sim.objects()[0];
+    assert_eq!((g.x, g.y, g.shape), (x, y, 0));
+    let z = sim.launch_zone().expect("a launch zone");
+    assert!((z.range - 212).abs() <= 3 && z.in_zone(), "{z:?}");
+    // Close to the object: the object.
+    p.cmd.designate_at = Some((mx + 303, my - 297));
+    sim.step(&p, 15);
+    assert_eq!(sim.targeting().ground, Some(o));
+}
+
+/// Slewing the pod moves the launch zone's target with it (the SPI): the Hellfire's, and a
+/// Maverick's without a lock; the zone is against the lock again once the pod rests on it.
+#[test]
+fn launch_zone_follows_the_slewed_pod() {
+    let (mut sim, mx, my, mut p) = helicopter(true, true);
+    p.altitude = 500;
+    p.hud_mode = HudMode::Gnd;
+    let pod = |x: i32, y: i32| Some(PodAim { heading: 0x2000, pitch: -0x100, ground: Some((x, y)) });
+    p.pod = pod(mx + 150, my - 150);
+    p.cmd.designate_at = Some((mx + 150, my - 150));
+    sim.step(&p, 15);
+    p.cmd = Commands::default();
+    let z = sim.launch_zone().unwrap();
+    assert!(z.at_lock && (z.range - 212).abs() <= 3, "{z:?}");
+    p.pod = pod(mx + 300, my - 300);
+    sim.step(&p, 15);
+    let z = sim.launch_zone().unwrap();
+    assert!(!z.at_lock && (z.range - 424).abs() <= 3, "{z:?}");
+
+    let d = data();
+    let m = mission(d, 3, 0x1234, 1);
+    let opts = SimOptions { realistic_guidance: true, ..Default::default() };
+    let mut sim = Sim::with_options(&d.sim, &m, opts);
+    let (mx, my) = sandbox(&mut sim, &m);
+    sim.set_training(true);
+    sim.set_loadout(&[(5, 2)]);
+    let mut p = player_at(mx, my, 3000, 0x2000, 450);
+    p.hud_mode = HudMode::Gnd;
+    p.pod = pod(mx + 200, my - 200);
+    sim.step(&p, 15);
+    let z = sim.launch_zone().expect("a zone against the pod's point");
+    assert!(!z.at_lock && (z.range - 283).abs() <= 3, "{z:?}");
 }
 
 /// The AH-1Z's cannon fires where the pod looks, as far as its turret turns; the UH-60 has none.

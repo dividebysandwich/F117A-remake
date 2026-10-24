@@ -40,9 +40,9 @@ returns to it.
 |---|---|
 | SINGLE MISSION | One mission with the options below. |
 | CAREER | Pilot records and the tour of duty, with the tour's options (chapter 10). |
-| DYNAMIC CAMPAIGN | Start or continue a dynamic campaign, with the theater, situation, opponents, aircraft, realism and classic / modern options. **Weather**: *changing* (the default) or *clear sky*. Changing weather turns once or twice a day of the campaign's sky, mostly fair (clear, scattered or broken cumulus, sometimes an overcast) and now and then thunderstorms; each change takes a few minutes, the clouds building up or thinning out and the light following. The Ops screen shows the weather and the next change next to the clock, the briefing the cloud layers. **The enemy fights back**: now and then it sends helicopters against the weakest friendly place on its front and raids a friendly airfield with escorted strike aircraft (more often against better opponents). Intelligence warns a few minutes ahead, and the board posts an INTERCEPT or DEFEND mission at the top. A bombed airfield launches no AI aircraft until it is repaired, but you can always take off from it. Guns and MANPADS teams destroyed stay destroyed (saves included) until they are replaced, one every 20 minutes. The war is won when the enemy holds no airfield, and lost when the friendly side holds neither an airfield nor a carrier. **Materiel and aircraft**: each side's AI fights with the war materiel its places and their cities bring in every hour and with the fighters and helicopters it has left. Every repair, AI sortie, raid and AI insertion costs materiel; aircraft shot down are gone, and new ones are bought every hour while the materiel lasts. INTERDICTION missions strike the enemy's rear: a city destroyed costs it materiel at once and its income until rebuilt. Only the AI runs short: your aircraft, bases and insertion orders never do. The **FORCES** tab shows both sides side by side: materiel, income and where it comes from, the aircraft on the ground and in the air, where the materiel went since the start, and the prices. The footer of the Ops screen shows both sides' materiel and income at all times. **CSAR**: eject over enemy territory and the board posts a rescue: any player who holds the air within 5 km of the pilot for 2 minutes gets him out. Otherwise, after 20 minutes, a rescue helicopter may still get through; if it doesn't, the pilot is captured, which costs the friendly side materiel and a fighter (never your own next sortie). **Points and ranks**: every sortie earns points: the objective's (100 to 250 by kind, once it is settled), 50 per aircraft and 20 per ground kill, and 25 for bringing the aircraft home. They earn the career's ranks over the campaign, and its medals for one sortie's points; the debrief shows them, and PLAYERS has a leaderboard of every pilot who flew in the campaign. **Packages**: objectives of two different kinds achieved at one place within 15 minutes (SEAD and STRIKE, say, or CAS and the ESCORT of an insertion) earn every sortie of the package 100 more points; the mission's details name the other missions there. Flying alone, **REQUEST AI SEAD** sends two friendly strike aircraft at one of the place's SAM sites ahead of you (15 materiel and two aircraft of the friendly side). **Opportunity**: now and then the enemy puts an AWACS up behind its front for an hour; while it flies, its patrols go up twice as often and are sent straight at you, so the board offers to shoot it down. In Ukraine the enemy also launches waves of six Geran attack drones at a friendly city or airfield (DRONE DEFENSE): the first one through destroys it. **Rules**: a campaign keeps the realism rules it was started with, whoever continues or serves it later; the realism settings apply to new campaigns. |
+| DYNAMIC CAMPAIGN | Start or continue a dynamic campaign, with the theater, situation, opponents, aircraft and realism options. **Weather**: *changing* (the default) or *clear sky*. Changing weather turns once or twice a day of the campaign's sky, mostly fair (clear, scattered or broken cumulus, sometimes an overcast) and now and then thunderstorms; each change takes a few minutes, the clouds building up or thinning out and the light following. The Ops screen shows the weather and the next change next to the clock, the briefing the cloud layers. **The enemy fights back**: now and then it sends helicopters against the weakest friendly place on its front and raids a friendly airfield with escorted strike aircraft (more often against better opponents). Intelligence warns a few minutes ahead, and the board posts an INTERCEPT or DEFEND mission at the top. A bombed airfield launches no AI aircraft until it is repaired, but you can always take off from it. Guns and MANPADS teams destroyed stay destroyed (saves included) until they are replaced, one every 20 minutes. The war is won when the enemy holds no airfield, and lost when the friendly side holds neither an airfield nor a carrier. **Materiel and aircraft**: each side's AI fights with the war materiel its places and their cities bring in every hour and with the fighters and helicopters it has left. Every repair, AI sortie, raid and AI insertion costs materiel; aircraft shot down are gone, and new ones are bought every hour while the materiel lasts. INTERDICTION missions strike the enemy's rear: a city destroyed costs it materiel at once and its income until rebuilt. Only the AI runs short: your aircraft, bases and insertion orders never do. The **FORCES** tab shows both sides side by side: materiel, income and where it comes from, the aircraft on the ground and in the air, where the materiel went since the start, and the prices. The footer of the Ops screen shows both sides' materiel and income at all times. **CSAR**: eject over enemy territory and the board posts a rescue: any player who holds the air within 5 km of the pilot for 2 minutes gets him out. Otherwise, after 20 minutes, a rescue helicopter may still get through; if it doesn't, the pilot is captured, which costs the friendly side materiel and a fighter (never your own next sortie). **Points and ranks**: every sortie earns points: the objective's (100 to 250 by kind, once it is settled), 50 per aircraft and 20 per ground kill, and 25 for bringing the aircraft home. They earn the career's ranks over the campaign, and its medals for one sortie's points; the debrief shows them, and PLAYERS has a leaderboard of every pilot who flew in the campaign. **Packages**: objectives of two different kinds achieved at one place within 15 minutes (SEAD and STRIKE, say, or CAS and the ESCORT of an insertion) earn every sortie of the package 100 more points; the mission's details name the other missions there. Flying alone, **REQUEST AI SEAD** sends two friendly strike aircraft at one of the place's SAM sites ahead of you (15 materiel and two aircraft of the friendly side). **Opportunity**: now and then the enemy puts an AWACS up behind its front for an hour; while it flies, its patrols go up twice as often and are sent straight at you, so the board offers to shoot it down. In Ukraine the enemy also launches waves of six Geran attack drones at a friendly city or airfield (DRONE DEFENSE): the first one through destroys it. **Rules**: a campaign keeps the realism rules it was started with, whoever continues or serves it later; the realism settings apply to new campaigns. |
 | MULTIPLAYER | Coop in the dynamic campaign: join a server or host a campaign and fly in it (chapter 13). |
-| CONTROLS | The input mapping (chapter 2). |
+| OPTIONS | Your own settings, saved for every later game: game, graphics, sound and controls (below). |
 | QUIT | Exit to the desktop. |
 
 ### Single mission
@@ -60,17 +60,31 @@ mission, and the summary on the right shows it. Hovering over an option shows a 
 | **Start time** | The takeoff hour; night from 18:00 to 06:00. *Random*: rolled with each new mission, 06:00-08:00 by day or 18:00-20:00 by night. |
 | **Situation** | *Cold War*: covert peacetime operation, fewer enemy aircraft. *Limited War*: regional conflict, air defences on alert. *Conventional War*: full-scale war, all enemy forces active. The briefing states the exact rules of engagement. |
 | **Mission** | *Strike*: ground target (destroy, photograph or reach), with a primary and a secondary objective. *Air to air*: intercept an enemy aircraft. *Strike training* and *Air training*: practice missions. *Drone defense* (Ukraine only): stop a wave of attack drones, then bomb their launch site (chapter 11). |
-| **Aircraft** | *F-117A* or *F-16C*: the flown aircraft. *Realistic weapons* (F-117A only): two bays instead of four, no AIM-9/AIM-120, no carrier operations. *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. *Tacview export*: each flight is saved as a Tacview recording (chapter 10). *Tacview real-time telemetry*: the flight is shown in Tacview while you fly it (chapter 10). |
+| **Aircraft** | *F-117A* or *F-16C*: the flown aircraft. *Realistic weapons* (F-117A only): two bays instead of four, no AIM-9/AIM-120, no carrier operations. |
+| **Simulation** | The realism switches below and *Crash protection*: automatic pull-up near the ground with the gear up; ground contact and collisions are not fatal. They belong to each game (single mission, career, campaign), not to OPTIONS. |
 | **Realism** | *Damage*: *Game* features simplified weapon damage (hits add up, damaging systems, but never bring the aircraft down). *Real*: a missile hit can destroy the aircraft outright (the engine dies, it burns and breaks up within seconds: eject), otherwise it damages several systems at once and often starts a fire, which either burns out or blows the aircraft up after a while. Hits to the flight controls bend control surfaces: the aircraft rolls or pitches by itself (hold the stick against it) or wobbles. *Guidance*: *Classic* keeps the DOS era missiles. *Real*: missiles fly proportional navigation to the collision point; their motors burn for the real missile's burn time (the smoke trail ends with it) and then they glide, losing speed with every turn and turning ever more slowly as they slow down, especially up high. SAMs climb at a loft angle against distant targets and dive on them from above. The AIM-120 flies straight for 3 s after launch: pull up before firing to lob it for more range. *Low level*: *Real* adds anti-aircraft guns and MANPADS (chapter 8.3). |
 | **Weather** | Random (based on the theater's climate), Clear, Scattered, Broken, Overcast, Storm. *Random cover* off: a slider sets the coverage of the main cloud layer. Clouds block optical seekers and visual identification for both sides; radar sees through clouds. |
-| **Head/eye tracking** | *Head/Eye Tracking* (desktop): your head turns and moves the view in the cockpit (chapter 3). Below it the menu shows whether a tracker is heard. |
-| **Classic / Modern** | *Shaders*: flat DOS era shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Lighting*: cockpit lamps, explosions, flares and runway lights light the scene. *Cockpit*: DOS era panel or modern panel (this manual describes the modern panel). *HUD*: the DOS era HUD, or a high-resolution F-16 style HUD in green. *Time of day*: simplified slow change of colours, or the sun and the moon moving with the mission clock: the sun is drawn in the sky (with the modern shaders it glares when you look towards it), the sky turns golden or orange around sunrise and sunset (each dawn and dusk a little different), purple and dark blue about an hour after sunset, stars come out, the moon shows the phase of the briefing date, and moonlight sets how far enemy pilots see you at night (about 2 km on a moonless night, 4 km under a full moon high in the sky, 8 km by day). The sun keeps to the equinox, rising at 06:00 and setting at 18:00, so with a random start time day missions start at dawn and night missions at dusk. *Flight model*: DOS era flight model, or an aerodynamic model with fly-by-wire: the stick commands pitch rate (up to 7 g) and roll rate; released, the nose stays where it was left and, once the flight path has caught up with it, the path is held (also in turns up to 60° of bank). Angle of attack and g limiters only act near the limits. New players start with modern shaders, time of day, cockpit, HUD, avionics and flight model, and classic shadows and lighting. |
 
 The **mission summary** lists theater, situation, mission type, opponents, time of day and
 departure time, weather, visibility and fuel. The **briefing** below it lists the objectives, the
 departure and landing bases, the weather, the armament and intelligence notes.
 
 The menu remembers its choices and switches for the next start.
+
+### Options
+
+OPTIONS (main menu) holds your own settings, saved for every later game; the in-flight menu has
+the same pages (chapter 3.8).
+
+| Tab | Settings |
+|---|---|
+| **Game** | *Cockpit*: DOS era panel or modern panel (this manual describes the modern panel). *HUD*: the DOS era HUD, or a high-resolution F-16 style HUD in green. *Avionics*: DOS era MFD pages or F-16 style formats (chapter 4.1). *Flight model*: DOS era flight model, or an aerodynamic model with fly-by-wire: the stick commands pitch rate (up to 7 g) and roll rate; released, the nose stays where it was left and, once the flight path has caught up with it, the path is held (also in turns up to 60° of bank). Angle of attack and g limiters only act near the limits. *Auto trim*: with the stick released, the trim holds the attitude (helicopters) or trims out damaged control surfaces (jets); Alt + arrow keys trim by hand, Alt + Home centres the trim. *Cockpit tooltips*. *VR cockpit size* (chapter 3.8). *Tacview export*: each flight is saved as a Tacview recording; *Tacview real-time telemetry*: the flight is shown in Tacview while you fly it (chapter 10). |
+| **Graphics** | *Shaders*: flat DOS era shading or anti-aliasing, shading and haze. *Shadows*: sun shadows. *Point lights*: cockpit lamps, explosions, flares and runway lights light the scene. *Time of day*: simplified slow change of colours, or the sun and the moon moving with the mission clock: the sun is drawn in the sky (with the modern shaders it glares when you look towards it), the sky turns golden or orange around sunrise and sunset (each dawn and dusk a little different), purple and dark blue about an hour after sunset, stars come out, the moon shows the phase of the briefing date, and moonlight sets how far enemy pilots see you at night (about 2 km on a moonless night, 4 km under a full moon high in the sky, 8 km by day). The sun keeps to the equinox, rising at 06:00 and setting at 18:00, so with a random start time day missions start at dawn and night missions at dusk. With the classic time of day, *Sun and moon* still shows them in the sky. |
+| **Sound** | *Master*, *Engine* (your engine or rotor, and the aircraft heard around you), *Effects* (weapons, explosions, gear, radio) and *Warnings* (stall horn, radar and missile warnings, fire siren, Sidewinder tones) volumes. *Engine low-pass*: inside the aircraft the engine sounds are muffled. |
+| **Controls** | *Keys and joystick*: the input mapping (chapter 2). *Head/Eye Tracking* (desktop): your head turns and moves the view in the cockpit (chapter 3); below it the menu shows whether a tracker is heard. |
+
+New players start with modern shaders, time of day, cockpit, HUD, avionics and flight model, and
+classic shadows and lighting.
 
 | Button | Function |
 |---|---|
@@ -85,7 +99,7 @@ The menu remembers its choices and switches for the next start.
 
 ![Input mapping](images/controls.png)
 
-The *Controls* button opens the input mapping. The mapping is saved automatically and applies
+OPTIONS > CONTROLS > *Keys and joystick* opens the input mapping. The mapping is saved automatically and applies
 to all later flights.
 
 - **Device list**: connected joysticks, throttles and gamepads.
@@ -105,11 +119,21 @@ to all later flights.
 
 **VR controllers**: the last section assigns an action to each VR controller input (trigger, A/X,
 B/Y, stick click, stick directions) per hand. **DEFAULTS** restores the default assignment. A
-trigger only counts while that hand holds the throttle (left) or the stick (right). By default
-the right trigger fires, the left trigger holds the wheel brakes (on while pulled, also with the
-hand off the throttle unless its fingertip is on a control; any VR button set to *Brakes* works
-this way) and the right thumbstick pushed left opens and closes the bay
-doors; the left thumbstick slews the displays' cursor.
+trigger only counts while that hand holds the throttle (left) or the stick (right). The defaults
+work like a HOTAS:
+
+| | Right controller (stick) | Left controller (throttle) |
+|---|---|---|
+| Trigger | Fire weapon | Wheel brakes (held) |
+| A / X | Gun (held) | Flare |
+| B / Y | Select weapon | Chaff |
+| Thumbstick | Targeting: up nearest target ahead, down clear target, right next target, left designate | Slews the displays' cursor |
+| Stick click | Lock cursor target | Bay doors |
+
+The left trigger's brakes are on while it is pulled, also with the hand off the throttle unless its
+fingertip is on a control (any VR button set to *Brakes* works this way). The decoy is on the
+cockpit's DECOY button. A mapping still on the old defaults is switched to these once; a
+customised one is kept.
 
 ## 3. The cockpit
 
@@ -121,7 +145,7 @@ has a keyboard equivalent (chapter 7). Rest the mouse on a button, display, inst
 light and a **tooltip** names it, says what it does and shows its keys; parts hidden behind the
 stick, the throttle or the glare shield can't be pointed at.
 
-**Head/eye tracking.** With *Head/Eye Tracking* on in the menu, the cockpit view follows your head
+**Head/eye tracking.** With *Head/Eye Tracking* on in OPTIONS > CONTROLS, the cockpit view follows your head
 movements, picked up by an infrared tracker (TrackIR, DelanClip, TrackHat, Grass Monkey
 Simulations, ...), an eye tracker (Tobii Eye Tracker, Beam Eye Tracker, ...), a webcam or a smartphone. A tracking program such as OpenTrack sends them to the game (FreeTrack output, or UDP on port 4242).
 **Home** recentres the view.
@@ -155,7 +179,11 @@ drawn at half the size, about the F-16C's, so it stays in the middle of the larg
 
 The modes add their own symbols:
 
-* **NAV:** a diamond on the steerpoint on the ground.
+* **NAV:** a diamond on the steerpoint on the ground; when the steerpoint is outside the HUD it
+  waits at the HUD's edge in its direction, crossed out.
+
+In every mode a small circle with a dot marks where the targeting pod looks while the TGP page is
+up on an MFD (the classic HUD shows it and the steerpoint diamond too).
 * **AA:** the target designator box with the missile diamond once locked, the range below it;
   with an air-to-air missile selected the steering circle and dot, *SHOOT* in range, and the
   launch zone scale (maximum and minimum range, target range caret).
@@ -223,7 +251,7 @@ the right one. The side stick is on the right console, the throttle on the left 
 
 | Up-front display, bottom row | Key | Function |
 |---|---|---|
-| MENU | Esc | Open or close the in-flight settings menu (chapter 3.8). |
+| MENU | Esc | Open or close the in-flight menu (chapter 3.8). |
 | VOL | Alt V | Sound level. |
 | TIME | Shift Z / Shift X | Time acceleration on/off. Acceleration ends automatically when a radar detects the aircraft or a weapon is released. |
 | STPT | F7 | Waypoints. |
@@ -290,7 +318,7 @@ Under the right MFD, right of the fuel quantity: **FUEL** (fuel in lbs divided b
 
 The F-16C has its own cockpit, laid out like the real Block 50's. Under the HUD the **up-front
 controls** stand out of the panel: the round override buttons along the top (**COM1** is the
-sound volume, **LIST** the settings menu, **A-A** and **A-G** the master modes; pressing A-A again
+sound volume, **MENU** the in-flight menu, **A-A** and **A-G** the master modes; pressing A-A again
 returns to NAV, pressing A-G again switches the bombsight between CCIP and CCRP) and the keypad with the real page labels, of which **1 T-ILS** (ILS),
 **4 STPT** (the WAY page), **6 TIME** (time acceleration) and **7 MARK** (designate) work, with
 **DCLT** (HUD declutter) and **NVG** right of them. The **DED** (data entry display) right of the
@@ -330,26 +358,28 @@ searching near the rim). Symbols: the SAM type (`2` SA-2, `10` SA-10, `N6` SA-N-
 searching, bright = tracking, a diamond marks the most dangerous one, a flashing circle a missile in
 the air.
 
-### 3.8 In-flight settings menu
+### 3.8 In-flight menu
 
 **Esc** (also Pause, Alt P, the gamepad's Start button, the **MENU** cap of the F-117A's up-front
-display or the F-16C's **LIST** key) opens the settings menu and pauses the flight: in VR a screen in front of the pilot, on
+display or the F-16C's **MENU** key) opens the menu and pauses the flight: in VR a screen in front of the pilot, on
 the desktop over the middle of the window. In VR, touch an
 entry with a fingertip and pull the trigger, or use a thumbstick and A / X. On the desktop, click
-an entry or use the arrow keys and Enter (gamepad: d-pad and A, B closes).
+an entry or use the arrow keys and Enter (gamepad: d-pad and A). Esc, BACK or the gamepad's B go
+back a page; on the first page they close the menu.
 
 | Entry | Function |
 |---|---|
-| Shaders | Modern (anti-aliasing, shading, haze) or classic flat shading. |
-| Shadows | Sun shadows on / off. |
-| Point lights | Cockpit lamps, explosions, flares and runway lights lighting the scene. |
-| Time of day | Modern (the sun and the moon move with the mission clock) or classic (chapter 1). |
-| Cockpit | Modern or classic panel (F-117A only). |
-| HUD | Modern (F-16 style) or classic HUD. |
-| Avionics | Modern (F-16 style MFD formats, chapter 4.1) or classic MFD pages. |
-| Cockpit size | VR only: size of the cockpit in the headset (70–150 %; at the default 100 % the F-117A's cockpit looks 60 % and the F-16C's 87 % of life size, which felt right); left / right or the < > halves. The world looks smaller by as much, so in the F-117A the cockpit is raised in VR until the runway looks as far below as from the real one (2.7 m). |
 | Resume | Closes the menu (as does Esc again). |
+| Options | The pages of the main menu's OPTIONS (chapter 1) that apply in flight, below. |
+| Key guide | The keys as bound, the mouse or the VR controllers. |
 | End mission | Ends the flight and goes to the debrief. |
+
+| Page | Entries |
+|---|---|
+| Game | *Cockpit* (modern or classic panel, F-117A only), *HUD*, *Avionics*, *Auto trim*, *Tooltips*, *Cockpit size*: VR only, the size of the cockpit in the headset (70–150 %; at the default 100 % the F-117A's cockpit looks 60 % and the F-16C's 87 % of life size, which felt right); left / right or the < > halves. The world looks smaller by as much, so in the F-117A the cockpit is raised in VR until the runway looks as far below as from the real one (2.7 m). The flight model and Tacview are chosen in the main menu. |
+| Graphics | *Shaders*, *Shadows*, *Point lights*, *Time of day*, *Sun and moon* (with the classic time of day). |
+| Sound | The *Master*, *Engine*, *Effects* and *Warnings* volumes in steps of 10 % (left / right or the < > halves), *Engine low-pass*. |
+| Controls | *Head tracking* (desktop), *Keys and joystick*: the input mapping (chapter 2) over the view, in VR on a panel in front of you (point a controller, the trigger clicks); DONE returns to the menu. The key guide. |
 
 Changes apply at once and are saved as the defaults for the next flight.
 
@@ -362,8 +392,10 @@ current waypoint highlighted), **MAP** (the route on the theater map with the ra
 ranges and your position) and **TARGET** (a close-up of the primary target's surroundings with a
 2 km scale and its grid reference, and the intelligence summary). In VR touch a tab with a
 fingertip; on the desktop click one. **K** shows the kneeboard large over the view on the desktop
-and turns its pages, the last one hides it again; in VR the *Kneeboard* action (bind it to a
-controller button in the input mapping) hides or shows the board. In VR you can also squeeze the
+and turns its pages, the last one hides it again; in VR **K** or the *Kneeboard* action (bind it
+to a controller button in the input mapping) hides or shows the board. An achieved objective is
+ticked on the BRIEF and TARGET pages and on the ORD page, and plays
+`assets/sounds/objective_complete.flac` if that file exists. In VR you can also squeeze the
 grip with a hand on the board to pick it up and put it anywhere in the cockpit: it stays floating
 where you let go (until the next flight).
 
@@ -464,11 +496,12 @@ symbols, so a turn doesn't take the cursor off its target.
 
 **Targeting pod.** The TGP follows the locked target (SLV); without one it looks ahead and down,
 or where the camera keys turn it. Every target key (B, T, the camera keys), a lock on the HSD and
-CZ put it back to SLV on the new lock. Made the SOI, the slew controls turn the pod itself (AREA,
+a display lock put it back to SLV on the new lock. Made the SOI, the slew controls turn the pod itself (AREA,
 slower when zoomed in); a moment after the slew stops it holds the ground point it looks at (PNT),
 wherever the aircraft flies. **Lock cursor target** then locks what is at that point (the ground
-itself if nothing is there) and the pod follows the lock again. **CZ** snaps the pod to the next
-ground target (as B; not in A-A, where the button is blank). **SP** (snowplow, with the pod the
+itself if nothing is there) and the pod follows the lock again. **CZ** (cursor zero) turns the pod to
+the current steerpoint and holds it there (PNT) as the SOI, to slew on from there or lock with
+**Lock cursor target** (not in A-A, where the button is blank). **SP** (snowplow, with the pod the
 SOI) drops the locks and points the pod straight ahead of the nose and a little down, turning with
 the aircraft without holding the ground or locking anything, until you slew it (the slew starts
 from there) or press a target key. The zoom button steps AUTO, 1X .. 6X; `[` / `]` (and Z / X
@@ -548,10 +581,10 @@ steady high tone when the target is in range: fire.
 | Penguin 3 / AGM-84A Harpoon | Anti-ship missiles, only against ships | 32 / 60 |
 | AGM-65D Maverick | Optical air-to-ground missile | 32 |
 | GBU-12 Paveway, Mk 20 Rockeye II, CBU-72 FAE | Guided bombs | 10 |
-| Durandal, Mk 82-1 Snakeye, Mk 20 Rockeye, Mk 35, Minelets | Retarded / cluster bombs | – |
-| Mk 82-0 Slick, Mk 122 Fireye | Free-fall bombs | – |
-| 135 mm camera | Reconnaissance photos of the target | – |
-| Extra fuel | 1900 lbs, transferred on release | – |
+| Durandal, Mk 82 Snakeye, Mk 20 Rockeye, Mk 35, ISCB-1 mines | Retarded / cluster bombs | – |
+| Mk 82 LDGP, Mk 122 Fireye | Free-fall bombs | – |
+| IR/optical camera | Reconnaissance photos of the target | – |
+| Fuel tank | 1900 lb, transferred on release | – |
 | AGM-114 Hellfire (AH-1Z) | Laser guided: flies to where the targeting pod looks | 8 |
 
 **Unguided bombs** leave with the aircraft's speed and direction and fall under gravity and
@@ -704,7 +737,7 @@ The input mapping (chapter 2) shows all keys and can bind them to joystick butto
 | Group | Action | Key |
 |---|---|---|
 | **Flight** | Stick (pitch / roll) | Arrow keys (rebindable); double-tap for full deflection |
-| | Rudder (yaw) left / right | Unbound by default; bind keys in the input mapping |
+| | Rudder (yaw) left / right | Q / E |
 | | Stick sensitivity | Ins |
 | | Throttle up / down | `=` / `-` |
 | | Full / idle throttle | Shift `=` / Shift `-` |
@@ -888,7 +921,7 @@ time. *Radar exposure* sums up the flight: the time any radar tracked you, the c
 detection and the radar that tracked you longest. Drag the map to pan it, turn the wheel (in VR,
 push the thumbstick) to zoom. *RESULTS* goes back to the statistics.
 
-**Tacview.** With *Tacview export* checked in the menu, every flight is also saved as a Tacview
+**Tacview.** With *Tacview export* checked in OPTIONS > GAME, every flight is also saved as a Tacview
 recording (`.acmi`) in the game's data folder under `tacview` (on Linux
 `~/.local/share/stealth-mission-89/tacview`, on Windows `%APPDATA%\stealth-mission-89\tacview`):
 your aircraft, the enemy aircraft and missiles, the radar sites and airfields. The theater is laid
@@ -906,7 +939,7 @@ the firewall; `--tacview-password <text>` makes Tacview give that password to jo
 
 **Career.** *Career* in the main menu keeps pilot records: enlist a pilot by name, then start a
 **tour of duty**, 12 sorties in the theater, situation and opponents chosen beside the records
-(fixed while the selected pilot is on a tour). The aircraft, realism, weather and classic / modern
+(fixed while the selected pilot is on a tour). The aircraft, realism and weather
 options there apply to every sortie. *Start tour* or *Fly next sortie* shows the sortie's briefing
 with PLAN ROUTE, LOADOUT and FLY; NEW SORTIE picks another one, BACK returns to the records. A
 sortie starts at its rolled time. In a tour:

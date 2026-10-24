@@ -1,6 +1,6 @@
 //! Sound effects, recorded from the AdLib driver into assets/sounds/.
 //!
-//! - Effects are requested by id with a priority (`makeSound(id, prio)`); they play when
+//! - Effects are requested by id with a priority (`PlaySound`); they play when
 //!   `prio >= 3 - level` (level 3 = all sounds, 2 = no engine, 1 = firing and explosions only,
 //!   0 = none; Alt-V cycles, with an extra step at level 3 that halves the engine first).
 //!   Gear, bay doors, the error buzz and speech bypass the level.
@@ -10,11 +10,26 @@
 //! - Samples are optional: `sfx_NN_*` / `speech_NN_*` (.flac) register under id NN, and a
 //!   requested id with no sample stays silent, so speech can be added later by dropping files in.
 //! - Radar warning tones come from `sounds/rwr/` instead of sounds 8 and 9.
+//! - The cannon (sound 6) holds a loop of its burst while it fires and plays the burst's decay
+//!   when it stops (`cannon_loop.flac`, `cannon_tail.flac`, tools/cut_cannon.py).
 //! - A fire on board sounds the fire warning siren (`fire_siren.flac`, tools/gen_fire_siren.py)
 //!   without a break until the fire is out (or the pilot has ejected).
+//! - The master caution (its cockpit light or key) silences the alarms sounding: the fire
+//!   siren until that fire is out, the stall horn and the radar warning tones while they keep
+//!   repeating (one that pauses for `ALARM_REARM` sounds again).
 //! - After ejecting the aircraft falls silent (engine, warnings, radio); the pilot hears the
 //!   ejection, explosions and flares, and on the ground the emergency beacon (`beacon.flac`, two
 //!   chirps every 3 s at half volume) until the rescue ends.
+//! - Volumes (the OPTIONS menus): a master volume times the channel's, engine (the flown
+//!   aircraft's and the others'), warnings (alarms, the fire siren, the Sidewinder tones) or
+//!   effects (everything else) (`Channel`).
+//! - Inside the aircraft (the cockpit views) the engine sounds (the drone, the spool up and
+//!   down, the helicopter's rotor and turbines) play through a low-pass filter (`muffle`).
+//! - A jet with `jet_engine.flac` and `jet_wind.flac` (tools/gen_aircraft_sounds.py) plays
+//!   them instead of the drone and the spool up and down: the engine pitched with
+//!   its rpm (winding up quickly from 0 when the throttle opens, idling in the air with it
+//!   closed, running down when it closes on the ground or the fuel runs out), the wind louder
+//!   with airspeed.
 //! - A helicopter has no engine drone: its rotor (`heli_rotor.flac`) plays at the rotor speed,
 //!   louder with the torque and in translational lift (the blade slap), over the turbines
 //!   (`heli_turbine.flac`) pitched up with the torque.
@@ -30,8 +45,8 @@
 use std::collections::HashMap;
 
 use bevy::audio::{
-    AudioSink, PlaybackMode, PlaybackSettings, SpatialAudioSink, SpatialListener, SpatialScale,
-    Volume,
+    AddAudioSource, AudioSink, PlaybackMode, PlaybackSettings, SpatialAudioSink, SpatialListener,
+    SpatialScale, Volume,
 };
 use bevy::prelude::*;
 use stealth_sim::{AircraftKind, fflags};
@@ -43,23 +58,36 @@ use crate::input::{Action, ActionEvent};
 use crate::settings::AppState;
 use crate::world::{FloatingOrigin, WorldPos, wu_to_bevy};
 
+mod muffle;
+
+use muffle::{Muffler, Pitch};
+
 pub struct SoundPlugin;
 
 impl Plugin for SoundPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<PlaySound>()
             .init_resource::<SoundLevel>()
+            .init_resource::<Alarms>()
+            .init_resource::<muffle::MuffledSounds>()
+            .add_audio_source::<muffle::Muffled>()
             .add_systems(Startup, load_bank)
+            .add_systems(OnEnter(AppState::Flight), muffle::reset)
             .add_systems(
                 Update,
                 (
+                    muffle::follow_view,
                     flight_sounds,
                     play_sounds,
+                    cannon,
                     engine_drone,
                     heli_sounds,
+                    jet_sounds,
                     beacon,
                     fire_siren,
                     sidewinder_tones,
+                    objective_sound,
+                    remix,
                 )
                     .chain()
                     .run_if(in_state(AppState::Flight)),
@@ -118,11 +146,103 @@ impl Default for SoundLevel {
 /// Engine drone volume at full level.
 const ENGINE_VOLUME: f32 = 0.8;
 
+/// What a sound is, for its volume (`Settings::*_volume`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Channel {
+    Engine,
+    Effects,
+    Warnings,
+}
+
+impl Channel {
+    /// The channel of an effect by id.
+    fn of(id: u8) -> Self {
+        if ENGINE_SFX.contains(&id) {
+            Channel::Engine
+        } else if ALARM_TONES.contains(&id) {
+            Channel::Warnings
+        } else {
+            Channel::Effects
+        }
+    }
+
+    /// The channel's volume: the master volume times its own.
+    pub fn gain(self, s: &crate::settings::Settings) -> f32 {
+        s.master_volume
+            * match self {
+                Channel::Engine => s.engine_volume,
+                Channel::Effects => s.effects_volume,
+                Channel::Warnings => s.warning_volume,
+            }
+    }
+}
+
+/// A sound played at a fixed volume (before its channel's gain), set again when the volumes
+/// change.
+#[derive(Component)]
+struct Mixed(Channel, f32);
+
+impl Mixed {
+    /// The playback settings with the volume mixed in.
+    fn settings(&self, s: &crate::settings::Settings, p: PlaybackSettings) -> PlaybackSettings {
+        p.with_volume(Volume::Linear(self.1 * self.0.gain(s)))
+    }
+}
+
+/// The volumes changed: the sounds playing at a fixed volume follow (the others set theirs every
+/// frame).
+fn remix(settings: Res<crate::settings::Settings>, mut q: Query<(&Mixed, &mut AudioSink)>) {
+    if !settings.is_changed() {
+        return;
+    }
+    for (m, mut sink) in &mut q {
+        sink.set_volume(Volume::Linear(m.1 * m.0.gain(&settings)));
+    }
+}
+
+/// The engine's spool up and down (filtered with the engine inside the aircraft).
+const ENGINE_SFX: [u8; 2] = [11, 12];
+
 /// The sounds still heard after ejecting: impact, explosion, the ejection, signal flare.
 const EJECTED_SOUNDS: [u8; 4] = [4, 5, 0x14, 0x1C];
 
 /// Fire warning siren volume.
 const SIREN_VOLUME: f32 = 0.35;
+
+/// The alarm tones the master caution silences: radar detection and missile warning (the
+/// AdLib ones), the stall horn and the radar warning tones.
+const ALARM_TONES: [u8; 8] = [8, 9, 14, 100, 101, 102, 103, 104];
+
+/// Seconds an alarm tone silenced by the master caution has to pause to sound again.
+const ALARM_REARM: f64 = 5.0;
+
+/// Alarms and the master caution.
+#[derive(Resource, Default)]
+struct Alarms {
+    /// Alarm tone ids: when each was last asked for (real seconds), and whether the master
+    /// caution silenced it.
+    tones: HashMap<u8, (f64, bool)>,
+    /// The fire siren is silenced until the fire is out.
+    fire_silenced: bool,
+}
+
+impl Alarms {
+    /// The master caution: silences the alarm tones heard lately, and the fire siren.
+    fn silence(&mut self, now: f64) {
+        self.fire_silenced = true;
+        for (last, quiet) in self.tones.values_mut() {
+            *quiet |= now - *last < ALARM_REARM;
+        }
+    }
+
+    /// An alarm tone is asked for: false while it is silenced.
+    fn sounds(&mut self, id: u8, now: f64) -> bool {
+        let (last, quiet) = self.tones.entry(id).or_insert((now, false));
+        *quiet &= now - *last < ALARM_REARM;
+        *last = now;
+        !*quiet
+    }
+}
 
 /// Emergency beacon interval (real seconds) and volume.
 const BEACON_INTERVAL: f32 = 3.0;
@@ -152,10 +272,14 @@ struct SoundBank {
     engine: Vec<(f32, Handle<AudioSource>)>,
     beacon: Option<Handle<AudioSource>>,
     siren: Option<Handle<AudioSource>>,
+    /// The cannon's loop and tail.
+    cannon: Option<(Handle<AudioSource>, Handle<AudioSource>)>,
     jet: Option<Handle<AudioSource>>,
     helicopter: Option<Handle<AudioSource>>,
     heli_rotor: Option<Handle<AudioSource>>,
     heli_turbine: Option<Handle<AudioSource>>,
+    /// The flown jet's engine and wind loops.
+    jet_loops: Option<(Handle<AudioSource>, Handle<AudioSource>)>,
     /// The Sidewinder seeker's loops, by `SeekerTone`.
     aim9: [Option<Handle<AudioSource>>; 3],
 }
@@ -166,6 +290,13 @@ struct OneShot(u8);
 
 #[derive(Component)]
 struct Beacon;
+
+/// The cannon's loop, while it fires.
+#[derive(Component)]
+struct CannonLoop;
+
+/// Sound id of the cannon.
+const CANNON: u8 = 6;
 
 /// The fire warning siren's loop.
 #[derive(Component)]
@@ -211,8 +342,30 @@ struct HeliLoop(bool);
 const ROTOR_VOLUME: (f32, f32, f32) = (0.45, 0.35, 0.2);
 const TURBINE_VOLUME: f32 = 0.35;
 
+/// The flown jet's loops: engine (false) and wind (true).
+#[derive(Component)]
+struct JetLoop(bool);
+
+/// Jet engine rpm (share of full): at idle thrust, its rise per second while starting, and
+/// the time constants (s) following the thrust and running down without it.
+const JET_IDLE: f32 = 0.6;
+const JET_START_RATE: f32 = 0.45;
+const JET_SPOOL_TAU: f32 = 0.6;
+const JET_RUNDOWN_TAU: f32 = 1.8;
+/// Jet loop volumes at full level: the engine at full rpm, the wind at `JET_WIND_KNOTS` and
+/// above.
+const JET_ENGINE_VOLUME: f32 = 0.55;
+/// The rpm by which the engine's loop has faded in on start.
+const JET_FADE_IN: f32 = 0.2;
+const JET_WIND_VOLUME: f32 = 0.45;
+const JET_WIND_KNOTS: f32 = 600.0;
+/// The engine loop's playback speed at idle rpm (1 at full): an octave between them.
+const JET_IDLE_PITCH: f32 = 0.5;
+
 /// Sound id of an anti-aircraft shell burst nearby (not an AdLib sound).
 pub const AIRBURST: u8 = 110;
+/// Sound id of an objective achieved (`sounds/objective_complete.flac`, optional).
+pub const OBJECTIVE: u8 = 111;
 
 fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     let mut bank = SoundBank::default();
@@ -251,12 +404,17 @@ fn load_bank(mut commands: Commands, server: Res<AssetServer>) {
     if let Some(h) = optional("airburst.flac") {
         bank.sfx.entry(AIRBURST).or_default().push(h);
     }
+    if let Some(h) = optional("objective_complete.flac") {
+        bank.sfx.entry(OBJECTIVE).or_default().push(h);
+    }
     bank.beacon = optional("beacon.flac");
     bank.siren = optional("fire_siren.flac");
+    bank.cannon = optional("cannon_loop.flac").zip(optional("cannon_tail.flac"));
     bank.jet = optional("jet.flac");
     bank.helicopter = optional("helicopter.flac");
     bank.heli_rotor = optional("heli_rotor.flac");
     bank.heli_turbine = optional("heli_turbine.flac");
+    bank.jet_loops = optional("jet_engine.flac").zip(optional("jet_wind.flac"));
     bank.aim9 = AIM9_FILES.map(optional);
     bank.engine.sort_by(|a, b| a.0.total_cmp(&b.0));
     commands.insert_resource(bank);
@@ -277,14 +435,29 @@ fn play_sounds(
     combat: Option<Res<crate::combat::Combat>>,
     playing: Query<(Entity, &OneShot)>,
     mut silenced: Local<bool>,
+    mut alarms: ResMut<Alarms>,
+    real: Res<Time<Real>>,
+    mut muffler: Muffler,
+    settings: Res<crate::settings::Settings>,
 ) {
+    let now = real.elapsed_secs_f64();
     for ActionEvent(a) in actions.read() {
-        if *a == Action::Volume {
-            *level = match *level {
-                SoundLevel(3, false) => SoundLevel(3, true),
-                SoundLevel(0, _) => SoundLevel(3, false),
-                SoundLevel(l, _) => SoundLevel(l - 1, false),
-            };
+        match a {
+            Action::Volume => {
+                *level = match *level {
+                    SoundLevel(3, false) => SoundLevel(3, true),
+                    SoundLevel(0, _) => SoundLevel(3, false),
+                    SoundLevel(l, _) => SoundLevel(l - 1, false),
+                };
+            }
+            Action::MasterCaution => {
+                info!("master caution: alarms silenced");
+                alarms.silence(now);
+                for (e, _) in playing.iter().filter(|(_, p)| ALARM_TONES.contains(&p.0)) {
+                    commands.entity(e).despawn();
+                }
+            }
+            _ => {}
         }
     }
     // Ejecting cuts off the aircraft's sounds at once.
@@ -302,17 +475,89 @@ fn play_sounds(
         return;
     };
     for r in requests.read() {
+        if ALARM_TONES.contains(&r.id) && !alarms.sounds(r.id, now) {
+            continue;
+        }
         let allowed =
             r.priority == DIRECT || (level.0 > 0 && r.priority as i32 >= 3 - level.0 as i32);
         if !allowed || !survives(r.id) || playing.iter().any(|(_, p)| p.0 == r.id && survives(p.0))
         {
             continue;
         }
+        // The jet's engine loop spools up and down itself.
+        if ENGINE_SFX.contains(&r.id) && bank.jet_loops.is_some() {
+            continue;
+        }
+        // The cannon's loop and tail take its place.
+        if r.id == CANNON && bank.cannon.is_some() {
+            continue;
+        }
         let Some(variants) = bank.sfx.get(&r.id) else { continue };
-        let handle = variants[rand::random_range(0..variants.len())].clone();
+        let handle = &variants[rand::random_range(0..variants.len())];
         debug!("sound {} (priority {})", r.id, r.priority);
-        commands.spawn((AudioPlayer(handle), PlaybackSettings::DESPAWN, OneShot(r.id)));
+        let mix = Mixed(Channel::of(r.id), 1.0);
+        let playback = mix.settings(&settings, PlaybackSettings::DESPAWN);
+        let muffled = ENGINE_SFX.contains(&r.id).then(|| muffler.get(handle)).flatten();
+        match muffled {
+            Some(h) => commands.spawn((AudioPlayer(h), playback, mix, OneShot(r.id))),
+            None => commands.spawn((AudioPlayer(handle.clone()), playback, mix, OneShot(r.id))),
+        };
     }
+}
+
+/// The cannon: its loop while it fires (held while the flight is paused), then the tail. Ejecting
+/// cuts it off.
+fn cannon(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    combat: Option<Res<crate::combat::Combat>>,
+    virt: Res<Time<Virtual>>,
+    playing: Query<(Entity, Option<&AudioSink>), With<CannonLoop>>,
+    settings: Res<crate::settings::Settings>,
+) {
+    let mix = || Mixed(Channel::Effects, 1.0);
+    let Some((looped, tail)) = bank.as_ref().and_then(|b| b.cannon.clone()) else { return };
+    let ejected = has_ejected(combat.as_deref());
+    let firing = combat
+        .as_deref()
+        .is_some_and(|c| c.sim.gun_firing() && c.end.is_none() && !c.sim.player_absent())
+        && !ejected
+        && level.0 > 0;
+    if !firing {
+        if !playing.is_empty() && !ejected && level.0 > 0 {
+            let playback = mix().settings(&settings, PlaybackSettings::DESPAWN);
+            commands.spawn((AudioPlayer(tail), playback, mix(), OneShot(CANNON)));
+        }
+        for (e, _) in &playing {
+            commands.entity(e).despawn();
+        }
+        return;
+    }
+    match playing.single() {
+        Ok((_, Some(sink))) => {
+            if virt.is_paused() != sink.is_paused() {
+                if virt.is_paused() { sink.pause() } else { sink.play() }
+            }
+        }
+        Ok(_) => {}
+        Err(_) => {
+            let playback = mix().settings(&settings, PlaybackSettings::LOOP);
+            commands.spawn((AudioPlayer(looped), playback, mix(), CannonLoop));
+        }
+    }
+}
+
+/// An objective just achieved (ticked in the mission orders): its sound, if there is one.
+fn objective_sound(
+    orders: Res<crate::mfd::MissionOrders>,
+    mut was: Local<[bool; 2]>,
+    mut sounds: MessageWriter<PlaySound>,
+) {
+    if (0..2).any(|k| orders.done[k] && !was[k]) {
+        sounds.write(PlaySound { id: OBJECTIVE, priority: 3 });
+    }
+    *was = orders.done;
 }
 
 /// Sounds triggered from the flight step and frame update.
@@ -387,6 +632,7 @@ fn flight_sounds(
     *prev = Some((a.on_ground, a.thrust));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn engine_drone(
     mut commands: Commands,
     bank: Option<Res<SoundBank>>,
@@ -394,7 +640,8 @@ fn engine_drone(
     player: Query<&Aircraft, With<Player>>,
     combat: Option<Res<crate::combat::Combat>>,
     settings: Res<crate::settings::Settings>,
-    mut drone: Query<(Entity, &EngineDrone, Option<&mut AudioSink>)>,
+    mut drone: Query<(Entity, &EngineDrone, &Pitch, Option<&mut AudioSink>)>,
+    mut muffler: Muffler,
 ) {
     let Some(bank) = bank else { return };
     let Ok(a) = player.single() else { return };
@@ -405,54 +652,61 @@ fn engine_drone(
         && knots >= 2.0
         && a.ended.is_none()
         && !has_ejected(combat.as_deref());
-    if !on || bank.engine.is_empty() {
-        for (e, _, _) in &drone {
+    if !on || bank.engine.is_empty() || bank.jet_loops.is_some() {
+        for (e, ..) in &drone {
             commands.entity(e).despawn();
         }
         return;
     }
     // Nearest recording at or below the airspeed, pitched to the exact frequency.
     let (sample_knots, handle) =
-        bank.engine.iter().rev().find(|(k, _)| *k <= knots).unwrap_or(&bank.engine[0]).clone();
+        bank.engine.iter().rev().find(|(k, _)| *k <= knots).unwrap_or(&bank.engine[0]);
+    let sample_knots = *sample_knots;
     let freq = |k: f32| 0x83 as f32 + ((k as u32) & !1) as f32;
     let speed = freq(knots) / freq(sample_knots);
-    let volume = if level.1 { ENGINE_VOLUME * 0.5 } else { ENGINE_VOLUME };
+    let volume =
+        if level.1 { ENGINE_VOLUME * 0.5 } else { ENGINE_VOLUME } * Channel::Engine.gain(&settings);
+    let marker = EngineDrone { sample_knots };
     match drone.single_mut() {
-        Ok((e, d, sink)) if d.sample_knots != sample_knots => {
-            let _ = sink;
+        Ok((e, d, ..)) if d.sample_knots != sample_knots => {
             commands.entity(e).despawn();
-            spawn_drone(&mut commands, handle, sample_knots, speed, volume);
+            spawn_loop(&mut commands, &mut muffler, handle, speed, volume, marker);
         }
-        Ok((_, _, Some(mut sink))) => {
-            sink.set_speed(speed);
+        Ok((_, _, pitch, Some(mut sink))) => {
+            pitch.set(speed);
             sink.set_volume(Volume::Linear(volume));
         }
         Ok(_) => {}
-        Err(_) => spawn_drone(&mut commands, handle, sample_knots, speed, volume),
+        Err(_) => spawn_loop(&mut commands, &mut muffler, handle, speed, volume, marker),
     }
 }
 
-fn spawn_drone(
+/// An engine loop through the filter, its speed set with its `Pitch`.
+fn spawn_loop(
     commands: &mut Commands,
-    handle: Handle<AudioSource>,
-    sample_knots: f32,
+    muffler: &mut Muffler,
+    handle: &Handle<AudioSource>,
     speed: f32,
     volume: f32,
+    marker: impl Bundle,
 ) {
+    let Some((handle, pitch)) = muffler.looped(handle, speed) else { return };
     commands.spawn((
         AudioPlayer(handle),
         PlaybackSettings {
-            mode: PlaybackMode::Loop,
+            // The filtered sound loops itself.
+            mode: PlaybackMode::Once,
             volume: Volume::Linear(volume),
-            speed,
             ..default()
         },
-        EngineDrone { sample_knots },
+        pitch,
+        marker,
     ));
 }
 
 /// The flown helicopter's rotor and turbines (instead of the engine drone), while the rotor
 /// turns.
+#[allow(clippy::too_many_arguments)]
 fn heli_sounds(
     mut commands: Commands,
     bank: Option<Res<SoundBank>>,
@@ -460,7 +714,8 @@ fn heli_sounds(
     player: Query<&Aircraft, With<Player>>,
     combat: Option<Res<crate::combat::Combat>>,
     settings: Res<crate::settings::Settings>,
-    mut loops: Query<(Entity, &HeliLoop, Option<&mut AudioSink>)>,
+    mut loops: Query<(Entity, &HeliLoop, &Pitch, Option<&mut AudioSink>)>,
+    mut muffler: Muffler,
 ) {
     let Some(bank) = bank else { return };
     let Ok(a) = player.single() else { return };
@@ -476,7 +731,7 @@ fn heli_sounds(
         }
         return;
     }
-    let half = if level.1 { 0.5 } else { 1.0 };
+    let half = if level.1 { 0.5 } else { 1.0 } * Channel::Engine.gain(&settings);
     let torque = a.torque().clamp(0.0, 1.2);
     let rotor = (
         nr.max(0.3),
@@ -486,32 +741,105 @@ fn heli_sounds(
     // The turbines run down with the fuel.
     let turbine = (0.85 + 0.2 * torque, if a.fuel > 0.0 { half * TURBINE_VOLUME } else { 0.0 });
     let mut have = [false; 2];
-    for (_, l, sink) in &mut loops {
+    for (_, l, pitch, sink) in &mut loops {
         have[l.0 as usize] = true;
         let (speed, volume) = if l.0 { turbine } else { rotor };
+        pitch.set(speed);
         if let Some(mut sink) = sink {
-            sink.set_speed(speed);
             sink.set_volume(Volume::Linear(volume));
         }
     }
     for (turbines, handle) in [(false, &bank.heli_rotor), (true, &bank.heli_turbine)] {
-        let Some(handle) = handle.clone().filter(|_| !have[turbines as usize]) else { continue };
+        let Some(handle) = handle.as_ref().filter(|_| !have[turbines as usize]) else { continue };
         let (speed, volume) = if turbines { turbine } else { rotor };
-        commands.spawn((
-            AudioPlayer(handle),
-            PlaybackSettings {
-                mode: PlaybackMode::Loop,
-                volume: Volume::Linear(volume),
-                speed,
-                ..default()
-            },
-            HeliLoop(turbines),
-        ));
+        spawn_loop(&mut commands, &mut muffler, handle, speed, volume, HeliLoop(turbines));
+    }
+}
+
+/// The flown jet's engine (pitched with its rpm) and wind (louder with airspeed), instead of
+/// the engine drone.
+#[allow(clippy::too_many_arguments)]
+fn jet_sounds(
+    mut commands: Commands,
+    bank: Option<Res<SoundBank>>,
+    level: Res<SoundLevel>,
+    player: Query<&Aircraft, With<Player>>,
+    combat: Option<Res<crate::combat::Combat>>,
+    settings: Res<crate::settings::Settings>,
+    time: Res<Time>,
+    mut rpm: Local<f32>,
+    mut loops: Query<(Entity, &JetLoop, &Pitch, Option<&mut AudioSink>)>,
+    mut muffler: Muffler,
+) {
+    let Some((engine, wind)) = bank.as_ref().and_then(|b| b.jet_loops.clone()) else { return };
+    let Ok(a) = player.single() else { return };
+    let on = level.0 == 3
+        && !settings.aircraft.spec().helicopter
+        && a.ended.is_none()
+        && !has_ejected(combat.as_deref());
+    if !on {
+        *rpm = 0.0;
+        for (e, ..) in &loops {
+            commands.entity(e).despawn();
+        }
+        return;
+    }
+    // The engine runs with fuel left and the throttle open (in the air also closed, at idle);
+    // it winds up to idle at a steady rate, then follows the thrust.
+    let dt = time.delta_secs();
+    let running = (a.set_thrust > 0.0 || !a.on_ground) && a.fuel > 0.0;
+    let target = JET_IDLE + (1.0 - JET_IDLE) * (a.thrust / 100.0).clamp(0.0, 1.0);
+    // A flight starting in the air starts with the engine running.
+    *rpm = if a.time < 0.2 {
+        if running { target } else { 0.0 }
+    } else if !running {
+        *rpm * (-dt / JET_RUNDOWN_TAU).exp()
+    } else if *rpm < JET_IDLE {
+        (*rpm + JET_START_RATE * dt).min(JET_IDLE)
+    } else {
+        target + (*rpm - target) * (-dt / JET_SPOOL_TAU).exp()
+    };
+    let half = if level.1 { 0.5 } else { 1.0 } * Channel::Engine.gain(&settings);
+    let n = *rpm;
+    // Mostly the pitch follows the rpm: the volume only fades in over the first part of the
+    // start and swells a little towards full rpm.
+    let pitch = if n < JET_IDLE {
+        JET_IDLE_PITCH * n / JET_IDLE
+    } else {
+        JET_IDLE_PITCH + (1.0 - JET_IDLE_PITCH) * (n - JET_IDLE) / (1.0 - JET_IDLE)
+    };
+    let engine_mix = (
+        pitch.max(0.05),
+        half * JET_ENGINE_VOLUME * (n / JET_FADE_IN).min(1.0) * (0.85 + 0.15 * n),
+    );
+    let airspeed = (a.knots() / JET_WIND_KNOTS).min(1.0);
+    let wind_mix = (0.9 + 0.15 * airspeed, half * JET_WIND_VOLUME * airspeed.powf(1.5));
+    let mut have = [false; 2];
+    for (e, l, pitch, sink) in &mut loops {
+        let (speed, volume) = if l.0 { wind_mix } else { engine_mix };
+        // The engine's loop goes once it has run down.
+        if !l.0 && n < 0.01 {
+            commands.entity(e).despawn();
+            continue;
+        }
+        have[l.0 as usize] = true;
+        pitch.set(speed);
+        if let Some(mut sink) = sink {
+            sink.set_volume(Volume::Linear(volume));
+        }
+    }
+    for (is_wind, handle) in [(false, &engine), (true, &wind)] {
+        if have[is_wind as usize] || (!is_wind && n < 0.01) {
+            continue;
+        }
+        let (speed, volume) = if is_wind { wind_mix } else { engine_mix };
+        spawn_loop(&mut commands, &mut muffler, handle, speed, volume, JetLoop(is_wind));
     }
 }
 
 /// The emergency beacon of the pilot on the ground waiting for the rescue: the first chirps on
 /// landing, then every `BEACON_INTERVAL` (real time, held while the flight is paused).
+#[allow(clippy::too_many_arguments)]
 fn beacon(
     mut commands: Commands,
     bank: Option<Res<SoundBank>>,
@@ -520,6 +848,7 @@ fn beacon(
     real: Res<Time<Real>>,
     virt: Res<Time<Virtual>>,
     mut wait: Local<f32>,
+    settings: Res<crate::settings::Settings>,
 ) {
     let Some(handle) = bank.as_ref().and_then(|b| b.beacon.clone()) else { return };
     let waiting = combat.is_some_and(|c| c.sim.csar().is_some() && c.end.is_none());
@@ -534,17 +863,16 @@ fn beacon(
     if *wait <= 0.0 {
         *wait = BEACON_INTERVAL;
         if level.0 > 0 {
-            commands.spawn((
-                AudioPlayer(handle),
-                PlaybackSettings::DESPAWN.with_volume(Volume::Linear(BEACON_VOLUME)),
-                Beacon,
-            ));
+            let mix = Mixed(Channel::Effects, BEACON_VOLUME);
+            let playback = mix.settings(&settings, PlaybackSettings::DESPAWN);
+            commands.spawn((AudioPlayer(handle), playback, mix, Beacon));
         }
     }
 }
 
 /// The fire warning: a siren sounding without a break while the aircraft is on fire (held while
 /// the flight is paused).
+#[allow(clippy::too_many_arguments)]
 fn fire_siren(
     mut commands: Commands,
     bank: Option<Res<SoundBank>>,
@@ -553,14 +881,22 @@ fn fire_siren(
     player: Query<&Aircraft, With<Player>>,
     virt: Res<Time<Virtual>>,
     siren: Query<(Entity, Option<&AudioSink>), With<FireSiren>>,
+    mut alarms: ResMut<Alarms>,
+    settings: Res<crate::settings::Settings>,
 ) {
+    let on_fire = combat
+        .as_deref()
+        .is_some_and(|c| c.sim.damage_effects().bits & stealth_sim::dmg::FIRE != 0);
+    // The master caution silences this fire only.
+    if !on_fire && alarms.fire_silenced {
+        alarms.fire_silenced = false;
+    }
     // Out of the aircraft: ejected, or (campaign) back at the board with the damage of the
     // sortie still on record until the next one.
-    let burning = combat.as_deref().is_some_and(|c| {
-        c.sim.damage_effects().bits & stealth_sim::dmg::FIRE != 0
-            && c.end.is_none()
-            && !c.sim.player_absent()
-    }) && !has_ejected(combat.as_deref())
+    let burning = on_fire
+        && combat.as_deref().is_some_and(|c| c.end.is_none() && !c.sim.player_absent())
+        && !alarms.fire_silenced
+        && !has_ejected(combat.as_deref())
         && player.single().is_ok_and(|a| a.ended.is_none())
         && level.0 > 0;
     let Some(handle) = bank.as_ref().and_then(|b| b.siren.clone()).filter(|_| burning) else {
@@ -577,15 +913,9 @@ fn fire_siren(
         }
         Ok(_) => {}
         Err(_) => {
-            commands.spawn((
-                AudioPlayer(handle),
-                PlaybackSettings {
-                    mode: PlaybackMode::Loop,
-                    volume: Volume::Linear(SIREN_VOLUME),
-                    ..default()
-                },
-                FireSiren,
-            ));
+            let mix = Mixed(Channel::Warnings, SIREN_VOLUME);
+            let playback = mix.settings(&settings, PlaybackSettings::LOOP);
+            commands.spawn((AudioPlayer(handle), playback, mix, FireSiren));
         }
     }
 }
@@ -604,6 +934,7 @@ fn sidewinder_tones(
     virt: Res<Time<Virtual>>,
     mut loops: Query<(Entity, &SeekerTone, Option<&mut AudioSink>)>,
     mut held: Local<((bool, bool), f32)>,
+    settings: Res<crate::settings::Settings>,
 ) {
     // None: silent; Some(false): growl; Some(true): lock tone.
     let state = combat.as_deref().and_then(|c| {
@@ -659,15 +990,9 @@ fn sidewinder_tones(
     }
     if let Some(handle) = bank.as_ref().and_then(|b| b.aim9[tone].clone()) {
         debug!("sidewinder {}", AIM9_FILES[tone]);
-        commands.spawn((
-            AudioPlayer(handle),
-            PlaybackSettings {
-                mode: PlaybackMode::Loop,
-                volume: Volume::Linear(SEEKER_VOLUME),
-                ..default()
-            },
-            SeekerTone(tone),
-        ));
+        let mix = Mixed(Channel::Warnings, SEEKER_VOLUME);
+        let playback = mix.settings(&settings, PlaybackSettings::LOOP);
+        commands.spawn((AudioPlayer(handle), playback, mix, SeekerTone(tone)));
     }
 }
 
@@ -689,7 +1014,9 @@ fn distant_aircraft(
         &mut WorldPos,
         Option<&mut SpatialAudioSink>,
     )>,
+    settings: Res<crate::settings::Settings>,
 ) {
+    let gain = Channel::Engine.gain(&settings);
     let heard = level.0 == 3
         && has_ejected(combat.as_deref())
         && combat.as_ref().is_some_and(|c| c.end.is_none());
@@ -760,7 +1087,7 @@ fn distant_aircraft(
             continue;
         }
         sink.play();
-        sink.set_volume(Volume::Linear(distant_volume(helicopter, dist)));
+        sink.set_volume(Volume::Linear(distant_volume(helicopter, dist) * gain));
         sink.set_speed(unit_pitch(d.unit) * d.doppler);
     }
     for &(unit, helicopter, p, dist) in heard.iter().filter(|h| !have.contains(&h.0)) {
@@ -771,7 +1098,7 @@ fn distant_aircraft(
             AudioPlayer(handle),
             PlaybackSettings {
                 mode: PlaybackMode::Loop,
-                volume: Volume::Linear(distant_volume(helicopter, dist)),
+                volume: Volume::Linear(distant_volume(helicopter, dist) * gain),
                 speed: unit_pitch(unit),
                 spatial: true,
                 // Positions shrunk to within rodio's unit distance: it only pans, the volume
@@ -806,13 +1133,37 @@ type FlightSound = Or<(
     With<OneShot>,
     With<EngineDrone>,
     With<HeliLoop>,
+    With<JetLoop>,
     With<Beacon>,
     With<FireSiren>,
+    With<CannonLoop>,
     With<DistantAircraft>,
 )>;
 
 fn stop_all(mut commands: Commands, q: Query<Entity, FlightSound>) {
     for e in &q {
         commands.entity(e).despawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The master caution silences the tones sounding while they repeat; a tone that pauses,
+    /// or one not heard before, sounds again.
+    #[test]
+    fn master_caution_silences_alarms() {
+        let mut a = Alarms::default();
+        assert!(a.sounds(14, 0.0));
+        assert!(a.sounds(103, 0.5));
+        a.silence(1.0);
+        assert!(a.fire_silenced);
+        assert!(!a.sounds(14, 1.1));
+        assert!(!a.sounds(14, 4.0));
+        assert!(!a.sounds(103, 5.0));
+        assert!(a.sounds(101, 5.0), "a new tone");
+        assert!(a.sounds(14, 4.0 + ALARM_REARM + 0.1), "the stall horn after a pause");
+        assert!(a.sounds(103, 20.0), "a new launch");
     }
 }

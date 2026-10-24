@@ -4,7 +4,8 @@
 //! In VR the eye camera entity is the XR tracking root (the headset cameras are its children),
 //! so the same rig carries both. External views move the camera off the aircraft instead.
 //! Cockpit views add a free look (`HeadLook`, mouse on the desktop), the tracked head pose
-//! (`headtrack`, desktop) and `RigOffset` (VR recentring) to the head.
+//! (`headtrack`, desktop) and `RigOffset` (VR recentring) to the head. The free view
+//! (`FreeView`, desktop) leaves the aircraft: the keys move it, the mouse turns it.
 
 use bevy::math::DVec3;
 use bevy::prelude::*;
@@ -23,10 +24,11 @@ impl Plugin for CameraPlugin {
             .init_resource::<RigOffset>()
             .init_resource::<XrRoot>()
             .init_resource::<WeaponCam>()
+            .init_resource::<FreeView>()
             // The weapon view after the combat step, on the weapon's pose drawn this frame.
             .add_systems(
                 Update,
-                (track_weapon, place_weapon_camera)
+                (track_weapon, place_weapon_camera, place_free_camera)
                     .chain()
                     .after(RigSystems)
                     .after(crate::combat::CombatSystems)
@@ -66,7 +68,35 @@ pub enum View {
     /// Behind one of the player's missiles or bombs in flight, then on its impact point
     /// (`WeaponCam`).
     Weapon,
+    /// A camera flown about the world with the keys and turned with the mouse (`FreeView`).
+    Free,
 }
+
+/// The free view: keys (`FREE_KEYS`) move it along where it looks, Shift faster, Ctrl slower;
+/// the right mouse button held turns it; the mouse wheel zooms (`ViewState::magnify`). It
+/// starts where the view was.
+#[derive(Resource, Default)]
+pub struct FreeView {
+    /// Bevy world position, heading and pitch (radians).
+    pos: DVec3,
+    yaw: f32,
+    pitch: f32,
+    /// Just switched to: take the position and direction of the view before it.
+    fresh: bool,
+    /// The view to return to with the free view key.
+    back_to: View,
+}
+
+/// The free view's movement keys: forward, back, left, right, down, up (bound to the aircraft,
+/// they do nothing there in the free view; with Alt they still do).
+pub const FREE_KEYS: [KeyCode; 6] =
+    [KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD, KeyCode::KeyQ, KeyCode::KeyE];
+/// Free view speed (m/s), times this with Shift held and with Ctrl held.
+const FREE_SPEED: f64 = 100.0;
+const FREE_FAST: f64 = 10.0;
+const FREE_SLOW: f64 = 0.1;
+/// Free view zoom: magnification range (below 1 wider than the normal view).
+pub const FREE_MAGNIFY: std::ops::RangeInclusive<f32> = 0.5..=12.0;
 
 /// The weapon followed in `View::Weapon`.
 #[derive(Resource, Default)]
@@ -297,6 +327,8 @@ fn switch_view(
     mut actions: MessageReader<ActionEvent>,
     mut state: ResMut<ViewState>,
     mut weapon: ResMut<WeaponCam>,
+    mut free: ResMut<FreeView>,
+    settings: Res<crate::settings::Settings>,
     combat: Option<Res<crate::combat::Combat>>,
 ) {
     if combat.as_ref().is_some_and(|c| c.sim.chute().is_some()) {
@@ -317,6 +349,18 @@ fn switch_view(
             Action::ViewSide => state.view = View::Side,
             Action::ViewTactical | Action::ViewInverseTactical => state.view = View::Tactical,
             Action::ViewMissile => follow_next_weapon(&mut state, &mut weapon, combat.as_deref()),
+            // The headset is the camera in VR.
+            Action::ViewFree if !settings.vr => {
+                if state.view == View::Free {
+                    state.view = free.back_to;
+                } else {
+                    free.back_to =
+                        if state.view == View::Weapon { weapon.back_to } else { state.view };
+                    free.fresh = true;
+                    state.view = View::Free;
+                }
+                state.magnify = 1.0;
+            }
             Action::Zoom => state.zoom = (state.zoom + 1).min(3),
             Action::Unzoom => state.zoom = (state.zoom - 1).max(-MAX_UNZOOM),
             Action::WideAngle => state.wide = !state.wide,
@@ -498,6 +542,87 @@ fn place_weapon_camera(
     *cam_tf = Transform::IDENTITY;
 }
 
+/// The free view's camera: moved by the keys, turned by the mouse with the right button held,
+/// zoomed by the wheel; placed relative to the aircraft (the rig's parent) like the weapon view.
+#[allow(clippy::too_many_arguments)]
+fn place_free_camera(
+    mut state: ResMut<ViewState>,
+    mut free: ResMut<FreeView>,
+    keys: Res<ButtonInput<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    motion: Res<bevy::input::mouse::AccumulatedMouseMotion>,
+    scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
+    time: Res<Time<Real>>,
+    block: Res<crate::input::InputBlock>,
+    aircraft: Query<(&Aircraft, &WorldPos), With<Player>>,
+    mut head: Query<&mut Transform, (With<HeadAnchor>, Without<EyeCamera>)>,
+    mut cam: Query<&mut Transform, With<EyeCamera>>,
+    mut viewpoint: ResMut<crate::palette::Viewpoint>,
+) {
+    if state.view != View::Free {
+        return;
+    }
+    let (Ok(mut head), Ok(mut cam_tf), Ok((a, pos))) =
+        (head.single_mut(), cam.single_mut(), aircraft.single())
+    else {
+        return;
+    };
+    if std::mem::take(&mut free.fresh) {
+        // Where the last view's camera is (the rig still has its pose).
+        let local = head.mul_transform(*cam_tf);
+        free.pos = pos.0 + (a.orientation * local.translation).as_dvec3();
+        let forward = a.orientation * local.rotation * Vec3::NEG_Z;
+        free.yaw = (-forward.x).atan2(-forward.z);
+        free.pitch = forward.y.clamp(-1.0, 1.0).asin();
+    }
+    if !block.0 {
+        // Slower when zoomed in, so the view moves as far on the screen per mouse move.
+        if buttons.pressed(MouseButton::Right) {
+            let k = 0.004 / state.magnify;
+            free.yaw -= motion.delta.x * k;
+            free.pitch = (free.pitch - motion.delta.y * k).clamp(-1.55, 1.55);
+        }
+        let notches = crate::key_guide::wheel_notches(&scroll);
+        if notches != 0.0 {
+            state.magnify = (state.magnify * 1.2f32.powf(notches))
+                .clamp(*FREE_MAGNIFY.start(), *FREE_MAGNIFY.end());
+        }
+    }
+    let rot = Quat::from_euler(EulerRot::YXZ, free.yaw, free.pitch, 0.0);
+    let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
+    if !block.0 && !alt {
+        let mut dir = Vec3::ZERO;
+        for (k, d) in FREE_KEYS.iter().zip([
+            rot * Vec3::NEG_Z,
+            rot * Vec3::Z,
+            rot * Vec3::NEG_X,
+            rot * Vec3::X,
+            Vec3::NEG_Y,
+            Vec3::Y,
+        ]) {
+            if keys.pressed(*k) {
+                dir += d;
+            }
+        }
+        let mut speed = FREE_SPEED;
+        if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) {
+            speed *= FREE_FAST;
+        }
+        if keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]) {
+            speed *= FREE_SLOW;
+        }
+        free.pos += dir.normalize_or_zero().as_dvec3() * speed * time.delta_secs_f64();
+    }
+    // At least 1 m above sea level.
+    let floor = crate::world::wu_to_bevy(0.0, 0.0, 0.0).y + 1.0;
+    free.pos.y = free.pos.y.max(floor);
+    viewpoint.altitude_wu = (free.pos.y / crate::world::WU) as f32;
+    let local = a.orientation.inverse();
+    *head = Transform::from_translation(local * (free.pos - pos.0).as_vec3())
+        .with_rotation(local * rot);
+    *cam_tf = Transform::IDENTITY;
+}
+
 #[allow(clippy::too_many_arguments)]
 fn update_rig(
     state: Res<ViewState>,
@@ -580,8 +705,8 @@ fn update_rig(
                 .with_rotation(local * world_rot);
             *cam_tf = offset.0;
         }
-        // Placed by `place_weapon_camera`.
-        View::Weapon => {}
+        // Placed by `place_weapon_camera` and `place_free_camera`.
+        View::Weapon | View::Free => {}
         View::Tactical => {
             // Above and behind in world-up terms: undo the aircraft's roll and pitch.
             let d = 120.0 * 2f32.powf(-state.external_zoom());

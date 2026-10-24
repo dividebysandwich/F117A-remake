@@ -48,6 +48,8 @@ pub struct MultiplayerWindow {
     flash_name: bool,
     flash_since: Option<f64>,
     saves: Vec<(String, String, f64)>,
+    /// The save whose DELETE was clicked: (name, label), awaiting confirmation.
+    confirm_delete: Option<(String, String)>,
     sky_ratio: f32,
     start_hour: f32,
     /// No weather: the classic clear sky.
@@ -65,6 +67,7 @@ impl MultiplayerWindow {
     pub fn show(&mut self) {
         self.open = true;
         self.saves = save::list_saves();
+        self.confirm_delete = None;
         self.error = None;
         self.status = None;
         if self.sky_ratio == 0.0 {
@@ -240,7 +243,9 @@ fn multiplayer_window(
     }
     let Some(data) = data else { return Ok(()) };
     let ctx = contexts.ctx_mut()?;
-    let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape)) && w.joining.is_none();
+    let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    // Escape cancels the delete confirmation first.
+    let mut close = escape && w.joining.is_none() && w.confirm_delete.is_none();
     let mut join = false;
     let auto_host = std::mem::take(&mut w.auto_host);
     let mut host: Option<Result<(String, Host), String>> = None;
@@ -465,24 +470,32 @@ fn multiplayer_window(
                         if w.saves.is_empty() {
                             ui.label(egui::RichText::new("No saved campaigns").color(DIM));
                         }
-                        for (name, code, hours) in w.saves.clone().into_iter().take(6) {
-                            let theater = THEATERS.iter().find(|t| t.0 == code).map_or(code.as_str(), |t| t.1);
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{theater:<22} {hours:>5.1} h"));
-                                let clicked = ui.button("HOST").clicked();
-                                no_name |= clicked && !named;
-                                if clicked && named {
-                                    let rules = host_rules(&settings, &state);
-                                    host = Some(match save::load(&name) {
-                                        Ok(Some(st)) => Host::resume(st, &data.0, rules)
-                                            .map(|h| (name.clone(), h))
-                                            .map_err(|e| format!("{e:#}")),
-                                        Ok(None) => Err("The save is gone".into()),
-                                        Err(e) => Err(format!("{e:#}")),
-                                    });
-                                }
-                            });
-                        }
+                        let scroll = egui::ScrollArea::vertical()
+                            .id_salt("mp_saves")
+                            .max_height(crate::campaign::SAVES_HEIGHT);
+                        scroll.show(ui, |ui| {
+                            for (name, code, hours) in w.saves.clone() {
+                                let theater = THEATERS.iter().find(|t| t.0 == code).map_or(code.as_str(), |t| t.1);
+                                ui.horizontal(|ui| {
+                                    ui.label(format!("{theater:<22} {hours:>5.1} h"));
+                                    let clicked = ui.button("HOST").clicked();
+                                    no_name |= clicked && !named;
+                                    if clicked && named {
+                                        let rules = host_rules(&settings, &state);
+                                        host = Some(match save::load(&name) {
+                                            Ok(Some(st)) => Host::resume(st, &data.0, rules)
+                                                .map(|h| (name.clone(), h))
+                                                .map_err(|e| format!("{e:#}")),
+                                            Ok(None) => Err("The save is gone".into()),
+                                            Err(e) => Err(format!("{e:#}")),
+                                        });
+                                    }
+                                    if ui.button("DELETE").on_hover_text("Delete this saved campaign").clicked() {
+                                        w.confirm_delete = Some((name.clone(), format!("{theater}, {hours:.1} h played")));
+                                    }
+                                });
+                            }
+                        });
                     });
                 });
             }
@@ -504,6 +517,18 @@ fn multiplayer_window(
     });
     if no_name {
         w.flash_since = Some(now);
+    }
+    if let Some((name, label)) = w.confirm_delete.clone() {
+        let answer = crate::campaign::delete_popup(ctx, &label, escape);
+        if answer == Some(true) {
+            if let Err(e) = save::delete(&name) {
+                w.error = Some(format!("The save could not be deleted: {e:#}"));
+            }
+            w.saves = save::list_saves();
+        }
+        if answer.is_some() {
+            w.confirm_delete = None;
+        }
     }
     if let Some((e, since)) = &w.popup {
         if now - since < POPUP_SECONDS {

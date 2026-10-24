@@ -56,6 +56,37 @@ impl CampaignWindow {
     }
 }
 
+/// How tall the list of saved campaigns grows before it scrolls.
+pub(crate) const SAVES_HEIGHT: f32 = 240.0;
+
+/// The "delete this campaign?" popup over the menu: Some(true) to delete, Some(false) to keep it
+/// (CANCEL, or `cancel` such as Escape), None while it waits.
+pub(crate) fn delete_popup(ctx: &egui::Context, label: &str, cancel: bool) -> Option<bool> {
+    let mut answer = cancel.then_some(false);
+    egui::Window::new("Delete the campaign")
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .collapsible(false)
+        .resizable(false)
+        .title_bar(false)
+        .order(egui::Order::Foreground)
+        .frame(egui::Frame::window(&ctx.global_style()).inner_margin(18.0))
+        .show(ctx, |ui| {
+            ui.label(egui::RichText::new("DELETE THIS CAMPAIGN?").heading().color(BRIGHT));
+            ui.label(egui::RichText::new(label).color(BRIGHT));
+            ui.label(egui::RichText::new("Deletion is permanent").color(DIM));
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.add(big_button("DELETE").fill(super::ops::EXIT_RED)).clicked() {
+                    answer = Some(true);
+                }
+                if ui.add(big_button("CANCEL")).clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+    answer
+}
+
 fn roe_name(roe: u8) -> &'static str {
     match roe {
         0 => "Cold War",
@@ -76,7 +107,6 @@ pub fn campaign_window(
     mut next: ResMut<NextState<AppState>>,
     mut settings: ResMut<crate::settings::Settings>,
     vr: Res<crate::menu::VrAvailable>,
-    head: Res<crate::headtrack::HeadTrack>,
     mut exit: MessageWriter<AppExit>,
 ) -> Result {
     if !w.open {
@@ -146,7 +176,6 @@ pub fn campaign_window(
                 crate::menu::simulation_options(
                     ui,
                     &mut settings,
-                    head.source,
                     Some("A saved campaign keeps the rules it was started with"),
                 );
             });
@@ -191,7 +220,8 @@ pub fn campaign_window(
             if w.saves.is_empty() {
                 ui.label(egui::RichText::new("No saved campaigns").color(DIM));
             }
-            for (name, code, hours) in w.saves.clone().into_iter().take(8) {
+            egui::ScrollArea::vertical().id_salt("campaign_saves").max_height(SAVES_HEIGHT).show(ui, |ui| {
+            for (name, code, hours) in w.saves.clone() {
                 let theater = THEATERS.iter().find(|t| t.0 == code).map_or(code.as_str(), |t| t.1);
                 ui.horizontal(|ui| {
                     ui.label(format!("{theater:<24} {hours:>5.1} h played"));
@@ -214,6 +244,7 @@ pub fn campaign_window(
                     }
                 });
             }
+            });
             if let Some(e) = &w.error {
                 ui.colored_label(AMBER, e);
             }
@@ -225,36 +256,14 @@ pub fn campaign_window(
         }
     });
     if let Some((name, label)) = w.confirm_delete.clone() {
-        let mut delete = false;
-        let mut cancel = escape;
-        egui::Window::new("Delete the campaign")
-            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-            .collapsible(false)
-            .resizable(false)
-            .title_bar(false)
-            .order(egui::Order::Foreground)
-            .frame(egui::Frame::window(&ctx.global_style()).inner_margin(18.0))
-            .show(ctx, |ui| {
-                ui.label(egui::RichText::new("DELETE THIS CAMPAIGN?").heading().color(BRIGHT));
-                ui.label(egui::RichText::new(&label).color(BRIGHT));
-                ui.label(egui::RichText::new("Deletion is permanent").color(DIM));
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.add(big_button("DELETE").fill(super::ops::EXIT_RED)).clicked() {
-                        delete = true;
-                    }
-                    if ui.add(big_button("CANCEL")).clicked() {
-                        cancel = true;
-                    }
-                });
-            });
-        if delete {
+        let answer = delete_popup(ctx, &label, escape);
+        if answer == Some(true) {
             if let Err(e) = stealth_host::save::delete(&name) {
                 w.error = Some(format!("The save could not be deleted: {e:#}"));
             }
             w.saves = stealth_host::save::list_saves();
         }
-        if delete || cancel {
+        if answer.is_some() {
             w.confirm_delete = None;
         }
     }

@@ -326,9 +326,9 @@ fn setup_weather(
     mut state: ResMut<WeatherState>,
 ) {
     let weather = mission.map(|m| m.0.weather).unwrap_or_default();
-    // Stratus sheets are cut out by their coverage field: alpha to coverage with modern
-    // mode's MSAA, a dithered screen door otherwise.
-    let coverage = if settings.modern_shading { FLAG_CLOUD_COVERAGE } else { 0 };
+    // Stratus sheets are cut out by their coverage field: alpha to coverage with MSAA, a
+    // dithered screen door otherwise.
+    let coverage = if settings.msaa { FLAG_CLOUD_COVERAGE } else { 0 };
     let material = materials.add(PaletteMaterial {
         params: PaletteParams { word: 0xFFE0, flags: FLAG_CLOUD | coverage, ..default() },
         globals: palette.globals.clone(),

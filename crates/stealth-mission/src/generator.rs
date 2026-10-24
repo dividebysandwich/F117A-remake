@@ -866,7 +866,7 @@ impl<'a> Gen<'a> {
             }
             if t[k].ty == 2 {
                 let sh = self.o(t[k].idx).shape();
-                let class = self.w.buf7.get(sh).copied().unwrap_or(0) & 0xF;
+                let class = self.w.shape_class.get(sh).copied().unwrap_or(0) & 0xF;
                 wv = self.choose_weapon(class as usize);
             }
             if let Some(v) = wv {

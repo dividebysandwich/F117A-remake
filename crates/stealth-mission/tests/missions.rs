@@ -33,7 +33,7 @@ fn central_europe_reference_briefing() {
     assert_eq!(m.time.depart, "18:50");
     let json = serde_json::to_string(&m).unwrap();
     let back: Mission = serde_json::from_str(&json).unwrap();
-    assert_eq!(handoff_block(&back), handoff_block(&m));
+    assert_eq!(serde_json::to_string(&back).unwrap(), json);
 }
 
 /// A chosen start hour sets the clock and day or night, and leaves the rest of the mission.
@@ -73,7 +73,7 @@ fn random_missions_do_not_panic() {
                 roe: (next() % 3) as u8,
                 kind: MissionKind::from_index((next() % 4) as u8).unwrap(),
                 opponents: (next() % 4) as u8,
-                plane: if next() % 2 == 0 { Plane::MicroProse } else { Plane::Lockheed },
+                plane: if next() % 2 == 0 { Plane::Fictional } else { Plane::Lockheed },
                 sorties: (next() % 100) as u16,
                 pilot: "Capt. Test".into(),
                 weather: if i % 3 == 0 { None } else { Some(stealth_mission::Sky::Clear) },
@@ -83,10 +83,6 @@ fn random_missions_do_not_panic() {
             };
             let seed = if i % 2 == 0 { Seed::Srand(next() as u16) } else { Seed::Holdrand(next()) };
             let m = generate(data, &s, seed).unwrap_or_else(|e| panic!("{s:?} {seed:?}: {e}"));
-            assert_eq!(
-                handoff_block(&m).len(),
-                handoff_names_offset(&m) + NAMES_BYTES + 256 + 4 + 16 + 36
-            );
             assert!(
                 (1..=8).contains(&m.primary.mission_type)
                     && (1..=8).contains(&m.secondary.mission_type)

@@ -203,7 +203,7 @@ fn readout(
     );
 }
 
-/// Aircraft models (STFLT.3DX) use 1/8 world unit per model unit (F-117 model: 288 units long
+/// Aircraft models (stflt.glb) use 1/8 world unit per model unit (F-117 model: 288 units long
 /// = 17.6 m). ASSUMED from model sizes; not confirmed.
 pub const AIRCRAFT_MODEL_SCALE: f64 = crate::world::WU / 8.0;
 

@@ -90,6 +90,8 @@ pub enum Action {
     ViewMissile,
     ViewTactical,
     ViewInverseTactical,
+    /// The free camera, moved with the keys and turned with the mouse (`camera::FreeView`).
+    ViewFree,
     Zoom,
     Unzoom,
     /// Map display only (bezel buttons; Z/X also zoom the external views).
@@ -129,6 +131,15 @@ pub enum Action {
     /// Rudder keys (unbound by default).
     YawLeft,
     YawRight,
+    /// Trim switch (held, not a discrete action): moves the stick trim.
+    TrimNoseDown,
+    TrimNoseUp,
+    TrimLeft,
+    TrimRight,
+    /// Centres the trim.
+    TrimReset,
+    /// Master caution: silences the alarms sounding.
+    MasterCaution,
 }
 
 impl Action {
@@ -142,6 +153,17 @@ impl Action {
             Action::RollRight => Some((1.0, 0.0, 0.0)),
             Action::YawLeft => Some((0.0, 0.0, -1.0)),
             Action::YawRight => Some((0.0, 0.0, 1.0)),
+            _ => None,
+        }
+    }
+
+    /// The (roll, pitch) direction of a held trim switch action; None for the others.
+    pub fn trim_direction(self) -> Option<Vec2> {
+        match self {
+            Action::TrimNoseDown => Some(Vec2::new(0.0, -1.0)),
+            Action::TrimNoseUp => Some(Vec2::new(0.0, 1.0)),
+            Action::TrimLeft => Some(Vec2::new(-1.0, 0.0)),
+            Action::TrimRight => Some(Vec2::new(1.0, 0.0)),
             _ => None,
         }
     }
@@ -197,10 +219,6 @@ pub fn all_actions() -> Vec<Action> {
     for &(_, _, a) in BINDINGS {
         if !out.contains(&a) {
             out.push(a);
-            // The actions without a default key follow the one they belong with.
-            if a == UNBOUND_BY_DEFAULT.0 {
-                out.extend(UNBOUND_BY_DEFAULT.1);
-            }
         }
     }
     out
@@ -237,6 +255,8 @@ pub struct FlightControls {
     /// Helicopters: the collective moving while its keys (the throttle keys) or the gamepad
     /// triggers are held, -1 (down) .. 1 (up).
     pub collective_rate: f32,
+    /// Trim switch held: x roll right, y nose up (-1..1).
+    pub trim: Vec2,
     /// Gun trigger held.
     pub gun: bool,
     /// Fire button held (fires the gun when it is the selected weapon).
@@ -255,11 +275,6 @@ pub enum Mods {
     Alt,
 }
 
-/// Actions without a default key, still listed in the input mapping right after the given one
-/// (the rudder keys after the roll keys).
-const UNBOUND_BY_DEFAULT: (Action, [Action; 2]) =
-    (Action::RollRight, [Action::YawLeft, Action::YawRight]);
-
 /// Default bindings, from the manual's key summary (IBM version); the input mapping can change
 /// them.
 const BINDINGS: &[(Mods, KeyCode, Action)] = {
@@ -271,6 +286,15 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::ArrowDown, PitchUp),
         (None, K::ArrowLeft, RollLeft),
         (None, K::ArrowRight, RollRight),
+        // Remake: the rudder (the helicopters' pedals), left hand.
+        (None, K::KeyQ, YawLeft),
+        (None, K::KeyE, YawRight),
+        // Remake: the trim switch.
+        (Alt, K::ArrowUp, TrimNoseDown),
+        (Alt, K::ArrowDown, TrimNoseUp),
+        (Alt, K::ArrowLeft, TrimLeft),
+        (Alt, K::ArrowRight, TrimRight),
+        (Alt, K::Home, TrimReset),
         (None, K::Equal, ThrottleUp),
         (None, K::NumpadAdd, ThrottleUp),
         (None, K::Minus, ThrottleDown),
@@ -294,6 +318,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (None, K::Digit9, Flaps),
         (None, K::Digit0, Brakes),
         (Shift, K::F10, Eject),
+        (Alt, K::KeyC, MasterCaution),
         (None, K::F2, HudMode),
         (Alt, K::F2, BombMode),
         (None, K::KeyV, HudDeclutter),
@@ -328,6 +353,7 @@ const BINDINGS: &[(Mods, KeyCode, Action)] = {
         (Shift, K::F4, ViewMissile),
         (Shift, K::F5, ViewTactical),
         (Shift, K::F6, ViewInverseTactical),
+        (Shift, K::F7, ViewFree),
         (None, K::KeyZ, Zoom),
         (None, K::KeyX, Unzoom),
         (Alt, K::KeyZ, MapZoomIn),
@@ -390,6 +416,7 @@ fn read_keyboard(
     mut controls: ResMut<FlightControls>,
     mut actions: MessageWriter<ActionEvent>,
     block: Res<InputBlock>,
+    view: Option<Res<crate::camera::ViewState>>,
 ) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     let alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
@@ -400,10 +427,16 @@ fn read_keyboard(
     } else {
         Mods::None
     };
+    // The free view's movement keys move it, not the aircraft (with Alt they still do).
+    let free = view.is_some_and(|v| v.view == crate::camera::View::Free) && mods != Mods::Alt;
+    let camera_key = |k: KeyCode| free && crate::camera::FREE_KEYS.contains(&k);
     for m in &config.keys {
         let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
         // The stick keys are held, read below.
-        if (block.0 && action != Action::Menu) || action.stick_direction().is_some() {
+        if (block.0 && action != Action::Menu)
+            || action.stick_direction().is_some()
+            || camera_key(m.key)
+        {
             continue;
         }
         if m.mods == mods && keys.just_pressed(m.key) {
@@ -424,6 +457,7 @@ fn read_keyboard(
         controls.yaw = 0.0;
         controls.throttle = None;
         controls.collective_rate = 0.0;
+        controls.trim = Vec2::ZERO;
         controls.slew = Vec2::ZERO;
         return;
     }
@@ -435,7 +469,7 @@ fn read_keyboard(
     for m in &config.keys {
         let crate::hotas::ButtonTarget::Action(action) = m.target else { continue };
         let Some((r, p, y)) = action.stick_direction() else { continue };
-        if m.mods != mods {
+        if m.mods != mods || camera_key(m.key) {
             continue;
         }
         if keys.just_pressed(m.key) {
@@ -462,6 +496,7 @@ fn read_keyboard(
     controls.gun = config.keys.iter().any(|m| {
         m.target == crate::hotas::ButtonTarget::Gun
             && keys.pressed(m.key)
+            && !camera_key(m.key)
             && (m.mods == Mods::None || m.mods == mods)
     });
     let held = |a: Action| {
@@ -477,6 +512,15 @@ fn read_keyboard(
     controls.throttle = None;
     controls.collective_rate =
         held(Action::ThrottleUp) as i8 as f32 - held(Action::ThrottleDown) as i8 as f32;
+    controls.trim = config
+        .keys
+        .iter()
+        .filter_map(|m| {
+            let crate::hotas::ButtonTarget::Action(a) = m.target else { return None };
+            let d = a.trim_direction()?;
+            (m.mods == mods && keys.pressed(m.key)).then_some(d)
+        })
+        .sum();
     let mut slew = Vec2::ZERO;
     if mods == Mods::None {
         for &(key, x, y) in SLEW_KEYS {

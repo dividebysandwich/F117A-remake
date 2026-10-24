@@ -81,6 +81,7 @@ pub fn action_text(a: Action) -> (String, &'static str) {
         Flaps => ("Flaps", "More lift, about 20 % lower stall speed"),
         Brakes => ("Brakes", "Wheel brakes on the ground, speed brake in the air"),
         Eject => ("Ejection handle", "Eject"),
+        MasterCaution => ("Master caution", "Silences the alarms: fire, stall and radar warnings"),
         HudMode => ("HUD mode", "NAV, AIR, GND"),
         BombMode => ("Bombing mode", "CCIP / CCRP"),
         HudDeclutter => ("HUD declutter", ""),
@@ -180,6 +181,7 @@ fn cmd_text(c: MfdCmd) -> String {
         MfdCmd::CamZoomCycle => "Camera zoom: auto, 1X to 6X".into(),
         MfdCmd::TgpSp => "Targeting pod snowplow: locks dropped, fixed ahead".into(),
         MfdCmd::TgpSlave => "Targeting pod back to slaved".into(),
+        MfdCmd::TgpCz => "Cursor zero: targeting pod to the current steerpoint".into(),
     }
 }
 
@@ -241,7 +243,11 @@ pub(super) fn face_tip(face: Face) -> Option<Tip> {
     let (title, detail): (String, &str) = match elem {
         Elem::Lamp(id, label) => {
             let detail = match id {
-                LampId::Mw => "Missile warning",
+                LampId::Mw => {
+                    let name = label.unwrap_or(LAMPS[id as usize].1).replace('\n', " ");
+                    let detail = "Lit with a missile warning; press to silence the alarms";
+                    return Some(Tip::new(name, detail, &[Action::MasterCaution]));
+                }
                 LampId::Stall => "Airspeed below stall speed (blinks)",
                 LampId::Trak => "An enemy radar tracks the aircraft",
                 LampId::Ir => "An infrared missile is in flight",
@@ -749,7 +755,7 @@ mod tests {
             let k = qwerty_key_label(m.mods, m.key);
             assert!(drawable(&k), "{k}");
         }
-        for c in "ÉÈÇÀÙ²µ§£¤¨°ÖÜÄßÅÆØÑ´`^~".chars() {
+        for c in crate::keyboard_layout::EUROPEAN_KEYCAPS.chars() {
             assert!(drawable(&c.to_string()), "{c}");
         }
         assert!(!drawable("你"));

@@ -49,6 +49,7 @@ Aircraft and rules
   --realistic-guidance         realistic missile guidance
   --realistic-damage           realistic weapon damage
   --no-crashes                 crash protection: collisions and ground contact are not fatal
+  --no-auto-trim               no auto trim (the trim keys still trim)
   --continuous-time            moving sun and moon; moonlight sets the enemy's visual range
   --sun-moon                   without --continuous-time: sun by day, moon and stars by night
   --air-defence                low-level air defences
@@ -62,7 +63,8 @@ Cockpit and graphics
   --classic-avionics           DOS era MFD pages
   --classic-flight             DOS era flight model (default for --script runs)
   --modern-flight              the modern flight model also in --script runs
-  --modern                     modern rendering (smooth gradients and haze, shading, MSAA)
+  --modern                     modern rendering (smooth gradients and haze, shading)
+  --no-msaa                    no MSAA anti-aliasing
   --shadows                    sun shadows
   --local-lights               cockpit lamps, explosions, flares, missile motors, runway lights
   --head-tracking              head/eye tracking through OpenTrack (FreeTrack or UDP 4242)
@@ -115,6 +117,7 @@ Testing and screenshots
   --open-mission, --open-planner, --open-loadout, --open-career, --open-campaign,
   --open-multiplayer, --open-keyboard
                                start with that screen or window open
+  --open-options <tab>         start with OPTIONS open: game, graphics, sound, controls
   --campaign-tab <tab>         board, map, players, debrief, log
   --campaign-take <n>          take the n-th mission of the board
   --campaign-accept map|loadout

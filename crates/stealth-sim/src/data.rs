@@ -37,7 +37,7 @@ pub struct AircraftType {
     pub agility: i16,
     /// Radar type index; 0 = none, -1 = friendly.
     pub radar: i16,
-    /// STFLT.3DX model index.
+    /// Aircraft model index (stflt.glb).
     pub model: i16,
     pub unknown: i16,
     /// Initial kill counter.
@@ -74,7 +74,7 @@ pub struct MissileType {
     /// Seeker class: <= 0 infrared, > 0 radar; 4..=6 guided air-to-ground, 7 air-to-air.
     pub class: i16,
     pub turn: i16,
-    /// STFLT.3DX model index.
+    /// Aircraft model index (stflt.glb).
     pub model: i16,
 }
 
@@ -94,7 +94,7 @@ pub struct TheaterTiles {
     pub grid: terrain::Grid,
     /// `objects[level-1][tile type]` = (x, y, shape) for LOD levels 1 and 2.
     pub objects: [Vec<Vec<(i16, i16, u8)>>; 2],
-    /// Theater .3DX attribute byte per shape (bit 0x20: the model has its own wreck state).
+    /// Theater model attribute byte per shape (bit 0x20: the model has its own wreck state).
     pub model_attr: Vec<u8>,
 }
 

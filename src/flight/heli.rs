@@ -28,7 +28,7 @@ use bevy::prelude::*;
 
 use super::{
     Aircraft, FlightConstants, FlightControls, FlightEnd, Theater, WorldPos, bevy_to_wu,
-    ground_contact, wu_to_bevy,
+    ground_contact, stick_released, wu_to_bevy,
 };
 
 const G: f32 = 32.174;
@@ -168,6 +168,8 @@ pub(super) struct State {
     pub(super) angle: f32,
     /// Translational lift 0..1, for the blade slap.
     pub(super) etl: f32,
+    /// Auto trim: the pitch and bank (rad) the cyclic was released at.
+    trim_hold: (Option<f32>, Option<f32>),
     init: bool,
 }
 
@@ -197,6 +199,11 @@ fn collective(a: &mut Aircraft, controls: &FlightControls, dt: f32) -> f32 {
     }
     a.set_thrust / 100.0
 }
+
+/// Auto trim: trim (stick) per second per rad/s of pitch or roll rate, and per radian off the
+/// attitude the cyclic was released at.
+const TRIM_GAIN: f32 = 2.5;
+const TRIM_HOLD_GAIN: f32 = 2.0;
 
 /// Collective travel per second with the keys held (percent).
 pub const COLLECTIVE_RATE: f32 = 40.0;
@@ -229,9 +236,29 @@ pub(super) fn step(
     let c = collective(a, controls, dt);
 
     // --- controls (damaged controls add their bias, jitter while flying)
+    // Auto trim: with the cyclic released, the trim takes out the pitch and roll rates, so the
+    // attitude stays where it was left (against flapback at speed).
+    let (roll_free, pitch_free) = stick_released(controls);
+    if a.auto_trim && !a.on_ground {
+        let (_, p, b) = a.euler();
+        let rates = a.heli.rates;
+        let hold = &mut a.heli.trim_hold;
+        let (p0, b0) = (*hold.0.get_or_insert(p), *hold.1.get_or_insert(b));
+        let d = Vec2::new(
+            if roll_free { TRIM_GAIN * rates.z - TRIM_HOLD_GAIN * (b - b0) } else { 0.0 },
+            if pitch_free { -TRIM_GAIN * rates.x - TRIM_HOLD_GAIN * (p - p0) } else { 0.0 },
+        );
+        a.move_trim(d * dt);
+    }
+    if !roll_free || !a.auto_trim || a.on_ground {
+        a.heli.trim_hold.1 = None;
+    }
+    if !pitch_free || !a.auto_trim || a.on_ground {
+        a.heli.trim_hold.0 = None;
+    }
     let (bias_roll, bias_pitch) = a.damage.control_bias(a.time);
-    let mut roll = (controls.roll + bias_roll).clamp(-1.0, 1.0);
-    let mut pitch = (controls.pitch + bias_pitch).clamp(-1.0, 1.0);
+    let mut roll = (controls.roll + bias_roll + a.stick_trim.x).clamp(-1.0, 1.0);
+    let mut pitch = (controls.pitch + bias_pitch + a.stick_trim.y).clamp(-1.0, 1.0);
     let pedal = controls.yaw.clamp(-1.0, 1.0);
     if a.damage.stick_jitter > 0.0 && !a.on_ground {
         let j = a.damage.stick_jitter / 126.0;
@@ -584,6 +611,41 @@ mod tests {
         );
         assert!(sunk.climb_rate < -8.0, "climb {}", sunk.climb_rate);
         assert!(more > trim + 0.04, "collective {trim} -> {more}");
+    }
+
+    /// Cyclic released in cruise: without the auto trim flapback raises the nose, with it the
+    /// attitude stays where it was left.
+    #[test]
+    fn auto_trim_holds_the_attitude() {
+        let mut a0 = hovering(2000.0);
+        a0.velocity = 120.0 * 27.0;
+        let (a, c0) = cruise(a0, 20.0, -0.12, Some(2000.0), 0.6);
+        let start = a.euler().1;
+        let released = |auto: bool| {
+            let mut a = a.clone();
+            a.auto_trim = auto;
+            let mut highest = f32::MIN;
+            let (a, _) = fly(a, 10.0, 1, |a, c| {
+                c.pitch = 0.0;
+                c.roll = 0.0;
+                c.throttle = Some(c0);
+                highest = highest.max(a.euler().1);
+            });
+            (highest, a)
+        };
+        let ((free, _), (trimmed, a)) = (released(false), released(true));
+        println!(
+            "{:.0} kt, pitch {:.1}: released, highest {:.1}; auto trim {:.1} (trim {:.2})",
+            a.knots(),
+            start.to_degrees(),
+            free.to_degrees(),
+            trimmed.to_degrees(),
+            a.stick_trim.y
+        );
+        assert!(free > start + 0.2, "the nose rose without trim");
+        assert!(trimmed < start + 0.06, "{} -> {}", start.to_degrees(), trimmed.to_degrees());
+        assert!((a.euler().1 - start).abs() < 0.015, "pitch {}", a.euler().1.to_degrees());
+        assert!(a.stick_trim.y < -0.05, "trimmed nose down: {}", a.stick_trim.y);
     }
 
     #[test]

@@ -84,6 +84,34 @@ fn diamond(c: &mut Canvas, p: Vec2, r: f32) {
     );
 }
 
+/// The steerpoint diamond (direction in the aircraft frame); off the field it waits at the
+/// field's edge in the steerpoint's direction, crossed out.
+fn steerpoint_cue(c: &mut Canvas, d: Vec3, scale: f32) {
+    const R: f32 = 9.0;
+    let p = project(d, scale);
+    if let Some(p) = p.filter(|&p| inside(p)) {
+        diamond(c, p, R);
+        return;
+    }
+    let centre = Vec2::new(CX, CY);
+    let Some(dir) = p.map_or(Vec2::new(d.x, -d.y), |p| p - centre).try_normalize() else {
+        return;
+    };
+    // Inside the tapes and above the readouts.
+    let (lo, hi) = (Vec2::new(420.0, FIELD.0.y + R), Vec2::new(860.0, 365.0));
+    let reach = |d: f32, lo: f32, hi: f32, c: f32| match d {
+        d if d > 1e-6 => (hi - c) / d,
+        d if d < -1e-6 => (lo - c) / d,
+        _ => f32::INFINITY,
+    };
+    let t = reach(dir.x, lo.x, hi.x, CX).min(reach(dir.y, lo.y, hi.y, CY));
+    let q = centre + dir * t;
+    diamond(c, q, R);
+    let k = R * 0.7;
+    c.stroke(q + Vec2::new(-k, -k), q + Vec2::new(k, k), THIN, INK);
+    c.stroke(q + Vec2::new(-k, k), q + Vec2::new(k, -k), THIN, INK);
+}
+
 /// Screen directions of the horizon (to the right) and of world "down", from the attitude.
 fn horizon_axes(f: &HudFrame) -> (Vec2, Vec2) {
     let inv = f.orientation.inverse();
@@ -205,10 +233,14 @@ pub fn draw(c: &mut Canvas, f: &HudFrame) {
         text(c, 1010.0, 444.0, &t, Align::Right);
     }
     if st.mode == HudMode::Nav
-        && let Some(p) =
-            f.steerpoint_dir.and_then(|d| project(inv * d, f.scale)).filter(|&p| inside(p))
+        && let Some(d) = f.steerpoint_dir
     {
-        diamond(c, p, 9.0);
+        steerpoint_cue(c, inv * d, f.scale);
+    }
+    // Targeting pod line of sight: a small circle, in every mode.
+    if let Some(p) = f.tgp_dir.and_then(|d| project(inv * d, f.scale)).filter(|&p| inside(p)) {
+        c.ring(p, 8.0, THIN, INK);
+        c.circle(p.x, p.y, 1.5, INK);
     }
 
     match st.mode {

@@ -2,10 +2,10 @@
 Type=Application
 Name=Stealth Mission 89
 GenericName=Flight Simulator
-Comment=A remake of MicroProse's F-117A Nighthawk Stealth Fighter 2.0 (needs the original game's data)
+Comment=A remake of DOS-era 3D flight simulations
 Exec=stealth-mission-89
 Icon=stealth-mission-89
 Terminal=false
 Categories=Game;Simulation;
-Keywords=flight;simulator;stealth;F-117;MicroProse;VR;
+Keywords=flight;simulator;stealth;F-117;VR;
 StartupWMClass=stealth-mission-89

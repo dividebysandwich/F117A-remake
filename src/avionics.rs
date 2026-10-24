@@ -12,7 +12,7 @@
 //!   slew" controls move its cursor, "lock cursor target" locks what is under it (an aircraft or
 //!   a ground object on the HSD, a radar on the HARM display).
 //! - Targeting pod (TGP): slaved to the locked target; a target key or a display lock slaves it
-//!   again, CZ (cursor zero) turns it to the current steerpoint (point track). As the SOI, slewing turns the pod itself (area track);
+//!   again, CZ (cursor zero) turns it to the current steerpoint (point track). As the SOI, slewing moves the pod itself, stabilized against the aircraft's motion (area track);
 //!   once the slew stops it holds the ground point it looks at (point track), and "lock cursor
 //!   target" locks what is there. SP (snowplow) drops the locks and fixes it ahead of the nose.
 //!   The HSD shows where the pod looks.
@@ -171,8 +171,9 @@ pub enum TgpMode {
     /// At the locked target (else ahead and down, or the camera key's direction).
     #[default]
     Slaved,
-    /// Turned by the slew controls: azimuth (right) and elevation (up) from the nose, radians.
-    Area { az: f32, el: f32 },
+    /// Turned by the slew controls, the aircraft's motion not turning it: the ground point it
+    /// looks at (Bevy world position), or above the horizon a point far out on its line of sight.
+    Area(DVec3),
     /// Holding a ground point (Bevy world position).
     Point(DVec3),
     /// Snowplow: fixed ahead of the nose (`SP_EL` down), nothing locked, no ground track.
@@ -201,7 +202,7 @@ impl TgpMode {
     fn label(self) -> &'static str {
         match self {
             TgpMode::Slaved => "SLV",
-            TgpMode::Area { .. } => "AREA",
+            TgpMode::Area(_) => "AREA",
             TgpMode::Point(_) => "PNT",
             TgpMode::Snowplow => "SP",
         }
@@ -214,6 +215,9 @@ const POD_RATE: f32 = 0.5;
 const POD_SETTLE: f32 = 0.15;
 /// Farthest ground point the pod tracks (m).
 const POD_RANGE: f64 = 40_000.0;
+/// How far out an area track above the horizon puts its point (m): far enough that flying
+/// does not turn the line of sight.
+const POD_SKY: f64 = 1.0e7;
 const POD_AZ_LIMIT: f32 = 2.97;
 const POD_EL_LIMITS: (f32, f32) = (-1.75, 0.5);
 /// Snowplow elevation (rad): ahead and a little down, as the unlocked slaved pod.
@@ -227,6 +231,8 @@ const SLEW_FAR: f32 = 20_000.0;
 const SLEW_EXPO_FAR: f32 = 3.0;
 const SLEW_START_FAR: f32 = 0.15;
 const SLEW_RAMP: f32 = 0.8;
+/// Ground slew away from (and toward) the aircraft against slewing across, at the same range.
+const SLEW_AWAY: f32 = 1.1;
 
 /// Direction from the nose (aircraft frame, -Z forward) by azimuth and elevation.
 pub fn pod_dir(az: f32, el: f32) -> Vec3 {
@@ -269,9 +275,12 @@ fn slew_gain(slew: Vec2, range: Option<f64>, held: f32) -> Vec2 {
     Vec2::new(curve(slew.x), curve(slew.y)) * ramp
 }
 
-/// One step of the pod: slewing (`slew`, with the pod the SOI) turns it from where it looks
-/// (`looking`, world direction) in area track; `POD_SETTLE` seconds after the slew stops it holds
-/// the ground point it looks at. Returns the ground point on its line of sight.
+/// One step of the pod: slewing (`slew`, with the pod the SOI) moves it from where it looks
+/// (`looking`, world direction) in area track, stabilized against the aircraft's motion: on the
+/// ground it moves the ground point, right and away from the aircraft, at a pace by its range (so
+/// at a shallow angle the line of sight rises and falls finely); above the horizon it turns the
+/// line of sight. `POD_SETTLE` seconds after the slew stops it holds the ground point it looks
+/// at. Returns the ground point on its line of sight.
 #[allow(clippy::too_many_arguments)]
 pub fn pod_step(
     tgp: &mut TgpState,
@@ -284,30 +293,65 @@ pub fn pod_step(
     ground_y: f64,
 ) -> Option<DVec3> {
     let to_world = |az: f32, el: f32| orientation * pod_dir(az, el);
+    // An area track's ground point (as it is when on the ground, not rounded through its
+    // direction).
+    let area_ground = |p: DVec3| {
+        if p.y == ground_y {
+            Some(p).filter(|p| (p - origin).length() <= POD_RANGE)
+        } else {
+            ground_hit(origin, (p - origin).as_vec3(), ground_y)
+        }
+    };
     if slew.length() > 0.05 {
-        let (az, el) = match tgp.mode {
-            TgpMode::Area { az, el } => (az, el),
-            TgpMode::Point(p) => pod_angles(orientation.inverse() * (p - origin).as_vec3()),
-            TgpMode::Slaved => {
-                looking.map_or((0.0, SP_EL), |d| pod_angles(orientation.inverse() * d))
-            }
-            TgpMode::Snowplow => (0.0, SP_EL),
-        };
-        let range = ground_distance(origin, to_world(az, el), ground_y);
+        let dir = match tgp.mode {
+            TgpMode::Area(p) | TgpMode::Point(p) => (p - origin).as_vec3(),
+            TgpMode::Slaved => looking.unwrap_or_else(|| to_world(0.0, SP_EL)),
+            TgpMode::Snowplow => to_world(0.0, SP_EL),
+        }
+        .normalize_or(orientation * Vec3::NEG_Z);
+        let range = ground_distance(origin, dir, ground_y);
         let slew = slew_gain(slew, range, tgp.held);
         tgp.held += dt;
         let rate = POD_RATE / (1u32 << zoom.min(6)) as f32 * dt;
-        tgp.mode = TgpMode::Area {
-            az: (az + slew.x * rate).clamp(-POD_AZ_LIMIT, POD_AZ_LIMIT),
-            el: (el + slew.y * rate).clamp(POD_EL_LIMITS.0, POD_EL_LIMITS.1),
+        let on_ground = range.filter(|&r| r <= POD_RANGE).map(|r| origin + dir.as_dvec3() * r);
+        let moved = match on_ground {
+            Some(p) => {
+                let flat = DVec3::new(dir.x as f64, 0.0, dir.z as f64);
+                let away = flat.try_normalize().unwrap_or_else(|| {
+                    let nose = (orientation * Vec3::NEG_Z).as_dvec3();
+                    DVec3::new(nose.x, 0.0, nose.z).normalize_or(DVec3::NEG_Z)
+                });
+                let right = away.cross(DVec3::Y);
+                let r = (p - origin).length();
+                let away = away * SLEW_AWAY as f64;
+                p + (right * slew.x as f64 + away * slew.y as f64) * r * rate as f64
+            }
+            // Above the horizon (or past the pod's range): turned by heading and elevation, as
+            // its picture is upright.
+            None => {
+                let heading = dir.x.atan2(-dir.z) + slew.x * rate;
+                let el = dir.y.clamp(-1.0, 1.0).asin() + slew.y * rate;
+                origin + pod_dir(heading, el.clamp(-1.55, 1.55)).as_dvec3() * POD_SKY
+            }
         };
+        // Within the pod's gimbal limits and range.
+        let (az, el) = pod_angles(orientation.inverse() * (moved - origin).as_vec3());
+        let (caz, cel) =
+            (az.clamp(-POD_AZ_LIMIT, POD_AZ_LIMIT), el.clamp(POD_EL_LIMITS.0, POD_EL_LIMITS.1));
+        let ground = area_ground(moved).is_some_and(|p| p == moved);
+        tgp.mode = TgpMode::Area(if (caz, cel) == (az, el) && (ground || moved.y > ground_y) {
+            moved
+        } else {
+            let dir = to_world(caz, cel);
+            ground_hit(origin, dir, ground_y).unwrap_or(origin + dir.as_dvec3() * POD_SKY)
+        });
         tgp.idle = 0.0;
     } else {
         tgp.held = 0.0;
-        if let TgpMode::Area { az, el } = tgp.mode {
+        if let TgpMode::Area(p) = tgp.mode {
             tgp.idle += dt;
             if tgp.idle >= POD_SETTLE
-                && let Some(p) = ground_hit(origin, to_world(az, el), ground_y)
+                && let Some(p) = area_ground(p)
             {
                 tgp.mode = TgpMode::Point(p);
             }
@@ -315,7 +359,7 @@ pub fn pod_step(
     }
     match tgp.mode {
         TgpMode::Point(p) => Some(p),
-        TgpMode::Area { az, el } => ground_hit(origin, to_world(az, el), ground_y),
+        TgpMode::Area(p) => area_ground(p),
         TgpMode::Snowplow => ground_hit(origin, to_world(0.0, SP_EL), ground_y),
         TgpMode::Slaved => looking.and_then(|d| ground_hit(origin, d, ground_y)),
     }
@@ -326,9 +370,8 @@ pub fn pod_step(
 pub fn pod_direction(tgp: &TgpState, orientation: Quat, origin: DVec3) -> Option<Vec3> {
     match tgp.mode {
         TgpMode::Slaved => None,
-        TgpMode::Area { az, el } => Some(orientation * pod_dir(az, el)),
         TgpMode::Snowplow => Some(orientation * pod_dir(0.0, SP_EL)),
-        TgpMode::Point(p) => (p - origin).as_vec3().try_normalize(),
+        TgpMode::Area(p) | TgpMode::Point(p) => (p - origin).as_vec3().try_normalize(),
     }
 }
 
@@ -1603,29 +1646,90 @@ mod tests {
         assert_eq!(osb(MfdSide::Third, 5, &s).map(|o| o.0), Some("HSI"));
     }
 
+    /// The ground point of an area track.
+    fn area_point(tgp: &TgpState) -> DVec3 {
+        let TgpMode::Area(p) = tgp.mode else { panic!("{:?}", tgp.mode) };
+        p
+    }
+
     #[test]
     fn pod_area_then_point_track() {
         let origin = DVec3::new(0.0, 1000.0, 0.0);
         let mut tgp = TgpState::default();
         let ahead_down = Vec3::new(0.0, -0.5, -1.0).normalize();
-        // Slewing right from where the slaved pod looks.
+        let start = ground_hit(origin, ahead_down, 0.0).unwrap();
+        let r = (start - origin).length();
+        // Slewing right from where the slaved pod looks: the ground point moves right.
         let p0 = pod_step(&mut tgp, Vec2::X, 0.5, 0, Quat::IDENTITY, origin, Some(ahead_down), 0.0);
-        let TgpMode::Area { az, el } = tgp.mode else { panic!("{:?}", tgp.mode) };
-        assert!((az - 0.25).abs() < 1e-4 && (el - ahead_down.y.asin()).abs() < 1e-4, "{az} {el}");
-        assert!(p0.is_some_and(|p| p.x > 0.0 && p.y.abs() < 1e-6));
+        let p = area_point(&tgp);
+        assert!((p.x - r * 0.25).abs() < 1e-3 && (p.z - start.z).abs() < 1e-3, "{p}");
+        assert_eq!(p0, Some(p));
         // Zoomed in, slower.
         let mut z = tgp.clone();
         pod_step(&mut z, Vec2::X, 0.5, 2, Quat::IDENTITY, origin, None, 0.0);
-        let TgpMode::Area { az: az2, .. } = z.mode else { panic!() };
-        assert!((az2 - az - 0.0625).abs() < 1e-4, "{az2}");
+        let r2 = (p - origin).length();
+        let moved = (area_point(&z) - p).length();
+        assert!((moved - r2 * 0.0625).abs() < 1e-3, "{moved}");
         // Released: point track on the ground point after a moment.
         pod_step(&mut tgp, Vec2::ZERO, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
-        assert!(matches!(tgp.mode, TgpMode::Area { .. }));
+        assert!(matches!(tgp.mode, TgpMode::Area(_)));
         let p = pod_step(&mut tgp, Vec2::ZERO, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
         let TgpMode::Point(q) = tgp.mode else { panic!("{:?}", tgp.mode) };
         assert_eq!(p, Some(q));
         // It stays on that point as the aircraft moves.
         assert!(pod_direction(&tgp, Quat::IDENTITY, origin + DVec3::Z * 500.0).unwrap().z < -0.0);
+    }
+
+    #[test]
+    fn pod_slew_ignores_aircraft_motion() {
+        // Slewing right while the aircraft pitches and rolls: the ground point moves as it would
+        // in level flight.
+        let slew = |pitch: f32, roll: f32| {
+            let mut origin = DVec3::new(0.0, 1000.0, 0.0);
+            let start = DVec3::new(0.0, 0.0, -5000.0);
+            let mut tgp = TgpState { mode: TgpMode::Point(start), ..default() };
+            for i in 0..20 {
+                let t = i as f32 * 0.05;
+                let attitude = Quat::from_rotation_x(pitch * t) * Quat::from_rotation_z(roll * t);
+                pod_step(&mut tgp, Vec2::X, 0.05, 0, attitude, origin, None, 0.0);
+                origin += DVec3::new(0.0, 0.0, -12.0);
+            }
+            area_point(&tgp)
+        };
+        let level = slew(0.0, 0.0);
+        assert!(level.x > 1000.0, "{level}");
+        let rolled = slew(0.3, -0.8);
+        assert!((rolled - level).length() < 0.01, "{rolled} {level}");
+        // Above the horizon it holds its direction while the aircraft turns.
+        let origin = DVec3::new(0.0, 1000.0, 0.0);
+        let sky = origin + pod_dir(0.0, 0.2).as_dvec3() * POD_SKY;
+        let mut tgp = TgpState { mode: TgpMode::Area(sky), ..default() };
+        pod_step(&mut tgp, Vec2::Y, 0.2, 0, Quat::IDENTITY, origin, None, 0.0);
+        let d = pod_direction(&tgp, Quat::IDENTITY, origin).unwrap();
+        assert!(d.y > 0.0, "{d}");
+        let pitched = Quat::from_rotation_x(0.2);
+        pod_step(&mut tgp, Vec2::ZERO, 0.5, 0, pitched, origin, None, 0.0);
+        assert!((pod_direction(&tgp, pitched, origin).unwrap() - d).length() < 1e-4);
+    }
+
+    #[test]
+    fn pod_slew_fine_at_shallow_angles() {
+        // 25 km out from 1000 m: up and down move the line of sight far less than left and right
+        // (the ground point moves alike either way).
+        let origin = DVec3::new(0.0, 1000.0, 0.0);
+        let start = DVec3::new(0.0, 0.0, -25_000.0);
+        let angles =
+            |tgp: &TgpState| pod_angles(pod_direction(tgp, Quat::IDENTITY, origin).unwrap());
+        let (az0, el0) = pod_angles((start - origin).as_vec3());
+        let mut right = TgpState { mode: TgpMode::Point(start), ..default() };
+        pod_step(&mut right, Vec2::X, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
+        let mut up = TgpState { mode: TgpMode::Point(start), ..default() };
+        pod_step(&mut up, Vec2::Y, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
+        let daz = angles(&right).0 - az0;
+        let del = angles(&up).1 - el0;
+        assert!(daz > 0.0 && del > 0.0 && del < daz / 10.0, "{daz} {del}");
+        // Still on the ground (farther out), not above the horizon.
+        assert!(area_point(&up).z < start.z && area_point(&up).y.abs() < 1e-6);
     }
 
     #[test]
@@ -1643,24 +1747,19 @@ mod tests {
         // In between, in between.
         let mid = slew_gain(Vec2::new(0.5, 0.0), Some(11_500.0), SLEW_RAMP).x;
         assert!(mid < 0.5 && mid > 0.125, "{mid}");
-        // A slew held far out ramps up; letting go starts over.
+        // A slew held far out ramps up; letting go starts over (moves relative to the range).
         let origin = DVec3::new(0.0, 1000.0, 0.0);
-        let mut tgp = TgpState { mode: TgpMode::Area { az: 0.0, el: -0.04 }, ..default() };
+        let mut tgp =
+            TgpState { mode: TgpMode::Area(DVec3::new(0.0, 0.0, -25_000.0)), ..default() };
         let step = |tgp: &mut TgpState, s: Vec2| {
-            let before = match tgp.mode {
-                TgpMode::Area { az, .. } => az,
-                _ => panic!(),
-            };
+            let before = area_point(tgp);
             pod_step(tgp, s, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
-            match tgp.mode {
-                TgpMode::Area { az, .. } => az - before,
-                _ => panic!(),
-            }
+            (area_point(tgp) - before).length() / (before - origin).length()
         };
         let first = step(&mut tgp, Vec2::X);
         let later = (0..10).map(|_| step(&mut tgp, Vec2::X)).last().unwrap();
         assert!(later > 4.0 * first, "{first} {later}");
-        assert!((later - POD_RATE * 0.1).abs() < 1e-4, "{later}");
+        assert!((later - POD_RATE as f64 * 0.1).abs() < 1e-4, "{later}");
         step(&mut tgp, Vec2::ZERO);
         assert!((step(&mut tgp, Vec2::X) - first).abs() < 1e-4);
     }
@@ -1707,9 +1806,10 @@ mod tests {
         assert!(p.is_some_and(|p| p.x > 0.0));
         // A slew starts from there.
         pod_step(&mut s.av.tgp, Vec2::Y, 0.5, 0, turned, origin, None, 0.0);
-        let TgpMode::Area { az, el } = s.av.tgp.mode else { panic!("{:?}", s.av.tgp.mode) };
-        // (6.7 km out: a little finer than the full 0.25 rad.)
-        assert!(az.abs() < 1e-5 && el > SP_EL + 0.1 && el < SP_EL + 0.25, "{az} {el}");
+        let d = pod_direction(&s.av.tgp, turned, origin).unwrap();
+        let (az, el) = pod_angles(turned.inverse() * d);
+        // (Farther out on the ground, finer at the shallow angle.)
+        assert!(az.abs() < 1e-4 && el > SP_EL && el < SP_EL + 0.1, "{az} {el}");
         // A target key slaves it again; CZ (to the steerpoint), but not in A-A.
         apply(&mut s, raster, MfdCmd::TgpSlave);
         assert_eq!(s.av.tgp.mode, TgpMode::Slaved);

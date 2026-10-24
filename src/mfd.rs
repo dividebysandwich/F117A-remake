@@ -576,6 +576,8 @@ fn reset_mfd(
     *state = MfdState {
         hires: settings.hires_displays(),
         modern: !settings.classic_avionics,
+        // The targeting pod starts at 1X; the classic tracking camera zooms by range.
+        cam_zoom: (!settings.classic_avionics).then_some(0),
         av,
         ..default()
     };

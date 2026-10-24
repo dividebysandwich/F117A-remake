@@ -233,6 +233,10 @@ const SLEW_START_FAR: f32 = 0.15;
 const SLEW_RAMP: f32 = 0.8;
 /// Ground slew away from (and toward) the aircraft against slewing across, at the same range.
 const SLEW_AWAY: f32 = 1.1;
+/// At a shallow angle the away slew moves the line of sight by only the sine of the depression;
+/// it is sped up by that sine to this power (so the line of sight follows it to 1 - this), e.g.
+/// about 3x at 10 km from 1000 ft.
+const SLEW_AWAY_SHALLOW: f64 = 0.32;
 
 /// Direction from the nose (aircraft frame, -Z forward) by azimuth and elevation.
 pub fn pod_dir(az: f32, el: f32) -> Vec3 {
@@ -323,7 +327,8 @@ pub fn pod_step(
                 });
                 let right = away.cross(DVec3::Y);
                 let r = (p - origin).length();
-                let away = away * SLEW_AWAY as f64;
+                let shallow = (-dir.y as f64).max(1e-3).powf(-SLEW_AWAY_SHALLOW);
+                let away = away * SLEW_AWAY as f64 * shallow;
                 p + (right * slew.x as f64 + away * slew.y as f64) * r * rate as f64
             }
             // Above the horizon (or past the pod's range): turned by heading and elevation, as
@@ -1729,7 +1734,7 @@ mod tests {
         pod_step(&mut up, Vec2::Y, 0.1, 0, Quat::IDENTITY, origin, None, 0.0);
         let daz = angles(&right).0 - az0;
         let del = angles(&up).1 - el0;
-        assert!(daz > 0.0 && del > 0.0 && del < daz / 10.0, "{daz} {del}");
+        assert!(daz > 0.0 && del > 0.0 && del < daz / 5.0, "{daz} {del}");
         // Still on the ground (farther out), not above the horizon.
         assert!(area_point(&up).z < start.z && area_point(&up).y.abs() < 1e-6);
     }
